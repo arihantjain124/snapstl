@@ -1,4 +1,4 @@
-"""Secrets: MakerWorld license password and login cookie.
+"""Secrets: the MakerWorld license password.
 
 macOS: the login Keychain. Elsewhere / test runs (SNAPSTL_HOME set): files readable
 only by this user in APP_DIR (mode 600).
@@ -12,7 +12,6 @@ from .settings import APP_DIR
 
 SERVICE = "SnapSTL"
 LICENSE = "makerworld-license-password"
-COOKIE = "makerworld-session-cookie"
 
 
 def _use_keyring() -> bool:
@@ -63,11 +62,3 @@ def get_password() -> str:
 
 def set_password(pw: str) -> None:
     set_secret(LICENSE, pw)
-
-
-def get_cookie() -> str:
-    return get_secret(COOKIE)
-
-
-def set_cookie(cookie: str) -> None:
-    set_secret(COOKIE, cookie.strip())

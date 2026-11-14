@@ -27,14 +27,15 @@ This installs:
 Re-run the script after moving the folder or updating the code. Uninstall the service with
 `launchctl bootout gui/$(id -u)/local.snapmagicians.snapstl && rm ~/Library/LaunchAgents/local.snapmagicians.snapstl.plist`.
 
-## One-time setup (Settings tab)
+## One-time setup
 
-1. **MakerWorld login cookie** — in Chrome on makerworld.com (signed in): View → Developer →
-   Developer Tools → **Network** → reload → click any `api/v1/…` request → under *Request Headers*
-   copy the whole **cookie** value → paste → **Save**. SnapSTL checks it and keeps it in the Keychain.
-2. **MakerWorld license password** (removes anti-sale markings) → Save.
-3. **Output folder** → *Choose…* (app window) — each batch is saved here.
-4. Check the model options (font, sizes) and the scaling / compartments table.
+1. **Install the SnapSTL Helper** in Chrome (the browser where you use MakerWorld):
+   `chrome://extensions` → turn on **Developer mode** → **Load unpacked** → choose the
+   `helper` folder in this project (or download it from Settings → SnapSTL Helper).
+2. In Chrome, sign in to MakerWorld and open the **model maker** page (link in Settings).
+   Leave that tab open — ideally in its own window.
+3. In SnapSTL **Settings**: MakerWorld license password → Save; output folder → *Choose…*;
+   check the model options and the scaling / compartments table.
 
 ## Daily use
 
@@ -43,9 +44,8 @@ Re-run the script after moving the folder or updating the code. Uninstall the se
    in transit, packed or cancelled are recorded as *Not needed*.
 2. **Needs review** — fix names (spaces, symbols, missing colour) and **Approve**.
 3. Tick orders (or **Select all matching** a colour) → **Create batch**.
-4. SnapSTL opens its **MakerWorld window** and generates each name, one at a time.
-   If MakerWorld shows a security check, the header says **Action needed** — click
-   **Show MakerWorld window**, complete the check, and it carries on by itself.
+4. The helper (in your MakerWorld tab) generates each name, one at a time — the header shows what
+   it's doing. If MakerWorld shows a security check in that tab, just complete it; it carries on.
 5. **Batches** tab: progress per batch and the **Download queue**. When a batch is done:
    **Show in Finder** or **Download ZIP**.
 6. Open the plates in Bambu Studio, check, slice, print. Bases in white; names in their colour.
@@ -64,20 +64,21 @@ Output per batch:
 
 | You see | Do |
 |---|---|
-| **Action needed: MakerWorld security check** | *Show MakerWorld window* → complete the check |
-| **MakerWorld login needed** | paste a fresh cookie in Settings |
+| **Helper not connected** | open the MakerWorld model maker tab in Chrome; check the helper is enabled in `chrome://extensions` |
+| Helper says **Complete the MakerWorld security check** | click the check in that tab |
 | A name shows **Failed** in the download queue | read *Detail*; **Retry failed** |
 | Batch stuck *Waiting for models* | check the header / download queue; **Pause/Resume**; *Build now* builds with what's ready |
 | Portal doesn't open | `launchctl kickstart -k gui/$(id -u)/local.snapmagicians.snapstl`; see `~/Library/Logs/SnapSTL.log` |
+| Database getting big | Settings → Database → **Clean up** (made orders are kept; a backup is saved first) |
 
 Data lives in `~/Library/Application Support/SnapSTL` (database `snapstl.db`, model cache,
-settings). Back it up to keep order history.
+settings, `backups/`). Settings → Database has Back up / Clean up / Reset.
 
 ## Development
 
 ```bash
 uv sync                 # install deps (incl. dev)
-uv run pytest           # 20 tests: scaling, packing, grouping, ingest, batches, downloader (stubbed)
+uv run pytest           # 20 tests: scaling, packing, grouping, ingest, batches, helper API, DB maintenance
 SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn snapstl.server:app --port 8320
                         # a throwaway dev instance with its own data
 ```

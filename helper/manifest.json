@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "SnapSTL Helper",
+  "version": "2.0.0",
+  "description": "Generates SnapSTL name-organizer models on the MakerWorld model maker in your own Chrome and hands them to the SnapSTL app on this Mac.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://makerworld.com/*", "http://127.0.0.1:8317/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "SnapSTL Helper" },
+  "content_scripts": [
+    {
+      "matches": ["https://makerworld.com/*makerlab/parametricModelMaker*"],
+      "js": ["inject.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://makerworld.com/*makerlab/parametricModelMaker*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

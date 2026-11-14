@@ -67,7 +67,6 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
   <nav id="tabs"><button data-t="orders" class="on">Orders</button><button data-t="batches">Batches</button><button data-t="settings">Settings</button></nav>
   <span class="status grow" id="status"></span>
   <span class="pill" id="dl" title="MakerWorld downloads">Downloads idle</span>
-  <button id="dlshow" class="small primary" hidden>Show MakerWorld window</button>
   <button id="dlpause" class="small">Pause downloads</button>
   <button id="logout" class="small">Sign out</button>
 </header>
@@ -168,13 +167,23 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <p class="hint" id="savehint"></p>
   </div>
   <div class="card">
-    <h2>MakerWorld connection</h2>
-    <p class="hint">SnapSTL opens its own Chrome window, signed in with your MakerWorld login, and generates each model on the real model-maker page — one session per run, one name at a time. If MakerWorld shows a security check in that window, complete it there.</p>
-    <h3>Your login cookie (one-time)</h3>
-    <p class="hint">In Chrome on makerworld.com (signed in): View → Developer → Developer Tools → <b>Network</b>. Reload, click any <code>api/v1/…</code> request, and under <i>Request Headers</i> copy the whole <b>cookie</b> value.</p>
-    <div class="row2" style="grid-template-columns:1fr auto"><input id="cookie" type="password" placeholder="Paste the cookie value" autocomplete="off"><button id="cookiesave">Save</button></div>
-    <p class="hint" id="cookiehint"></p>
-    <div style="display:flex;gap:8px;margin-top:8px"><button id="mwtest">Test connection</button></div>
+    <h2>SnapSTL Helper (Chrome)</h2>
+    <p class="hint">Models are generated in your normal Chrome, where you're signed in to MakerWorld. The helper fills the model-maker page for each queued name, presses Generate and hands the files to SnapSTL. Security checks: just click them in that tab.</p>
+    <ol class="hint" style="padding-left:18px;margin:6px 0">
+      <li><a href="/api/helper.zip">Download the helper</a> and unzip it (or use the <code>helper</code> folder in the SnapSTL project).</li>
+      <li>Chrome → <code>chrome://extensions</code> → turn on <b>Developer mode</b> → <b>Load unpacked</b> → pick the folder.</li>
+      <li>Open the <a href="https://makerworld.com/en/makerlab/parametricModelMaker?designId=2600234&amp;from=model_page&amp;modelName=Custom_Name_Desk_Organizer_v2.34.scad&amp;protected=true&amp;unikey=70189420-efcd-4593-a07c-771fe72d52b3" target="_blank" rel="noopener">MakerWorld model maker</a> in Chrome and leave that tab open. That's it — no codes or settings.</li>
+    </ol>
+    <p class="hint" id="helperinfo"></p>
+  </div>
+  <div class="card">
+    <h2>Database</h2>
+    <p class="hint" id="dbinfo">…</p>
+    <label>Clean up records older than (days)</label>
+    <div class="row2" style="grid-template-columns:1fr auto"><input id="cleandays" type="number" min="0" value="30"><button id="cleanup">Clean up</button></div>
+    <p class="hint">Removes old <i>Not needed</i> orders, finished batches, download history and upload records. Orders already made are kept, so a later report can't bring them back. A backup is saved first.</p>
+    <div style="display:flex;gap:8px;margin-top:10px"><button id="backupnow">Back up now</button><button id="resetdb" style="color:var(--err)">Reset database…</button></div>
+    <p class="hint" id="dbmsg"></p>
   </div>
   </div>
 </section>
@@ -195,7 +204,7 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   for(const s of ['orders','batches','settings'])$('t-'+s).hidden=s!==t;
-  if(t==='orders')loadOrders(); if(t==='batches'){loadBatches();loadQueue()} try{localStorage.setItem('tab',t)}catch{}}
+  if(t==='orders')loadOrders(); if(t==='batches'){loadBatches();loadQueue()} if(t==='settings')loadDb(); try{localStorage.setItem('tab',t)}catch{}}
 
 // ---------- orders ----------
 async function loadOrders(){
@@ -277,7 +286,7 @@ async function openBatchDetail(id,quiet){openBatch=id;const b=await api('/api/ba
   if(!quiet)$('bdetail').scrollIntoView({behavior:'smooth'})}
 const DST={claimed:['Generating','info'],queued:['Waiting',''],failed:['Failed','err'],done:['Done','ok']};
 async function loadQueue(){const r=await api('/api/downloads');const d=r.downloader;
-  $('dlsession').textContent=(d.session_open?'MakerWorld window open · ':'')+(d.status||'');
+  $('dlsession').textContent=d.online?`Helper: ${d.status}`:'Helper not connected';
   $('qpause').textContent=d.paused?'Resume':'Pause';$('qpause').dataset.paused=d.paused?'1':'0';
   $('dlq').innerHTML=r.items.length?r.items.map(x=>{const st=DST[x.state]||[x.state,''];return `<tr><td>${x.id}</td><td>${esc(x.name)}</td><td>${x.compartments}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${x.attempts}</td><td class="hint">${esc(x.error||'')}</td></tr>`}).join(''):'<tr><td colspan="6" class="empty">Nothing queued — create a batch on the Orders tab</td></tr>'}
 $('qpause').onclick=async()=>{await post('/api/downloader/'+($('qpause').dataset.paused==='1'?'resume':'pause'));loadQueue();refresh()};
@@ -307,13 +316,17 @@ $('reset').onclick=async()=>{if(!confirm('Restore default settings?'))return;S=a
 $('licsave').onclick=async()=>{const r=await post('/api/license',{password:$('lic').value});$('lic').value='';licHint(r.license_set)};
 function licHint(set){$('lichint').textContent=set?'Saved on the server':'Not set — downloads will have anti-sale markings';$('lichint').style.color=set?'':'var(--warn)'}
 
-// ---------- MakerWorld connection ----------
-function mwHints(mw){$('cookiehint').textContent=mw.cookie_set?'Saved in your Mac Keychain':'Not set';$('cookiehint').style.color=mw.cookie_set?'':'var(--warn)'}
-$('cookiesave').onclick=async()=>{const v=$('cookie').value.trim();if(!v)return;$('cookiehint').textContent='Checking with MakerWorld…';
-  try{await post('/api/makerworld/cookie',{cookie:v});$('cookie').value='';$('cookiehint').textContent='Signed in — saved in your Mac Keychain';$('cookiehint').style.color='var(--ok)'}
-  catch(e){$('cookiehint').textContent=e.message;$('cookiehint').style.color='var(--err)'}};
-$('mwtest').onclick=async()=>{try{const r=await post('/api/makerworld/test');alert(r.signed_in?'MakerWorld login works.':'MakerWorld did not accept the saved cookie — paste a fresh one.')}catch(e){alert(e.message)}};
-$('dlshow').onclick=()=>post('/api/downloader/show');
+// ---------- database ----------
+const fmtMB=b=>(b/1048576).toFixed(1)+' MB';
+async function loadDb(){const m=await api('/api/maintenance');const o=m.orders,sum=x=>Object.values(x).reduce((a,b)=>a+b,0);
+  $('dbinfo').textContent=`${sum(o)} orders (${o.ready||0} ready, ${o.needs_review||0} to review, ${o.in_batch||0} in a batch, ${o.bundled||0} made, ${o.not_needed||0} not needed) · ${sum(m.batches)} batches · ${m.reports_uploaded} report uploads · database ${fmtMB(m.db_bytes)} · model cache ${m.cache_models} (${fmtMB(m.cache_bytes)}) · ${m.backups} backups${m.last_backup?` (latest ${m.last_backup})`:''}`}
+$('cleanup').onclick=async()=>{const d=parseInt($('cleandays').value,10);if(isNaN(d)||d<0){$('dbmsg').textContent='Enter a number of days';return}
+  if(!confirm(`Remove records older than ${d} days? Orders already made are kept. A backup is saved first.`))return;
+  try{const r=await post('/api/maintenance/cleanup',{older_than_days:d});$('dbmsg').textContent=`Removed ${r.orders_removed} orders, ${r.batches_removed} batches, ${r.downloads_removed} downloads, ${r.reports_removed} upload records. Backup: ${r.backup}`;loadDb();refreshAll()}catch(e){$('dbmsg').textContent=e.message}};
+$('backupnow').onclick=async()=>{const r=await post('/api/maintenance/backup');$('dbmsg').textContent='Backup saved: '+r.backup;loadDb()};
+$('resetdb').onclick=async()=>{const t=prompt('This empties the database: all orders, batches and history. Orders you already made could come back as new if you upload an old report again. A backup is saved first.\n\nType RESET to continue.');
+  if(t!=='RESET')return;const cache=confirm('Also delete the downloaded model cache? (OK = delete, Cancel = keep)');
+  try{const r=await post('/api/maintenance/reset',{confirm:'RESET',clear_cache:cache});$('dbmsg').textContent='Database emptied. Backup: '+r.backup;SEL.clear();loadDb();refreshAll()}catch(e){$('dbmsg').textContent=e.message}};
 $('dlpause').onclick=async()=>{const paused=$('dlpause').dataset.paused==='1';await post('/api/downloader/'+(paused?'resume':'pause'));refresh()};
 $('o_pick').onclick=async()=>{const p=await window.pywebview.api.choose_folder();if(p){$('o_dir').value=p}};
 window.addEventListener('pywebviewready',()=>{$('o_pick').hidden=false});
@@ -324,10 +337,10 @@ let lastKey='';
 async function refresh(){try{const st=await api('/api/state');
   const q=st.queue||{};const pending=(q.queued||0)+(q.claimed||0);
   $('status').textContent=st.building?`Building batch #${st.building}…`:pending?`${pending} model(s) to download`:'';
-  const d=st.downloader;const mw=st.makerworld;mwHints(mw);
-  $('dlshow').hidden=!(d.attention||d.session_open);$('dlshow').classList.toggle('primary',!!d.attention);
-  const dlText=d.attention?'Action needed: MakerWorld security check':d.needs_login?'MakerWorld login needed':d.paused?'Downloads paused':d.current?d.status:pending?'Downloads waiting':'Downloads idle';
-  $('dl').textContent=dlText;$('dl').title=d.status||'';$('dl').className='pill '+(d.attention||d.needs_login||!mw.cookie_set&&pending?'err':d.current?'info':d.paused?'warn':'');
+  const d=st.downloader;
+  const dlText=d.paused?'Downloads paused':!d.online?(pending?'Helper not connected — open the MakerWorld tab':'Helper not connected'):d.status||'Helper connected';
+  $('dl').textContent=dlText;$('dl').title=d.status||'';$('dl').className='pill '+(!d.online&&pending?'err':/security check/i.test(d.status||'')?'err':d.current?'info':d.paused?'warn':d.online?'ok':'');
+  $('helperinfo').textContent=d.online?`Helper connected · ${d.status}`:'Helper not connected — open the MakerWorld model maker tab in Chrome (with the helper installed).';
   $('dlpause').textContent=d.paused?'Resume downloads':'Pause downloads';$('dlpause').dataset.paused=d.paused?'1':'0';
   $('queueinfo').textContent=`Download queue: ${q.queued||0} waiting, ${q.claimed||0} in progress, ${q.done||0} done${q.failed?`, ${q.failed} failed`:''}`;$('retry').hidden=!q.failed;
   licHint(st.license_set);

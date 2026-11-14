@@ -17,7 +17,7 @@ SnapSTL turns the webstore's order report into print-ready plate files:
 Order Reconciliation Report (.xlsx)
    → keep SKU Magicians_35, read name + colour, de-duplicate by Order ID      (ingest.py, db.py)
    → you review odd names, then select orders → Create batch                   (server.py, UI)
-   → each name is generated on MakerWorld (NO AMS → base + name separately)   (browser_gen.py)
+   → each name is generated on MakerWorld by the SnapSTL Helper in your Chrome  (helper/, batches.py)
    → scale with Scaling Rules v1.1                                             (scaling.py)
    → group into plates of 3 and pack collision-free on a 256×256 bed           (grouping.py, packing.py)
    → merged STL per plate + report.csv + ZIP per batch                         (export.py, batches.py)
@@ -29,16 +29,22 @@ Order Reconciliation Report (.xlsx)
 
 | Piece | What it is |
 |---|---|
-| **Service** | `snapstl-serve` (FastAPI + uvicorn) on `http://127.0.0.1:8317`, started at login by launchd (`~/Library/LaunchAgents/local.snapmagicians.snapstl.plist`, `KeepAlive`). Runs the web portal, the download worker and the batch builder. Keeps the Mac awake (`caffeinate`) while running. |
+| **Service** | `snapstl-serve` (FastAPI + uvicorn) on `http://127.0.0.1:8317`, started at login by launchd (`~/Library/LaunchAgents/local.snapmagicians.snapstl.plist`, `KeepAlive`). Runs the web portal, the download queue and the batch builder. Keeps the Mac awake (`caffeinate`) while running. |
 | **App** | `~/Applications/SnapSTL.app` → `snapstl` → opens a pywebview window onto the same portal (adds a native folder picker). Closing the window does **not** stop the service. |
-| **MakerWorld window** | A separate Chrome window owned by SnapSTL (Playwright, persistent profile `~/Library/Application Support/SnapSTL/chrome-profile`), signed in with the user's pasted cookie. Opened per download run, reused for every name, closed when the queue is empty. |
-| **Data** | `~/Library/Application Support/SnapSTL/` — `snapstl.db` (SQLite), `cache/` (unscaled meshes per name), `settings.json`. Secrets (MakerWorld cookie, license password) in the macOS Keychain. |
+| **SnapSTL Helper** | Chrome extension (`helper/`, loaded unpacked) in the user's **normal** Chrome. On the MakerWorld model-maker tab it asks the app for the next queued name, fills the real page, presses Generate and uploads the two model files. No settings or tokens. |
+| **Data** | `~/Library/Application Support/SnapSTL/` — `snapstl.db` (SQLite), `cache/` (unscaled meshes per name), `settings.json`, `backups/`. License password in the macOS Keychain. |
 | **Output** | Chosen in Settings (default `~/SnapSTL/output`). One folder + one ZIP per batch. |
 | **Log** | `~/Library/Logs/SnapSTL.log` |
 
-Decision history: a cloud server (AWS Lightsail) and a Chrome extension were both tried and
-**removed** — the server was unreliable and the extension/server sync was fragile. Everything
-now runs on one dedicated Mac.
+Decision history (so nobody repeats it):
+1. Cloud server (AWS Lightsail) — removed: unreliable; everything runs on one dedicated Mac.
+2. Token-based extension talking to the server — removed: setup/sync was fragile.
+3. Direct HTTP calls to MakerWorld's generate API with the user's cookie — **does not work**:
+   MakerWorld never answers generate requests that don't come from its page.
+4. App-owned automated Chrome window (Playwright) — **does not work**: Cloudflare keeps rejecting
+   "Verify you are a human" in a browser that is controlled by automation.
+5. **Current:** a zero-setup helper extension in the user's own Chrome, talking only to the app on
+   this Mac. The user's real browser passes Cloudflare normally; the app keeps all the logic.
 
 ---
 
@@ -49,7 +55,7 @@ now runs on one dedicated Mac.
 | Language / env | Python 3.12, managed by **uv** (`pyproject.toml`, `uv.lock`) |
 | Web | FastAPI + uvicorn; UI is one static page `src/snapstl/static/index.html` (vanilla JS, no build step) |
 | Window | pywebview (Cocoa/WKWebView) |
-| Browser automation | Playwright driving **Google Chrome** (visible, not headless) |
+| MakerWorld | Chrome extension (Manifest V3, vanilla JS) in `helper/` |
 | Geometry | trimesh (meshes, STL), shapely (2-D footprints / collisions), numpy |
 | Spreadsheet | python-calamine (the webstore XLSX has a stylesheet openpyxl rejects) |
 | Storage | SQLite (WAL) via stdlib `sqlite3`; secrets via `keyring` (macOS Keychain) |
@@ -83,7 +89,7 @@ colours are lower-cased (`gray` → `grey`). Quantity N → N organizers.
 
 ---
 
-## 5. MakerWorld model (settings.py, browser_gen.py)
+## 5. MakerWorld model & the helper (helper/, batches.py)
 
 Model: **Custom Name Desk Organizer v2.34** (`designId=2600234`), Parametric Model Maker.
 
@@ -100,20 +106,21 @@ NO AMS output: `plate_1.obj` = base (upright; X length, Y depth, Z height),
 `plate_2.obj` = name (flat; X length, Y letter height, Z 4 mm). SnapSTL tells them apart by
 height, not by order.
 
-**Why a real browser:** MakerWorld only processes *Generate* requests that come from its web
-page — the identical request from a program (Python, curl, HTTP/1.1 or 2) never gets an answer.
-So SnapSTL fills the real page in its own Chrome window. It **never** tries to get around
-Cloudflare: when a security check appears, the download pauses, the UI shows *Action needed*
-+ *Show MakerWorld window*, and the user completes it; then the same name is retried.
+**Helper loop** (`helper/content.js`, one MakerWorld tab, one name at a time):
+`GET /api/helper/next` → fill the form (labels located by XPath, React inputs set via the
+native value setter, MUI menus opened with `mousedown`) → click Generate → `inject.js` (page
+world) copies the `plate_1/plate_2.obj` responses → `POST /api/helper/jobs/{id}/result`.
+Failures → `/fail` (one retry, then *Failed*). A reload mid-name → `/release` (back to the queue).
+Pause in the app → `next` returns nothing. Pace: pause between names (Settings, default 3 s);
+MakerWorld takes ~4–10 s per new name.
 
-Login: the user pastes the `cookie` request header from a signed-in Chrome tab (DevTools →
-Network). It is checked against MakerWorld's account API and stored in the Keychain; SnapSTL
-never handles the MakerWorld password.
+**Security checks:** the helper never touches them. If Cloudflare shows a check, the helper
+says *Complete the MakerWorld security check in this tab* and waits; the user clicks it.
+Never add code that hides automation, solves checks, or spoofs a browser.
 
-Pace: one name at a time, a pause between names (Settings, default 3 s). MakerWorld itself
-takes ~4–10 s per new name.
-
----
+**Helper ↔ app trust:** the helper has no token. The app accepts `chrome-extension://` origins
+**only** on `/api/helper/*` and only in local mode on `127.0.0.1` — every other cross-site request
+is rejected (see §9).
 
 ## 6. Scaling Rules v1.1 (scaling.py) — agreed with the business
 
@@ -174,9 +181,9 @@ Each STL is one merged mesh in bed coordinates (sits on Z = 0) — open in Bambu
 1. **Create batch** (selected `ready` orders) → orders become `in_batch`; every model not in the
    cache is queued in `downloads` (de-duplicated by cache key = name + model options + compartments
    + license-password hash).
-2. **Downloader thread** opens one MakerWorld session and works through the queue. Failed names
-   retry once, then show as *Failed* (Retry button). Pausing, a closed window or a restart never
-   loses work: interrupted names go back to *Waiting*.
+2. **The helper** works through the queue (one MakerWorld tab, one name at a time). Failed names
+   retry once, then show as *Failed* (Retry button). Pausing, a closed tab or an app restart never
+   loses work: interrupted names go back to *Waiting* (claims also expire after 6 minutes).
 3. **Builder thread** builds a batch as soon as all its models are cached (or on **Build now** with
    what's ready — orders still missing a model go back to `ready`).
 4. Output: `<output>/batch-NNN_<date>/{bases/, names/, report.csv}` + `batch-NNN_<date>.zip`.
@@ -184,19 +191,30 @@ Each STL is one merged mesh in bed coordinates (sits on Z = 0) — open in Bambu
 
 ---
 
-## 9. Security
+## 9. Database maintenance (maintenance.py, Settings → Database)
+
+* **Back up now** — consistent SQLite copy to `backups/` (newest 20 kept).
+* **Clean up** (older than N days, default 30) — removes *Not needed* orders, finished batches,
+  download history and report-upload records. **Bundled (made) orders are always kept**: their
+  Order IDs stop a later report from bringing a printed order back as *Ready*. Backup first.
+* **Reset database** — type RESET; empties everything (optionally the model cache). Backup first.
+  Batch folders/ZIPs on disk are never deleted by SnapSTL.
+
+## 10. Security
 
 * Local mode (no portal password set): the service only answers `127.0.0.1`/`localhost`, and
   rejects cross-site requests (other websites in the browser) and DNS-rebinding host names.
 * Optional password (`uv run snapstl-admin set-password`) enables a login page + signed session
   cookie — only needed if the portal is ever exposed beyond this Mac.
+* The helper extension is accepted only on `/api/helper/*` from this Mac.
 * Secrets only in the Keychain; the order report's customer contact data is never stored.
 
 ---
 
-## 10. Known limits / open items
+## 11. Known limits / open items
 
-* MakerWorld's page and request formats are undocumented; a site redesign can break
-  `browser_gen.py` (form labels, `plate_N.obj` file names). Fix there first.
-* The cookie expires periodically → header shows *MakerWorld login needed* → paste a new one.
+* MakerWorld's page is undocumented; a redesign can break `helper/content.js` (form labels,
+  `plate_N.obj` file names, the Generate button text). Fix there first, then reload the
+  extension in `chrome://extensions`.
+* The MakerWorld tab must stay open (ideally in its own window — Chrome slows hidden tabs).
 * Bambu Studio open/slice of the generated plates is a manual review step.

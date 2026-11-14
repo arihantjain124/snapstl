@@ -1,0 +1,154 @@
+// SnapSTL Helper — works on the MakerWorld model-maker tab for the Custom Name Desk Organizer.
+// Loop: ask the SnapSTL app for the next name → fill the form → press Generate → send the two
+// model files back. One tab, one name at a time, a short pause between names. Security checks
+// are left to the person using the tab: the helper simply waits.
+(() => {
+  const DESIGN_ID = "2600234";
+  if (new URLSearchParams(location.search).get("designId") !== DESIGN_ID) return;
+
+  const GENERATE_TIMEOUT_MS = 180000;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const bg = (type, data = {}) => chrome.runtime.sendMessage({ type, ...data });
+
+  // ---------- model files seen by inject.js ----------
+  let captured = {};
+  window.addEventListener("message", (e) => {
+    if (e.source === window && e.data && e.data.__snapstl === "obj") captured[e.data.plate] = e.data.text;
+  });
+
+  // ---------- page state ----------
+  const generateButton = () =>
+    [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Generate" && !b.disabled) || null;
+  const formShown = () => [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Generate");
+  const blocked = () => {
+    const t = (document.title || "").toLowerCase();
+    return t.includes("just a moment") || !!document.querySelector("iframe[src*='challenges.cloudflare.com']");
+  };
+  const menuOpen = () => [...document.querySelectorAll(".MuiMenu-root, .MuiPopover-root")]
+    .some((m) => m.getAttribute("aria-hidden") !== "true" && getComputedStyle(m).visibility !== "hidden");
+
+  // ---------- form ----------
+  const TEXT = "input:not([type=range]):not([type=hidden]):not(.MuiSelect-nativeInput)";
+  const field = (label) => {
+    const xp = `//div[contains(@class,'MuiAccordionDetails-root')]//*[normalize-space(text())='${label}']/ancestor::div[.//input][1]`;
+    const n = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+    if (!n) throw new Error(`Can't find the "${label}" control (the MakerWorld page may have changed)`);
+    return n;
+  };
+  const setNative = (input, value) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  async function setText(label, value) {
+    const box = field(label).querySelector(TEXT);
+    box.focus(); setNative(box, value); box.blur(); await sleep(80);
+    if (field(label).querySelector(TEXT).value !== value) throw new Error(`Couldn't set ${label}`);
+  }
+  async function setNumber(label, value) {
+    const box = field(label).querySelector(TEXT);
+    box.focus(); setNative(box, String(value));
+    for (const t of ["keydown", "keyup"]) box.dispatchEvent(new KeyboardEvent(t, { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }));
+    box.blur(); await sleep(150);
+    const r = field(label).querySelector("input[type=range]");
+    if (r && r.value !== String(value)) { setNative(r, String(value)); await sleep(150); }
+    const r2 = field(label).querySelector("input[type=range]");
+    if (r2 && r2.value !== String(value)) throw new Error(`Couldn't set ${label} to ${value}`);
+  }
+  async function setSelect(label, value) {
+    const combo = () => field(label).querySelector("[role=combobox]");
+    if (combo().innerText.trim() === value) return;
+    combo().dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    let item = null;
+    for (let i = 0; i < 40 && !item; i++) {
+      await sleep(100);
+      item = [...document.querySelectorAll("[role=option],[role=menuitem]")].find((li) => li.innerText.trim() === value);
+    }
+    if (!item) throw new Error(`Option "${value}" not found for ${label}`);
+    item.click(); await sleep(250);
+    if (combo().innerText.trim() !== value) throw new Error(`Couldn't select ${value} for ${label}`);
+  }
+  function errorToast() {
+    for (const a of document.querySelectorAll("[role=alert]")) {
+      const t = a.innerText.trim();
+      if (/fail|error|invalid/i.test(t)) return t;
+    }
+    return "";
+  }
+
+  async function waitWhileBlocked(say) {
+    while (blocked()) {
+      await say("Complete the MakerWorld security check in this tab");
+      await sleep(2000);
+    }
+  }
+
+  async function runJob(job, say) {
+    const p = job.params;
+    await setSelect("Print version", "NO AMS");
+    await setText("Name line 1", p.name);
+    await setText("Name line 2", "");
+    await setSelect("Font", p.font);
+    await setNumber("Font size", p.font_size);
+    await setNumber("Thickness", p.thickness);
+    await setNumber("Outline", p.outline);
+    await setNumber("Compartments", p.compartments);
+    await setSelect("Rotate text", p.rotate_text);
+    if (job.license_password) await setText("License password", job.license_password);
+
+    let gen = null;  // the page may still be busy with an earlier build: wait up to 90 s
+    for (let i = 0; i < 900 && !gen; i++) {
+      if (!menuOpen()) gen = generateButton();
+      if (!gen) await sleep(100);
+    }
+    if (!gen) throw new Error("The Generate button isn't available");
+    captured = {};
+    gen.click();
+    const end = Date.now() + GENERATE_TIMEOUT_MS;
+    while (Date.now() < end) {
+      if (captured.plate_1 && captured.plate_2) return { plate_1: captured.plate_1, plate_2: captured.plate_2 };
+      if (blocked()) await waitWhileBlocked(say);
+      const err = errorToast();
+      if (err) throw new Error(`MakerWorld: ${err}`);
+      await sleep(500);
+    }
+    throw new Error("Timed out waiting for MakerWorld to generate the model");
+  }
+
+  // ---------- main loop ----------
+  async function main() {
+    const claim = await bg("claimTab");
+    if (!claim.ok) return; // another MakerWorld tab is already doing the work
+    let lastSaid = "";
+    const say = async (text) => { lastSaid = text; await bg("status", { text }); };
+    await bg("recover"); // a name left half-done by a reload goes back to the queue
+    while (true) {
+      try {
+        if (blocked()) { await waitWhileBlocked(say); continue; }
+        if (!formShown()) { await say("Waiting for the MakerWorld page to load"); await sleep(2000); continue; }
+        const r = await bg("next", { status: lastSaid });
+        if (r.error) { await say(`SnapSTL app not reachable — is it running? (${r.error})`); await sleep(5000); continue; }
+        if (r.paused) { await say("Paused in SnapSTL"); await sleep(4000); continue; }
+        if (!r.job) { await say("Idle — nothing to download"); await sleep(4000); continue; }
+        const job = r.job;
+        await bg("working", { job_id: job.job_id });
+        await say(`Generating ${job.name} (${job.compartments} compartments)`);
+        try {
+          const files = await runJob(job, say);
+          await say(`Sending ${job.name} to SnapSTL`);
+          const up = await bg("result", { job_id: job.job_id, ...files });
+          if (up && up.error) throw new Error(up.error);
+          await say(`Done ${job.name}`);
+        } catch (e) {
+          await bg("fail", { job_id: job.job_id, error: String(e.message || e) });
+          await say(`Failed ${job.name}: ${e.message || e}`);
+        }
+        await bg("working", { job_id: null });
+        await sleep(Math.max(1, job.pause_after_s || 3) * 1000);
+      } catch (e) {
+        await sleep(3000);
+      }
+    }
+  }
+  main();
+})();

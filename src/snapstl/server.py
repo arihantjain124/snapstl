@@ -18,9 +18,9 @@ from starlette.background import BackgroundTask
 from . import auth, db
 from .ingest import ingest, reset_to_ready, set_name
 from . import batches as B
+from . import maintenance as M
 from .batches import DOWNLOADER, MANAGER, compartments_for
-from . import makerworld as MW
-from .keychain import get_cookie, get_password, set_cookie, set_password
+from .keychain import get_password, set_password
 from .scaling import pick_band
 from .settings import COMPARTMENT_RANGE, FONTS, NUMBER_RANGES, ROTATE_TEXT, Settings, load_settings, save_settings
 
@@ -35,7 +35,7 @@ async def _lifespan(_app):
     MANAGER.output_dir = SETTINGS.output_dir
     MANAGER.start()  # builds batches once their models arrive
     DOWNLOADER.pause_s = SETTINGS.delay_between_downloads_s
-    DOWNLOADER.start()  # generates queued models on MakerWorld
+    DOWNLOADER.start()  # re-queues names that were mid-download when the app stopped
     yield
 
 
@@ -55,6 +55,9 @@ def _cross_site(request: Request) -> bool:
     origin = request.headers.get("origin")
     if not origin:
         return False
+    if origin.startswith("chrome-extension://"):
+        # only the helper extension's endpoints accept extension calls, and only on this Mac
+        return not (request.url.path.startswith("/api/helper/") and not auth.enabled())
     return origin.split("://", 1)[-1] != host
 
 
@@ -134,7 +137,6 @@ def state():
     return {
         "counts": counts, "ready_colors": ready_colors, "license_set": bool(get_password()),
         "downloader": DOWNLOADER.snapshot(),
-        "makerworld": {"cookie_set": bool(get_cookie())},
         "queue": B.queue_counts(), "building": MANAGER.building, "log": MANAGER.log[-120:],
     }
 
@@ -283,39 +285,100 @@ def retry_downloads():
     return {"requeued": B.retry_failed()}
 
 
-# ---------------- MakerWorld connection + downloader ----------------
-@app.post("/api/makerworld/cookie")
-async def mw_cookie(req: Request):
-    cookie = str((await req.json()).get("cookie", "")).strip()
-    if not cookie:
-        set_cookie("")
-        return {"cookie_set": False}
-    problems = MW.check_cookie_shape(cookie)
-    if problems:
-        raise HTTPException(400, "; ".join(problems))
-    try:
-        signed_in = MW.Session(cookie).check_login()
-    except MW.MakerWorldError as e:
-        raise HTTPException(502, str(e)) from e
-    if not signed_in:
-        raise HTTPException(400, "MakerWorld didn't accept that cookie — copy it again from a signed-in tab")
-    set_cookie(cookie)
-    DOWNLOADER.setup_changed()
-    return {"cookie_set": True, "signed_in": True}
+# ---------------- SnapSTL Helper (Chrome extension on this Mac) ----------------
+HELPER_DIR = Path(__file__).resolve().parents[2] / "helper"
 
 
-@app.post("/api/makerworld/test")
-def mw_test():
-    cookie = get_cookie()
-    if not cookie:
-        raise HTTPException(400, "No cookie saved yet")
+@app.get("/api/helper/next")
+def helper_next(status: str = ""):
+    DOWNLOADER.seen(status)
+    return {"job": B.helper_next(), "paused": DOWNLOADER.paused}
+
+
+@app.post("/api/helper/ping")
+async def helper_ping(req: Request):
+    body = await req.json()
+    if not body.get("probe"):  # the popup's "is the app running?" check doesn't count as the helper working
+        DOWNLOADER.seen(str(body.get("status", "")))
+    return {"paused": DOWNLOADER.paused}
+
+
+@app.post("/api/helper/jobs/{job_id}/result")
+async def helper_result(job_id: int, plate_1: UploadFile = File(...), plate_2: UploadFile = File(...)):
+    DOWNLOADER.seen("Uploading")
+    a = await plate_1.read(MAX_UPLOAD + 1)
+    b = await plate_2.read(MAX_UPLOAD + 1)
+    if len(a) > MAX_UPLOAD or len(b) > MAX_UPLOAD:
+        raise HTTPException(413, "Model too large")
     try:
-        ok = MW.Session(cookie).check_login()
-    except MW.MakerWorldError as e:
-        raise HTTPException(502, str(e)) from e
-    if ok:
-        DOWNLOADER.setup_changed()
-    return {"signed_in": ok}
+        return B.store_result(job_id, a, b)
+    except KeyError as e:
+        raise HTTPException(404, "No such job") from e
+    except ValueError as e:
+        B.store_failure(job_id, str(e))
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/helper/jobs/{job_id}/fail")
+async def helper_fail(job_id: int, req: Request):
+    try:
+        B.store_failure(job_id, str((await req.json()).get("error", "unknown error")))
+    except KeyError as e:
+        raise HTTPException(404, "No such job") from e
+    DOWNLOADER.current = None
+    return {"ok": True}
+
+
+@app.post("/api/helper/jobs/{job_id}/release")
+def helper_release(job_id: int):
+    B.helper_release(job_id)
+    return {"ok": True}
+
+
+@app.get("/api/helper.zip")
+def helper_zip():
+    if not HELPER_DIR.is_dir():
+        raise HTTPException(404, "Helper files are missing")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(HELPER_DIR.rglob("*")):
+            if f.is_file() and not f.name.startswith("."):
+                z.write(f, "snapstl-helper/" + f.relative_to(HELPER_DIR).as_posix())
+    return StreamingResponse(iter([buf.getvalue()]), media_type="application/zip",
+                             headers={"Content-Disposition": "attachment; filename=snapstl-helper.zip"})
+
+
+# ---------------- database maintenance ----------------
+@app.get("/api/maintenance")
+def maintenance_info():
+    return M.stats()
+
+
+@app.post("/api/maintenance/backup")
+def maintenance_backup():
+    return {"backup": str(M.backup())}
+
+
+@app.post("/api/maintenance/cleanup")
+async def maintenance_cleanup(req: Request):
+    days = int((await req.json()).get("older_than_days", 30))
+    if days < 0:
+        raise HTTPException(400, "Days must be 0 or more")
+    try:
+        return M.cleanup(days)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.post("/api/maintenance/reset")
+async def maintenance_reset(req: Request):
+    body = await req.json()
+    if body.get("confirm") != "RESET":
+        raise HTTPException(400, 'Type RESET to confirm')
+    try:
+        return M.reset(clear_cache=bool(body.get("clear_cache")))
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
 
 
 @app.get("/api/downloads")
@@ -332,13 +395,10 @@ def downloads():
 
 @app.post("/api/downloader/{action}")
 def downloader_action(action: str):
-    if action == "show":
-        DOWNLOADER.show_window()
-    elif action == "pause":
+    if action == "pause":
         DOWNLOADER.paused = True
-        DOWNLOADER.status = "Paused"
     elif action == "resume":
-        DOWNLOADER.setup_changed()
+        DOWNLOADER.paused = False
     else:
         raise HTTPException(404)
     return DOWNLOADER.snapshot()
