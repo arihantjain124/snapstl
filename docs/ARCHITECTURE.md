@@ -177,9 +177,9 @@ matching the handoff's 116.56 % / 93.51 %.
 File names:
 
 ```
-names/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl
-bases/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl
-bases/{Kabir,blue},{Zoya,blue},{Tara,green}.stl        mixed colours (bases only)
+Bases/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl
+Bases/{Kabir,blue},{Zoya,blue},{Tara,green}.stl        mixed colours (bases only)
+Names/pink/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl    one folder per name colour
 ```
 
 Each STL is one merged mesh in bed coordinates (sits on Z = 0) — open in Bambu Studio as is.
@@ -207,7 +207,9 @@ Batches never start by themselves:
 3. When all models are in, the batch becomes `models_ready`. The **builder thread** builds only after
    **Build plates** (or *Build plates now* with what's ready — orders still missing a model go back
    to `ready`).
-4. Output: `<output>/batch-NNN_<date>/{bases/, names/, report.csv}` — plain STL files, **no ZIP is
+4. Output: `<output>/<YYYY-MM-DD>/Batch N - <YYYY-MM-DD>/{Bases/, Names/<colour>/, report.csv}` —
+   N restarts at 1 each day (date = the day the plates are built; the app's internal batch # is
+   separate and shown in the UI next to the folder name). Plain STL files, **no ZIP is
    written** (owner's request). *Download ZIP* in the UI builds one on demand in a temp file only.
    Orders become `bundled`. Leftover downloads nobody needs are cancelled automatically.
 

@@ -108,7 +108,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
 <section id="t-batches" hidden>
   <div class="card">
     <div class="toolbar"><h2 style="margin:0">Batches</h2><span class="grow hint" id="queueinfo"></span><button id="retry" class="small" hidden>Retry failed downloads</button></div>
-    <div class="tw"><table><thead><tr><th>#</th><th>Created</th><th>Orders</th><th>Models</th><th>Plates</th><th>Status</th><th></th></tr></thead><tbody id="batches"></tbody></table></div>
+    <div class="tw"><table><thead><tr><th>#</th><th>Folder</th><th>Created</th><th>Orders</th><th>Models</th><th>Plates</th><th>Status</th><th></th></tr></thead><tbody id="batches"></tbody></table></div>
   </div>
   <div class="card">
     <div class="toolbar"><h2 style="margin:0">Download queue</h2><span class="grow hint" id="dlsession"></span>
@@ -285,7 +285,7 @@ async function loadBatches(){const bs=await api('/api/batches');
     if(b.status==='models_ready')acts.push(`<button class="small primary" data-build="${b.id}">Build plates</button>`);
     if(b.status==='waiting')acts.push(`<button class="small" data-build="${b.id}" data-partial="1" title="Build with the models that are ready; orders still missing a model go back to Ready">Build plates now</button>`);
     if(['created','waiting','models_ready'].includes(b.status))acts.push(`<button class="small" data-cancel="${b.id}">Cancel</button>`);
-    return `<tr><td>${b.id}</td><td>${new Date(b.created_at*1000).toLocaleString()}</td><td>${b.orders}</td><td>${models}</td><td>${b.plates||'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${acts.join(' ')}</td></tr>`}).join(''):'<tr><td colspan="7" class="empty">No batches yet — select orders on the Orders tab</td></tr>';
+    return `<tr><td>${b.id}</td><td>${esc(b.label||'—')}</td><td>${new Date(b.created_at*1000).toLocaleString()}</td><td>${b.orders}</td><td>${models}</td><td>${b.plates||'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${acts.join(' ')}</td></tr>`}).join(''):'<tr><td colspan="8" class="empty">No batches yet — select orders on the Orders tab</td></tr>';
   document.querySelectorAll('[data-b]').forEach(x=>x.onclick=()=>openBatchDetail(+x.dataset.b));
   document.querySelectorAll('[data-dl]').forEach(x=>x.onclick=async()=>{try{const r=await post(`/api/batches/${x.dataset.dl}/download`);$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for the helper`}catch(e){alert(e.message)}loadBatches();loadQueue()});
   document.querySelectorAll('[data-build]').forEach(x=>x.onclick=async()=>{if(x.dataset.partial&&!confirm('Build now with the models that are ready? Orders still missing a model go back to Ready.'))return;try{await post(`/api/batches/${x.dataset.build}/build`)}catch(e){alert(e.message)}loadBatches()});
@@ -295,7 +295,7 @@ function plateSVG(p){const [bx,by]=p.preview.bed,m=p.preview.margin;const fill=p
   const parts=p.preview.parts.map(pt=>`<path d="${pt.rings.map(r=>'M'+r.map(([x,y])=>`${x},${by-y}`).join('L')+'Z').join('')}" fill="${fill}" fill-rule="evenodd" stroke="#777" stroke-width="0.8"><title>${esc(pt.key)} (${pt.rotation}°)</title></path>`).join('');
   return `<svg viewBox="-2 -2 ${bx+4} ${by+4}"><rect width="${bx}" height="${by}" rx="4" fill="var(--bed)" stroke="var(--line)"/><rect x="${m}" y="${m}" width="${bx-2*m}" height="${by-2*m}" fill="none" stroke="var(--line)" stroke-dasharray="3 3"/>${parts}</svg>`}
 async function openBatchDetail(id,quiet){openBatch=id;const b=await api('/api/batches/'+id);const s=b.summary||{};
-  $('bdetail').hidden=false;$('btitle').textContent=`Batch #${id} · ${b.order_ids.length} orders`;$('bzip').href=`/api/batches/${id}/zip`;$('bzip').hidden=!b.status.startsWith('done');
+  $('bdetail').hidden=false;$('btitle').textContent=`${s.label||'Batch #'+id} · ${b.order_ids.length} orders`;$('bzip').href=`/api/batches/${id}/zip`;$('bzip').hidden=!b.status.startsWith('done');
   if(b.progress){const P=b.progress;const msg=b.status==='created'?`Not started: press <b>Start download</b> (${P.ready} of ${P.models} models already downloaded).`:b.status==='models_ready'?`All models downloaded (${P.ready}/${P.models}${P.failed?`, ${P.failed} failed`:''}) — press <b>Build plates</b>.`:`Downloading from MakerWorld: ${P.ready} of ${P.models} models done${P.failed?`, ${P.failed} failed`:''}.`;
     $('bmsgs').innerHTML=`<div class="w">${msg}</div>`;$('bbases').innerHTML=$('bnames').innerHTML='<div class="empty">Plates appear when the batch is built</div>';return}
   $('bmsgs').innerHTML=(s.folder?`<div class="o">Saved to ${esc(s.folder)}</div>`:'')+(s.errors||[]).map(e=>`<div class="e">${esc(e)}</div>`).join('')+(s.warnings||[]).map(w=>`<div class="w">${esc(w)}</div>`).join('')+(s.ok&&!(s.warnings||[]).length?'<div class="o">All plates passed the checks.</div>':'');

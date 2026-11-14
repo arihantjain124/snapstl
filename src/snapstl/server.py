@@ -479,6 +479,7 @@ def batches():
             "id": r["id"], "created_at": r["created_at"], "status": r["status"],
             "orders": len(json.loads(r["order_ids"] or "[]")),
             "plates": len(summ.get("plates", [])), "errors": len(summ.get("errors", [])),
+            "label": summ.get("label", ""),
         }
         if r["status"] in B.OPEN:
             item["progress"] = B.batch_progress(r)
