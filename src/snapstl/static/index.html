@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SnapSTL</title>
+<style>
+:root{--bg:#f6f5f2;--panel:#fff;--line:#e3e1db;--text:#1f1e1c;--muted:#6b6a65;--accent:#1f6fd1;--ok:#2e7d32;--okbg:#e6f3e6;--warn:#8a5a00;--warnbg:#fbf0d9;--err:#b42318;--errbg:#fdecea;--infobg:#e7f0fb;--bed:#ecebe6;--chip:#f1f0ec}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1b1a;--panel:#242423;--line:#3a3936;--text:#ecebe6;--muted:#a19f98;--accent:#6aa5ee;--ok:#8fd18f;--okbg:#20361f;--warn:#f0c46a;--warnbg:#3a2f15;--err:#f19a90;--errbg:#3d1d1a;--infobg:#1d2b3d;--bed:#2f2f2d;--chip:#2e2e2c}}
+*{box-sizing:border-box}
+a{color:var(--accent)}
+body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
+header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+header h1{font-size:16px;margin:0;font-weight:600}
+nav{display:flex;gap:2px}
+nav button{border:0;background:none;padding:6px 10px;border-radius:7px;color:var(--muted)}
+nav button.on{background:var(--chip);color:var(--text)}
+button,.btn{font:inherit;padding:6px 12px;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--muted)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.small{padding:3px 8px;font-size:12px}
+button:disabled{opacity:.5;cursor:default}
+input,select{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 7px;width:100%}
+input[type=checkbox]{width:auto}
+.grow{flex:1}
+.status{color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.bar{height:4px;background:var(--chip);border-radius:2px;overflow:hidden;width:120px}.bar i{display:block;height:100%;background:var(--accent);width:0}
+main{padding:14px 16px;max-width:1300px;margin:0 auto}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px}
+.card h2{font-size:14px;margin:0 0 8px;font-weight:600}
+.card h3{font-size:12px;margin:12px 0 6px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+label{display:block;font-size:12px;color:var(--muted);margin:7px 0 3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.hint{font-size:12px;color:var(--muted)}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:6px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top}
+th{color:var(--muted);font-weight:500;font-size:12px;white-space:nowrap}
+.pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--muted);white-space:nowrap}
+.pill.ok{background:var(--okbg);color:var(--ok)}.pill.warn{background:var(--warnbg);color:var(--warn)}.pill.err{background:var(--errbg);color:var(--err)}.pill.info{background:var(--infobg);color:var(--accent)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.chips button{border-radius:999px;font-size:12px;padding:4px 10px}
+.chips button.on{border-color:var(--accent);color:var(--accent)}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.toolbar input,.toolbar select{width:auto}
+.swatch{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px;border:1px solid var(--line)}
+.plates{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.plate{border:1px solid var(--line);border-radius:8px;padding:8px;display:block;color:inherit;text-decoration:none}
+.plate:hover{border-color:var(--muted)}
+.plate .fn{font-size:12px;word-break:break-all;margin-top:6px}
+.plate svg{width:100%;height:auto;display:block}
+.msgs div{font-size:13px;padding:6px 10px;border-radius:6px;margin:4px 0}
+.msgs .e{background:var(--errbg);color:var(--err)}.msgs .w{background:var(--warnbg);color:var(--warn)}.msgs .o{background:var(--okbg);color:var(--ok)}
+.log{font:12px/1.5 ui-monospace,Menlo,monospace;max-height:260px;overflow:auto;white-space:pre-wrap;color:var(--muted)}
+.empty{color:var(--muted);text-align:center;padding:26px}
+.edit{display:flex;gap:4px;min-width:260px}.edit input{padding:3px 6px}
+.reason{font-size:12px;color:var(--warn)}
+section[hidden]{display:none}
+iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;background:#000}
+@media (max-width:700px){header{gap:6px}.bar{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>SnapSTL</h1>
+  <nav id="tabs"><button data-t="orders" class="on">Orders</button><button data-t="batches">Batches</button><button data-t="settings">Settings</button></nav>
+  <span class="status grow" id="status"></span>
+  <span class="pill" id="dl" title="MakerWorld downloads">Downloads idle</span>
+  <button id="dlshow" class="small primary" hidden>Show MakerWorld window</button>
+  <button id="dlpause" class="small">Pause downloads</button>
+  <button id="logout" class="small">Sign out</button>
+</header>
+<main>
+<section id="t-orders">
+  <div class="card">
+    <div class="toolbar">
+      <label class="btn" style="margin:0;color:var(--text)">Upload report (.xlsx)<input id="report" type="file" accept=".xlsx,.xls,.csv" hidden></label>
+      <span class="grow hint" id="ingestmsg"></span>
+    </div>
+    <div class="msgs" id="ingestres"></div>
+  </div>
+  <div class="card">
+    <div class="chips" id="chips"></div>
+    <div class="toolbar">
+      <input id="q" placeholder="Search name or order ID" style="max-width:260px">
+      <select id="colorf"><option value="">All colours</option></select>
+      <span class="grow"></span>
+      <a class="btn" href="/api/orders.csv">Export CSV</a>
+    </div>
+    <div class="toolbar" id="selbar">
+      <span id="selcount" class="hint">No orders selected</span>
+      <button id="selall" class="small">Select all matching</button>
+      <button id="selclear" class="small">Clear</button>
+      <span class="grow"></span>
+      <button id="mkbatch" class="primary" disabled>Create batch</button>
+    </div>
+    <div class="tw"><table><thead><tr><th><input type="checkbox" id="pagecheck" title="Select this page"></th><th>Order</th><th>Date</th><th>Report status</th><th>Name to print</th><th>Colour</th><th>Qty</th><th>Size L×H · comp.</th><th>State</th><th></th></tr></thead>
+    <tbody id="orders"></tbody></table></div>
+    <div class="toolbar" style="margin-top:8px"><span class="hint grow" id="pageinfo"></span><button id="prev" class="small">Previous</button><button id="next" class="small">Next</button></div>
+  </div>
+</section>
+
+<section id="t-batches" hidden>
+  <div class="card">
+    <div class="toolbar"><h2 style="margin:0">Batches</h2><span class="grow hint" id="queueinfo"></span><button id="retry" class="small" hidden>Retry failed downloads</button></div>
+    <div class="tw"><table><thead><tr><th>#</th><th>Created</th><th>Orders</th><th>Models</th><th>Plates</th><th>Status</th><th></th></tr></thead><tbody id="batches"></tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="toolbar"><h2 style="margin:0">Download queue</h2><span class="grow hint" id="dlsession"></span>
+      <button id="qpause" class="small">Pause</button><button id="retry2" class="small">Retry failed</button></div>
+    <div class="tw" style="max-height:340px;overflow:auto"><table><thead><tr><th>#</th><th>Name</th><th>Comp.</th><th>State</th><th>Tries</th><th>Detail</th></tr></thead><tbody id="dlq"></tbody></table></div>
+  </div>
+  <div class="card" id="bdetail" hidden>
+    <div class="toolbar"><h2 style="margin:0" id="btitle"></h2><span class="grow"></span><button id="bfinder" hidden>Show in Finder</button> <a class="btn primary" id="bzip">Download ZIP</a></div>
+    <div class="msgs" id="bmsgs"></div>
+    <h3>Bases</h3><div class="plates" id="bbases"></div>
+    <h3>Names</h3><div class="plates" id="bnames"></div>
+    <p class="hint">Top view of each plate. Click a plate to get its STL. Review in Bambu Studio before printing.</p>
+  </div>
+  <div class="card"><h2>Activity</h2><div class="log" id="log"></div></div>
+</section>
+
+<section id="t-settings" hidden>
+  <div class="grid">
+  <div class="card">
+    <h2>Model maker options</h2>
+    <p class="hint">Applied to every name. Print version is always NO AMS; names are single line. Compartments come from the scaling table.</p>
+    <label>Font</label><select id="m_Font"></select>
+    <div class="row2">
+      <div><label>Font size (mm)</label><input id="m_Font_size" type="number" step="1"></div>
+      <div><label>Thickness (mm)</label><input id="m_Thickness" type="number" step="1"></div>
+      <div><label>Outline (mm)</label><input id="m_Outline" type="number" step="1"></div>
+      <div><label>Rotate text</label><select id="m_Rotate_text"></select></div>
+    </div>
+    <label>MakerWorld license password</label>
+    <div class="row2" style="grid-template-columns:1fr auto"><input id="lic" type="password" placeholder="Not set" autocomplete="off"><button id="licsave">Save</button></div>
+    <p class="hint" id="lichint"></p>
+  </div>
+  <div class="card">
+    <h2>Scaling and compartments (rules v1.1)</h2>
+    <table><thead><tr><th>Letters</th><th>Length</th><th>Height</th><th>Comp.</th></tr></thead><tbody id="bands"></tbody></table>
+    <div class="row2">
+      <div><label>Name Z scale %</label><input id="s_name_z" type="number" step="1"></div>
+      <div><label>Max length (mm)</label><input id="s_max_length" type="number" step="1"></div>
+    </div>
+    <p class="hint">Base X = Name X · Base Z = Name Y · Base Y 100 %</p>
+  </div>
+  <div class="card">
+    <h2>Plate and fit</h2>
+    <div class="row3">
+      <div><label>Bed X</label><input id="p_bed_x" type="number" step="1"></div>
+      <div><label>Bed Y</label><input id="p_bed_y" type="number" step="1"></div>
+      <div><label>Bed Z</label><input id="p_bed_z" type="number" step="1"></div>
+    </div>
+    <div class="row2">
+      <div><label>Edge margin (mm)</label><input id="p_margin" type="number" step="0.5"></div>
+      <div><label>Gap between parts</label><input id="p_gap" type="number" step="0.5"></div>
+      <div><label>Max names / plate</label><input id="p_max_names_per_plate" type="number" min="1" max="3"></div>
+      <div><label>Bases / plate</label><input id="p_bases_per_plate" type="number" min="1" max="3"></div>
+    </div>
+    <label>Allowed rotations (flat on the bed only)</label>
+    <div id="rots" style="display:flex;gap:12px;font-size:13px"></div>
+    <label>Output folder (each batch gets a folder + ZIP here)</label>
+    <div class="row2" style="grid-template-columns:1fr auto"><input id="o_dir"><button id="o_pick" hidden>Choose…</button></div>
+    <label>Pause between downloads (s)</label><input id="o_delay" type="number" step="0.5" min="0">
+    <div style="display:flex;gap:8px;margin-top:12px"><button id="save" class="primary">Save settings</button><button id="reset">Defaults</button></div>
+    <p class="hint" id="savehint"></p>
+  </div>
+  <div class="card">
+    <h2>MakerWorld connection</h2>
+    <p class="hint">SnapSTL opens its own Chrome window, signed in with your MakerWorld login, and generates each model on the real model-maker page — one session per run, one name at a time. If MakerWorld shows a security check in that window, complete it there.</p>
+    <h3>Your login cookie (one-time)</h3>
+    <p class="hint">In Chrome on makerworld.com (signed in): View → Developer → Developer Tools → <b>Network</b>. Reload, click any <code>api/v1/…</code> request, and under <i>Request Headers</i> copy the whole <b>cookie</b> value.</p>
+    <div class="row2" style="grid-template-columns:1fr auto"><input id="cookie" type="password" placeholder="Paste the cookie value" autocomplete="off"><button id="cookiesave">Save</button></div>
+    <p class="hint" id="cookiehint"></p>
+    <div style="display:flex;gap:8px;margin-top:8px"><button id="mwtest">Test connection</button></div>
+  </div>
+  </div>
+</section>
+
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const COLORS={pink:'#f4a7c0','hot pink':'#ff4fa0','baby pink':'#f9c9d9',lavender:'#b9a3e3',red:'#e5534b',orange:'#f39a3d',yellow:'#f2d04b',green:'#5fb36a',blue:'#4a86d9','baby blue':'#9fd0f3','sky blue':'#7cc4f0',purple:'#9a6bd1',black:'#333',white:'#fafafa',grey:'#999',lightgray:'#ccc'};
+const STATES=[['ready','Ready','ok'],['needs_review','Needs review','warn'],['in_batch','In a batch','info'],['bundled','Bundled','info'],['not_needed','Not needed','']];
+let S=null,META=null,filter={state:'ready',q:'',color:'',offset:0},LIMIT=100,openBatch=null,tab='orders';
+const SEL=new Set();
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function api(path,opts={}){const r=await fetch(path,opts);if(r.status===401){location.href='/login';throw new Error('Signed out')}const t=await r.text();let j;try{j=JSON.parse(t)}catch{j={detail:t}}if(!r.ok)throw new Error(j.detail||r.statusText);return j}
+const post=(p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
+const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"></span>${esc(c||'—')}`;
+
+// tabs
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
+function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+  for(const s of ['orders','batches','settings'])$('t-'+s).hidden=s!==t;
+  if(t==='orders')loadOrders(); if(t==='batches'){loadBatches();loadQueue()} try{localStorage.setItem('tab',t)}catch{}}
+
+// ---------- orders ----------
+async function loadOrders(){
+  const p=new URLSearchParams({state:filter.state,q:filter.q,color:filter.color,limit:LIMIT,offset:filter.offset});
+  const r=await api('/api/orders?'+p);
+  $('pageinfo').textContent=r.total?`${filter.offset+1}–${Math.min(filter.offset+LIMIT,r.total)} of ${r.total}`:'';
+  $('prev').disabled=filter.offset===0; $('next').disabled=filter.offset+LIMIT>=r.total;
+  if(!r.orders.length){$('orders').innerHTML='<tr><td colspan="10" class="empty">No orders here</td></tr>';$('pagecheck').checked=false;return}
+  PAGE=r.orders.filter(o=>o.state==='ready').map(o=>o.order_id);
+  $('orders').innerHTML=r.orders.map(o=>{
+    const st=STATES.find(s=>s[0]===o.state)||[o.state,o.state,''];
+    const nameCell=o.state==='needs_review'
+      ?`<div class="edit"><input value="${esc(o.name)}" data-n="${esc(o.order_id)}" placeholder="Name to print"><input value="${esc(o.color)}" data-c="${esc(o.order_id)}" style="max-width:90px" placeholder="colour"><button class="small primary" data-ok="${esc(o.order_id)}">Approve</button></div><div class="hint">Customer typed: ${esc(o.raw_name)||'—'}</div><div class="reason">${esc(o.review_reason)}</div>`
+      :`${esc(o.name)}${o.name_edited?' <span class="hint">(edited)</span>':''}${o.raw_name&&o.raw_name.trim()!==o.name?`<div class="hint">typed: ${esc(o.raw_name)}</div>`:''}${o.last_error?`<div class="reason">${esc(o.last_error)}</div>`:''}`;
+    const act=o.state==='in_batch'?`<a class="hint" href="#" data-batch="${o.batch_id}">in batch #${o.batch_id}</a>`:o.state==='bundled'?`<button class="small" data-reset="${esc(o.order_id)}" title="Make it again">Remake</button> <a class="hint" href="#" data-batch="${o.batch_id}">batch #${o.batch_id}</a>`
+      :(o.state==='ready'||o.state==='needs_review')?`<button class="small" data-skip="${esc(o.order_id)}">Skip</button>`
+      :`<button class="small" data-reset="${esc(o.order_id)}">Make anyway</button>`;
+    const cb=o.state==='ready'?`<input type="checkbox" data-sel="${esc(o.order_id)}" ${SEL.has(o.order_id)?'checked':''}>`:'';
+    return `<tr><td>${cb}</td><td><span title="${esc(o.clubbed_id)}">${esc(o.order_id)}</span></td><td style="white-space:nowrap">${esc(o.order_date)}</td><td>${esc(o.source_status)}</td><td>${nameCell}</td><td>${o.state==='needs_review'?'':sw(o.color)}</td><td>${o.quantity}</td><td>${o.target?`${o.target[0]}×${o.target[1]} · ${o.compartments}`:'—'}</td><td><span class="pill ${st[2]}">${st[1]}</span></td><td>${act}</td></tr>`}).join('');
+  document.querySelectorAll('[data-ok]').forEach(b=>b.onclick=async()=>{const id=b.dataset.ok;
+    const n=document.querySelector(`[data-n="${CSS.escape(id)}"]`).value, c=document.querySelector(`[data-c="${CSS.escape(id)}"]`).value;
+    try{await post(`/api/orders/${encodeURIComponent(id)}/name`,{name:n,color:c});refreshAll()}catch(e){alert(e.message)}});
+  document.querySelectorAll('[data-skip]').forEach(b=>b.onclick=async()=>{await post(`/api/orders/${encodeURIComponent(b.dataset.skip)}/skip`);refreshAll()});
+  document.querySelectorAll('[data-reset]').forEach(b=>b.onclick=async()=>{if(!confirm('Make this order again in the next batch?'))return;await post(`/api/orders/${encodeURIComponent(b.dataset.reset)}/reset`);refreshAll()});
+  document.querySelectorAll('[data-batch]').forEach(a=>a.onclick=e=>{e.preventDefault();show('batches');openBatchDetail(+a.dataset.batch)});
+  document.querySelectorAll('[data-sel]').forEach(c=>c.onchange=()=>{c.checked?SEL.add(c.dataset.sel):SEL.delete(c.dataset.sel);selUI()});
+  selUI();
+}
+let PAGE=[];
+function selUI(){$('selcount').textContent=SEL.size?`${SEL.size} order${SEL.size>1?'s':''} selected`:'No orders selected';
+  $('mkbatch').disabled=!SEL.size;$('mkbatch').textContent=SEL.size?`Create batch (${SEL.size})`:'Create batch';
+  $('pagecheck').checked=PAGE.length>0&&PAGE.every(id=>SEL.has(id))}
+$('pagecheck').onchange=()=>{for(const id of PAGE)$('pagecheck').checked?SEL.add(id):SEL.delete(id);loadOrders()};
+$('selall').onclick=async()=>{const ids=await api('/api/orders/ids?'+new URLSearchParams({state:'ready',q:filter.q,color:filter.color}));ids.forEach(i=>SEL.add(i));loadOrders()};
+$('selclear').onclick=()=>{SEL.clear();loadOrders()};
+$('mkbatch').onclick=async()=>{if(!SEL.size)return;
+  try{const r=await post('/api/batches',{order_ids:[...SEL]});SEL.clear();
+    $('ingestres').innerHTML=`<div class="o">Batch #${r.batch_id} created with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped — not ready)`:''}. ${r.downloads_queued?`${r.downloads_queued} model(s) will be downloaded from MakerWorld.`:'All models already downloaded — building now.'}</div>`;
+    refreshAll()}catch(e){alert(e.message)}};
+function renderChips(counts){
+  $('chips').innerHTML=STATES.map(([k,l])=>`<button data-s="${k}" class="${filter.state===k?'on':''}">${l} · ${counts[k]||0}</button>`).join('')+`<button data-s="" class="${filter.state===''?'on':''}">All</button>`;
+  document.querySelectorAll('#chips button').forEach(b=>b.onclick=()=>{filter.state=b.dataset.s;filter.offset=0;renderChips(counts);loadOrders()});
+}
+let qt;$('q').oninput=()=>{clearTimeout(qt);qt=setTimeout(()=>{filter.q=$('q').value.trim();filter.offset=0;loadOrders()},250)};
+$('colorf').onchange=()=>{filter.color=$('colorf').value;filter.offset=0;loadOrders()};
+$('prev').onclick=()=>{filter.offset=Math.max(0,filter.offset-LIMIT);loadOrders()};
+$('next').onclick=()=>{filter.offset+=LIMIT;loadOrders()};
+$('report').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('ingestmsg').textContent='Reading '+f.name+'…';
+  const fd=new FormData();fd.append('file',f);
+  try{const s=await api('/api/ingest',{method:'POST',body:fd});$('ingestmsg').textContent='';
+    $('ingestres').innerHTML=`<div class="o">${esc(s.filename)}: ${s.sku_rows} Magicians_35 rows — ${s.new} new (${s.to_print_new} ready, ${s.needs_review_new} need review), ${s.updated} updated, ${s.unchanged} unchanged${s.became_not_needed?`, ${s.became_not_needed} no longer need making`:''}.${s.already_seen_file?' This exact file was uploaded before.':''}</div>`+s.warnings.map(w=>`<div class="w">${esc(w)}</div>`).join('');
+    refreshAll()}catch(err){$('ingestmsg').textContent='';$('ingestres').innerHTML=`<div class="e">${esc(err.message)}</div>`}e.target.value=''};
+
+// ---------- batches ----------
+const BST={waiting:['Waiting for models','info'],build_requested:['Building soon','info'],building:['Building','info'],done:['Done','ok'],done_with_problems:['Done with problems','warn'],failed:['Failed','err'],cancelled:['Cancelled','']};
+async function loadBatches(){const bs=await api('/api/batches');
+  $('batches').innerHTML=bs.length?bs.map(b=>{const st=BST[b.status]||[b.status,''];const p=b.progress;const active=!!p;const finished=b.status.startsWith('done');
+    const models=p?`${p.ready}/${p.models}${p.failed?` <span class="reason">${p.failed} failed</span>`:''}<div class="bar" style="margin-top:4px"><i style="width:${p.models?100*p.ready/p.models:0}%"></i></div>`:'—';
+    const acts=[`<button class="small" data-b="${b.id}">Open</button>`];
+    if(finished)acts.push(`<a class="btn small" href="/api/batches/${b.id}/zip">ZIP</a>`);
+    if(b.status==='waiting')acts.push(`<button class="small" data-build="${b.id}" title="Build plates now with the models that are ready; the rest go back to Ready">Build now</button>`,`<button class="small" data-cancel="${b.id}">Cancel</button>`);
+    return `<tr><td>${b.id}</td><td>${new Date(b.created_at*1000).toLocaleString()}</td><td>${b.orders}</td><td>${models}</td><td>${b.plates||'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${acts.join(' ')}</td></tr>`}).join(''):'<tr><td colspan="7" class="empty">No batches yet — select orders on the Orders tab</td></tr>';
+  document.querySelectorAll('[data-b]').forEach(x=>x.onclick=()=>openBatchDetail(+x.dataset.b));
+  document.querySelectorAll('[data-build]').forEach(x=>x.onclick=async()=>{if(confirm('Build now with the models that are ready? Orders still missing a model go back to Ready.')){try{await post(`/api/batches/${x.dataset.build}/build`)}catch(e){alert(e.message)}loadBatches()}});
+  document.querySelectorAll('[data-cancel]').forEach(x=>x.onclick=async()=>{if(confirm('Cancel this batch? Its orders go back to Ready.')){try{await post(`/api/batches/${x.dataset.cancel}/cancel`)}catch(e){alert(e.message)}refreshAll();loadBatches()}});
+  if(openBatch&&!$('bdetail').hidden)openBatchDetail(openBatch,true)}
+function plateSVG(p){const [bx,by]=p.preview.bed,m=p.preview.margin;const fill=p.kind==='bases'?'#ffffff':(COLORS[p.colors[0]]||'#bbb');
+  const parts=p.preview.parts.map(pt=>`<path d="${pt.rings.map(r=>'M'+r.map(([x,y])=>`${x},${by-y}`).join('L')+'Z').join('')}" fill="${fill}" fill-rule="evenodd" stroke="#777" stroke-width="0.8"><title>${esc(pt.key)} (${pt.rotation}°)</title></path>`).join('');
+  return `<svg viewBox="-2 -2 ${bx+4} ${by+4}"><rect width="${bx}" height="${by}" rx="4" fill="var(--bed)" stroke="var(--line)"/><rect x="${m}" y="${m}" width="${bx-2*m}" height="${by-2*m}" fill="none" stroke="var(--line)" stroke-dasharray="3 3"/>${parts}</svg>`}
+async function openBatchDetail(id,quiet){openBatch=id;const b=await api('/api/batches/'+id);const s=b.summary||{};
+  $('bdetail').hidden=false;$('btitle').textContent=`Batch #${id} · ${b.order_ids.length} orders`;$('bzip').href=`/api/batches/${id}/zip`;$('bzip').hidden=!b.status.startsWith('done');
+  if(b.progress){$('bmsgs').innerHTML=`<div class="w">Downloading from MakerWorld: ${b.progress.ready} of ${b.progress.models} models done${b.progress.failed?`, ${b.progress.failed} failed`:''}.</div>`;$('bbases').innerHTML=$('bnames').innerHTML='<div class="empty">Plates appear when the batch is built</div>';return}
+  $('bmsgs').innerHTML=(s.zip?`<div class="o">Saved to ${esc(s.zip)}</div>`:'')+(s.errors||[]).map(e=>`<div class="e">${esc(e)}</div>`).join('')+(s.warnings||[]).map(w=>`<div class="w">${esc(w)}</div>`).join('')+(s.ok&&!(s.warnings||[]).length?'<div class="o">All plates passed the checks.</div>':'');
+  for(const k of ['bases','names']){const ps=(s.plates||[]).filter(p=>p.kind===k);
+    $('b'+k).innerHTML=ps.length?ps.map(p=>`<a class="plate" data-file="${esc(p.file)}" href="/api/batches/${id}/file?path=${encodeURIComponent(p.file)}">${plateSVG(p)}<div class="fn">${esc(p.file.split('/').pop())}</div>${p.warnings.map(w=>`<div class="hint" style="color:var(--warn)">${esc(w)}</div>`).join('')}</a>`).join(''):'<div class="empty">None</div>'}
+  $('bfinder').hidden=!(META.local&&b.status.startsWith('done'));
+  $('bfinder').onclick=()=>post(`/api/batches/${id}/reveal`,{});
+  if(META.local)document.querySelectorAll('.plate[data-file]').forEach(a=>a.onclick=e=>{e.preventDefault();post(`/api/batches/${id}/reveal`,{file:a.dataset.file})});
+  if(!quiet)$('bdetail').scrollIntoView({behavior:'smooth'})}
+const DST={claimed:['Generating','info'],queued:['Waiting',''],failed:['Failed','err'],done:['Done','ok']};
+async function loadQueue(){const r=await api('/api/downloads');const d=r.downloader;
+  $('dlsession').textContent=(d.session_open?'MakerWorld window open · ':'')+(d.status||'');
+  $('qpause').textContent=d.paused?'Resume':'Pause';$('qpause').dataset.paused=d.paused?'1':'0';
+  $('dlq').innerHTML=r.items.length?r.items.map(x=>{const st=DST[x.state]||[x.state,''];return `<tr><td>${x.id}</td><td>${esc(x.name)}</td><td>${x.compartments}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${x.attempts}</td><td class="hint">${esc(x.error||'')}</td></tr>`}).join(''):'<tr><td colspan="6" class="empty">Nothing queued — create a batch on the Orders tab</td></tr>'}
+$('qpause').onclick=async()=>{await post('/api/downloader/'+($('qpause').dataset.paused==='1'?'resume':'pause'));loadQueue();refresh()};
+$('retry2').onclick=async()=>{await post('/api/downloads/retry');loadQueue()};
+$('retry').onclick=async()=>{const r=await post('/api/downloads/retry');$('queueinfo').textContent=`${r.requeued} download(s) re-queued`;loadBatches()};
+
+// ---------- settings ----------
+function fillSettings(){const m=S.model;
+  $('m_Font').innerHTML=META.fonts.map(f=>`<option ${f===m.Font?'selected':''}>${esc(f)}</option>`).join('');
+  $('m_Rotate_text').innerHTML=META.rotate_text.map(f=>`<option ${f===m.Rotate_text?'selected':''}>${f}</option>`).join('');
+  for(const k of ['Font_size','Thickness','Outline']){const el=$('m_'+k);el.value=m[k];[el.min,el.max]=META.ranges[k]}
+  for(const k of ['bed_x','bed_y','bed_z','margin','gap','max_names_per_plate','bases_per_plate'])$('p_'+k).value=S.plate[k];
+  $('rots').innerHTML=[0,90,180,270].map(r=>`<label style="margin:0;color:var(--text)"><input type="checkbox" value="${r}" ${S.plate.rotations.includes(r)?'checked':''}> ${r}°</label>`).join('');
+  $('bands').innerHTML=S.scaling.bands.map((b,i)=>`<tr><td>${b.min_letters}${b.max_letters>=999?'+':b.max_letters!==b.min_letters?'–'+b.max_letters:''}</td><td><input data-b="${i}" data-k="length" type="number" step="0.5" value="${b.length}"></td><td><input data-b="${i}" data-k="height" type="number" step="0.5" value="${b.height}"></td><td><input data-b="${i}" data-k="compartments" type="number" step="1" min="1" max="10" value="${b.compartments}"></td></tr>`).join('');
+  $('s_name_z').value=Math.round(S.scaling.name_z_scale*100);$('s_max_length').value=S.scaling.max_length;$('o_delay').value=S.delay_between_downloads_s;$('o_dir').value=S.output_dir;$('o_dir').disabled=!META.local}
+function readSettings(){const s=structuredClone(S);
+  s.model.Font=$('m_Font').value;s.model.Rotate_text=$('m_Rotate_text').value;
+  for(const k of ['Font_size','Thickness','Outline'])s.model[k]=parseInt($('m_'+k).value,10);
+  for(const k of ['bed_x','bed_y','bed_z','margin','gap'])s.plate[k]=parseFloat($('p_'+k).value);
+  for(const k of ['max_names_per_plate','bases_per_plate'])s.plate[k]=parseInt($('p_'+k).value,10);
+  s.plate.rotations=[...document.querySelectorAll('#rots input:checked')].map(i=>+i.value);
+  document.querySelectorAll('#bands input').forEach(i=>{const v=parseFloat(i.value);s.scaling.bands[+i.dataset.b][i.dataset.k]=i.dataset.k==='compartments'?Math.round(v):v});
+  s.scaling.name_z_scale=parseFloat($('s_name_z').value)/100;s.scaling.max_length=parseFloat($('s_max_length').value);
+  s.delay_between_downloads_s=parseFloat($('o_delay').value)||0;s.output_dir=$('o_dir').value.trim();return s}
+$('save').onclick=async()=>{try{S=await api('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(readSettings())});fillSettings();$('savehint').textContent='Saved';$('savehint').style.color='';loadOrders()}catch(e){$('savehint').textContent=e.message;$('savehint').style.color='var(--err)'}};
+$('reset').onclick=async()=>{if(!confirm('Restore default settings?'))return;S=await post('/api/settings/reset');fillSettings();$('savehint').textContent='Defaults restored'};
+$('licsave').onclick=async()=>{const r=await post('/api/license',{password:$('lic').value});$('lic').value='';licHint(r.license_set)};
+function licHint(set){$('lichint').textContent=set?'Saved on the server':'Not set — downloads will have anti-sale markings';$('lichint').style.color=set?'':'var(--warn)'}
+
+// ---------- MakerWorld connection ----------
+function mwHints(mw){$('cookiehint').textContent=mw.cookie_set?'Saved in your Mac Keychain':'Not set';$('cookiehint').style.color=mw.cookie_set?'':'var(--warn)'}
+$('cookiesave').onclick=async()=>{const v=$('cookie').value.trim();if(!v)return;$('cookiehint').textContent='Checking with MakerWorld…';
+  try{await post('/api/makerworld/cookie',{cookie:v});$('cookie').value='';$('cookiehint').textContent='Signed in — saved in your Mac Keychain';$('cookiehint').style.color='var(--ok)'}
+  catch(e){$('cookiehint').textContent=e.message;$('cookiehint').style.color='var(--err)'}};
+$('mwtest').onclick=async()=>{try{const r=await post('/api/makerworld/test');alert(r.signed_in?'MakerWorld login works.':'MakerWorld did not accept the saved cookie — paste a fresh one.')}catch(e){alert(e.message)}};
+$('dlshow').onclick=()=>post('/api/downloader/show');
+$('dlpause').onclick=async()=>{const paused=$('dlpause').dataset.paused==='1';await post('/api/downloader/'+(paused?'resume':'pause'));refresh()};
+$('o_pick').onclick=async()=>{const p=await window.pywebview.api.choose_folder();if(p){$('o_dir').value=p}};
+window.addEventListener('pywebviewready',()=>{$('o_pick').hidden=false});
+$('logout').onclick=async()=>{await post('/api/logout');location.href='/login'};
+
+// ---------- polling ----------
+let lastKey='';
+async function refresh(){try{const st=await api('/api/state');
+  const q=st.queue||{};const pending=(q.queued||0)+(q.claimed||0);
+  $('status').textContent=st.building?`Building batch #${st.building}…`:pending?`${pending} model(s) to download`:'';
+  const d=st.downloader;const mw=st.makerworld;mwHints(mw);
+  $('dlshow').hidden=!(d.attention||d.session_open);$('dlshow').classList.toggle('primary',!!d.attention);
+  const dlText=d.attention?'Action needed: MakerWorld security check':d.needs_login?'MakerWorld login needed':d.paused?'Downloads paused':d.current?d.status:pending?'Downloads waiting':'Downloads idle';
+  $('dl').textContent=dlText;$('dl').title=d.status||'';$('dl').className='pill '+(d.attention||d.needs_login||!mw.cookie_set&&pending?'err':d.current?'info':d.paused?'warn':'');
+  $('dlpause').textContent=d.paused?'Resume downloads':'Pause downloads';$('dlpause').dataset.paused=d.paused?'1':'0';
+  $('queueinfo').textContent=`Download queue: ${q.queued||0} waiting, ${q.claimed||0} in progress, ${q.done||0} done${q.failed?`, ${q.failed} failed`:''}`;$('retry').hidden=!q.failed;
+  licHint(st.license_set);
+  const key=JSON.stringify(st.counts)+JSON.stringify(q)+st.building;
+  if(key!==lastKey){lastKey=key;renderChips(st.counts);
+    const cur=$('colorf').value;$('colorf').innerHTML='<option value="">All colours</option>'+st.ready_colors.map(c=>`<option value="${esc(c.color)}" ${c.color===cur?'selected':''}>${esc(c.color||'(none)')} · ${c.n} ready</option>`).join('');
+    if(tab==='orders')loadOrders(); if(tab==='batches')loadBatches()}
+  if(tab==='batches')loadQueue();
+  const log=$('log');const atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-4;log.textContent=st.log.join('\n');if(atEnd)log.scrollTop=log.scrollHeight;
+}catch(e){}}
+function refreshAll(){lastKey='';refresh()}
+(async()=>{META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;let t='orders';try{t=localStorage.getItem('tab')||'orders'}catch{}if(!['orders','batches','settings'].includes(t))t='orders';show(t);refresh();setInterval(refresh,2000)})();
+</script>
+</body>
+</html>

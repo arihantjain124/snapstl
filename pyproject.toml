@@ -1,0 +1,36 @@
+[project]
+name = "snapstl"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "Arihant Jain", email = "14129747+arihantjain124@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.162.7",
+    "keyring>=25.7.0",
+    "numpy>=2.5.4",
+    "playwright>=1.65.2",
+    "python-calamine>=0.9.1",
+    "python-multipart>=0.0.33",
+    "pywebview>=6.2.1",
+    "shapely>=2.2.0",
+    "trimesh>=5.2.1",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+snapstl = "snapstl:main"
+snapstl-admin = "snapstl.auth:admin"
+snapstl-serve = "snapstl:serve"
+
+[build-system]
+requires = ["uv_build>=0.10.9,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mapbox-earcut>=2.1.0",
+    "pytest>=9.2.0",
+]

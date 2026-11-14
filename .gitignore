@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+.claude/launch.json
+
+# customer data and generated output never go in git
+*.xlsx
+*.xls
+*.csv
+*.zip
+output/
