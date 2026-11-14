@@ -105,8 +105,10 @@
     captured = {};
     gen.click();
     const end = Date.now() + GENERATE_TIMEOUT_MS;
+    let lastPing = Date.now();
     while (Date.now() < end) {
       if (captured.plate_1 && captured.plate_2) return { plate_1: captured.plate_1, plate_2: captured.plate_2 };
+      if (Date.now() - lastPing > 5000) { await say(`Generating ${p.name} (${p.compartments} compartments)`); lastPing = Date.now(); }
       if (blocked()) await waitWhileBlocked(say);
       const err = errorToast();
       if (err) throw new Error(`MakerWorld: ${err}`);

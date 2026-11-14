@@ -230,6 +230,7 @@ class Downloader:
         self.done_count = 0
         self.pause_s = 3.0
         self.last_seen = 0.0
+        self.claimed_at = 0.0
 
     def start(self) -> None:
         # resume: anything that was mid-download when SnapSTL stopped goes back in the queue
@@ -247,7 +248,9 @@ class Downloader:
 
     @property
     def online(self) -> bool:
-        return time.time() - self.last_seen < self.ONLINE_S
+        # a name being generated counts as connected (MakerWorld can take a while)
+        busy = self.current is not None and time.time() - self.claimed_at < CLAIM_TIMEOUT_S
+        return busy or time.time() - self.last_seen < self.ONLINE_S
 
     def snapshot(self) -> dict:
         return {"status": self.status if self.online else "Helper not connected", "paused": self.paused,
@@ -264,6 +267,7 @@ def helper_next() -> dict | None:
         DOWNLOADER.current = None
         return None
     DOWNLOADER.current = job["name"]
+    DOWNLOADER.claimed_at = time.time()
     model = json.loads(job["model_json"])
     return {
         "job_id": job["id"], "name": job["name"], "compartments": job["compartments"],
