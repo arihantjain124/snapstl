@@ -79,8 +79,10 @@ git tag v0.X.Y                              # optional: tag releases the owner i
 - Small, focused commits with plain-English messages ("Bases: allow 2 per plate when …").
 - Never commit failing tests. Never rewrite history on `main` (no force-push, no rebase of `main`).
 - To undo a bad change: `git revert <commit>` (keeps history), not `git reset --hard`.
-- Before handing the project on as a ZIP: commit everything, then `git archive -o snapstl.zip HEAD`
-  (or zip the folder **including** `.git` so history travels with it). Exclude `.venv/`.
+- Before handing the project on: commit everything, then copy the folder **including** `.git`
+  (e.g. `git clone /path/to/Snapstl SnapSTL-copy`) so history travels with it. Leave out `.venv/`,
+  customer reports (`*.xlsx`) and local data. The owner zips it themselves.
+- Batch builds write plain folders (`bases/`, `names/`, `report.csv`) — **never a ZIP file**.
 
 ## Keep the docs true
 

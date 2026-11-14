@@ -533,10 +533,8 @@ async def batch_reveal(batch_id: int, req: Request):
 
 @app.get("/api/batches/{batch_id}/zip")
 def batch_zip(batch_id: int):
+    """On-demand download only: the ZIP is built in a temp file and deleted after sending (never saved)."""
     b = _batch(batch_id)
-    ready = json.loads(b["summary"] or "{}").get("zip")
-    if ready and Path(ready).is_file():
-        return FileResponse(ready, filename=Path(ready).name)
     root = Path(b["out_dir"] or "/nonexistent")
     if not root.is_dir():
         raise HTTPException(404, "Batch folder is gone")

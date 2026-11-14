@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import threading
-import zipfile
 from pathlib import Path
 import time
 import traceback
@@ -389,7 +388,7 @@ class Manager:
             errors = res.errors + [f"{n}: model not downloaded — order returned to Ready" for n in missing]
             summary = {"ok": res.ok and not missing, "errors": errors, "warnings": res.warnings,
                        "plates": [asdict(p) for p in res.plates], "orders": len(done_ids), "organizers": len(usable)}
-            summary["zip"] = str(make_zip(out))
+            summary["folder"] = str(out)  # plates are left as plain STL files — no ZIP is written
             with db.tx() as con:
                 db.finish_batch(con, batch_id, "done" if summary["ok"] else "done_with_problems", summary, done_ids)
             self._log(f"Batch #{batch_id} done: {len(res.plates)} plates")
@@ -402,18 +401,6 @@ class Manager:
             self.building = None
             with db.tx() as con:
                 _cancel_unneeded_downloads(con)  # failed / missing models of a finished batch
-
-
-def make_zip(folder: Path) -> Path:
-    """<batch folder>.zip next to the folder: bases/, names/ and report.csv."""
-    z = folder.with_suffix(".zip")
-    tmp = z.with_suffix(".zip.part")
-    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
-        for f in sorted(folder.rglob("*")):
-            if f.is_file():
-                zf.write(f, f"{folder.name}/{f.relative_to(folder).as_posix()}")
-    tmp.replace(z)
-    return z
 
 
 MANAGER = Manager()

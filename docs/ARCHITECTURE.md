@@ -20,7 +20,7 @@ Order Reconciliation Report (.xlsx)
    → each name is generated on MakerWorld by the SnapSTL Helper in your Chrome  (helper/, batches.py)
    → scale with Scaling Rules v1.1                                             (scaling.py)
    → group into plates of 3 and pack collision-free on a 256×256 bed           (grouping.py, packing.py)
-   → merged STL per plate + report.csv + ZIP per batch                         (export.py, batches.py)
+   → merged STL per plate + report.csv per batch folder                         (export.py, batches.py)
 ```
 
 ---
@@ -207,7 +207,8 @@ Batches never start by themselves:
 3. When all models are in, the batch becomes `models_ready`. The **builder thread** builds only after
    **Build plates** (or *Build plates now* with what's ready — orders still missing a model go back
    to `ready`).
-4. Output: `<output>/batch-NNN_<date>/{bases/, names/, report.csv}` + `batch-NNN_<date>.zip`.
+4. Output: `<output>/batch-NNN_<date>/{bases/, names/, report.csv}` — plain STL files, **no ZIP is
+   written** (owner's request). *Download ZIP* in the UI builds one on demand in a temp file only.
    Orders become `bundled`. Leftover downloads nobody needs are cancelled automatically.
 
 ---

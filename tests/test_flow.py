@@ -1,4 +1,5 @@
 """End-to-end: report → select orders → batch → helper downloads → plates → ZIP; plus DB maintenance."""
+import io
 import time
 import zipfile
 from pathlib import Path
@@ -73,7 +74,7 @@ def build_and_wait(c, bid):
     return wait_for(lambda: (lambda d: d if d["status"].startswith("done") else None)(c.get(f"/api/batches/{bid}").json()))
 
 
-def test_batch_with_helper_builds_and_zips(client):
+def test_batch_with_helper_builds_plates(client):
     data = report([
         ("F1", "PRINT", "Magicians_35", "Ayra", "Pink", 1),
         ("F2", "PRINT", "Magicians_35", "Manvi", "Pink", 1),
@@ -106,11 +107,12 @@ def test_batch_with_helper_builds_and_zips(client):
         "names/{Ayra,pink},{Manvi,pink}.stl",
         "names/{Riya,blue}.stl",
     ]
-    z = Path(b["summary"]["zip"])
-    assert z.is_file() and z.name.startswith(f"batch-{bid:03d}_")
-    names = zipfile.ZipFile(z).namelist()
-    assert any(n.endswith("/report.csv") for n in names) and len([n for n in names if n.endswith(".stl")]) == 3
-    assert client.get(f"/api/batches/{bid}/zip").status_code == 200
+    folder = Path(b["summary"]["folder"])
+    assert folder.is_dir() and folder.name.startswith(f"batch-{bid:03d}_")
+    assert (folder / "report.csv").is_file() and len(list(folder.rglob("*.stl"))) == 3
+    assert not list(folder.parent.glob("*.zip")) and not list(folder.rglob("*.zip"))  # no ZIP written
+    r = client.get(f"/api/batches/{bid}/zip")  # optional on-demand download still works
+    assert r.status_code == 200 and len([n for n in zipfile.ZipFile(io.BytesIO(r.content)).namelist() if n.endswith(".stl")]) == 3
     states = {o["order_id"]: o["state"] for o in client.get("/api/orders?tab=all&limit=10").json()["orders"]}
     assert states["F1"] == "bundled" and states["F4"] == "ready"
     q = client.get("/api/downloads").json()["items"]

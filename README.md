@@ -2,7 +2,7 @@
 
 Turns Snap Magicians webstore orders for the **Custom Name Desk Organizer** (SKU `Magicians_35`)
 into print-ready Bambu Lab plate STLs — automatically generated on MakerWorld, scaled to the
-agreed rules, grouped 3 per plate, and zipped per batch.
+agreed rules, and grouped 3 per plate into one folder per batch.
 
 Runs entirely on one Mac: a background service with a web portal at **http://127.0.0.1:8317**,
 plus a SnapSTL app window onto the same portal.
@@ -50,7 +50,7 @@ Re-run the script after moving the folder or updating the code. Uninstall the se
 4. The helper (in your MakerWorld tab) generates each name, one at a time — the header shows what
    it's doing. If MakerWorld shows a security check in that tab, just complete it; it carries on.
 5. **Batches** tab: progress per batch and the **Download queue**. When a batch is done:
-   **Show in Finder** or **Download ZIP**.
+   **Show in Finder** (plain STL files; *Download ZIP* is optional and saves nothing).
 6. Open the plates in Bambu Studio, check, slice, print. Bases in white; names in their colour.
 
 Output per batch:
@@ -60,7 +60,6 @@ Output per batch:
     bases/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl
     names/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl
     report.csv               original sizes, target sizes, scale % per axis, files, warnings
-<output folder>/batch-001_2026-11-14_231500.zip
 ```
 
 ## Troubleshooting
