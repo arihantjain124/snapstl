@@ -123,10 +123,10 @@ def test_build_writes_valid_files(tmp_path: Path, meshes_for):
     assert res.ok, res.errors
     files = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.stl"))
     assert files == [
-        "bases/{Ayra,pink},{Manvi,pink},{Aishwarya,pink}.stl",
-        "bases/{Kabir,blue}.stl",
-        "names/{Ayra,pink},{Manvi,pink},{Aishwarya,pink}.stl",
-        "names/{Kabir,blue}.stl",
+        "Bases/{Ayra,pink},{Manvi,pink},{Aishwarya,pink}.stl",
+        "Bases/{Kabir,blue}.stl",
+        "Names/blue/{Kabir,blue}.stl",
+        "Names/pink/{Ayra,pink},{Manvi,pink},{Aishwarya,pink}.stl",
     ]
     m = trimesh.load(tmp_path / files[2], force="mesh")
     lo, hi = m.bounds
@@ -141,4 +141,25 @@ def test_duplicate_names_and_copies(tmp_path: Path, meshes_for):
     assert res.ok, res.errors
     assert all(res.complete(o.idx) for o in orders)
     names = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.stl"))
-    assert "names/{Anaya,pink},{Anaya,pink},{Anaya,pink}.stl" in names
+    assert "Names/pink/{Anaya,pink},{Anaya,pink},{Anaya,pink}.stl" in names
+
+
+def test_batch_folders_number_per_day(tmp_path, monkeypatch):
+    import datetime as dt
+
+    from snapstl import pipeline
+
+    class D(dt.datetime):
+        day = "2026-11-15"
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.fromisoformat(cls.day + "T10:00:00")
+
+    monkeypatch.setattr(pipeline, "datetime", D)
+    a = pipeline.new_batch_dir(tmp_path)
+    b = pipeline.new_batch_dir(tmp_path)
+    D.day = "2026-11-16"
+    c = pipeline.new_batch_dir(tmp_path)
+    rel = [p.relative_to(tmp_path).as_posix() for p in (a, b, c)]
+    assert rel == ["2026-11-15/Batch 1 - 2026-11-15", "2026-11-15/Batch 2 - 2026-11-15", "2026-11-16/Batch 1 - 2026-11-16"]

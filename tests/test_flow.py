@@ -103,14 +103,16 @@ def test_batch_with_helper_builds_plates(client):
     b = build_and_wait(client, bid)
     assert b["status"] == "done", b["summary"].get("errors")
     assert sorted(p["file"] for p in b["summary"]["plates"]) == [
-        "bases/{Ayra,pink},{Manvi,pink},{Riya,blue}.stl",
-        "names/{Ayra,pink},{Manvi,pink}.stl",
-        "names/{Riya,blue}.stl",
+        "Bases/{Ayra,pink},{Manvi,pink},{Riya,blue}.stl",
+        "Names/blue/{Riya,blue}.stl",
+        "Names/pink/{Ayra,pink},{Manvi,pink}.stl",
     ]
     folder = Path(b["summary"]["folder"])
-    assert folder.is_dir() and folder.name.startswith(f"batch-{bid:03d}_")
+    today = time.strftime("%Y-%m-%d")
+    assert folder.is_dir() and folder.parent.name == today and folder.name == f"Batch 1 - {today}"
+    assert b["summary"]["label"] == folder.name
     assert (folder / "report.csv").is_file() and len(list(folder.rglob("*.stl"))) == 3
-    assert not list(folder.parent.glob("*.zip")) and not list(folder.rglob("*.zip"))  # no ZIP written
+    assert not list(folder.parent.parent.rglob("*.zip"))  # no ZIP written anywhere
     r = client.get(f"/api/batches/{bid}/zip")  # optional on-demand download still works
     assert r.status_code == 200 and len([n for n in zipfile.ZipFile(io.BytesIO(r.content)).namelist() if n.endswith(".stl")]) == 3
     states = {o["order_id"]: o["state"] for o in client.get("/api/orders?tab=all&limit=10").json()["orders"]}

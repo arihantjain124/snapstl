@@ -56,10 +56,15 @@ Re-run the script after moving the folder or updating the code. Uninstall the se
 Output per batch:
 
 ```
-<output folder>/batch-001_2026-11-14_231500/
-    bases/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl
-    names/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl
-    report.csv               original sizes, target sizes, scale % per axis, files, warnings
+<output folder>/2026-11-15/                       one folder per day
+    Batch 1 - 2026-11-15/                        numbering restarts at 1 every day
+        Bases/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl
+        Names/pink/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl
+        Names/blue/{Kabir,blue}.stl              one folder per name colour
+        report.csv               original sizes, target sizes, scale % per axis, files, warnings
+    Batch 2 - 2026-11-15/
+<output folder>/2026-11-16/
+    Batch 1 - 2026-11-16/
 ```
 
 ## Troubleshooting

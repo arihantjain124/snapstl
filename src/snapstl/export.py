@@ -18,6 +18,11 @@ _BAD = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 MAX_NAME = 200
 
 
+def clean_part(s: str) -> str:
+    """Safe for a file or folder name."""
+    return _BAD.sub("", s).strip()
+
+
 def _clean(s: str) -> str:
     return _BAD.sub("", s).strip() or "_"
 

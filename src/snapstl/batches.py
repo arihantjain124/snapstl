@@ -389,6 +389,7 @@ class Manager:
             summary = {"ok": res.ok and not missing, "errors": errors, "warnings": res.warnings,
                        "plates": [asdict(p) for p in res.plates], "orders": len(done_ids), "organizers": len(usable)}
             summary["folder"] = str(out)  # plates are left as plain STL files — no ZIP is written
+            summary["label"] = out.name   # "Batch 1 - 2026-11-15" (numbering restarts every day)
             with db.tx() as con:
                 db.finish_batch(con, batch_id, "done" if summary["ok"] else "done_with_problems", summary, done_ids)
             self._log(f"Batch #{batch_id} done: {len(res.plates)} plates")

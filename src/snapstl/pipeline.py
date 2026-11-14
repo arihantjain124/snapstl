@@ -7,6 +7,7 @@ after changing plate or scaling settings.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -49,12 +50,33 @@ class BuildResult:
         return ("bases", idx) in self.files and ("names", idx) in self.files
 
 
+BATCH_RE = re.compile(r"^Batch (\d+) - ")
+
+
 def new_batch_dir(root: str | Path, batch_id: int | None = None) -> Path:
-    stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    name = f"batch-{batch_id:03d}_{stamp}" if batch_id is not None else f"batch-{stamp}"
-    d = Path(root).expanduser() / name
-    d.mkdir(parents=True, exist_ok=False)
-    return d
+    """<root>/<YYYY-MM-DD>/Batch N - <YYYY-MM-DD>; N starts again at 1 every day.
+
+    `batch_id` (the app's internal number) is not part of the folder name.
+    """
+    day = datetime.now().strftime("%Y-%m-%d")
+    day_dir = Path(root).expanduser() / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    taken = [int(m.group(1)) for p in day_dir.iterdir() if (m := BATCH_RE.match(p.name))]
+    n = max(taken, default=0) + 1
+    while True:
+        d = day_dir / f"Batch {n} - {day}"
+        try:
+            d.mkdir()
+            return d
+        except FileExistsError:
+            n += 1
+
+
+def plate_folder(kind: str, color: str) -> str:
+    """Bases/ for all bases; Names/<colour>/ for names (one folder per colour)."""
+    if kind == "bases":
+        return "Bases"
+    return f"Names/{export.clean_part(color) or 'no colour'}"
 
 
 def build(
@@ -93,16 +115,16 @@ def build(
     plates_out: list[PlateOut] = []
     file_of: dict[tuple[str, int], str] = {}
     for plate in base_plates + name_plates:
-        folder = out_dir / plate.kind
+        rel = plate_folder(plate.kind, plate.colors[0])
         progress(f"Writing {plate.kind} plate: {', '.join(o.name for o in plate.orders)}")
-        path, problems = export.write_plate(plate, folder, settings.plate, used)
+        path, problems = export.write_plate(plate, out_dir / rel, settings.plate, used)
         errors.extend(problems)
         for o in plate.orders:
-            file_of[(plate.kind, o.idx)] = f"{plate.kind}/{path.name}"
+            file_of[(plate.kind, o.idx)] = f"{rel}/{path.name}"
         plates_out.append(
             PlateOut(
                 kind=plate.kind,
-                file=f"{plate.kind}/{path.name}",
+                file=f"{rel}/{path.name}",
                 names=[o.name for o in plate.orders],
                 colors=plate.colors,
                 preview=export.preview(plate, settings.plate),

@@ -82,7 +82,8 @@ git tag v0.X.Y                              # optional: tag releases the owner i
 - Before handing the project on: commit everything, then copy the folder **including** `.git`
   (e.g. `git clone /path/to/Snapstl SnapSTL-copy`) so history travels with it. Leave out `.venv/`,
   customer reports (`*.xlsx`) and local data. The owner zips it themselves.
-- Batch builds write plain folders (`bases/`, `names/`, `report.csv`) — **never a ZIP file**.
+- Batch builds write plain folders — `<date>/Batch N - <date>/Bases/`, `Names/<colour>/`, `report.csv`
+  (N restarts daily) — **never a ZIP file**.
 
 ## Keep the docs true
 
