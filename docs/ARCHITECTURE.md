@@ -71,8 +71,10 @@ Decision history (so nobody repeats it):
   "Number of Compartments" is ignored** (unreliable) — compartments come from the scaling table.
 * **Order ID is the primary key** → re-uploading the same or a newer report never duplicates.
   Later reports only update the report status.
-* Stored fields are minimal: order id, clubbed id, date (ISO), report status, quantity, name as
-  typed, name to print, colour. **No customer contact details are stored.**
+* Stored fields: order id, clubbed id, date (ISO), report status, quantity, name as typed, name to
+  print, colour, and — at the owner's request — **customer name, phone and address** (address +
+  city + state + pincode), shown in the Orders table. They stay in the local database on this Mac;
+  re-uploading a report refreshes them.
 
 Order states:
 
@@ -82,7 +84,15 @@ Order states:
 | `needs_review` | `PRINT` but name has a space / removed symbols / non-Latin letters / >15 letters, or no name/colour, or a special request. Edit + Approve in the UI. |
 | `in_batch` | selected into a batch that is still downloading / building |
 | `bundled` | in a finished batch — never made again unless **Remake** |
-| `not_needed` | delivered / in transit / packed / cancelled / returned (or skipped by hand) |
+| `skipped` | skipped by hand (**Skip**) — kept separate from report statuses |
+| `not_needed` | the report says delivered / in transit / packed / cancelled / returned |
+
+Orders screen tabs: **Ready** (sub-tabs **Single** = its clubbed order ID has only this name;
+**Clubbed** = one clubbed order ID linked to several names), Needs review, In a batch, Bundled,
+Skipped, and the *not needed* orders split by report status: **Delivered**, **RTO** (`RTO…`),
+**In Transit**, **Cancelled** (`CANCEL…`), **Others** (e.g. `PACK`), plus All. Every column has a
+filter box (text "contains"; status / colour / qty exact); filters combine with AND and also apply to
+*Select all matching* and *Export CSV*. Text in the app is selectable / copyable.
 
 Name cleaning: emoji and symbols are dropped silently; other characters removed → review;
 colours are lower-cased (`gray` → `grey`). Quantity N → N organizers.
@@ -167,9 +177,9 @@ matching the handoff's 116.56 % / 93.51 %.
 File names:
 
 ```
-names/(Ayra,Manvi,Riya)-(pink).stl
-bases/bases-(Ayra,Manvi,Riya,pink).stl                 all three same colour
-bases/bases-(Kabir,Zoya,Tara,blue,blue,green).stl      mixed colours
+names/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl
+bases/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl
+bases/{Kabir,blue},{Zoya,blue},{Tara,green}.stl        mixed colours (bases only)
 ```
 
 Each STL is one merged mesh in bed coordinates (sits on Z = 0) — open in Bambu Studio as is.
@@ -178,14 +188,25 @@ Each STL is one merged mesh in bed coordinates (sits on Z = 0) — open in Bambu
 
 ## 8. Batches & downloads (batches.py)
 
-1. **Create batch** (selected `ready` orders) → orders become `in_batch`; every model not in the
-   cache is queued in `downloads` (de-duplicated by cache key = name + model options + compartments
-   + license-password hash).
+Batches never start by themselves:
+
+| Status | Meaning | Buttons |
+|---|---|---|
+| `created` | orders reserved (`in_batch`), nothing downloading | **Start download**, Cancel |
+| `waiting` (Downloading) | models queued for the helper | Build plates now (partial), Cancel |
+| `models_ready` | every model downloaded (or failed) | **Build plates**, Cancel |
+| `build_requested` → `building` | plates being made | — |
+| `done` / `done_with_problems` / `failed` / `cancelled` | finished | Open, ZIP, Show in Finder |
+
+1. **Create batch** (selected `ready` orders) → `created`. **Start download** queues every model not
+   in the cache in `downloads` (de-duplicated by cache key = name + model options + compartments +
+   license-password hash).
 2. **The helper** works through the queue (one MakerWorld tab, one name at a time). Failed names
    retry once, then show as *Failed* (Retry button). Pausing, a closed tab or an app restart never
    loses work: interrupted names go back to *Waiting* (claims also expire after 6 minutes).
-3. **Builder thread** builds a batch as soon as all its models are cached (or on **Build now** with
-   what's ready — orders still missing a model go back to `ready`).
+3. When all models are in, the batch becomes `models_ready`. The **builder thread** builds only after
+   **Build plates** (or *Build plates now* with what's ready — orders still missing a model go back
+   to `ready`).
 4. Output: `<output>/batch-NNN_<date>/{bases/, names/, report.csv}` + `batch-NNN_<date>.zip`.
    Orders become `bundled`. Leftover downloads nobody needs are cancelled automatically.
 
@@ -207,7 +228,7 @@ Each STL is one merged mesh in bed coordinates (sits on Z = 0) — open in Bambu
 * Optional password (`uv run snapstl-admin set-password`) enables a login page + signed session
   cookie — only needed if the portal is ever exposed beyond this Mac.
 * The helper extension is accepted only on `/api/helper/*` from this Mac.
-* Secrets only in the Keychain; the order report's customer contact data is never stored.
+* Secrets only in the Keychain. Customer name/phone/address are stored only in the local database.
 
 ---
 

@@ -57,6 +57,10 @@ th{color:var(--muted);font-weight:500;font-size:12px;white-space:nowrap}
 .edit{display:flex;gap:4px;min-width:260px}.edit input{padding:3px 6px}
 .reason{font-size:12px;color:var(--warn)}
 section[hidden]{display:none}
+body,td,th,.hint,.pill,code{-webkit-user-select:text;user-select:text}
+.frow th{padding:3px 4px}.frow input,.frow select{padding:3px 5px;font-size:12px;min-width:60px}
+.otable td.addr{max-width:220px;font-size:12px}
+.club{font-size:11px;color:var(--accent)}
 iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;background:#000}
 @media (max-width:700px){header{gap:6px}.bar{display:none}}
 </style>
@@ -81,11 +85,11 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
   </div>
   <div class="card">
     <div class="chips" id="chips"></div>
+    <div class="chips" id="subchips"></div>
     <div class="toolbar">
-      <input id="q" placeholder="Search name or order ID" style="max-width:260px">
-      <select id="colorf"><option value="">All colours</option></select>
-      <span class="grow"></span>
-      <a class="btn" href="/api/orders.csv">Export CSV</a>
+      <button id="fclear" class="small">Clear filters</button>
+      <span class="grow hint">Type in the boxes under the column names to filter; filters combine.</span>
+      <a class="btn" id="csvlink" href="/api/orders.csv?tab=all">Export CSV</a>
     </div>
     <div class="toolbar" id="selbar">
       <span id="selcount" class="hint">No orders selected</span>
@@ -94,7 +98,8 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
       <span class="grow"></span>
       <button id="mkbatch" class="primary" disabled>Create batch</button>
     </div>
-    <div class="tw"><table><thead><tr><th><input type="checkbox" id="pagecheck" title="Select this page"></th><th>Order</th><th>Date</th><th>Report status</th><th>Name to print</th><th>Colour</th><th>Qty</th><th>Size L×H · comp.</th><th>State</th><th></th></tr></thead>
+    <div class="tw"><table class="otable"><thead><tr><th><input type="checkbox" id="pagecheck" title="Select this page"></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Address</th><th>Report status</th><th>Name to print</th><th>Colour</th><th>Qty</th><th>Size L×H · comp.</th><th>State</th><th></th></tr>
+    <tr class="frow"><th></th><th><input data-f="order" placeholder="filter"></th><th><input data-f="date" placeholder="2026-11"></th><th><input data-f="customer" placeholder="filter"></th><th><input data-f="phone" placeholder="filter"></th><th><input data-f="address" placeholder="filter"></th><th><select data-f="status"><option value="">all</option></select></th><th><input data-f="name" placeholder="filter"></th><th><select data-f="color"><option value="">all</option></select></th><th><input data-f="qty" placeholder="=" style="width:44px"></th><th></th><th></th><th></th></tr></thead>
     <tbody id="orders"></tbody></table></div>
     <div class="toolbar" style="margin-top:8px"><span class="hint grow" id="pageinfo"></span><button id="prev" class="small">Previous</button><button id="next" class="small">Next</button></div>
   </div>
@@ -192,8 +197,10 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
 <script>
 const $=id=>document.getElementById(id);
 const COLORS={pink:'#f4a7c0','hot pink':'#ff4fa0','baby pink':'#f9c9d9',lavender:'#b9a3e3',red:'#e5534b',orange:'#f39a3d',yellow:'#f2d04b',green:'#5fb36a',blue:'#4a86d9','baby blue':'#9fd0f3','sky blue':'#7cc4f0',purple:'#9a6bd1',black:'#333',white:'#fafafa',grey:'#999',lightgray:'#ccc'};
-const STATES=[['ready','Ready','ok'],['needs_review','Needs review','warn'],['in_batch','In a batch','info'],['bundled','Bundled','info'],['not_needed','Not needed','']];
-let S=null,META=null,filter={state:'ready',q:'',color:'',offset:0},LIMIT=100,openBatch=null,tab='orders';
+const STATES=[['ready','Ready','ok'],['needs_review','Needs review','warn'],['in_batch','In a batch','info'],['bundled','Bundled','info'],['skipped','Skipped',''],['not_needed','Not needed','']];
+const TABS=[['ready','Ready'],['needs_review','Needs review'],['in_batch','In a batch'],['bundled','Bundled'],['skipped','Skipped'],['delivered','Delivered'],['rto','RTO'],['in_transit','In Transit'],['cancelled','Cancelled'],['others','Others'],['all','All']];
+const SUBTABS=[['ready','All ready'],['ready_single','Single'],['ready_clubbed','Clubbed']];
+let S=null,META=null,filter={tab:'ready',f:{},offset:0},LIMIT=100,openBatch=null,tab='orders',FACETS=null;
 const SEL=new Set();
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(path,opts={}){const r=await fetch(path,opts);if(r.status===401){location.href='/login';throw new Error('Signed out')}const t=await r.text();let j;try{j=JSON.parse(t)}catch{j={detail:t}}if(!r.ok)throw new Error(j.detail||r.statusText);return j}
@@ -208,11 +215,12 @@ function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.cl
 
 // ---------- orders ----------
 async function loadOrders(){
-  const p=new URLSearchParams({state:filter.state,q:filter.q,color:filter.color,limit:LIMIT,offset:filter.offset});
+  const p=filterParams({limit:LIMIT,offset:filter.offset});
   const r=await api('/api/orders?'+p);
   $('pageinfo').textContent=r.total?`${filter.offset+1}–${Math.min(filter.offset+LIMIT,r.total)} of ${r.total}`:'';
   $('prev').disabled=filter.offset===0; $('next').disabled=filter.offset+LIMIT>=r.total;
-  if(!r.orders.length){$('orders').innerHTML='<tr><td colspan="10" class="empty">No orders here</td></tr>';$('pagecheck').checked=false;return}
+  $('csvlink').href='/api/orders.csv?'+filterParams({});
+  if(!r.orders.length){$('orders').innerHTML='<tr><td colspan="13" class="empty">No orders here</td></tr>';$('pagecheck').checked=false;return}
   PAGE=r.orders.filter(o=>o.state==='ready').map(o=>o.order_id);
   $('orders').innerHTML=r.orders.map(o=>{
     const st=STATES.find(s=>s[0]===o.state)||[o.state,o.state,''];
@@ -223,7 +231,8 @@ async function loadOrders(){
       :(o.state==='ready'||o.state==='needs_review')?`<button class="small" data-skip="${esc(o.order_id)}">Skip</button>`
       :`<button class="small" data-reset="${esc(o.order_id)}">Make anyway</button>`;
     const cb=o.state==='ready'?`<input type="checkbox" data-sel="${esc(o.order_id)}" ${SEL.has(o.order_id)?'checked':''}>`:'';
-    return `<tr><td>${cb}</td><td><span title="${esc(o.clubbed_id)}">${esc(o.order_id)}</span></td><td style="white-space:nowrap">${esc(o.order_date)}</td><td>${esc(o.source_status)}</td><td>${nameCell}</td><td>${o.state==='needs_review'?'':sw(o.color)}</td><td>${o.quantity}</td><td>${o.target?`${o.target[0]}×${o.target[1]} · ${o.compartments}`:'—'}</td><td><span class="pill ${st[2]}">${st[1]}</span></td><td>${act}</td></tr>`}).join('');
+    const club=o.clubbed_id?`<div class="club" title="Clubbed order ID">${o.clubbed?'clubbed · ':''}${esc(o.clubbed_id)}</div>`:'';
+    return `<tr><td>${cb}</td><td>${esc(o.order_id)}${club}</td><td style="white-space:nowrap">${esc(o.order_date)}</td><td>${esc(o.customer_name)}</td><td style="white-space:nowrap">${esc(o.phone)}</td><td class="addr">${esc(o.address)}</td><td>${esc(o.source_status)}</td><td>${nameCell}</td><td>${o.state==='needs_review'?'':sw(o.color)}</td><td>${o.quantity}</td><td>${o.target?`${o.target[0]}×${o.target[1]} · ${o.compartments}`:'—'}</td><td><span class="pill ${st[2]}">${st[1]}</span></td><td>${act}</td></tr>`}).join('');
   document.querySelectorAll('[data-ok]').forEach(b=>b.onclick=async()=>{const id=b.dataset.ok;
     const n=document.querySelector(`[data-n="${CSS.escape(id)}"]`).value, c=document.querySelector(`[data-c="${CSS.escape(id)}"]`).value;
     try{await post(`/api/orders/${encodeURIComponent(id)}/name`,{name:n,color:c});refreshAll()}catch(e){alert(e.message)}});
@@ -238,18 +247,25 @@ function selUI(){$('selcount').textContent=SEL.size?`${SEL.size} order${SEL.size
   $('mkbatch').disabled=!SEL.size;$('mkbatch').textContent=SEL.size?`Create batch (${SEL.size})`:'Create batch';
   $('pagecheck').checked=PAGE.length>0&&PAGE.every(id=>SEL.has(id))}
 $('pagecheck').onchange=()=>{for(const id of PAGE)$('pagecheck').checked?SEL.add(id):SEL.delete(id);loadOrders()};
-$('selall').onclick=async()=>{const ids=await api('/api/orders/ids?'+new URLSearchParams({state:'ready',q:filter.q,color:filter.color}));ids.forEach(i=>SEL.add(i));loadOrders()};
+$('selall').onclick=async()=>{const ids=await api('/api/orders/ids?'+filterParams({}));ids.forEach(i=>SEL.add(i));loadOrders()};
+function filterParams(extra){const p=new URLSearchParams({tab:filter.tab,...extra});for(const [k,v] of Object.entries(filter.f))if(v)p.set('f_'+k,v);return p}
+let ft;document.querySelectorAll('.frow [data-f]').forEach(el=>{const go=()=>{filter.f[el.dataset.f]=el.value.trim();filter.offset=0;loadOrders()};
+  if(el.tagName==='SELECT')el.onchange=go;else el.oninput=()=>{clearTimeout(ft);ft=setTimeout(go,250)}});
+$('fclear').onclick=()=>{filter.f={};document.querySelectorAll('.frow [data-f]').forEach(el=>el.value='');filter.offset=0;loadOrders()};
+async function loadFacets(){FACETS=await api('/api/orders/facets?tab='+filter.tab);renderChips(FACETS.tabs);
+  for(const [k,vals] of [['status',FACETS.statuses],['color',FACETS.colors]]){const el=document.querySelector(`.frow [data-f="${k}"]`);const cur=el.value;
+    el.innerHTML='<option value="">all</option>'+vals.map(v=>`<option ${v===cur?'selected':''}>${esc(v)}</option>`).join('')}}
 $('selclear').onclick=()=>{SEL.clear();loadOrders()};
 $('mkbatch').onclick=async()=>{if(!SEL.size)return;
   try{const r=await post('/api/batches',{order_ids:[...SEL]});SEL.clear();
-    $('ingestres').innerHTML=`<div class="o">Batch #${r.batch_id} created with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped — not ready)`:''}. ${r.downloads_queued?`${r.downloads_queued} model(s) will be downloaded from MakerWorld.`:'All models already downloaded — building now.'}</div>`;
+    $('ingestres').innerHTML=`<div class="o">Batch #${r.batch_id} created with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped — not ready)`:''}. Go to <b>Batches</b> and press <b>Start download</b>.</div>`;
     refreshAll()}catch(e){alert(e.message)}};
 function renderChips(counts){
-  $('chips').innerHTML=STATES.map(([k,l])=>`<button data-s="${k}" class="${filter.state===k?'on':''}">${l} · ${counts[k]||0}</button>`).join('')+`<button data-s="" class="${filter.state===''?'on':''}">All</button>`;
-  document.querySelectorAll('#chips button').forEach(b=>b.onclick=()=>{filter.state=b.dataset.s;filter.offset=0;renderChips(counts);loadOrders()});
+  const top=filter.tab.startsWith('ready')?'ready':filter.tab;
+  $('chips').innerHTML=TABS.map(([k,l])=>`<button data-s="${k}" class="${top===k?'on':''}">${l} · ${counts[k]||0}</button>`).join('');
+  $('subchips').innerHTML=top==='ready'?SUBTABS.map(([k,l])=>`<button data-s="${k}" class="${filter.tab===k?'on':''}">${l} · ${counts[k]||0}</button>`).join(''):'';
+  document.querySelectorAll('#chips button,#subchips button').forEach(b=>b.onclick=()=>{filter.tab=b.dataset.s;filter.offset=0;loadFacets();loadOrders()});
 }
-let qt;$('q').oninput=()=>{clearTimeout(qt);qt=setTimeout(()=>{filter.q=$('q').value.trim();filter.offset=0;loadOrders()},250)};
-$('colorf').onchange=()=>{filter.color=$('colorf').value;filter.offset=0;loadOrders()};
 $('prev').onclick=()=>{filter.offset=Math.max(0,filter.offset-LIMIT);loadOrders()};
 $('next').onclick=()=>{filter.offset+=LIMIT;loadOrders()};
 $('report').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('ingestmsg').textContent='Reading '+f.name+'…';
@@ -259,16 +275,20 @@ $('report').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('ingestm
     refreshAll()}catch(err){$('ingestmsg').textContent='';$('ingestres').innerHTML=`<div class="e">${esc(err.message)}</div>`}e.target.value=''};
 
 // ---------- batches ----------
-const BST={waiting:['Waiting for models','info'],build_requested:['Building soon','info'],building:['Building','info'],done:['Done','ok'],done_with_problems:['Done with problems','warn'],failed:['Failed','err'],cancelled:['Cancelled','']};
+const BST={created:['Created — not started',''],waiting:['Downloading','info'],models_ready:['Ready to build','ok'],build_requested:['Building soon','info'],building:['Building','info'],done:['Done','ok'],done_with_problems:['Done with problems','warn'],failed:['Failed','err'],cancelled:['Cancelled','']};
 async function loadBatches(){const bs=await api('/api/batches');
   $('batches').innerHTML=bs.length?bs.map(b=>{const st=BST[b.status]||[b.status,''];const p=b.progress;const active=!!p;const finished=b.status.startsWith('done');
     const models=p?`${p.ready}/${p.models}${p.failed?` <span class="reason">${p.failed} failed</span>`:''}<div class="bar" style="margin-top:4px"><i style="width:${p.models?100*p.ready/p.models:0}%"></i></div>`:'—';
     const acts=[`<button class="small" data-b="${b.id}">Open</button>`];
     if(finished)acts.push(`<a class="btn small" href="/api/batches/${b.id}/zip">ZIP</a>`);
-    if(b.status==='waiting')acts.push(`<button class="small" data-build="${b.id}" title="Build plates now with the models that are ready; the rest go back to Ready">Build now</button>`,`<button class="small" data-cancel="${b.id}">Cancel</button>`);
+    if(b.status==='created')acts.push(`<button class="small primary" data-dl="${b.id}">Start download</button>`);
+    if(b.status==='models_ready')acts.push(`<button class="small primary" data-build="${b.id}">Build plates</button>`);
+    if(b.status==='waiting')acts.push(`<button class="small" data-build="${b.id}" data-partial="1" title="Build with the models that are ready; orders still missing a model go back to Ready">Build plates now</button>`);
+    if(['created','waiting','models_ready'].includes(b.status))acts.push(`<button class="small" data-cancel="${b.id}">Cancel</button>`);
     return `<tr><td>${b.id}</td><td>${new Date(b.created_at*1000).toLocaleString()}</td><td>${b.orders}</td><td>${models}</td><td>${b.plates||'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${acts.join(' ')}</td></tr>`}).join(''):'<tr><td colspan="7" class="empty">No batches yet — select orders on the Orders tab</td></tr>';
   document.querySelectorAll('[data-b]').forEach(x=>x.onclick=()=>openBatchDetail(+x.dataset.b));
-  document.querySelectorAll('[data-build]').forEach(x=>x.onclick=async()=>{if(confirm('Build now with the models that are ready? Orders still missing a model go back to Ready.')){try{await post(`/api/batches/${x.dataset.build}/build`)}catch(e){alert(e.message)}loadBatches()}});
+  document.querySelectorAll('[data-dl]').forEach(x=>x.onclick=async()=>{try{const r=await post(`/api/batches/${x.dataset.dl}/download`);$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for the helper`}catch(e){alert(e.message)}loadBatches();loadQueue()});
+  document.querySelectorAll('[data-build]').forEach(x=>x.onclick=async()=>{if(x.dataset.partial&&!confirm('Build now with the models that are ready? Orders still missing a model go back to Ready.'))return;try{await post(`/api/batches/${x.dataset.build}/build`)}catch(e){alert(e.message)}loadBatches()});
   document.querySelectorAll('[data-cancel]').forEach(x=>x.onclick=async()=>{if(confirm('Cancel this batch? Its orders go back to Ready.')){try{await post(`/api/batches/${x.dataset.cancel}/cancel`)}catch(e){alert(e.message)}refreshAll();loadBatches()}});
   if(openBatch&&!$('bdetail').hidden)openBatchDetail(openBatch,true)}
 function plateSVG(p){const [bx,by]=p.preview.bed,m=p.preview.margin;const fill=p.kind==='bases'?'#ffffff':(COLORS[p.colors[0]]||'#bbb');
@@ -276,7 +296,8 @@ function plateSVG(p){const [bx,by]=p.preview.bed,m=p.preview.margin;const fill=p
   return `<svg viewBox="-2 -2 ${bx+4} ${by+4}"><rect width="${bx}" height="${by}" rx="4" fill="var(--bed)" stroke="var(--line)"/><rect x="${m}" y="${m}" width="${bx-2*m}" height="${by-2*m}" fill="none" stroke="var(--line)" stroke-dasharray="3 3"/>${parts}</svg>`}
 async function openBatchDetail(id,quiet){openBatch=id;const b=await api('/api/batches/'+id);const s=b.summary||{};
   $('bdetail').hidden=false;$('btitle').textContent=`Batch #${id} · ${b.order_ids.length} orders`;$('bzip').href=`/api/batches/${id}/zip`;$('bzip').hidden=!b.status.startsWith('done');
-  if(b.progress){$('bmsgs').innerHTML=`<div class="w">Downloading from MakerWorld: ${b.progress.ready} of ${b.progress.models} models done${b.progress.failed?`, ${b.progress.failed} failed`:''}.</div>`;$('bbases').innerHTML=$('bnames').innerHTML='<div class="empty">Plates appear when the batch is built</div>';return}
+  if(b.progress){const P=b.progress;const msg=b.status==='created'?`Not started: press <b>Start download</b> (${P.ready} of ${P.models} models already downloaded).`:b.status==='models_ready'?`All models downloaded (${P.ready}/${P.models}${P.failed?`, ${P.failed} failed`:''}) — press <b>Build plates</b>.`:`Downloading from MakerWorld: ${P.ready} of ${P.models} models done${P.failed?`, ${P.failed} failed`:''}.`;
+    $('bmsgs').innerHTML=`<div class="w">${msg}</div>`;$('bbases').innerHTML=$('bnames').innerHTML='<div class="empty">Plates appear when the batch is built</div>';return}
   $('bmsgs').innerHTML=(s.zip?`<div class="o">Saved to ${esc(s.zip)}</div>`:'')+(s.errors||[]).map(e=>`<div class="e">${esc(e)}</div>`).join('')+(s.warnings||[]).map(w=>`<div class="w">${esc(w)}</div>`).join('')+(s.ok&&!(s.warnings||[]).length?'<div class="o">All plates passed the checks.</div>':'');
   for(const k of ['bases','names']){const ps=(s.plates||[]).filter(p=>p.kind===k);
     $('b'+k).innerHTML=ps.length?ps.map(p=>`<a class="plate" data-file="${esc(p.file)}" href="/api/batches/${id}/file?path=${encodeURIComponent(p.file)}">${plateSVG(p)}<div class="fn">${esc(p.file.split('/').pop())}</div>${p.warnings.map(w=>`<div class="hint" style="color:var(--warn)">${esc(w)}</div>`).join('')}</a>`).join(''):'<div class="empty">None</div>'}
@@ -345,8 +366,7 @@ async function refresh(){try{const st=await api('/api/state');
   $('queueinfo').textContent=`Download queue: ${q.queued||0} waiting, ${q.claimed||0} in progress, ${q.done||0} done${q.failed?`, ${q.failed} failed`:''}`;$('retry').hidden=!q.failed;
   licHint(st.license_set);
   const key=JSON.stringify(st.counts)+JSON.stringify(q)+st.building;
-  if(key!==lastKey){lastKey=key;renderChips(st.counts);
-    const cur=$('colorf').value;$('colorf').innerHTML='<option value="">All colours</option>'+st.ready_colors.map(c=>`<option value="${esc(c.color)}" ${c.color===cur?'selected':''}>${esc(c.color||'(none)')} · ${c.n} ready</option>`).join('');
+  if(key!==lastKey){lastKey=key;loadFacets();
     if(tab==='orders')loadOrders(); if(tab==='batches')loadBatches()}
   if(tab==='batches')loadQueue();
   const log=$('log');const atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-4;log.textContent=st.log.join('\n');if(atEnd)log.scrollTop=log.scrollHeight;

@@ -60,7 +60,8 @@ def _open_window(url: str) -> None:
         import webview
 
         webview.settings["ALLOW_DOWNLOADS"] = True
-        webview.create_window("SnapSTL", url, width=1320, height=880, min_size=(900, 640), js_api=_WindowApi())
+        webview.create_window("SnapSTL", url, width=1320, height=880, min_size=(900, 640), js_api=_WindowApi(),
+                              text_select=True)  # allow selecting / copying text (off by default in pywebview)
         webview.start()
     except Exception:  # noqa: BLE001 — no native window available: use the browser
         webbrowser.open(url)

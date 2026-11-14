@@ -41,9 +41,12 @@ Re-run the script after moving the folder or updating the code. Uninstall the se
 
 1. **Orders → Upload report (.xlsx)** — the webstore *Order Reconciliation Report*. Only new
    `Magicians_35` orders are added; re-uploading never duplicates. Orders already delivered,
-   in transit, packed or cancelled are recorded as *Not needed*.
+   in transit, packed, returned or cancelled go to those tabs and are never made.
 2. **Needs review** — fix names (spaces, symbols, missing colour) and **Approve**.
-3. Tick orders (or **Select all matching** a colour) → **Create batch**.
+   Tabs: Ready (Single / Clubbed), Needs review, In a batch, Bundled, Skipped, Delivered, RTO,
+   In Transit, Cancelled, Others, All. Filter any column with the boxes under its heading.
+3. Tick orders (or **Select all matching** your filters) → **Create batch**.
+   On **Batches**: press **Start download**; when it says *Ready to build*, press **Build plates**.
 4. The helper (in your MakerWorld tab) generates each name, one at a time — the header shows what
    it's doing. If MakerWorld shows a security check in that tab, just complete it; it carries on.
 5. **Batches** tab: progress per batch and the **Download queue**. When a batch is done:
@@ -54,8 +57,8 @@ Output per batch:
 
 ```
 <output folder>/batch-001_2026-11-14_231500/
-    bases/bases-(Ayra,Manvi,Riya,pink).stl
-    names/(Ayra,Manvi,Riya)-(pink).stl
+    bases/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl
+    names/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl
     report.csv               original sizes, target sizes, scale % per axis, files, warnings
 <output folder>/batch-001_2026-11-14_231500.zip
 ```

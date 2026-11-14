@@ -162,61 +162,116 @@ def _order_view(r: dict) -> dict:
     band = pick_band(letters, SETTINGS.scaling.bands) if letters else None
     return {
         "order_id": r["order_id"], "clubbed_id": r["clubbed_id"], "order_date": r["order_date"],
+        "customer_name": r.get("customer_name") or "", "phone": r.get("phone") or "", "address": r.get("address") or "",
         "source_status": r["source_status"], "quantity": r["quantity"], "raw_name": r["raw_name"],
         "raw_color": r["raw_color"], "special_request": r["special_request"], "name": r["name"],
         "color": r["color"], "name_edited": bool(r["name_edited"]), "review_reason": r["review_reason"],
         "state": r["state"], "batch_id": r["batch_id"], "last_error": r["last_error"], "letters": letters,
+        "clubbed": bool(r.get("club_size", 1) > 1),
         "target": [min(band.length, SETTINGS.scaling.max_length), band.height] if band else None,
         "compartments": compartments_for(letters, SETTINGS) if letters else None,
     }
 
 
-@app.get("/api/orders")
-def list_orders(state: str = "", q: str = "", color: str = "", limit: int = 200, offset: int = 0):
-    where, args = [], []
-    if state:
-        where.append("state=?")
-        args.append(state)
-    if color:
-        where.append("color=?")
-        args.append(color)
+# Order tabs. "Not needed" orders are split by their webstore report status.
+_CLUB = ("(CASE WHEN COALESCE(clubbed_id,'')='' THEN 1 ELSE "
+         "(SELECT COUNT(*) FROM orders o2 WHERE o2.clubbed_id=orders.clubbed_id) END)")
+_NN = "state='not_needed' AND "
+TABS = {
+    "ready": "state='ready'",
+    "ready_single": f"state='ready' AND {_CLUB} <= 1",
+    "ready_clubbed": f"state='ready' AND {_CLUB} > 1",
+    "needs_review": "state='needs_review'",
+    "in_batch": "state='in_batch'",
+    "bundled": "state='bundled'",
+    "skipped": "state='skipped'",
+    "delivered": _NN + "UPPER(source_status)='DELIVERED'",
+    "rto": _NN + "UPPER(source_status) LIKE 'RTO%'",
+    "in_transit": _NN + "REPLACE(REPLACE(UPPER(source_status),'_','-'),' ','-')='IN-TRANSIT'",
+    "cancelled": _NN + "UPPER(source_status) LIKE 'CANCEL%'",
+    "others": _NN + "NOT (UPPER(source_status)='DELIVERED' OR UPPER(source_status) LIKE 'RTO%' OR "
+              "REPLACE(REPLACE(UPPER(source_status),'_','-'),' ','-')='IN-TRANSIT' OR UPPER(source_status) LIKE 'CANCEL%')",
+    "all": "1=1",
+}
+# Per-column filters: name → (SQL expression, exact match?)
+FILTERS = {
+    "order": ("order_id || ' ' || COALESCE(clubbed_id,'')", False),
+    "date": ("order_date", False),
+    "customer": ("customer_name", False),
+    "phone": ("phone", False),
+    "address": ("address", False),
+    "status": ("source_status", True),
+    "name": ("COALESCE(name,'') || ' ' || COALESCE(raw_name,'')", False),
+    "color": ("color", True),
+    "qty": ("CAST(quantity AS TEXT)", True),
+}
+
+
+def _where(request: Request, tab: str) -> tuple[str, list]:
+    if tab not in TABS:
+        raise HTTPException(400, f"Unknown tab {tab!r}")
+    where, args = [TABS[tab]], []
+    for key, (expr, exact) in FILTERS.items():
+        v = (request.query_params.get("f_" + key) or "").strip()
+        if not v:
+            continue
+        if exact:
+            where.append(f"COALESCE({expr},'') = ?")
+            args.append(v)
+        else:
+            where.append(f"COALESCE({expr},'') LIKE ?")
+            args.append(f"%{v}%")
+    q = (request.query_params.get("q") or "").strip()
     if q:
-        where.append("(order_id LIKE ? OR name LIKE ? OR raw_name LIKE ? OR clubbed_id LIKE ?)")
-        args += [f"%{q}%"] * 4
-    sql_where = ("WHERE " + " AND ".join(where)) if where else ""
+        where.append("(order_id LIKE ? OR name LIKE ? OR raw_name LIKE ? OR clubbed_id LIKE ? OR customer_name LIKE ? OR phone LIKE ?)")
+        args += [f"%{q}%"] * 6
+    return " AND ".join(where), args
+
+
+@app.get("/api/orders")
+def list_orders(request: Request, tab: str = "ready", limit: int = 200, offset: int = 0):
+    w, args = _where(request, tab)
     limit = max(1, min(limit, 1000))
     with db.tx() as con:
-        total = con.execute(f"SELECT COUNT(*) FROM orders {sql_where}", args).fetchone()[0]
-        rs = db.rows(con, f"SELECT * FROM orders {sql_where} ORDER BY order_date DESC, order_id LIMIT ? OFFSET ?",
+        total = con.execute(f"SELECT COUNT(*) FROM orders WHERE {w}", args).fetchone()[0]
+        rs = db.rows(con, f"SELECT *, {_CLUB} AS club_size FROM orders WHERE {w} "
+                          "ORDER BY order_date DESC, COALESCE(clubbed_id,''), order_id LIMIT ? OFFSET ?",
                      *args, limit, offset)
     return {"total": total, "orders": [_order_view(r) for r in rs]}
 
 
 @app.get("/api/orders/ids")
-def order_ids(state: str = "ready", q: str = "", color: str = ""):
-    """All order IDs matching a filter (for 'select all matching')."""
-    where, args = ["state=?"], [state]
-    if color:
-        where.append("color=?")
-        args.append(color)
-    if q:
-        where.append("(order_id LIKE ? OR name LIKE ? OR raw_name LIKE ? OR clubbed_id LIKE ?)")
-        args += [f"%{q}%"] * 4
+def order_ids(request: Request, tab: str = "ready"):
+    """All selectable (ready) order IDs matching the current tab + filters ('Select all matching')."""
+    w, args = _where(request, tab)
     with db.tx() as con:
-        rs = db.rows(con, f"SELECT order_id FROM orders WHERE {' AND '.join(where)} ORDER BY order_date, order_id", *args)
+        rs = db.rows(con, f"SELECT order_id FROM orders WHERE {w} AND state='ready' ORDER BY order_date, order_id", *args)
     return [r["order_id"] for r in rs]
 
 
-@app.get("/api/orders.csv")
-def export_orders():
+@app.get("/api/orders/facets")
+def order_facets(request: Request, tab: str = "ready"):
+    """Tab counts plus the values offered in the status / colour filter dropdowns."""
     with db.tx() as con:
-        rs = db.rows(con, "SELECT order_id,clubbed_id,order_date,source_status,quantity,raw_name,name,raw_color,color,"
-                          "state,batch_id,review_reason,last_error,first_file,last_file FROM orders ORDER BY order_date")
+        counts = {k: con.execute(f"SELECT COUNT(*) FROM orders WHERE {v}").fetchone()[0] for k, v in TABS.items()}
+        w = TABS.get(tab, "1=1")
+        statuses = [r["v"] for r in db.rows(con, f"SELECT DISTINCT source_status v FROM orders WHERE {w} ORDER BY v")]
+        colors = [r["v"] for r in db.rows(con, f"SELECT DISTINCT COALESCE(color,'') v FROM orders WHERE {w} ORDER BY v")]
+    return {"tabs": counts, "statuses": statuses, "colors": colors}
+
+
+@app.get("/api/orders.csv")
+def export_orders(request: Request, tab: str = "all"):
+    w, args = _where(request, tab)
+    with db.tx() as con:
+        rs = db.rows(con, "SELECT order_id,clubbed_id,order_date,customer_name,phone,address,source_status,quantity,"
+                          "raw_name,name,raw_color,color,state,batch_id,review_reason,last_error,first_file,last_file "
+                          f"FROM orders WHERE {w} ORDER BY order_date", *args)
     f = io.StringIO()
     if rs:
-        w = csv.DictWriter(f, fieldnames=list(rs[0]))
-        w.writeheader()
-        w.writerows(rs)
+        wr = csv.DictWriter(f, fieldnames=list(rs[0]))
+        wr.writeheader()
+        wr.writerows(rs)
     return StreamingResponse(iter([f.getvalue()]), media_type="text/csv",
                              headers={"Content-Disposition": "attachment; filename=snapstl-orders.csv"})
 
@@ -244,7 +299,7 @@ def reset_order(order_id: str):
 @app.post("/api/orders/{order_id}/skip")
 def skip_order(order_id: str):
     with db.tx() as con:
-        con.execute("UPDATE orders SET state='not_needed', updated_at=? WHERE order_id=? AND state IN ('ready','needs_review')",
+        con.execute("UPDATE orders SET state='skipped', updated_at=? WHERE order_id=? AND state IN ('ready','needs_review')",
                     (db.now(), order_id))
     return {"ok": True}
 
@@ -258,6 +313,14 @@ async def new_batch(req: Request):
         raise HTTPException(400, "; ".join(errs))
     try:
         return B.create_batch([str(x) for x in body.get("order_ids", [])][:2000], SETTINGS)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/batches/{batch_id}/download")
+def batch_download(batch_id: int):
+    try:
+        return B.start_download(batch_id)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
@@ -417,7 +480,7 @@ def batches():
             "orders": len(json.loads(r["order_ids"] or "[]")),
             "plates": len(summ.get("plates", [])), "errors": len(summ.get("errors", [])),
         }
-        if r["status"] in B.ACTIVE:
+        if r["status"] in B.OPEN:
             item["progress"] = B.batch_progress(r)
         out.append(item)
     return out
@@ -436,7 +499,7 @@ def batch(batch_id: int):
     r = _batch(batch_id)
     return {"id": r["id"], "created_at": r["created_at"], "status": r["status"],
             "order_ids": json.loads(r["order_ids"] or "[]"), "summary": json.loads(r["summary"] or "{}"),
-            "progress": B.batch_progress(r) if r["status"] in B.ACTIVE else None}
+            "progress": B.batch_progress(r) if r["status"] in B.OPEN else None}
 
 
 @app.get("/api/batches/{batch_id}/file")

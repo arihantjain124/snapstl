@@ -111,9 +111,9 @@ def test_grouping_by_color(meshes_for):
     assert set(bplates[0].colors) == {"pink"}  # full colour group first
     assert sum(sizes) == len(orders)
     names = [plate_filename(p) for p in bplates]
-    assert names[0] == "bases-(Ayra,Manvi,Riya,pink).stl"
-    assert names[1] == "bases-(Kabir,Zoya,Tara,blue,blue,green).stl"
-    assert plate_filename(nplates[0]) == "(Ayra,Manvi,Riya)-(pink).stl"
+    assert names[0] == "{Ayra,pink},{Manvi,pink},{Riya,pink}.stl"
+    assert names[1] == "{Kabir,blue},{Zoya,blue},{Tara,green}.stl"
+    assert plate_filename(nplates[0]) == "{Ayra,pink},{Manvi,pink},{Riya,pink}.stl"
 
 
 def test_build_writes_valid_files(tmp_path: Path, meshes_for):
@@ -123,10 +123,10 @@ def test_build_writes_valid_files(tmp_path: Path, meshes_for):
     assert res.ok, res.errors
     files = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.stl"))
     assert files == [
-        "bases/bases-(Ayra,Manvi,Aishwarya,pink).stl",
-        "bases/bases-(Kabir,blue).stl",
-        "names/(Ayra,Manvi,Aishwarya)-(pink).stl",
-        "names/(Kabir)-(blue).stl",
+        "bases/{Ayra,pink},{Manvi,pink},{Aishwarya,pink}.stl",
+        "bases/{Kabir,blue}.stl",
+        "names/{Ayra,pink},{Manvi,pink},{Aishwarya,pink}.stl",
+        "names/{Kabir,blue}.stl",
     ]
     m = trimesh.load(tmp_path / files[2], force="mesh")
     lo, hi = m.bounds
@@ -141,4 +141,4 @@ def test_duplicate_names_and_copies(tmp_path: Path, meshes_for):
     assert res.ok, res.errors
     assert all(res.complete(o.idx) for o in orders)
     names = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.stl"))
-    assert "names/(Anaya,Anaya,Anaya)-(pink).stl" in names
+    assert "names/{Anaya,pink},{Anaya,pink},{Anaya,pink}.stl" in names

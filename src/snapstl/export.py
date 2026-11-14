@@ -23,13 +23,8 @@ def _clean(s: str) -> str:
 
 
 def plate_filename(plate: Plate) -> str:
-    names = [_clean(o.name) for o in plate.orders]
-    colors = [_clean(c) for c in plate.colors]
-    if plate.kind == "names":
-        stem = f"({','.join(names)})-({colors[0]})"
-    else:
-        tail = [colors[0]] if len(set(colors)) == 1 else colors
-        stem = f"bases-({','.join(names + tail)})"
+    """{Ayra,pink},{Manvi,pink},{Riya,blue}.stl — same scheme for bases/ and names/ (folders tell them apart)."""
+    stem = ",".join("{" + _clean(o.name) + "," + _clean(o.color) + "}" for o in plate.orders)
     if len(stem) > MAX_NAME:
         h = hashlib.sha1(stem.encode()).hexdigest()[:8]
         stem = stem[: MAX_NAME - 10] + "~" + h

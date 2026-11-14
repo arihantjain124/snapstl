@@ -155,6 +155,9 @@ def ingest(data: bytes, filename: str, db_path: Path | None = None) -> IngestSum
                 "source_status": get(r, "Order Status").upper(),
                 "quantity": _qty(get(r, "Quantity")),
                 "cust": parse_customisation(get(r, "Product Customisation")),
+                "customer_name": get(r, "Customer Name"),
+                "phone": get(r, "Mobile"),
+                "address": ", ".join(x for x in (get(r, "Address"), get(r, "City"), get(r, "State"), get(r, "Pincode")) if x),
             })
         con.execute(
             "INSERT INTO files(filename,sha256,ingested_at,summary) VALUES (?,?,?,?)",
@@ -207,10 +210,12 @@ def _upsert(con, s: IngestSummary, filename: str, o: dict) -> None:
         state, review = _evaluate(name, color, review, o["source_status"])
         con.execute(
             """INSERT INTO orders(order_id,clubbed_id,sku,order_date,source_status,quantity,raw_name,raw_color,
-               special_request,name,color,review_reason,state,first_file,last_file,first_seen,updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               special_request,name,color,review_reason,state,first_file,last_file,first_seen,updated_at,
+               customer_name,phone,address)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (o["order_id"], o["clubbed_id"], "Magicians_35", o["order_date"], o["source_status"], o["quantity"],
-             raw_name, raw_color, special, name, color, review, state, filename, filename, t, t),
+             raw_name, raw_color, special, name, color, review, state, filename, filename, t, t,
+             o["customer_name"], o["phone"], o["address"]),
         )
         s.new += 1
         if state == "ready":
@@ -229,8 +234,11 @@ def _upsert(con, s: IngestSummary, filename: str, o: dict) -> None:
     elif state == "not_needed" and o["source_status"] in PRINT_STATUSES and not cur["batch_id"]:
         state = "needs_review" if review else "ready"
     con.execute(
-        "UPDATE orders SET source_status=?, clubbed_id=?, quantity=?, state=?, last_file=?, updated_at=? WHERE order_id=?",
-        (o["source_status"], o["clubbed_id"], o["quantity"], state, filename, t, o["order_id"]),
+        "UPDATE orders SET source_status=?, clubbed_id=?, quantity=?, state=?, last_file=?, updated_at=?, "
+        "customer_name=COALESCE(NULLIF(?,''),customer_name), phone=COALESCE(NULLIF(?,''),phone), "
+        "address=COALESCE(NULLIF(?,''),address) WHERE order_id=?",
+        (o["source_status"], o["clubbed_id"], o["quantity"], state, filename, t,
+         o["customer_name"], o["phone"], o["address"], o["order_id"]),
     )
     if changed or state != cur["state"]:
         s.updated += 1

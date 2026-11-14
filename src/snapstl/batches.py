@@ -28,7 +28,12 @@ from .settings import Settings
 
 CLAIM_TIMEOUT_S = 6 * 60
 MAX_ATTEMPTS = 2
-ACTIVE = ("waiting", "build_requested", "building")
+# Batch lifecycle:
+#   created  --Start download-->  waiting (downloading)  --all models in-->  models_ready
+#   models_ready / waiting  --Build plates-->  build_requested  -->  building  -->  done | done_with_problems | failed
+#   created / waiting / models_ready  --Cancel-->  cancelled
+ACTIVE = ("waiting", "models_ready", "build_requested", "building")   # need their models kept / downloaded
+OPEN = ("created", "waiting", "models_ready", "build_requested", "building")  # not finished yet
 
 
 def compartments_for(letters: int, settings: Settings) -> int:
@@ -64,11 +69,27 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
             raise ValueError("None of the selected orders are ready (they may need review or be in another batch)")
         orders = _expand(rows, settings)
         ids = [r["order_id"] for r in rows]
-        batch_id = db.create_batch(con, ids, "", json.dumps(settings.to_dict()))
+        batch_id = db.create_batch(con, ids, "", json.dumps(settings.to_dict()), status="created")
         con.execute(
             f"UPDATE orders SET state='in_batch', batch_id=?, updated_at=? WHERE order_id IN ({','.join('?' * len(ids))})",
             (batch_id, db.now(), *ids),
         )
+    return {"batch_id": batch_id, "orders": len(ids), "skipped": len(order_ids) - len(ids),
+            "models": len(_needed(orders, settings, pw))}
+
+
+def start_download(batch_id: int) -> dict:
+    """Queue every model this batch still needs; the helper then downloads them."""
+    pw = get_password()
+    with db.tx() as con:
+        b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
+        if b is None or b["status"] not in ("created", "waiting", "models_ready"):
+            raise ValueError("This batch can't start downloading (it's finished or being built)")
+        settings = Settings.from_dict(json.loads(b["settings"] or "{}"))
+        ids = json.loads(b["order_ids"] or "[]")
+        rows = db.rows(con, f"SELECT * FROM orders WHERE order_id IN ({','.join('?' * len(ids))})", *ids)
+        orders = _expand(rows, settings)
+        con.execute("UPDATE batches SET status='waiting' WHERE id=?", (batch_id,))
         queued = 0
         for key, (name, comps) in _needed(orders, settings, pw).items():
             if cache.load_exists(key):
@@ -84,8 +105,7 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
             )
             queued += 1
     MANAGER.wake()
-    DOWNLOADER.wake()
-    return {"batch_id": batch_id, "orders": len(ids), "skipped": len(order_ids) - len(ids), "downloads_queued": queued}
+    return {"batch_id": batch_id, "downloads_queued": queued}
 
 
 def batch_progress(batch: dict) -> dict:
@@ -112,20 +132,21 @@ def batch_progress(batch: dict) -> dict:
 def request_build(batch_id: int) -> None:
     with db.tx() as con:
         b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
-    if b is None or b["status"] != "waiting":
-        raise ValueError("Only a batch that is waiting for models can be built early")
+    if b is None or b["status"] not in ("waiting", "models_ready"):
+        raise ValueError("Start the download first — plates are built from downloaded models")
     if batch_progress(dict(b))["ready"] == 0:
         raise ValueError("No models are downloaded for this batch yet — wait for some, or cancel it")
     with db.tx() as con:
-        con.execute("UPDATE batches SET status='build_requested' WHERE id=? AND status='waiting'", (batch_id,))
+        con.execute("UPDATE batches SET status='build_requested' WHERE id=? AND status IN ('waiting','models_ready')",
+                    (batch_id,))
     MANAGER.wake()
 
 
 def cancel_batch(batch_id: int) -> None:
     with db.tx() as con:
         r = con.execute("SELECT status FROM batches WHERE id=?", (batch_id,)).fetchone()
-        if r is None or r["status"] not in ("waiting", "build_requested"):
-            raise ValueError("Only a batch that is still waiting can be cancelled")
+        if r is None or r["status"] not in ("created", "waiting", "models_ready"):
+            raise ValueError("Only a batch that hasn't been built yet can be cancelled")
         con.execute("UPDATE batches SET status='cancelled', finished_at=? WHERE id=?", (db.now(), batch_id))
         db.release_batch_orders(con, batch_id)
         _cancel_unneeded_downloads(con)
@@ -327,10 +348,13 @@ class Manager:
         with db.tx() as con:
             batches = db.rows(con, "SELECT * FROM batches WHERE status IN ('waiting','build_requested') ORDER BY id")
         for b in batches:
+            if b["status"] == "build_requested":
+                self._build(b)  # only when the user pressed Build plates
+                continue
             p = batch_progress(b)
-            pending = p["models"] - p["ready"] - p["failed"]
-            if b["status"] == "build_requested" or pending == 0:
-                self._build(b)
+            if p["models"] - p["ready"] - p["failed"] == 0:
+                with db.tx() as con:  # all downloaded (or failed): wait for "Build plates"
+                    con.execute("UPDATE batches SET status='models_ready' WHERE id=? AND status='waiting'", (b["id"],))
 
     def _build(self, b: dict) -> None:
         batch_id = b["id"]

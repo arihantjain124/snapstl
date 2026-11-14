@@ -24,7 +24,9 @@ settings, rule changes). Your job: make the change safely, keep the docs true, a
   security checks are completed by the human; the helper waits.
 - **Helper trust:** the app accepts extension calls only on `/api/helper/*` from 127.0.0.1. Don't widen that.
 - **Clean-up must keep bundled orders** (they prevent re-making printed orders).
-- **Privacy:** never store customer phone/address from the report; secrets only via `keychain.py`.
+- **Privacy:** customer name/phone/address are stored only in the local database (owner's request) —
+  never send them anywhere or put them in git; secrets only via `keychain.py`.
+- **Batches never auto-start:** Create → *Start download* → *Build plates* are separate user actions.
 - Never commit customer files (`*.xlsx`, `*.csv` reports) or anything under `~/Library/Application Support/SnapSTL`.
 
 ## Where things live

@@ -1,7 +1,8 @@
 """SQLite store for orders, ingested files and batches.
 
-Only what's needed to make the product is stored (order id, status, name,
-colour, quantity). Customer contact details from the report are NOT stored.
+Stores what's needed to make and track each order: order id, status, name, colour,
+quantity, plus customer name / phone / address so the owner can see them in the app.
+The database stays on this Mac (never sent anywhere).
 """
 from __future__ import annotations
 
@@ -76,6 +77,9 @@ CREATE INDEX IF NOT EXISTS downloads_key ON downloads(cache_key);
 MIGRATIONS = [
     ("batches", "settings", "TEXT"),       # JSON settings snapshot used for this batch
     ("batches", "finished_at", "REAL"),
+    ("orders", "customer_name", "TEXT"),   # shown in the UI (owner's request, local only)
+    ("orders", "phone", "TEXT"),
+    ("orders", "address", "TEXT"),         # address, city, state, pincode joined
 ]
 
 
