@@ -12,7 +12,8 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from urllib.parse import urlsplit
+import re
+from urllib.parse import quote, urlsplit
 
 from .platform_os import app_dir
 
@@ -27,17 +28,37 @@ def _read() -> dict:
         return {}
 
 
+_ENCODED = re.compile(r"(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})*")
+
+
+def encode_password(url: str) -> str:
+    """Percent-encode the password in a postgresql:// URL so it may contain any character.
+
+    Supabase passwords with symbols break a URL (`#` starts a fragment, `@` `:` `/` `?` split it). The
+    user may paste the password as typed: everything between the first ':' after the user name and the
+    last '@' is the password, and is encoded (e.g. `ab#c)d` → `ab%23c%29d`). A password that
+    is already encoded (only letters, digits, `-._~` and `%XX`) is left as it is."""
+    url = url.strip()
+    m = re.match(r"^(postgres(?:ql)?://)([^:/@]*):(.*)@([^@]*)$", url, re.S)
+    if not m:
+        return url
+    scheme, user, pw, rest = m.groups()
+    if not _ENCODED.fullmatch(pw):
+        pw = quote(pw, safe="")
+    return f"{scheme}{user}:{pw}@{rest}"
+
+
 def database_url() -> str:
     if "SNAPSTL_DATABASE_URL" in os.environ:  # tests / development
-        return os.environ["SNAPSTL_DATABASE_URL"].strip()
-    return str(_read().get("database_url", "")).strip()
+        return encode_password(os.environ["SNAPSTL_DATABASE_URL"])
+    return encode_password(str(_read().get("database_url", "")))
 
 
 def set_database_url(url: str) -> None:
     """Save (or with "" remove) the connection string, readable by this user only."""
     SECRETS_PATH.parent.mkdir(parents=True, exist_ok=True)
     data = _read()
-    data["database_url"] = url.strip()
+    data["database_url"] = encode_password(url)
     tmp = SECRETS_PATH.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
@@ -47,7 +68,7 @@ def set_database_url(url: str) -> None:
 
 def check_url(url: str) -> str:
     """A plain-English problem with a pasted connection string, or ""."""
-    url = url.strip()
+    url = encode_password(url)
     if not url:
         return "Paste the connection string from Supabase"
     if "YOUR-PASSWORD" in url:
@@ -56,8 +77,8 @@ def check_url(url: str) -> str:
         u = urlsplit(url)
         _ = u.port
     except ValueError:
-        return ("The connection string isn't valid — if your database password has symbols "
-                "(@ : / # ? %), change it in Supabase to letters and digits only")
+        return ("The connection string isn't valid — check it starts with postgresql:// and ends with "
+                "@<server>:<port>/postgres")
     if u.scheme not in ("postgres", "postgresql"):
         return "It should start with postgresql:// (Supabase → Connect → Connection string → URI)"
     if not u.password:
@@ -69,7 +90,7 @@ def check_url(url: str) -> str:
 
 def describe(url: str | None = None) -> str:
     """Where it connects, without the password (e.g. 'postgres.abcd @ aws-0-ap-south-1.pooler.supabase.com')."""
-    url = database_url() if url is None else url
+    url = database_url() if url is None else encode_password(url)
     if not url:
         return ""
     try:

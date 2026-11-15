@@ -89,6 +89,10 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
 .pushbox{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0;background:var(--bg)}
 .pushtable td,.prtable td{vertical-align:middle}.pushtable select{min-width:170px}.prtable input,.prtable select{padding:3px 6px}
 .pushtable .fn{font-size:12px;word-break:break-all}
+.kv{width:100%;border-collapse:collapse;margin:2px 0}.kv td{padding:3px 6px;font-size:12px;border-bottom:1px solid var(--line);vertical-align:top}
+.kv td.k{color:var(--muted);white-space:nowrap;width:1%;font-family:ui-monospace,Menlo,monospace}.kv td.v{font-family:ui-monospace,Menlo,monospace;word-break:break-word}
+details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{margin-left:4px}
+.pscard{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:10px 0;background:var(--bg)}
 .prgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:8px}
 .prcard{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--bg)}
 .prcard .top{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.prcard .top b{font-size:14px}
@@ -108,6 +112,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <button data-t="batches"><span class="ic">▦</span>Batches</button>
     <button data-t="downloads"><span class="ic">⇣</span>Downloads</button>
     <button data-t="printers"><span class="ic">⎙</span>Printers</button>
+    <button data-t="pstatus"><span class="ic">◉</span>Printer status</button>
     <button data-t="settings"><span class="ic">⚙</span>Settings</button>
     <button data-t="help"><span class="ic">?</span>Help</button>
   </nav>
@@ -168,7 +173,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
       <div class="msgs" id="bpmsgs"></div>
       <div class="tw"><table class="pushtable"><thead><tr><th><input type="checkbox" id="bpall" title="All plates"></th><th>Plate</th><th>Prints on</th><th>Sliced file</th><th>Printer</th><th>Status</th><th></th></tr></thead><tbody id="bplates"></tbody></table></div>
       <div class="toolbar" style="margin-top:8px"><span class="hint grow" id="bpinfo"></span><button class="primary" id="bpgo" disabled>Push to queue</button></div>
-      <p class="hint">Each plate goes to its printer's queue in Bambuddy. Bambuddy starts a print only once someone has cleared that printer's bed (<b>Clear plate</b> on the printer card in Bambuddy, or on the <b>Printers</b> page). A plate is offered only to printers that have its colour loaded in Bambuddy (white for bases); <i>loaded: Hot Pink</i> means a close colour, not the exact one.</p>
+      <p class="hint">Each plate goes to its printer's queue in Bambuddy and <b>waits there until you press Start</b> — nothing prints by itself. After Start, Bambuddy prints it once the printer is free and someone has cleared its bed (<b>Clear plate</b> on the printer card in Bambuddy, or on the <b>Printers</b> page). A plate is offered only to printers that have its colour loaded in Bambuddy (white for bases); <i>loaded: Hot Pink</i> means a close colour, not the exact one.</p>
     </div>
     <details class="objsbox" id="bobjsbox"><summary id="bobjsum">Objects</summary>
       <p class="hint">Every name in this batch as downloaded. The picture shows the back of the base, where MakerWorld puts its "SALE NOT PERMITTED" watermark (painted <b style="color:#dc2828">red</b> if found) — click it for the top view. <b>Re-download</b> fetches one object again; then press <b>Rebuild plates</b> so the plates use the fresh download.</p>
@@ -207,6 +212,17 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <h2>Print jobs</h2>
     <div class="tw" style="max-height:50vh;overflow:auto"><table><thead><tr><th></th><th>Printer</th><th>Print options</th><th>#</th><th>Batch</th><th>Plate</th><th>Status</th><th>Detail</th></tr></thead><tbody id="pjobs"></tbody></table></div>
     <div class="log" id="farmlog" style="margin-top:8px;max-height:120px"></div>
+  </div>
+</section>
+
+<section id="t-pstatus" hidden>
+  <div class="card">
+    <div class="toolbar"><h2 style="margin:0">Printer status · everything Bambuddy reports</h2><span class="grow hint" id="psinfo"></span>
+      <label style="display:flex;gap:6px;align-items:center;margin:0;color:var(--text)"><input type="checkbox" id="psauto"> Auto-refresh</label>
+      <button class="small" id="psrefresh">Refresh</button><a class="btn small" id="psdl" href="/api/printer-status?download=1">Download JSON</a></div>
+    <p class="hint">Every field Bambuddy has for each printer — its record, the full live status (temperatures, fans, AMS units and every tray, nozzles, errors, print options, network…) and its queue — plus Bambuddy's system info. Read only; access codes and keys are hidden. Use <b>Download JSON</b> to keep a copy.</p>
+    <div class="msgs" id="psmsg"></div>
+    <div id="pslist"></div>
   </div>
 </section>
 
@@ -339,7 +355,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
   <div class="card">
     <h2>Help</h2>
     <p>SnapSTL turns webstore orders for the <b>Custom Name Desk Organizer</b> (SKU <code>Magicians_35</code>) into print-ready plates: each name is generated on MakerWorld, scaled to the agreed rules, grouped 3 per plate and saved as <b>.3mf</b> files.</p>
-    <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-printers">Printers</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-portal">Other computers</a><a href="#h-data">Your data</a></div>
+    <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-printers">Printers</a><a href="#h-pstatus">Printer status</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-portal">Other computers</a><a href="#h-data">Your data</a></div>
   </div>
 
   <div class="card" id="h-start">
@@ -428,8 +444,14 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     </ol>
     <p>The <b>Printers</b> page is read-only: what each printer makes, its state (%, time left, layer, temperatures), the filament per slot, and <b>Clear plate</b> when the bed must be cleared. <b>Print jobs</b> below it: per plate a <b>printer</b>, <b>Print options</b> (bed levelling, flow calibration, timelapse — default = Bambuddy's) and <b>Print</b> — <i>Print</i> sends a failed/cancelled plate again, <i>Print again</i> reprints a printed one, <i>Move</i> moves a plate still waiting in Bambuddy's queue to another printer.</p>
     <p><b>Push to queue</b> (Batches → open a built batch) lists every plate with a suggested printer: a printer with the plate's colour loaded (white for bases) whose Location fits — the exact colour first (a close one is marked <i>loaded: hot pink</i>), least busy first. Printers that don't fit are greyed out with the reason. Pushed plates go to that printer's queue in Bambuddy; the <b>Status</b> column follows them: <i>Waiting to send → Slicing → Sending → In Bambuddy queue → Printing → Printed</i>. A plate already on its way isn't pushed twice; <b>Try again</b> / <b>Cancel</b> are on each row.</p>
-    <p><b>Clear plate:</b> Bambuddy starts each next print only after someone confirms the bed is empty — the <b>Clear plate</b> button on the Printers page (or in Bambuddy).</p>
+    <p><b>Nothing prints by itself.</b> A plate goes to Bambuddy only when you press <b>Push to queue</b> or <b>Print</b>, and waits there held (<i>Waiting for Start</i>) until you press <b>Start</b> (Push to queue panel or Printers → Print jobs). If Bambuddy warns (e.g. too little filament), SnapSTL asks before starting anyway.</p>
+    <p><b>Clear plate:</b> after Start, Bambuddy still starts a print only after someone confirms the bed is empty — the <b>Clear plate</b> button on the Printers page (or in Bambuddy).</p>
     <p><b>Slicing:</b> printers only print sliced plates. Either slice by hand — open the plate in Bambu Studio → <b>Slice plate</b> → <b>Export plate sliced file</b> → save it in the batch folder's <code>Sliced</code> folder under the same path (e.g. <code>Sliced/Names/pink/{Ayra,pink}.gcode.3mf</code>) — or set a <b>slicer service</b> (Bambuddy's slicer sidecar, Docker) in <b>Settings → Print farm</b> and SnapSTL slices each plate as it's pushed, without moving any part. The plate list shows <i>Sliced</i> / <i>Not sliced</i>.</p>
+  </div>
+
+  <div class="card" id="h-pstatus">
+    <h2>Printer status</h2>
+    <p>Everything Bambuddy reports about each printer, as it comes: the printer's record, the full live status (temperatures, fans, AMS units and every tray, nozzles, HMS errors, print options, network, SD card…), its queue, and Bambuddy's system info. Click a section to expand it; <b>Auto-refresh</b> keeps it current; <b>Download JSON</b> saves a copy for later use. Read only — access codes and keys are hidden.</p>
   </div>
 
   <div class="card" id="h-output">
@@ -521,8 +543,8 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   for(const s of PAGES)$('t-'+s).hidden=s!==t;
-  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='downloads')loadQueue(); if(t==='printers')loadFarm(); if(t==='settings'){loadSetup();loadShared();loadFarmSettings();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
-const PAGES=['orders','batches','downloads','printers','settings','help'];
+  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='downloads')loadQueue(); if(t==='printers')loadFarm(); if(t==='pstatus')loadStatusAll(); if(t==='settings'){loadSetup();loadShared();loadFarmSettings();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
+const PAGES=['orders','batches','downloads','printers','pstatus','settings','help'];
 
 // ---------- orders ----------
 // What can be ticked depends on the tab: Ready orders (→ Create batch), Bundled (→ Mark printed),
@@ -681,8 +703,13 @@ $('retry').onclick=async()=>{const r=await post('/api/downloads/retry');$('queue
 
 // ---------- push to queue (batch → Bambuddy) ----------
 const JST={queued:['Waiting to send','info'],slicing:['Slicing','info'],uploading:['Sending','info'],sent:['In Bambuddy queue','info'],printing:['Printing','info'],done:['Printed','ok'],failed:['Failed','err'],cancelled:['Cancelled','']};
-const jobPill=j=>{if(!j)return '<span class="hint">not pushed</span>';const st=JST[j.state]||[j.state,''];
+const jobPill=j=>{if(!j)return '<span class="hint">not pushed</span>';const st=j.state==='sent'?(j.held?['Waiting for Start','warn']:['Started · in queue','info']):(JST[j.state]||[j.state,'']);
   return `<span class="pill ${st[1]}">${st[0]}${j.state==='printing'&&j.progress!=null?' '+Math.round(j.progress)+'%':''}</span> <span class="hint">${esc(j.printer_name||'')}</span>${j.error?`<div class="reason">${esc(j.error)}</div>`:''}`};
+// Start: the only way a print begins (Bambuddy holds every plate until then)
+async function startJob(id,after){if(!confirm('Start this print? Bambuddy prints it as soon as the printer is free and its bed has been cleared.'))return;
+  try{await post(`/api/print-jobs/${id}/start`)}catch(e){
+    if(/Not enough|filament|409/i.test(e.message)&&confirm(e.message+'\n\nStart anyway?')){try{await post(`/api/print-jobs/${id}/start`,{force:true})}catch(e2){alert(e2.message)}}else alert(e.message)}
+  after&&after()}
 let PUSH=null; // {id, data, sel:{file: printer id}, on:Set(file)}
 async function openPush(id){PUSH={id,data:null,sel:{},on:new Set(),init:false};$('bpush').hidden=false;$('bpmsgs').innerHTML='<div class="w">Loading plates and printers…</div>';await loadPush(id);$('bpush').scrollIntoView({behavior:'smooth',block:'start'})}
 $('bpclose').onclick=()=>{$('bpush').hidden=true;PUSH=null};
@@ -700,11 +727,13 @@ async function loadPush(id){let r;try{r=await api(`/api/batches/${id}/plates`)}c
   $('bplates').innerHTML=r.plates.map(p=>{const busy=p.job_active;const c=p.colors[0]||'';
     const opts=`<option value="">— choose a printer —</option>`+p.choices.map(o=>`<option value="${o.id}" ${String(PUSH.sel[p.file])===String(o.id)?'selected':''} ${o.why_not?'disabled':''}>${esc(o.name)}${o.why_not?' · '+esc(o.why_not):(o.note?' · '+esc(o.note):'')+(o.state?' · '+esc(o.state.toLowerCase()):'')}</option>`).join('');
     const sl=p.sliced?`<span class="pill ok" title="${esc(p.sliced)}">Sliced</span>`:(f.slicer?'<span class="pill info">Slicer service</span>':'<span class="pill warn">Not sliced</span>');
-    const acts=p.job&&['failed','cancelled'].includes(p.job.state)?`<button class="small" data-jretry="${p.job.id}">Try again</button>`:p.job&&['queued','sent','failed'].includes(p.job.state)?`<button class="small" data-jcancel="${p.job.id}">Cancel</button>`:'';
+    const acts=(p.job&&p.job.state==='sent'&&p.job.held?`<button class="small primary" data-jstart="${p.job.id}" title="Let Bambuddy print it (once the printer is free and its bed is cleared)">Start</button> `:'')
+      +(p.job&&['failed','cancelled'].includes(p.job.state)?`<button class="small" data-jretry="${p.job.id}">Try again</button>`:p.job&&['queued','sent','failed'].includes(p.job.state)?`<button class="small" data-jcancel="${p.job.id}">Cancel</button>`:'');
     return `<tr><td><input type="checkbox" data-pon="${esc(p.file)}" ${PUSH.on.has(p.file)?'checked':''} ${busy?'disabled':''}></td><td><div>${p.kind==='bases'?'<b>Bases</b>':`<b>Names</b> ${sw(c)}`}</div><div class="fn">${esc(p.file.split('/').pop())}</div></td><td class="hint">${esc(p.names.join(', '))}<div>needs ${esc(p.need)}</div></td><td>${sl}</td><td><select data-psel="${esc(p.file)}" ${busy?'disabled':''}>${opts}</select></td><td>${jobPill(p.job)}</td><td>${acts}</td></tr>`}).join('')||'<tr><td colspan="7" class="empty">No plates</td></tr>';
   document.querySelectorAll('[data-pon]').forEach(x=>x.onchange=()=>{x.checked?PUSH.on.add(x.dataset.pon):PUSH.on.delete(x.dataset.pon);pushInfo()});
   document.querySelectorAll('[data-psel]').forEach(x=>x.onchange=()=>{PUSH.sel[x.dataset.psel]=x.value;if(x.value)PUSH.on.add(x.dataset.psel);loadPush(id)});
   document.querySelectorAll('[data-jretry]').forEach(x=>x.onclick=async()=>{try{await post(`/api/print-jobs/${x.dataset.jretry}/retry`)}catch(e){alert(e.message)}loadPush(id)});
+  document.querySelectorAll('#bplates [data-jstart]').forEach(x=>x.onclick=()=>startJob(x.dataset.jstart,()=>loadPush(id)));
   document.querySelectorAll('[data-jcancel]').forEach(x=>x.onclick=async()=>{if(!confirm('Cancel this print job? If it is waiting in Bambuddy\'s queue it is removed there too.'))return;try{await post(`/api/print-jobs/${x.dataset.jcancel}/cancel`)}catch(e){alert(e.message)}loadPush(id)});
   pushInfo()}
 function pushInfo(){if(!PUSH||!PUSH.data)return;const ready=[...PUSH.on].filter(f=>PUSH.sel[f]);const free=PUSH.data.plates.filter(p=>!p.job_active);
@@ -719,7 +748,7 @@ $('bpgo').onclick=async()=>{if(!PUSH)return;const id=PUSH.id;const files=[...PUS
   $('bpgo').disabled=true;
   let note='';
   try{const r=await post(`/api/batches/${id}/push`,{plates:files.map(f=>({file:f,printer_id:+PUSH.sel[f]})),again});
-    note=`<div class="o">${r.queued} plate(s) on their way to Bambuddy${r.skipped?` · ${r.skipped} already pushed (skipped)`:''} — follow them in the Status column.</div>`;for(const f of files)PUSH.on.delete(f)}
+    note=`<div class="o">${r.queued} plate(s) on their way to Bambuddy${r.skipped?` · ${r.skipped} already pushed (skipped)`:''}. They wait there — press <b>Start</b> on each when you want it printed.</div>`;for(const f of files)PUSH.on.delete(f)}
   catch(e){note=`<div class="e">${esc(e.message)}</div>`}
   await loadPush(id);$('bpmsgs').innerHTML+=note};
 
@@ -765,7 +794,7 @@ function renderJobs(r){const box=$('pjobs');if(box.contains(document.activeEleme
       const opts=j.choices.map(c=>`<option value="${c.id}" ${String(c.id)===sel.printer?'selected':''} ${c.why_not?'disabled':''}>${esc(c.name)}${c.why_not?' · '+esc(c.why_not):(c.note?' · '+esc(c.note):'')+(c.state?' · '+esc(c.state.toLowerCase()):'')}</option>`).join('');
       const optSel=(k,vals)=>`<label style="margin:4px 0 2px">${OPTLBL[k]}</label><select data-jopt="${j.id}" data-k="${k}"><option value="" ${sel.options[k]==null||sel.options[k]===''?'selected':''}>Bambuddy default</option>${vals.map(v=>`<option value="${v}" ${String(sel.options[k])===String(v)?'selected':''}>${v===true||v==='true'?'on':v===false||v==='false'?'off':v}</option>`).join('')}</select>`;
       const label=['failed','cancelled','done'].includes(j.state)?(j.state==='done'?'Print again':'Print'):(j.state==='sent'?'Move':'Change');
-      ctl=`<td><button class="small primary" data-jprint="${j.id}" title="${j.state==='sent'?'Move it to this printer in Bambuddy\'s queue (with these options)':'Send this plate to the chosen printer'}">${label}</button></td>
+      ctl=`<td style="white-space:nowrap">${j.state==='sent'&&j.held?`<button class="small primary" data-jstart="${j.id}" title="Let Bambuddy print it (once the printer is free and its bed is cleared)">Start</button> `:''}<button class="small${j.state==='sent'&&j.held?'':' primary'}" data-jprint="${j.id}" title="${j.state==='sent'?'Move it to this printer in Bambuddy\'s queue (with these options)':'Send this plate to the chosen printer'}">${label}</button></td>
         <td><select data-jpr="${j.id}" style="min-width:160px">${opts}</select></td>
         <td><details><summary class="hint" style="cursor:pointer">${esc(optSummary(sel.options))}</summary>${Object.entries(r.options).map(([k,v])=>optSel(k,v)).join('')}</details></td>`}
     return `<tr>${ctl}<td>${j.id}</td><td>#${j.batch_id}</td><td class="fn" style="font-size:12px">${esc(j.plate.split('/').slice(-2).join('/'))}</td><td>${jobPill({...j,printer_name:'',error:''})}</td><td class="hint">${esc(j.error||'')}${!j.latest?'<div>replaced by a newer job</div>':''}</td></tr>`}).join('')
@@ -773,6 +802,7 @@ function renderJobs(r){const box=$('pjobs');if(box.contains(document.activeEleme
   box.querySelectorAll('[data-jpr]').forEach(x=>x.onchange=()=>{JOBSEL[x.dataset.jpr].printer=x.value});
   box.querySelectorAll('[data-jopt]').forEach(x=>x.onchange=()=>{const o=JOBSEL[x.dataset.jopt].options;const v=x.value;o[x.dataset.k]=v===''?'':v==='true'?true:v==='false'?false:v});
   box.querySelectorAll('details').forEach(d=>d.ontoggle=()=>{if(!d.open)d.querySelector('summary').textContent=optSummary(JOBSEL[d.querySelector('[data-jopt]').dataset.jopt].options)});
+  box.querySelectorAll('[data-jstart]').forEach(x=>x.onclick=()=>startJob(x.dataset.jstart,loadFarm));
   box.querySelectorAll('[data-jprint]').forEach(x=>x.onclick=async()=>{const id=x.dataset.jprint,sel=JOBSEL[id];if(!sel.printer){alert('Choose a printer');return}
     const job=r.jobs.find(j=>String(j.id)===id);if(job.state==='done'&&!confirm('This plate was printed already. Print it again?'))return;
     x.disabled=true;try{const res=await post(`/api/print-jobs/${id}/print`,{printer_id:+sel.printer,options:sel.options});$('prinfo').textContent=res.moved?`Job #${id} updated`:`Printing again as job #${res.job_id}`}catch(e){alert(e.message)}finally{x.disabled=false}
@@ -788,6 +818,28 @@ $('sl_save').onclick=async()=>{$('sl_msg').textContent='Saving…';$('sl_msg').s
   try{const r=await api('/api/farm/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({slicer_url:$('sl_url').value,printer_preset:$('sl_printer').value,process_preset:$('sl_process').value,filament_preset:$('sl_filament').value})});
     $('sl_msg').textContent=r.slicer_url?(r.slicer_problem?'Saved, but: '+r.slicer_problem:'Saved — the slicer service answers.'):'Saved — plates are sliced by hand in Bambu Studio.';if(r.slicer_problem)$('sl_msg').style.color='var(--warn)'}
   catch(e){$('sl_msg').textContent=e.message;$('sl_msg').style.color='var(--err)'}};
+
+// ---------- printer status (everything from Bambuddy, read only) ----------
+const PSOPEN=new Set();
+function kvVal(v){if(v===null||v===undefined)return '<span class="hint">—</span>';if(typeof v==='boolean')return v?'true':'false';
+  const t=String(v);if(/^#?[0-9a-f]{6}([0-9a-f]{2})?$/i.test(t)&&t.length>=6)return `<span class="swatch" style="background:#${esc(t.replace('#','').slice(0,6))}"></span>${esc(t)}`;return esc(t)}
+function kvTable(obj,path){if(Array.isArray(obj)){if(!obj.length)return '<span class="hint">(empty list)</span>';
+    if(obj.every(x=>x===null||typeof x!=='object'))return esc(obj.map(x=>x===null?'—':String(x)).join(', '));
+    return obj.map((x,i)=>kvDetails(`[${i}]`,x,path+'.'+i)).join('')}
+  const keys=Object.keys(obj||{});if(!keys.length)return '<span class="hint">(empty)</span>';
+  const flat=keys.filter(k=>obj[k]===null||typeof obj[k]!=='object'),deep=keys.filter(k=>obj[k]!==null&&typeof obj[k]==='object');
+  return (flat.length?`<table class="kv">${flat.map(k=>`<tr><td class="k">${esc(k)}</td><td class="v">${kvVal(obj[k])}</td></tr>`).join('')}</table>`:'')+deep.map(k=>kvDetails(k,obj[k],path+'.'+k)).join('')}
+function kvDetails(label,v,path){const n=Array.isArray(v)?`${v.length} item${v.length===1?'':'s'}`:`${Object.keys(v||{}).length} field${Object.keys(v||{}).length===1?'':'s'}`;
+  return `<details class="kvd" data-path="${esc(path)}" ${PSOPEN.has(path)?'open':''}><summary><b>${esc(label)}</b> <span class="hint">${n}</span></summary>${kvTable(v,path)}</details>`}
+async function loadStatusAll(){$('psinfo').textContent='Loading…';let r;try{r=await api('/api/printer-status')}catch(e){$('psmsg').innerHTML=`<div class="e">${esc(e.message)}</div>`;$('psinfo').textContent='';return}
+  $('psmsg').innerHTML=r.error?`<div class="e">${esc(r.error)}</div>`:'';
+  $('psinfo').textContent=`${r.printers.length} printer${r.printers.length===1?'':'s'} · from ${r.bambuddy_url} · ${new Date(r.fetched_at*1000).toLocaleTimeString()}`;
+  $('pslist').innerHTML=r.printers.map(p=>{const st=p.status||{};
+    return `<div class="pscard"><div class="toolbar" style="margin:0 0 4px"><b>${esc(p.name)}</b><span class="hint">id ${p.id}</span><span class="grow"></span>${STATE_PILL(st.error?{connected:false,error:st.error}:{connected:st.connected,state:st.state,progress:st.progress,remaining_time:st.remaining_time,errors:(st.hms_errors||[]).length,awaiting_plate_clear:st.awaiting_plate_clear})}</div>
+      ${kvDetails('Printer (record in Bambuddy)',p.printer,`p${p.id}.printer`)}${kvDetails('Live status',st,`p${p.id}.status`)}${kvDetails('Queue',p.queue,`p${p.id}.queue`)}</div>`}).join('')
+    +kvDetails('Bambuddy system info',r.system||{},'system')||'<div class="empty">No printers</div>';
+  $('pslist').querySelectorAll('details.kvd').forEach(d=>d.ontoggle=()=>{d.open?PSOPEN.add(d.dataset.path):PSOPEN.delete(d.dataset.path)})}
+$('psrefresh').onclick=()=>loadStatusAll();
 
 // ---------- settings ----------
 function fillSettings(){const m=S.model;
@@ -915,7 +967,7 @@ async function refresh(){try{const st=await api('/api/state');if(tab==='settings
   if(key!==lastKey){lastKey=key;loadFacets();
     if(tab==='orders')loadOrders(); if(tab==='batches')loadBatches()}
   if(tab==='downloads')loadQueue();
-  if(++TICK%3===0){if(tab==='printers')loadFarm();if(tab==='batches'&&PUSH&&!$('bpush').hidden)loadPush(PUSH.id)}
+  if(++TICK%3===0){if(tab==='printers')loadFarm();if(tab==='pstatus'&&$('psauto').checked)loadStatusAll();if(tab==='batches'&&PUSH&&!$('bpush').hidden)loadPush(PUSH.id)}
   const log=$('log');const atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-4;log.textContent=st.log.join('\n');if(atEnd)log.scrollTop=log.scrollHeight;
 }catch(e){}}
 function refreshAll(){lastKey='';refresh()}

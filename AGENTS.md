@@ -35,6 +35,9 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   person presses **Push to queue** or **Print** (never automatically after a build), and only on a
   printer that fits: its Location in Bambuddy allows the kind and the plate's colour is loaded (white
   for bases). Never skip Bambuddy's "Clear plate" step. SnapSTL never talks to printers directly.
+- **No print starts by itself:** every queue item is created with `manual_start: true` (held) and is
+  released only by a person's **Start** (`farm.start_job`). Never create a queue item that can start
+  on its own, and never call Start from code paths a person didn't click.
 - Printers, filament and printer settings are managed in Bambuddy; the Printers page stays read only
   (no adding printers, filament or roles in SnapSTL).
 
@@ -53,6 +56,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   checking `farm.py`'s calls against that release. Don't retry slicing with the Bambu Studio app's
   command line on a Mac — it crashes (ARCHITECTURE decision log #28).
 - Database: add columns **only** via `MIGRATIONS` in `db.py`; never drop/rename columns or tables.
+- Shared-records schema changes go in `sync._SETUP_SQL`; regenerate `docs/supabase-schema.sql`
+  (`uv run snapstl-db schema > docs/supabase-schema.sql`) — a test checks they match.
 - Shared order records (`sync.py`, Supabase): **never delete** there — no DELETE/TRUNCATE in code, keep
   the `refuse_delete` triggers. Settings never go there. Conflict rules live in the SQL (`_WIN`,
   `_CLAIM`); keep a batch's claim before its local creation, and refuse to create a batch when the

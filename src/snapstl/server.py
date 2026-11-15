@@ -621,7 +621,7 @@ async def shared_records_save(req: Request):
     if body.get("disconnect"):
         config.set_database_url("")
         return shared_records_info()
-    url = str(body.get("url") or "").strip()
+    url = config.encode_password(str(body.get("url") or ""))  # passwords with symbols are fine
     if url:
         problem = config.check_url(url)
         if problem:
@@ -889,6 +889,7 @@ def _job_view(j: dict | None) -> dict | None:
         return None
     v = {k: j.get(k) for k in ("id", "plate", "kind", "color", "printer_id", "printer_name", "state", "sliced",
                                "progress", "error", "created_at", "updated_at", "batch_id")}
+    v["held"] = bool(j.get("held"))
     try:
         v["options"] = json.loads(j.get("options") or "{}")
     except ValueError:
@@ -927,6 +928,18 @@ def farm_info(request: Request):
             "options": {k: list(v) for k, v in farm.OPTIONS.items()}, "worker": {"current": farm.WORKER.current,
                                                                           "log": farm.WORKER.log[-20:]},
             "local": is_local(request)}
+
+
+@app.get("/api/printer-status")
+def printer_status_all(download: int = 0):
+    """Printer status tab: everything Bambuddy reports about every printer (read only, no secrets).
+    ?download=1 → the same as a JSON file."""
+    data = farm.everything()
+    if download:
+        name = time.strftime("bambuddy-printers-%Y-%m-%d-%H%M.json")
+        return StreamingResponse(iter([json.dumps(data, indent=2, default=str)]), media_type="application/json",
+                                 headers={"Content-Disposition": f"attachment; filename={name}"})
+    return data
 
 
 @app.post("/api/farm/connect")
@@ -1045,6 +1058,19 @@ async def print_job_print(job_id: int, req: Request):
         return await run_in_threadpool(farm.print_job, job_id, int(b["printer_id"]), b.get("options") or {}, prs)
     except farm.FarmError as e:
         raise _farm_err(e) from e
+
+
+@app.post("/api/print-jobs/{job_id}/start")
+async def print_job_start(job_id: int, req: Request):
+    """Start: the only way a print begins. {force: true} = start anyway after Bambuddy's warning."""
+    b = await req.json() if (await req.body()) else {}
+    try:
+        await run_in_threadpool(farm.start_job, job_id, bool(b.get("force")))
+    except farm.StartBlocked as e:
+        raise HTTPException(409, str(e)) from e
+    except farm.FarmError as e:
+        raise _farm_err(e) from e
+    return {"ok": True}
 
 
 @app.post("/api/print-jobs/{job_id}/{action}")

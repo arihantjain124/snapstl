@@ -106,8 +106,8 @@ computer still keeps its own database.
 1. Sign up at **supabase.com** in the business's name and click **New project**.
    - **Name:** `snapstl`.
    - **Region:** **South Asia (Mumbai)**, so the data stays in India.
-   - **Database password:** long, **letters and digits only** (symbols break the connection).
-     Keep it in a password manager.
+   - **Database password:** long. Symbols are fine: SnapSTL encodes them itself. Keep it in a
+     password manager.
    - **Plan:** **Pro**. The free plan pauses after a week without use.
 2. When the project is ready, click **Connect** → **Connection string** → **URI** → **Session pooler**,
    and copy it.
@@ -116,11 +116,22 @@ computer still keeps its own database.
 
 1. In SnapSTL, go to **Settings → Shared order records**.
 2. Paste the connection string. Replace `[YOUR-PASSWORD]`, brackets included, with the database
-   password.
+   password, typed exactly as it is, symbols included.
+   - SnapSTL percent-encodes the password before connecting (`#` → `%23`, `)` → `%29`, `@` → `%40`,
+     `/` → `%2F`, `?` → `%3F`, `%` → `%25`, `:` → `%3A`). A password you already encoded is left alone.
+   - Elsewhere, e.g. `psql`, use the encoded form: password `ab#c)d` →
+     `postgresql://postgres:ab%23c%29d@<server>:5432/postgres`.
+   - Prefer the **Session pooler** address (`…pooler.supabase.com`). The direct one
+     (`db.<project>.supabase.co`) only works on networks with IPv6 unless the project has the IPv4
+     add-on.
 3. Give this computer a name, for example *Packing Mac*. It's shown on its batches.
 4. Click **Connect / save**.
 
-SnapSTL checks the connection and creates its tables on first use. It then sends this computer's
+SnapSTL checks the connection and creates its tables on first use. To create them yourself
+beforehand, open Supabase → **SQL Editor**, paste [`docs/supabase-schema.sql`](docs/supabase-schema.sql)
+and click **Run**. No password is needed for that, and it's safe to run again. It makes the schema
+`snapstl` with the tables `order_records`, `batch_records` and `meta`, and records are never deleted
+(deleting is refused). It then sends this computer's
 batched, bundled and printed orders and loads everyone else's. The sidebar then shows
 "*name* · shared records".
 
@@ -154,11 +165,24 @@ Bambuddy**). SnapSTL only reads them.
 The **Printers** page shows every printer: what it makes, its state (printing %, time left, layer,
 temperatures), the filament in each slot, and **Clear plate** when its bed must be cleared. Below it,
 **Print jobs** lists every plate sent. Each one has a **printer** dropdown, **Print options** (bed
-levelling, flow calibration, timelapse; default = Bambuddy's settings) and a **Print** button:
+levelling, flow calibration, timelapse; default = Bambuddy's settings), a **Print** button and, while
+it waits, **Start**.
+
+**Nothing prints by itself.** A plate reaches Bambuddy only when you press **Push to queue** or
+**Print**, and it waits there **held** (*Waiting for Start*) until you press **Start**. After Start,
+Bambuddy prints it as soon as the printer is free and its bed has been cleared. If Bambuddy warns,
+for example about too little filament on the spool, SnapSTL asks before starting anyway.
+
+The **Print** button:
 
 - **Print** sends a failed or cancelled plate again.
 - **Print again** reprints a printed plate.
 - **Move** moves a plate still waiting in Bambuddy's queue to another printer and applies the options.
+
+**Printer status** (sidebar) shows *everything* Bambuddy reports about each printer: its record, the
+full live status (temperatures, fans, every AMS unit and tray, nozzles, errors, print options,
+network…) and its queue, plus Bambuddy's system info. Expand any part, or **Download JSON** to keep a
+copy. It's read only, and access codes and keys are hidden.
 
 ## Daily use
 
@@ -183,7 +207,8 @@ levelling, flow calibration, timelapse; default = Bambuddy's settings) and a **P
 7. **Print.**
    - **With Bambuddy:** open the batch → **Push to queue**. Each plate gets a suggested printer (the
      right job and colour, the least busy). Change any of them, then click **Push to queue**. The
-     **Status** column follows each plate: *Sending* → *In Bambuddy queue* → *Printing* → *Printed*.
+     **Status** column follows each plate: *Sending* → *Waiting for Start*. Press **Start** on each plate
+     when you want it printed → *Started · in queue* → *Printing* → *Printed*.
      After each print, clear that printer's bed and click **Clear plate** (in Bambuddy, or on SnapSTL's
      Printers page) so its next plate starts. To change the printer or print options later, or to
      print a plate again, use **Printers → Print jobs → Print**.

@@ -2,6 +2,7 @@
 
   check   Test the connection set in Settings → Shared order records and show what the records hold.
   sync    Push this computer's changes and load everyone's (same as Settings → Database → Sync now).
+  schema  Print the SQL that creates the shared records (no connection needed; docs/supabase-schema.sql).
 """
 from __future__ import annotations
 
@@ -13,6 +14,9 @@ from . import computer, sync
 
 def main() -> None:
     cmd = sys.argv[1] if len(sys.argv) > 1 else "check"
+    if cmd == "schema":
+        print(sync.schema_sql(), end="")
+        return
     if not sync.enabled():
         sys.exit("No shared order records set up: connect them in the app (Settings → Shared order records).")
     try:

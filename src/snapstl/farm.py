@@ -11,7 +11,9 @@ SnapSTL:
     Printers, filament and everything else are set up in Bambuddy itself. A printer's **Location** in
     Bambuddy says what it makes: "Bases…" or "Names…" (anything else: both);
   * after a build, **Push to queue**: for each plate the person picks a printer (a suggestion is
-    pre-filled: the plate's colour loaded — white for bases — right job, least busy). The plate's sliced file (.gcode.3mf) is uploaded
+    pre-filled: the plate's colour loaded — white for bases — right job, least busy).
+  * nothing is queued or started by itself: a plate goes to Bambuddy only when a person presses Push
+    to queue / Print, and it waits there **held** (manual start) until a person presses **Start**. The plate's sliced file (.gcode.3mf) is uploaded
     to Bambuddy's library and added to that printer's queue; the job is followed until it's printed.
     Bambuddy waits for a person to clear the bed before each next print.
 
@@ -356,6 +358,45 @@ def printers(cfg: dict | None = None, with_status: bool = True) -> list[dict]:
     return out
 
 
+_SECRET = ("access_code", "password", "token", "secret", "api_key", "apikey", "private_key", "auth")
+
+
+def redact(v):
+    """Remove secrets (printer access codes, keys, tokens) from anything Bambuddy returns."""
+    if isinstance(v, dict):
+        return {k: ("•••" if any(x in str(k).lower() for x in _SECRET) else redact(x)) for k, x in v.items()}
+    if isinstance(v, list):
+        return [redact(x) for x in v]
+    return v
+
+
+def everything(cfg: dict | None = None) -> dict:
+    """Printer status tab: all Bambuddy reports about each printer (record, full live status, its queue)
+    plus Bambuddy's system info — read only, secrets removed. Each part is fetched on its own, so one
+    failing part shows its error instead of hiding the rest."""
+    cfg = cfg or load_config()
+
+    def get(path):
+        try:
+            return api("GET", path, cfg=cfg, timeout=10)
+        except FarmError as e:
+            return {"error": str(e)}
+
+    out = {"fetched_at": time.time(), "bambuddy_url": cfg["bambuddy_url"], "system": redact(get("/system/info")),
+           "printers": []}
+    plist = get("/printers/")
+    if isinstance(plist, dict):  # error
+        out["error"] = plist.get("error", "")
+        return out
+    for p in plist or []:
+        pid = int(p["id"])
+        status = get(f"/printers/{pid}/status")
+        _status_cache[pid] = (time.time(), status if "error" not in status else {"connected": False, **status})
+        out["printers"].append({"id": pid, "name": p.get("name") or f"Printer {pid}", "printer": redact(p),
+                                "status": redact(status), "queue": redact(get(f"/queue/?printer_id={pid}"))})
+    return out
+
+
 def clear_plate(pid: int) -> None:
     """A person confirmed the bed is empty: Bambuddy may start the next queued print."""
     api("POST", f"/printers/{pid}/clear-plate")
@@ -579,7 +620,8 @@ def clean_options(o: dict | None) -> dict:
 def print_job(job_id: int, printer_id: int, options: dict | None, prs: list[dict]) -> dict:
     """Printers page → Print: send this job's plate to the chosen printer with these options.
     Waiting to send → just changed; waiting in Bambuddy's queue → moved there; failed / cancelled /
-    printed → printed again as a new job. A plate that is printing can't be changed."""
+    printed → printed again as a new job. A plate that is printing can't be changed. Nothing here
+    starts a print: every job waits in Bambuddy until a person presses Start (`start_job`)."""
     opts = clean_options(options)
     with db.tx() as con:
         j = con.execute("SELECT * FROM print_jobs WHERE id=? AND computer_id=?", (job_id, computer.ID)).fetchone()
@@ -612,6 +654,29 @@ def print_job(job_id: int, printer_id: int, options: dict | None, prs: list[dict
              computer.ID))
     WORKER.kick()
     return {"job_id": int(cur.lastrowid), "moved": False}
+
+
+class StartBlocked(FarmError):
+    """Bambuddy wants a confirmation before starting (e.g. not enough filament on the spool)."""
+
+
+def start_job(job_id: int, force: bool = False) -> None:
+    """A person pressed Start: Bambuddy may print it once the printer is free and its bed is cleared."""
+    with db.tx() as con:
+        j = con.execute("SELECT * FROM print_jobs WHERE id=? AND computer_id=?", (job_id, computer.ID)).fetchone()
+    if j is None:
+        raise FarmError("No such print job")
+    if j["state"] != "sent" or not j["queue_item_id"]:
+        raise FarmError("Only a plate waiting in Bambuddy's queue can be started")
+    cfg = load_config()
+    base = cfg["bambuddy_url"].rstrip("/") + "/api/v1"
+    q = "?skip_filament_check=true" if force else ""
+    st, data = _call(base, "POST", f"/queue/{j['queue_item_id']}/start{q}", key=cfg["api_key"])
+    if st == 409:
+        raise StartBlocked(f"Bambuddy: {_detail(st, data)}")
+    if st >= 400:
+        raise FarmError(f"Bambuddy: {_detail(st, data)}")
+    _set(job_id, held=0, error=None)
 
 
 def job_choices(job: dict, prs: list[dict]) -> list[dict]:
@@ -733,20 +798,13 @@ class Worker:
         filename = _upload_name(label, kind, sliced.name)
         up = api("POST", "/library/files", cfg=cfg, files=[("file", filename, data, "application/octet-stream")], timeout=300)
         file_id = int(up["id"])
-        r = api("POST", "/library/files/add-to-queue", cfg=cfg, json_body={"file_ids": [file_id], "printer_id": j["printer_id"]})
-        added = (r or {}).get("added") or []
-        if not added:
-            errs = "; ".join(e.get("error", "") for e in (r or {}).get("errors") or []) or "not added"
-            raise FarmError(f"Bambuddy didn't queue it: {errs}")
-        qid = int(added[0]["queue_item_id"])
-        _set(j["id"], state="sent", file_id=file_id, queue_item_id=qid, error=None)
+        # Held (manual_start): Bambuddy never starts it by itself — a person presses Start.
         opts = clean_options(json.loads(j.get("options") or "{}"))
-        if opts:  # set on the queue item (add-to-queue doesn't take them)
-            try:
-                api("PATCH", f"/queue/{qid}", cfg=cfg, json_body=opts)
-            except FarmError as e:
-                _set(j["id"], error=f"Queued, but the print options weren't set: {e}")
-        self._log(f"{Path(j['plate']).name} → queued on {j['printer_name']}")
+        item = api("POST", "/queue/", cfg=cfg, json_body={"library_file_id": file_id, "printer_id": j["printer_id"],
+                                                         "manual_start": True, **opts})
+        qid = int((item or {})["id"])
+        _set(j["id"], state="sent", file_id=file_id, queue_item_id=qid, held=1, error=None)
+        self._log(f"{Path(j['plate']).name} → in {j['printer_name']}'s queue, waiting for Start")
 
     def refresh(self) -> None:
         """Follow jobs sent to Bambuddy: waiting → printing → printed (or failed / cancelled there)."""
@@ -765,6 +823,9 @@ class Worker:
                 continue
             new = QUEUE_STATE.get((item or {}).get("status", ""), j["state"])
             changes: dict = {}
+            held = 1 if (item or {}).get("manual_start") and new == "sent" else 0
+            if held != (j.get("held") or 0):
+                changes["held"] = held
             if new != j["state"]:
                 changes["state"] = new
                 if new == "failed":
