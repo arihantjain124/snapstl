@@ -33,8 +33,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   plates (print farm) go only in that batch's `Sliced/` folder, same path + `.gcode.3mf`.
 - **Print farm (Bambuddy):** plates reach printers only through Bambuddy on this computer, only after a
   person presses **Start print** in Make It (never automatically after a build), and only on a
-  printer that fits: its Location in Bambuddy allows the kind and the plate's colour is loaded (white
-  for bases). Never skip Bambuddy's "Clear plate" step. SnapSTL never talks to printers directly.
+  printer that has the plate's colour loaded (white for bases). Printers have no Bases / Names
+  setting: any printer can print either. Never skip Bambuddy's "Clear plate" step. SnapSTL never talks to printers directly.
 - **No print starts by itself:** every queue item is created with `manual_start: true` (held) and is
   released only by a person's click (**Start print** → `autostart`, or `farm.start_job`). Never create
   a queue item that can start on its own, and never start one from a code path a person didn't click.

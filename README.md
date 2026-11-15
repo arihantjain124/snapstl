@@ -146,9 +146,8 @@ Bambuddy**). SnapSTL only reads them.
 
 1. **On each printer:** Settings → Network → turn on **LAN Only Mode**, then **Developer Mode**.
    Developer Mode cuts the printer off from Bambu Cloud and the Bambu Handy app.
-2. **In Bambuddy:** add each printer (IP address, serial number, access code). Set its **Location** to
-   start with `Bases` for printers that make bases, or `Names` for printers that make names. A printer
-   with any other Location gets both kinds of plates.
+2. **In Bambuddy:** add each printer (IP address, serial number, access code). Any printer can print
+   bases or names. What matters is the filament loaded in it.
 3. **Filament:** nothing to enter. SnapSTL reads what's loaded in each AMS slot and external spool from
    Bambuddy, with Bambu's colour names (e.g. *Hot Pink*, *Jade White*). Base plates need white loaded;
    a name plate needs its colour. A close colour (e.g. *Hot Pink* for a *pink* order) is offered, but
@@ -163,7 +162,7 @@ Bambuddy**). SnapSTL only reads them.
 
 - **Bases**: every base plate of your built batches that still has to be printed. A printer is
   already chosen: the next **available** printer (connected, idle, bed cleared, nothing of yours on
-  its way) that makes bases and has white loaded, with the **most filament left**. You can pick any
+  its way) that has white loaded, with the **most filament left**. You can pick any
   other printer that fits.
 - **Names**: every name plate with its colour. You can only pick printers that have that colour
   loaded, as Bambuddy reports it. One is pre-selected when such a printer is available.
@@ -297,7 +296,7 @@ was tested with (`scripts/bambuddy-version.txt`) at the same time.
 | Adding a printer in Bambuddy fails | Check the IP, serial and access code, and that LAN Only Mode **and** Developer Mode are on |
 | A plate shows **Slicing failed** | Read the message. "Bambuddy's slicer isn't running" → in Bambuddy, Settings → Slicer → start the slicer service and turn on Use Slicer API; then click **Slice** again |
 | A plate stays **Slicing** | It's stopped after 20 minutes without progress, with a message. Check Bambuddy → Settings → Slicer, then **Slice** again |
-| A printer is greyed out in Make It | It makes the other part (its **Location** in Bambuddy), it's offline, or that colour isn't loaded — load the spool; Make It → Printers shows what Bambuddy sees |
+| A printer is greyed out in Make It | It's offline, or that colour isn't loaded (white for bases) — load the spool; Make It → Printers shows what Bambuddy sees |
 | A pushed plate waits in Bambuddy | Its printer is busy or waiting for the bed to be cleared: **Clear plate** |
 | SnapSTL doesn't open | Run the install command again; it repairs and restarts SnapSTL |
 | Database getting big | Settings → Database → **Clean up** (orders already made are kept) |

@@ -215,7 +215,7 @@ def test_printers_page_reads_printers_and_filament_from_bambuddy(client, bb):
     assert r["status"]["connected"] and r["status"]["reachable"]
     assert "api_key" not in r["config"] and "bb_secret_key" not in json.dumps(r)  # never shown
     prs = {p["name"]: p for p in r["printers"]}
-    assert prs["Base 1"]["role"] == "bases" and prs["Names A"]["role"] == "names"
+    assert "role" not in prs["Base 1"]  # no Bases / Names setting: matched by filament only
     assert prs["Base 1"]["colors"] == ["jade white"] and prs["Base 1"]["spools"][0]["slot"] == "External"
     assert prs["Names A"]["colors"] == ["blue", "pink"]  # the empty AMS slot is left out
     sp = prs["Names A"]["spools"][0]
@@ -230,24 +230,25 @@ def test_printers_page_reads_printers_and_filament_from_bambuddy(client, bb):
     assert client.post("/api/farm/printers/1/clear-plate").status_code == 200 and bb.cleared == [1]
 
 
-def test_colour_matching_and_location_roles():
+def test_colour_matching_by_filament_only():
     plate_pink = {"kind": "names", "colors": ["pink"], "file": "p"}
     plate_base = {"kind": "bases", "colors": ["pink"], "file": "b"}
     ok = {"connected": True}
-    base = {"id": 1, "name": "B", "role": "bases", "colors": ["jade white"], "status": ok}
-    exact = {"id": 2, "name": "N1", "role": "names", "colors": ["blue", "pink"], "status": ok}
-    close = {"id": 3, "name": "N2", "role": "names", "colors": ["hot pink"], "status": ok}
-    both = {"id": 4, "name": "Any", "role": "", "colors": ["jade white", "pink"], "status": ok}
-    assert farm.eligible(plate_base, base) == "" and farm.match_note(plate_base, base) == "loaded: jade white"
-    assert "makes bases" in farm.eligible(plate_pink, base)
+    white = {"id": 1, "name": "B", "colors": ["jade white"], "status": ok}
+    exact = {"id": 2, "name": "N1", "colors": ["blue", "pink"], "status": ok}
+    close = {"id": 3, "name": "N2", "colors": ["hot pink"], "status": ok}
+    mixed = {"id": 4, "name": "Any", "colors": ["jade white", "pink"], "status": ok}
+    assert farm.eligible(plate_base, white) == "" and farm.match_note(plate_base, white) == "loaded: jade white"
+    assert "needs pink" in farm.eligible(plate_pink, white)  # only white loaded
+    assert "needs white" in farm.eligible(plate_base, exact)
     assert farm.eligible(plate_pink, exact) == "" and farm.match_note(plate_pink, exact) == ""
     assert farm.eligible(plate_pink, close) == "" and farm.match_note(plate_pink, close) == "loaded: hot pink"
     assert "needs blue" in farm.eligible({"kind": "names", "colors": ["blue"]}, close)
     assert farm.eligible(plate_pink, dict(exact, status={"connected": False})) == "offline"
-    # exact colour first, then the least busy; a printer with no Location takes both kinds
-    sug = farm.suggest([plate_pink, dict(plate_pink, file="p2"), plate_base], [base, exact, close, both], {})
-    assert sug["p"] == 2 and sug["p2"] == 4 and sug["b"] == 1
-    assert farm.role_of("Bases – left rack") == "bases" and farm.role_of("names") == "names" and farm.role_of("Shed") == ""
+    # any printer with the filament takes either kind: exact colour first, then the least busy
+    sug = farm.suggest([plate_pink, dict(plate_pink, file="p2"), plate_base, dict(plate_base, file="b2")],
+                       [white, exact, close, mixed], {})
+    assert sug["p"] == 4 and sug["p2"] == 2 and sug["b"] == 1 and sug["b2"] == 4
 
 
 def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
@@ -262,7 +263,7 @@ def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     assert by[base_plate]["need"] == "white" and by[pink]["need"] == "pink"
     assert all(p["sliced"] is None for p in v["plates"])
     ch = {c["name"]: c for c in by[pink]["choices"]}
-    assert ch["Names A"]["why_not"] == "" and ch["Names B"]["note"] == "loaded: hot pink" and "makes bases" in ch["Base 1"]["why_not"]
+    assert ch["Names A"]["why_not"] == "" and ch["Names B"]["note"] == "loaded: hot pink" and "needs pink" in ch["Base 1"]["why_not"]
 
     # wrong printer for a plate is refused
     r = client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": blue, "printer_id": 3}]})
@@ -332,7 +333,7 @@ def test_print_button_moves_reprints_and_sets_options(client, bb):
     j2 = job_of(client, bid, pink)
     assert j2["printer_name"] == "Names B" and j2["options"] == {"bed_levelling": "on", "timelapse": True}
     # a printer without the colour, a bad option, and a printing job are refused
-    assert "makes bases" in client.post(f"/api/print-jobs/{j['id']}/print", json={"printer_id": 1}).json()["detail"]
+    assert "needs pink" in client.post(f"/api/print-jobs/{j['id']}/print", json={"printer_id": 1}).json()["detail"]
     assert client.post(f"/api/print-jobs/{j['id']}/print", json={"printer_id": 2, "options": {"flow_cali": "maybe"}}).status_code == 400
 
     # printed → Print again = a new job with its options, applied after it reaches the queue

@@ -204,7 +204,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="msgs" id="mkmsgs"></div>
     <div class="chips" id="mktabs"></div>
     <div id="mk-bases" class="mkpane">
-      <p class="hint">Base plates of your built batches. A printer is pre-selected: the next <b>available</b> printer that makes bases, with white loaded and the most filament left. Nothing prints until you press <b>Start print</b>.</p>
+      <p class="hint">Base plates of your built batches. A printer is pre-selected: the next <b>available</b> printer with white loaded and the most filament left. Nothing prints until you press <b>Start print</b>.</p>
       <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Plate</th><th>Slice</th><th>Printer</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mkbases"></tbody></table></div>
     </div>
     <div id="mk-names" class="mkpane" hidden>
@@ -227,7 +227,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Printed on</th><th>When</th><th></th></tr></thead><tbody id="mkdone"></tbody></table></div>
     </div>
     <div id="mk-printers" class="mkpane" hidden>
-      <p class="hint">Live from Bambuddy: what each printer makes (its <b>Location</b> in Bambuddy: <i>Bases…</i> / <i>Names…</i>, else both), its state and the filament in every slot. Printers and filament are managed in Bambuddy. Full details: <b>Printer status</b>.</p>
+      <p class="hint">Live from Bambuddy: each printer's state and the filament in every slot. Printers and filament are managed in Bambuddy. Full details: <b>Printer status</b>.</p>
       <div class="prgrid" id="printers"></div>
       <div class="log" id="farmlog" style="margin-top:10px;max-height:120px"></div>
     </div>
@@ -453,10 +453,10 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <p><b>Bambuddy</b>, the open-source print-farm manager, is installed with SnapSTL on this computer (<code>http://127.0.0.1:8000</code>). It's connected to your Bambu printers and keeps a queue per printer. SnapSTL connects to it by itself; the <b>Printers</b> page shows it.</p>
     <ol>
       <li><b>On each printer:</b> Settings → Network → <b>LAN Only Mode</b> on, then <b>Developer Mode</b> on. Developer Mode disconnects the printer from Bambu Cloud and the Handy app.</li>
-      <li><b>In Bambuddy</b> (Make It → <b>Open Bambuddy</b>): add each printer. Its <b>Location</b> says what it makes: starting with <i>Bases</i> or <i>Names</i>; anything else = both.</li>
+      <li><b>In Bambuddy</b> (Make It → <b>Open Bambuddy</b>): add each printer. Any printer can print bases or names — it only needs the right filament loaded.</li>
       <li><b>Filament</b> is read from Bambuddy: every AMS slot and external spool with Bambu's colour name (<i>Hot Pink</i>, <i>Jade White</i>). Nothing to type in SnapSTL — load the spool and it shows up.</li>
     </ol>
-    <p><b>Make It</b> (sidebar) has four parts. <b>Bases</b>: every base plate still to print, with the next <b>available</b> printer that makes bases, has white loaded and the most filament left already chosen. <b>Names</b>: every name plate with its colour — only printers with that colour loaded (from Bambuddy) can be chosen; one is pre-selected when available. <b>Completed</b>: printed plates, with <b>Reprint</b> only for a failed print. <b>Printers</b>: state, filament per slot, and <b>Clear plate</b>.</p>
+    <p><b>Make It</b> (sidebar) has four parts. <b>Bases</b>: every base plate still to print, with the next <b>available</b> printer that has white loaded and the most filament left already chosen. <b>Names</b>: every name plate with its colour — only printers with that colour loaded (from Bambuddy) can be chosen; one is pre-selected when available. <b>Completed</b>: printed plates, with <b>Reprint</b> only for a failed print. <b>Printers</b>: state, filament per slot, and <b>Clear plate</b>.</p>
     <p><b>Nothing prints until you click Start print</b> on a plate: that click sends it to the chosen printer (with its <b>Options</b>: bed levelling, flow calibration, timelapse) and starts it. Bambuddy then prints it as soon as the printer is free and its bed has been cleared (<b>Clear plate</b>, in Bambuddy or Make It → Printers). If Bambuddy warns (e.g. too little filament), SnapSTL asks before starting anyway. A printed plate moves to <b>Completed</b>; once an order's base and name are both printed it shows in <b>Orders → Ready to ship</b>.</p>
     <p><b>Slicing</b> is done by <b>Bambuddy's slicer</b> only. In Bambuddy: <b>Settings → Slicer</b> → start its slicer service (Docker) and turn on <b>Use Slicer API</b>. In SnapSTL: <b>Make It → Slice</b> → choose the printer / process / filament presets from Bambuddy's list → <b>Save presets</b>; then <b>Slice</b> on a plate or <b>Slice all waiting plates</b>. Plates are sliced one at a time in the background: <i>Waiting to slice → Slicing % → Sliced</i>, or <i>Slicing failed</i> with the reason. A slice with no progress for 20 minutes is stopped with a message. <b>Start print</b> on a plate that isn't sliced yet slices it first. <b>Remove</b> takes a plate off its list (e.g. printed by hand); <b>Make It → Removed → Put back</b> returns it.</p>
   </div>
@@ -726,10 +726,10 @@ const STATE_PILL=s=>{if(!s)return '<span class="pill">—</span>';if(!s.connecte
 const fmtMin=m=>m>=60?`${Math.floor(m/60)} h ${Math.round(m%60)} min`:`${Math.round(m)} min`;
 function spoolRow(x){const name=x.name||(x.approx?`≈ ${x.approx}`:(x.hex||'unknown colour'));
   return `<div class="spool"><span class="slot">${esc(x.slot)}</span><span class="dot" style="background:${esc(x.hex||'transparent')}"></span><span>${esc(name)}</span><span class="hint">${esc(x.material||'')}${x.remain!=null?` · ${x.remain}%`:''}</span></div>`}
-function printerCard(p){const s=p.status||{};const job=p.role==='bases'?'Bases':p.role==='names'?'Names':'Bases & names';
+function printerCard(p){const s=p.status||{};
   const facts=[s.layer!=null&&s.layers?`layer ${s.layer}/${s.layers}`:'',s.nozzle!=null?`nozzle ${Math.round(s.nozzle)}°${s.nozzle_target?'/'+Math.round(s.nozzle_target)+'°':''}`:'',s.bed!=null?`bed ${Math.round(s.bed)}°${s.bed_target?'/'+Math.round(s.bed_target)+'°':''}`:'',s.wired?'ethernet':(s.wifi!=null?`Wi-Fi ${s.wifi} dBm`:''),s.door_open?'door open':'',s.sdcard===false?'no SD card':''].filter(Boolean).join(' · ');
   return `<div class="prcard"><div class="top"><b>${esc(p.name)}</b><span class="hint">${esc(p.model||'')}</span><span class="grow"></span>${STATE_PILL(s)}</div>
-    <div class="facts">Makes: <b>${job}</b>${p.location?` <span class="hint">(Location: ${esc(p.location)})</span>`:''} · ${esc(p.ip)}</div>
+    <div class="facts">${esc(p.ip)}${p.location?` · ${esc(p.location)}`:''}</div>
     ${s.file?`<div class="facts">Printing: ${esc(s.file)}</div>`:''}${facts?`<div class="facts">${esc(facts)}</div>`:''}
     <div class="spools">${p.spools.length?p.spools.map(spoolRow).join(''):'<span class="hint">No filament reported</span>'}</div>
     ${META.local&&s.awaiting_plate_clear?`<div style="margin-top:8px"><button class="small primary" data-pclear="${p.id}" title="You checked the bed is empty: the next queued print may start">Clear plate</button></div>`:''}</div>`}
@@ -841,7 +841,7 @@ const T=(c,t)=>c==null?'—':`${Math.round(c)}°${t?` / ${Math.round(t)}°`:''}`
 function statusCard(p){const m=p.summary||{};const raw=p.status||{};
   const pill=!m.connected?`<span class="pill err">Offline</span>`:`<span class="pill ${m.errors&&m.errors.length?'err':m.raw_state==='RUNNING'?'info':m.raw_state==='PAUSE'?'warn':m.raw_state==='FAILED'?'err':'ok'}">${esc(m.state)}</span>`;
   let h=`<div class="pscard"><div class="top" style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b style="font-size:15px">${esc(p.name)}</b><span class="hint">${esc(m.model||'')}</span><span class="grow"></span>${pill}</div>
-    <div class="line hint">Makes <b>${esc(m.makes||'')}</b>${m.location?` (Location: ${esc(m.location)})`:''} · ${esc(m.ip||'')}</div>`;
+    <div class="line hint">${esc(m.ip||'')}${m.location?` · ${esc(m.location)}`:''}</div>`;
   if(!m.connected)h+=`<div class="reason" style="margin-top:6px">Bambuddy can't reach this printer${m.error?': '+esc(m.error):''}. Check it's on, on the network, in LAN Only + Developer Mode.</div>`;
   if(m.awaiting_plate_clear)h+=`<div class="msgs"><div class="w">Waiting for the bed to be cleared — then press Clear plate (Make It → Printers or Bambuddy).</div></div>`;
   const j=m.job;

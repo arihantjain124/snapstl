@@ -8,8 +8,8 @@ SnapSTL:
   * connects to Bambuddy — on a fresh install (Bambuddy's login off) it creates its own API key;
   * only *reads* the printers from Bambuddy (Printers page): live state and the filament loaded in
     each AMS slot / external spool, named with Bambuddy's colour catalogue ("Hot Pink", "Jade White").
-    Printers, filament and everything else are set up in Bambuddy itself. A printer's **Location** in
-    Bambuddy says what it makes: "Bases…" or "Names…" (anything else: both);
+    Printers, filament and everything else are set up in Bambuddy itself. Any printer can print bases
+    or names: it only needs the right filament loaded (white for bases, the name's colour for names);
   * after a build, **Push to queue**: for each plate the person picks a printer (a suggestion is
     pre-filled: the plate's colour loaded — white for bases — right job, least busy).
   * nothing is queued or started by itself: a plate goes to Bambuddy only when a person presses Push
@@ -320,18 +320,8 @@ def spools(s: dict, cmap: dict) -> list[dict]:
     return out
 
 
-def role_of(location: str) -> str:
-    """What a printer makes, from its Location in Bambuddy: 'Bases…' / 'Names…'; anything else = both."""
-    loc = (location or "").strip().lower()
-    if loc.startswith("base"):
-        return "bases"
-    if loc.startswith("name"):
-        return "names"
-    return ""
-
-
 def printers(cfg: dict | None = None, with_status: bool = True) -> list[dict]:
-    """Bambuddy's printers (read only): what they make (Location), live state, filament loaded."""
+    """Bambuddy's printers (read only): live state and filament loaded."""
     cfg = cfg or load_config()
     cmap = color_names(cfg) if with_status else {}
     out = []
@@ -339,7 +329,7 @@ def printers(cfg: dict | None = None, with_status: bool = True) -> list[dict]:
         pid = int(p["id"])
         item = {"id": pid, "name": p.get("name") or f"Printer {pid}", "model": p.get("model") or "",
                 "serial": p.get("serial_number") or "", "ip": p.get("ip_address") or "",
-                "location": p.get("location") or "", "role": role_of(p.get("location") or ""),
+                "location": p.get("location") or "",
                 "active": p.get("is_active", True), "spools": [], "colors": []}
         if with_status:
             s = printer_status(pid, cfg)
@@ -424,7 +414,6 @@ def summarize(p: dict, s: dict, queue, cmap: dict) -> dict:
     return {
         "connected": bool(s.get("connected")) and "error" not in s, "error": s.get("error", ""),
         "state": STATES.get(state, state.title() or "Unknown"), "raw_state": state,
-        "makes": {"bases": "Bases", "names": "Names"}.get(role_of(p.get("location") or ""), "Bases & names"),
         "location": p.get("location") or "", "model": p.get("model") or "", "ip": p.get("ip_address") or "",
         "serial": p.get("serial_number") or "", "firmware": s.get("firmware_version"),
         "developer_mode": s.get("developer_mode"),
@@ -614,10 +603,7 @@ def color_match(need: str, colors: list[str]) -> tuple[int, str]:
 
 
 def eligible(plate: dict, printer: dict) -> str:
-    """'' if the printer can print this plate (right job, the plate's colour loaded), else why not."""
-    role = printer.get("role")
-    if role and role != plate["kind"]:
-        return f"makes {'names' if role == 'names' else 'bases'} (Location in Bambuddy)"
+    """'' if the printer can print this plate (the plate's colour loaded: white for bases), else why not."""
     st = printer.get("status") or {}
     if st and not st.get("connected"):
         return "offline"
@@ -653,8 +639,7 @@ def suggest(plates: list[dict], prs: list[dict], active_jobs: dict[int, int]) ->
             out[pl["file"]] = None
             continue
         need = needed_color(pl)
-        best = min(ok, key=lambda p: (-color_match(need, p.get("colors") or [])[0], load[p["id"]],
-                                      bool(p.get("role")) is False, p["name"]))
+        best = min(ok, key=lambda p: (-color_match(need, p.get("colors") or [])[0], load[p["id"]], p["name"]))
         out[pl["file"]] = best["id"]
         load[best["id"]] += 1
     return out
