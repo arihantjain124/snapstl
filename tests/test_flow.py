@@ -495,4 +495,28 @@ def test_printed_tab_and_report_dates(client):
     assert report_end_date([["Date Range: 30/10/2026 to 14/11/2026"], ["Order ID"]], 1) == "2026-11-14"
     assert status_stamp("2026-11-15", "2026-11-14", "u2") > status_stamp("", "2026-11-14", "u9")
     # without shared records set up, Sync now explains what to do
-    assert "SNAPSTL_DATABASE_URL" in client.post("/api/sync").json()["detail"]
+    assert "Settings" in client.post("/api/sync").json()["detail"]
+
+
+def test_shared_records_are_set_in_settings(client, monkeypatch):
+    from snapstl import config
+
+    monkeypatch.setattr(config, "SECRETS_PATH", config.SECRETS_PATH.parent / "shared-test.json")
+    monkeypatch.delenv("SNAPSTL_DATABASE_URL", raising=False)
+    assert "YOUR-PASSWORD" in config.check_url("postgresql://postgres.x:[YOUR-PASSWORD]@h.supabase.com:5432/postgres")
+    assert "password is missing" in config.check_url("postgresql://postgres.x@h.supabase.com:5432/postgres")
+    assert config.check_url("postgresql://postgres.x:Abc123@h.pooler.supabase.com:5432/postgres") == ""
+    r = client.post("/api/shared-records", json={"url": "postgresql://u:[YOUR-PASSWORD]@h:5432/p"})
+    assert r.status_code == 400 and "YOUR-PASSWORD" in r.json()["detail"]
+    r = client.post("/api/shared-records", json={"url": "postgresql://u:pw@127.0.0.1:1/p"})  # unreachable: not saved
+    assert r.status_code == 400 and config.database_url() == ""
+    r = client.post("/api/shared-records", json={"computer_name": "  Packing   Mac "}).json()
+    assert r["computer_name"] == "Packing Mac" and r["configured"] is False
+    config.set_database_url("postgresql://u:secretpw@db.example:5432/p")
+    info = client.get("/api/shared-records").json()
+    assert info["configured"] and "secretpw" not in str(info) and info["where"] == "u @ db.example"
+    assert oct(config.SECRETS_PATH.stat().st_mode & 0o777) == "0o600"
+    client.post("/api/shared-records", json={"disconnect": True})
+    assert config.database_url() == ""
+    s = client.get("/api/setup").json()
+    assert s["shared_records"]["configured"] is False and s["helper_folder"].endswith("helper")

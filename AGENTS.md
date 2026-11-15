@@ -58,8 +58,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 
 **Privacy**
 - Customer name/phone/address live only in the local database and the owner's shared order records
-  (Supabase, Mumbai) set in `.env`. Never send them anywhere else, log them, or put them in
-  git. `.env` (database password) is never committed; `.env.example` lists the keys with no values. License passwords live only in `settings.json` (per model) — never in model folders
+  (Supabase, Mumbai). Never send them anywhere else, log them, or put them in git. **The repository is public:** every secret — license passwords, the Supabase connection string (`config.py`, `shared-records.json`, mode 600), the portal password — is entered in the app's Settings and stays in the app folder; never add a secrets file to the repo or ask users to edit one. License passwords live only in `settings.json` (per model) — never in model folders
   (`info.json`), logs, reports or git. The helper's `check` carries only booleans/"sent" — never the password.
 - Never weaken the license guard: no download without the model's password, no saving a download the
   helper didn't confirm or that still has the watermark (decision log #18).
@@ -92,7 +91,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Backups / clean-up / reset | `maintenance.py` |
 | Install / service / window | Mac `scripts/make_app.sh`; Windows `scripts/windows/*.ps1`; `src/snapstl/__init__.py` |
 | Mac vs Windows (folders, Finder/Explorer, keep awake, restart, LAN name) | `platform_os.py` |
-| Shared order records (Supabase), .env, sync, claims | `sync.py`, `config.py`, `computer.py`, `dbtool.py` (`snapstl-db`), triggers in `db.POST_SCHEMA` |
+| Shared order records (Supabase): connection in Settings, sync, claims | `sync.py`, `config.py`, `computer.py`, `server.shared_records_*`, `server.setup_status`, `dbtool.py` (`snapstl-db`), triggers in `db.POST_SCHEMA` |
 | Printed tab / report status timestamps | `ingest.set_printed`, `ingest.status_stamp`, `server.TABS`, `index.html` (`SELKIND`) |
 
 ## 4. How to work

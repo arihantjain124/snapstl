@@ -1,49 +1,79 @@
-"""Secrets and per-computer configuration from the `.env` file in the SnapSTL folder.
+"""Per-computer connection details, entered in the app (Settings → Shared order records).
 
-`.env` is never in git (.gitignore); `.env.example` shows every key. Values already set in the
-environment win over the file (tests and dev runs rely on that).
+The shared order records' connection string holds the Supabase database password, so it is kept
+only on this computer: `shared-records.json` in the app folder, readable by this user only. It is
+never shown back in full, never logged and never in git (the repository is public).
 
-Keys:
-  SNAPSTL_DATABASE_URL   Postgres connection string of the shared order records (Supabase, sync.py).
-                         Empty = no sharing (this computer only). The local database is SQLite either way.
-  SNAPSTL_COMPUTER_NAME  How this computer is named on batches (default: the computer's name).
-  SNAPSTL_PORT           Port of the local web portal (default 8317).
+For tests and development an environment variable overrides it:
+  SNAPSTL_DATABASE_URL   connection string ("" = no shared records)
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
+
+from .platform_os import app_dir
 
 ROOT = Path(__file__).resolve().parents[2]  # the SnapSTL folder (src/snapstl/config.py → ../../)
-ENV_PATH = ROOT / ".env"
+SECRETS_PATH = app_dir() / "shared-records.json"
 
 
-def _parse(text: str) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        k = k.strip().removeprefix("export ").strip()
-        v = v.strip()
-        if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
-            v = v[1:-1]
-        out[k] = v
-    return out
-
-
-def load(path: Path = ENV_PATH) -> None:
+def _read() -> dict:
     try:
-        values = _parse(path.read_text(encoding="utf-8"))
-    except OSError:
-        return
-    for k, v in values.items():
-        os.environ.setdefault(k, v)
-
-
-load()
+        return json.loads(SECRETS_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
 
 
 def database_url() -> str:
-    return os.environ.get("SNAPSTL_DATABASE_URL", "").strip()
+    if "SNAPSTL_DATABASE_URL" in os.environ:  # tests / development
+        return os.environ["SNAPSTL_DATABASE_URL"].strip()
+    return str(_read().get("database_url", "")).strip()
+
+
+def set_database_url(url: str) -> None:
+    """Save (or with "" remove) the connection string, readable by this user only."""
+    SECRETS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    data = _read()
+    data["database_url"] = url.strip()
+    tmp = SECRETS_PATH.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f)
+    os.replace(tmp, SECRETS_PATH)
+
+
+def check_url(url: str) -> str:
+    """A plain-English problem with a pasted connection string, or ""."""
+    url = url.strip()
+    if not url:
+        return "Paste the connection string from Supabase"
+    if "YOUR-PASSWORD" in url:
+        return "Replace [YOUR-PASSWORD] (brackets included) with your database password"
+    try:
+        u = urlsplit(url)
+        _ = u.port
+    except ValueError:
+        return ("The connection string isn't valid — if your database password has symbols "
+                "(@ : / # ? %), change it in Supabase to letters and digits only")
+    if u.scheme not in ("postgres", "postgresql"):
+        return "It should start with postgresql:// (Supabase → Connect → Connection string → URI)"
+    if not u.password:
+        return "The database password is missing from the connection string"
+    if not u.hostname:
+        return "The server address is missing from the connection string"
+    return ""
+
+
+def describe(url: str | None = None) -> str:
+    """Where it connects, without the password (e.g. 'postgres.abcd @ aws-0-ap-south-1.pooler.supabase.com')."""
+    url = database_url() if url is None else url
+    if not url:
+        return ""
+    try:
+        u = urlsplit(url)
+        return f"{u.username or '?'} @ {u.hostname or '?'}"
+    except ValueError:
+        return "(not valid)"

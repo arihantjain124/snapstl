@@ -1,6 +1,6 @@
 """`uv run snapstl-db …` — the shared order records (Supabase) from a terminal.
 
-  check   Test the connection set in .env (SNAPSTL_DATABASE_URL) and show what the records hold.
+  check   Test the connection set in Settings → Shared order records and show what the records hold.
   sync    Push this computer's changes and load everyone's (same as Settings → Database → Sync now).
 """
 from __future__ import annotations
@@ -14,8 +14,7 @@ from . import computer, sync
 def main() -> None:
     cmd = sys.argv[1] if len(sys.argv) > 1 else "check"
     if not sync.enabled():
-        sys.exit("No shared records set up: add SNAPSTL_DATABASE_URL to the .env file in the SnapSTL folder "
-                 "(README → Shared order records).")
+        sys.exit("No shared order records set up: connect them in the app (Settings → Shared order records).")
     try:
         if cmd == "check":
             c = sync.check()

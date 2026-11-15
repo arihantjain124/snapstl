@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import auth, cache, computer, db, platform_os, sync, updater
+from . import auth, cache, computer, config, db, platform_os, sync, updater
 from .ingest import ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
 from . import maintenance as M
@@ -43,7 +43,7 @@ async def _lifespan(_app):
     MANAGER.start()  # builds batches once their models arrive
     DOWNLOADER.pause_s = SETTINGS.delay_between_downloads_s
     DOWNLOADER.start()  # re-queues names that were mid-download when the app stopped
-    sync.LOOP.start()   # shared order records (Supabase), if .env sets them up
+    sync.LOOP.start()   # shared order records (Supabase), if connected in Settings
     yield
 
 
@@ -55,7 +55,7 @@ OPEN_PATHS = {"/login", "/api/login", "/api/auth-check", "/favicon.ico"}
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]", "::1")
 # Things only the SnapSTL computer itself may do (helper, Finder, folders, portal setup, reset).
 MAC_ONLY_PREFIXES = ("/api/helper/", "/api/downloads/reveal", "/api/portal", "/api/maintenance/reset",
-                     "/api/update")
+                     "/api/update", "/api/shared-records", "/api/setup")
 
 
 def is_local(request: Request) -> bool:
@@ -245,7 +245,7 @@ def meta(request: Request):
         "local": is_local(request),  # on the SnapSTL computer itself: no login, folder buttons, folder settings
         "version": _version(),
         "computer": {"id": computer.ID, "name": computer.NAME},
-        "shared_records": sync.enabled(),  # Supabase order records set up in .env
+        "shared_records": sync.enabled(),  # Supabase order records connected in Settings
         "os": "windows" if platform_os.WINDOWS else "mac",
         "file_manager": platform_os.file_manager(),
     }
@@ -603,6 +603,60 @@ async def maintenance_cleanup(req: Request):
         raise HTTPException(409, str(e)) from e
 
 
+@app.get("/api/shared-records")
+def shared_records_info():
+    """Settings → Shared order records (this computer only): connected where, this computer's name."""
+    return {"configured": sync.enabled(), "where": config.describe(), "computer_name": computer.NAME,
+            "status": sync.STATUS.snapshot()}
+
+
+@app.post("/api/shared-records")
+async def shared_records_save(req: Request):
+    """Connect (test first, then save), rename this computer, or disconnect."""
+    body = await req.json()
+    if "computer_name" in body:
+        computer.set_name(str(body.get("computer_name") or ""))
+    if body.get("disconnect"):
+        config.set_database_url("")
+        return shared_records_info()
+    url = str(body.get("url") or "").strip()
+    if url:
+        problem = config.check_url(url)
+        if problem:
+            raise HTTPException(400, problem)
+        try:
+            await run_in_threadpool(sync.check, url)  # reach it and create the tables before saving
+        except sync.SyncError as e:
+            raise HTTPException(400, f"{e}. Check the password and that you copied the Session pooler address.") from e
+        config.set_database_url(url)
+        sync.LOOP.start()
+        await run_in_threadpool(sync.sync_now)  # send this computer's batched/bundled/printed orders now
+    return shared_records_info()
+
+
+@app.get("/api/setup")
+def setup_status():
+    """Settings → Setup checklist: what's done on this computer."""
+    d = DOWNLOADER.snapshot()
+    u = updater.check(fetch=False)
+    return {
+        "helper": {"connected": d["online"], "on_page": d["on_page"]},
+        "model": {"link": bool(SETTINGS.design_id), "license": bool(SETTINGS.license_password)},
+        "folders": {"output": SETTINGS.output_dir, "downloads": SETTINGS.downloads_dir},
+        "shared_records": {"configured": sync.enabled(), "ok": bool(sync.STATUS.last_ok) and not sync.STATUS.error,
+                           "error": sync.STATUS.error},
+        "updates": {"git": u.get("git", False) and not u.get("error"), "error": u.get("error", "")},
+        "helper_folder": str(config.ROOT / "helper"),
+    }
+
+
+@app.post("/api/setup/helper-folder")
+def setup_helper_folder():
+    """Open the helper folder (for Chrome → Load unpacked)."""
+    platform_os.open_folder(config.ROOT / "helper")
+    return {"opened": str(config.ROOT / "helper")}
+
+
 @app.get("/api/sync")
 def sync_status():
     return sync.STATUS.snapshot()
@@ -612,7 +666,7 @@ def sync_status():
 def sync_run():
     """Settings → Database → Sync now: push this computer's changes, load everyone's."""
     if not sync.enabled():
-        raise HTTPException(400, "No shared records set up — add SNAPSTL_DATABASE_URL to the .env file (README → Shared order records)")
+        raise HTTPException(400, "No shared order records set up — connect them in Settings → Shared order records")
     return sync.sync_now()
 
 
@@ -812,8 +866,11 @@ def batch_zip(batch_id: int):
 
 # ---------------- settings ----------------
 @app.get("/api/settings")
-def get_settings():
-    return SETTINGS.to_dict()
+def get_settings(request: Request):
+    d = SETTINGS.to_dict()
+    if not is_local(request):  # other computers never see this computer's license passwords
+        d["license_passwords"] = {}
+    return d
 
 
 @app.put("/api/settings")
