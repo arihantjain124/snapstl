@@ -108,7 +108,9 @@ Snapstl/
 │   ├── computer.py           this computer's id + name (on batches and in the shared records)
 │   ├── sync.py               shared order records in Supabase: claim, push, pull, merge, background loop
 │   ├── farm.py               print farm: Bambuddy client (stdlib HTTP), printers + their job (farm.json),
-│   │                         slicing with Bambuddy's slicer, print jobs + background worker
+│   │                         slicing (OrcaSlicer via slicer.py, or Bambuddy's), print jobs + background worker
+│   ├── slicer.py             OrcaSlicer command line: presets from the slicer apps (inherits resolved),
+│   │                         model defaults, preset import, slice_plate (arrange/orient off)
 │   ├── makeit.py             Make It tab: Bases / Names queues across batches, printer pre-selection,
 │   │                         Start print, Completed + Reprint, Ready to ship (orders.made_at)
 │   ├── dbtool.py             `snapstl-db check | sync`
@@ -497,6 +499,9 @@ unsent changes):
   sends + starts with options; warning → held → force; done → Completed; base + name printed → Ready to
   ship (Bundled tab excludes it); Reprint → back to queue and out of Ready to ship; old batches'
   plate → order matching
+* `test_slicer.py` — OrcaSlicer (a stand-in program with the same command line): presets from the slicer
+  folders (abstract bases hidden, user over system), inheritance, model defaults, slice + plain-English
+  failure, preset import (file, bundle, wrong kind), and Make It: Orca slices → Bambuddy prints; bases white
 * `test_config.py` — passwords with symbols are encoded (already-encoded left alone), schema file =
   `sync.schema_sql()`
 * `test_farm.py` — every print waits held until Start (409 warning → force), Printer status has every
@@ -555,6 +560,7 @@ snapstl.server:app --port 8320`.
 | 34 | **Slicing only by Bambuddy's slicer** (`POST /library/files/{id}/slice` with presets from Bambuddy's list, chosen in Make It → Slice); SnapSTL's own slicer settings and sidecar client removed. Slices run in the background one at a time, polled (`/slice-jobs/{id}`), stopped after 20 min without progress; Start print slices first if needed. Plates can be **Removed** from Make It and put back | owner wants one slicer (Bambuddy's), a Slice menu in SnapSTL, and no plate stuck "slicing" (the 0.12 client sliced inline on the worker thread, up to 15 min per plate, holding everything behind it) |
 | 35 | Printer status page explains each printer in plain words (`farm.summarize`) + slicing status; raw fields only under "All fields" | owner found the raw dump hard to read |
 | 36 | Slicing presets per printer model (`presets_by_model`, default `presets`); slices are per (plate, model) and a print always gets the slice for its printer's model (sliced first if missing). **Automatic slicing** (`auto_slice`, default on) slices every waiting plate for each model every 30 s, never retrying a failure. Preset files are added to Bambuddy (`POST /local-presets/import`). **Print speed** per print (1–4) is set with `POST /printers/{id}/print-speed` once the print is running | owner wants slicing ready without clicks, model-specific settings, and speed control; printing still only on Start print |
+| 37 | **Slicing with OrcaSlicer's command line on this computer** (default when installed; the installers install it): presets read from Bambu Studio / OrcaSlicer (system + the owner's own) and SnapSTL-added files, `inherits` resolved by SnapSTL, `--arrange 0 --orient 0`, `--outputdir` (its log names the failure); one plate at a time in its own thread; output `Sliced/<model>/…gcode.3mf` uploaded to Bambuddy at Start print. Bambuddy's slicer stays selectable | Bambuddy's slicer needs Docker and wasn't running on the farm; Bambu Studio's Mac CLI crashes; Orca's (2.5.1) slices real SnapSTL plates in ~1 s, layout kept |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -564,10 +570,11 @@ snapstl.server:app --port 8320`.
 * MakerWorld's page is undocumented: a redesign can break `helper/content.js` (form labels,
   `plate_N.obj` names, the "Generate" text). Fix there, then reload the extension in `chrome://extensions`.
 * The MakerWorld tab must stay open, ideally in its own window (Chrome slows hidden tabs).
-* Slicing needs Bambuddy's slicer service running (Docker; its images are amd64, emulated and slower
-  on Apple-silicon Macs). Without it Bambuddy lists no presets and every slice fails with "slicer
-  isn't running". Tested against a real Bambuddy v1.3.1 without the service (request accepted, clear
-  failure) and against a fake for a successful slice — not yet with Bambuddy's slicer running.
+* Slicing uses OrcaSlicer 2.5.1's command line (tested on this Mac with real SnapSTL plates, Bambu Studio
+  2.5 presets and a user preset). Its packed system presets (`*.opc`) can't be read, so system presets
+  come from Bambu Studio (or Orca's data folder once Orca has been opened). Bambuddy's slicer (Docker)
+  remains an option, tested only up to "slicer not running". The Windows OrcaSlicer install (winget
+  `SoftFever.OrcaSlicer`) is untested.
 * The print farm was tested against a real Bambuddy v1.3.1 with a simulated printer (upload, queue,
   status, cancel) — not yet with a real printer; Bambuddy's API paths change between versions, so bump
   `scripts/bambuddy-version.txt` only after checking `farm.py` against the new release.

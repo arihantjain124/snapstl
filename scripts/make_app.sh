@@ -65,6 +65,17 @@ exec "$UV" run --no-dev --quiet snapstl >> "$LOG" 2>&1
 LAUNCH
 chmod +x "$APP/Contents/MacOS/SnapSTL"
 
+# ---- OrcaSlicer (Make It slices plates with its command line; Bambu Studio's can't on a Mac) ----
+ORCA="already installed"
+if [ ! -d /Applications/OrcaSlicer.app ] && [ ! -d "$HOME/Applications/OrcaSlicer.app" ] && [ "${SNAPSTL_NO_ORCA:-0}" != 1 ]; then
+  if command -v brew >/dev/null 2>&1; then
+    echo "Installing OrcaSlicer (the slicer SnapSTL uses)…"
+    if brew install --cask orcaslicer >/dev/null 2>&1; then ORCA="installed"; else ORCA="couldn't be installed — install it from https://github.com/OrcaSlicer/OrcaSlicer/releases"; fi
+  else
+    ORCA="not installed — install it from https://github.com/OrcaSlicer/OrcaSlicer/releases (or install Homebrew and run this again)"
+  fi
+fi
+
 # ---- Bambuddy (print farm: SnapSTL's Push to queue sends plates there) ----
 BAMBUDDY="not installed (SNAPSTL_NO_BAMBUDDY=1)"
 if [ "${SNAPSTL_NO_BAMBUDDY:-0}" != 1 ]; then
@@ -80,5 +91,6 @@ echo "Installed:"
 echo "  • Background service — starts at login; web portal: http://127.0.0.1:8317"
 echo "  • $APP — opens the SnapSTL window (drag it to the Dock)"
 echo "  • Bambuddy (print farm) — $BAMBUDDY"
+echo "  • OrcaSlicer (slicing) — $ORCA"
 echo "To uninstall the service: launchctl bootout gui/\$(id -u)/$LABEL && rm $PLIST"
 echo "To uninstall Bambuddy:    launchctl bootout gui/\$(id -u)/local.snapmagicians.bambuddy && rm ~/Library/LaunchAgents/local.snapmagicians.bambuddy.plist"

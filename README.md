@@ -152,15 +152,19 @@ Bambuddy**). SnapSTL only reads them.
    Bambuddy, with Bambu's colour names (e.g. *Hot Pink*, *Jade White*). Base plates need white loaded;
    a name plate needs its colour. A close colour (e.g. *Hot Pink* for a *pink* order) is offered, but
    marked *loaded: hot pink*. The exact colour is suggested first.
-4. **Slicing** is done by **Bambuddy's slicer** only. In Bambuddy open **Settings → Slicer**, start its
-   slicer service (Docker; on an Apple-silicon Mac it runs under emulation, slower) and turn on **Use
-   Slicer API**. Then in SnapSTL: **Make It → Slice** → choose the printer, process and filament
-   presets from Bambuddy's list → **Save presets**. **Presets for** lets each printer model (A1,
-   P1S, …) have its own presets, and the default covers the rest. Print speeds, layer height and
-   infill are part of the **process** preset. Make presets in Bambu Studio and add them to Bambuddy,
-   either in Bambuddy (Profiles → Local → Import) or with **Add printer / process / filament
-   preset…** on the Slice page. If Bambuddy lists none, its slicer isn't running
-   yet; Bambu's standard A1 presets are used until then.
+4. **Slicing** is done on this computer by **OrcaSlicer**, which the installer puts in Applications.
+   It's built from Bambu Studio, with the same engine and Bambu presets. Bambu Studio's own command
+   line can't slice on a Mac, which is why SnapSTL uses OrcaSlicer's. In **Make It → Slice**:
+   - **Presets** come from Bambu Studio and OrcaSlicer on this computer, including **your own saved
+     presets**. Save a preset in Bambu Studio and it shows up in the lists by itself. Choose the
+     printer, process and filament presets → **Save presets**.
+   - **Presets for** lets each printer model (A1, P1S, …) have its own presets. A model without its
+     own uses the default set, or else its own Bambu defaults. Print speeds, layer height and infill
+     are part of the **process** preset.
+   - **Add printer / process / filament preset…** takes preset files exported from another
+     computer (.json, .bbscfg, .bbsflmt).
+   - **Slicer**: OrcaSlicer on this computer (the default), or Bambuddy's slicer if you run that
+     instead (Bambuddy → Settings → Slicer, Docker).
 
 **Make It** (sidebar) is where plates are printed. It has four parts:
 
@@ -302,7 +306,7 @@ was tested with (`scripts/bambuddy-version.txt`) at the same time.
 | Settings → Database shows changes waiting | They're sent on the next sync; **Sync now** shows any problem |
 | Make It: **Bambuddy isn't answering** | Run the install command again (it repairs Bambuddy); log: `~/Library/Logs/Bambuddy` (Windows: `%LOCALAPPDATA%\Bambuddy\logs`) |
 | Adding a printer in Bambuddy fails | Check the IP, serial and access code, and that LAN Only Mode **and** Developer Mode are on |
-| A plate shows **Slicing failed** | Read the message. "Bambuddy's slicer isn't running" → in Bambuddy, Settings → Slicer → start the slicer service and turn on Use Slicer API; then click **Slice** again |
+| A plate shows **Slicing failed** | Read the message. "OrcaSlicer isn't installed" → run the install command again. "isn't made for the printer preset" → choose a process preset for that printer in Make It → Slice. Then click **Slice** again |
 | A plate stays **Slicing** | It's stopped after 20 minutes without progress, with a message. Check Bambuddy → Settings → Slicer, then **Slice** again |
 | A printer is greyed out in Make It | It's offline, or that colour isn't loaded (white for bases) — load the spool; Make It → Printers shows what Bambuddy sees |
 | A pushed plate waits in Bambuddy | Its printer is busy or waiting for the bed to be cleared: **Clear plate** |
