@@ -50,7 +50,7 @@ class FakeBambuddy:
         self.auth_enabled = auth_enabled
         self.printers = {
             1: {"id": 1, "name": "Base 1", "model": "A1", "serial_number": "S1", "ip_address": "10.0.0.11",
-                "location": "Bases", "is_active": True},
+                "location": "Bases", "is_active": True, "access_code": "12345678"},
             2: {"id": 2, "name": "Names A", "model": "A1", "serial_number": "S2", "ip_address": "10.0.0.21",
                 "location": "Names row", "is_active": True},
             3: {"id": 3, "name": "Names B", "model": "A1", "serial_number": "S3", "ip_address": "10.0.0.22",
@@ -66,6 +66,7 @@ class FakeBambuddy:
         self.colors = {"colors": {"ffffff": "Jade White", "f55a74": "Pink", "f5547c": "Hot Pink", "0a2989": "Blue"},
                        "by_material": {}}
         self.files, self.queue, self.keys, self.slices, self.cleared, self.patches = {}, {}, [], [], [], []
+        self.short_filament = False
         self.calls = []
 
     def __call__(self, method, url, headers, body, timeout):
@@ -110,12 +111,27 @@ class FakeBambuddy:
             self.queue[qid] = {"id": qid, "status": "pending", "printer_id": b["printer_id"], "library_file_id": b["file_ids"][0]}
             return 200, json.dumps({"added": [{"file_id": b["file_ids"][0], "filename": "x", "queue_item_id": qid}],
                                     "errors": []}).encode()
-        m = re.fullmatch(r"/api/v1/queue/(\d+)(/cancel)?", path)
+        if method == "GET" and path == "/api/v1/system/info":
+            return 200, b'{"app": {"version": "1.3.1"}, "printers": {"total": 3}}'
+        if method == "GET" and path.startswith("/api/v1/queue/?printer_id="):
+            pid = int(path.split("=")[1])
+            return 200, json.dumps([q for q in self.queue.values() if q.get("printer_id") == pid]).encode()
+        if method == "POST" and path == "/api/v1/queue/":
+            b = json.loads(body)
+            assert "library_file_id" in b
+            qid = len(self.queue) + 1
+            self.queue[qid] = {"id": qid, "status": "pending", **b}
+            return 200, json.dumps(self.queue[qid]).encode()
+        m = re.fullmatch(r"/api/v1/queue/(\d+)(/cancel|/start)?(\?.*)?", path)
         if m:
             qid = int(m.group(1))
             if qid not in self.queue:
                 return 404, b'{"detail":"Queue item not found"}'
-            if m.group(2):
+            if m.group(2) == "/start":
+                if self.short_filament and "skip_filament_check=true" not in (m.group(3) or ""):
+                    return 409, b'{"detail":{"code":"filament_deficit","message":"Not enough filament on AMS 1-1"}}'
+                self.queue[qid]["manual_start"] = False
+            elif m.group(2):
                 self.queue[qid]["status"] = "cancelled"
             elif method == "PATCH":
                 if self.queue[qid]["status"] != "pending":
@@ -151,7 +167,7 @@ def bb(monkeypatch, tmp_path):
         con.execute("DELETE FROM print_jobs")
         con.execute("DELETE FROM downloads WHERE batch_id > ?", (first,))
         con.execute("DELETE FROM batches WHERE id > ?", (first,))
-        con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%' OR order_id LIKE 'PB%'")
+        con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%' OR order_id LIKE 'PB%' OR order_id LIKE 'PS%'")
     farm.CONFIG_PATH.unlink(missing_ok=True)
 
 
@@ -247,6 +263,8 @@ def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     sent = bb.files[1]
     assert sent["filename"] == f"{folder.name} - Bases - {{Ayra,pink}},{{Riya,blue}}.gcode.3mf"
     assert b"by hand" in sent["data"] and bb.queue[1]["printer_id"] == 1
+    assert bb.queue[1]["manual_start"] is True and j["held"]  # never starts by itself
+    assert not any("add-to-queue" in u for _, u in bb.calls)
     # pushing the same plate again is skipped while it's on its way
     assert client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": base_plate, "printer_id": 1}]}).json()["skipped"] == 1
 
@@ -300,9 +318,32 @@ def test_print_button_moves_reprints_and_sets_options(client, bb):
     r = client.post(f"/api/print-jobs/{j['id']}/print", json={"printer_id": 2, "options": {"flow_cali": "off"}})
     assert r.status_code == 200 and not r.json()["moved"] and r.json()["job_id"] != j["id"]
     wait_for(lambda: job_of(client, bid, pink)["state"] == "sent")
-    assert bb.queue[2]["printer_id"] == 2 and bb.queue[2]["flow_cali"] == "off"
+    assert bb.queue[2]["printer_id"] == 2 and bb.queue[2]["flow_cali"] == "off" and bb.queue[2]["manual_start"] is True
     old = next(x for x in client.get("/api/farm").json()["jobs"] if x["id"] == j["id"])
     assert not old["latest"] and "choices" not in old  # only a plate's newest job has a Print button
+
+
+def test_prints_start_only_when_start_is_pressed(client, bb):
+    client.get("/api/farm")
+    bid, folder = built_batch(client, "PS")
+    plate = "Bases/{Ayra,pink},{Riya,blue}.3mf"
+    (folder / "Bases" / "{Ayra,pink},{Riya,blue}.gcode.3mf").write_bytes(sliced_bytes())
+    client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": plate, "printer_id": 1}]})
+    j = wait_for(lambda: (lambda j: j if j["state"] == "sent" else None)(job_of(client, bid, plate)))
+    farm.WORKER.refresh()
+    assert bb.queue[1]["manual_start"] is True and job_of(client, bid, plate)["held"]
+
+    bb.short_filament = True  # Bambuddy asks for a confirmation → 409, nothing started
+    r = client.post(f"/api/print-jobs/{j['id']}/start")
+    assert r.status_code == 409 and "Not enough filament" in r.json()["detail"] and bb.queue[1]["manual_start"] is True
+    assert client.post(f"/api/print-jobs/{j['id']}/start", json={"force": True}).status_code == 200
+    assert bb.queue[1]["manual_start"] is False and not job_of(client, bid, plate)["held"]
+    farm.WORKER.refresh()
+    assert not job_of(client, bid, plate)["held"]
+    # a job that isn't waiting in Bambuddy can't be started
+    bb.queue[1]["status"] = "completed"
+    farm.WORKER.refresh()
+    assert client.post(f"/api/print-jobs/{j['id']}/start").status_code == 400
 
 
 def test_cancel_and_login_on_bambuddy(client, bb):
@@ -342,3 +383,15 @@ def test_upload_names_fit_sd_cards():
     n = farm._upload_name("Batch 1 - 2026-11-16", "Names pink", "{" + "A" * 300 + ",pink}.gcode.3mf")
     assert n.endswith(".gcode.3mf") and len(n.encode()) <= 200
     assert farm._upload_name("B", "Bases", 'a:b?c.gcode.3mf') == "B - Bases - a_b_c.gcode.3mf"
+
+
+def test_printer_status_tab_has_everything_but_secrets(client, bb):
+    client.get("/api/farm")
+    r = client.get("/api/printer-status").json()
+    assert r["system"]["app"]["version"] == "1.3.1" and [p["name"] for p in r["printers"]] == ["Base 1", "Names A", "Names B"]
+    p1 = r["printers"][0]
+    assert p1["printer"]["access_code"] == "•••" and "12345678" not in json.dumps(r)
+    assert p1["status"]["vt_tray"][0]["tray_color"] == "FFFFFFFF" and p1["queue"] == []
+    assert r["printers"][1]["status"]["ams"][0]["tray"][2] == {"id": 2, "state": 9}  # every field, empty slots too
+    d = client.get("/api/printer-status?download=1")
+    assert "attachment" in d.headers["content-disposition"] and json.loads(d.text)["printers"][0]["id"] == 1

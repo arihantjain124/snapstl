@@ -124,6 +124,7 @@ MIGRATIONS = [
     ("orders", "bundled_at", "REAL"),
     ("orders", "printed_at", "REAL"),       # marked printed by a person
     ("print_jobs", "options", "TEXT"),      # JSON print options for Bambuddy (bed levelling, flow cali, timelapse)
+    ("print_jobs", "held", "INTEGER"),      # 1 = waiting in Bambuddy for a person to press Start
 ]
 
 # Bookkeeping for the shared records, kept by triggers so no code path can forget it:
