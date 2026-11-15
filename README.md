@@ -14,6 +14,8 @@ the SnapSTL app window onto the same portal, and the **SnapSTL Helper** in Chrom
 
 ## Install (on the dedicated Mac)
 
+Setting up a new Mac from the shared zip: follow **[INSTALL.md](INSTALL.md)**.
+
 Needs macOS 12+, Google Chrome and internet. Put the project folder somewhere permanent (not
 Downloads), then in Terminal inside the folder:
 
