@@ -11,3 +11,8 @@ __pycache__/
 *.csv
 *.zip
 output/
+
+# secrets and per-computer settings (see .env.example)
+.env
+.env.*
+!.env.example

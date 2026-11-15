@@ -7,6 +7,12 @@ Flow:
      the next queued name, generates it on the real page and uploads the base + name files.
   3. The manager thread builds a batch's plates as soon as all its models are cached (or the
      user presses "Build now"); missing orders go back to ready.
+
+Shared database: a batch belongs to the computer that created it (batches.computer_id). Only that
+computer downloads its models (its helper, its Downloads folder), builds its plates and shows its
+files; other computers see the batch, its status and progress, but can't act on it. Orders taken
+into a batch leave Ready on every computer at once (a lock makes two computers taking the same
+order impossible).
 """
 from __future__ import annotations
 
@@ -17,7 +23,7 @@ import time
 import traceback
 from dataclasses import asdict
 
-from . import cache, db, watermark
+from . import cache, computer, db, watermark
 from .meshes import dims, obj_to_mesh
 from .orders import Order
 from .pipeline import build, new_batch_dir
@@ -61,10 +67,25 @@ def _needed(orders: list[Order], settings: Settings) -> dict[str, tuple[str, int
 
 
 # ---------------- batch lifecycle ----------------
+class NotOwner(ValueError):
+    """The batch belongs to another computer."""
+
+
+def _mine(b) -> bool:
+    return b is not None and (b["computer_id"] or computer.ID) == computer.ID
+
+
+def _require_mine(b) -> None:
+    if b is not None and not _mine(b):
+        raise NotOwner(f"Batch #{b['id']} belongs to {b['computer_name'] or 'another computer'} — its models are "
+                       "downloaded and its plates built there. Open SnapSTL on that computer to change it.")
+
+
 def create_batch(order_ids: list[str], settings: Settings) -> dict:
     if not order_ids:
         raise ValueError("Select at least one order")
     with db.tx() as con:
+        db.lock(con, "orders")  # one computer at a time takes orders into batches
         q = ",".join("?" * len(order_ids))
         rows = db.rows(con, f"SELECT * FROM orders WHERE state='ready' AND order_id IN ({q}) ORDER BY order_date, order_id", *order_ids)
         if not rows:
@@ -72,10 +93,13 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
         orders = _expand(rows, settings)
         ids = [r["order_id"] for r in rows]
         batch_id = db.create_batch(con, ids, "", json.dumps(settings.to_dict()), status="created")
-        con.execute(
-            f"UPDATE orders SET state='in_batch', batch_id=?, updated_at=? WHERE order_id IN ({','.join('?' * len(ids))})",
+        n = con.execute(
+            f"UPDATE orders SET state='in_batch', batch_id=?, updated_at=? "
+            f"WHERE state='ready' AND order_id IN ({','.join('?' * len(ids))})",
             (batch_id, db.now(), *ids),
-        )
+        ).rowcount
+        if n != len(ids):  # another computer took some of them a moment ago: undo this batch entirely
+            raise ValueError("Some of these orders were just put in a batch on another computer — refresh and try again")
     return {"batch_id": batch_id, "orders": len(ids), "skipped": len(order_ids) - len(ids),
             "models": len(_needed(orders, settings))}
 
@@ -96,6 +120,7 @@ def start_download(batch_id: int, force: bool = False) -> dict:
     """
     with db.tx() as con:
         b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
+        _require_mine(b)
         allowed = ("created", "waiting", "models_ready") + (FINISHED if force else ())
         if b is None or b["status"] not in allowed:
             raise ValueError("This batch can't be queued for download right now"
@@ -133,15 +158,16 @@ def _with_current_passwords(con, b) -> Settings:
 
 def _queue(con, key: str, name: str, comps: int, settings: Settings, batch_id: int, manual: bool = False) -> int:
     """Queue one model unless it's already queued / being downloaded. Returns 1 if queued."""
-    if con.execute("SELECT 1 FROM downloads WHERE cache_key=? AND state IN ('queued','claimed')", (key,)).fetchone():
+    if con.execute("SELECT 1 FROM downloads WHERE cache_key=? AND computer_id=? AND state IN ('queued','claimed')",
+                   (key, computer.ID)).fetchone():
         return 0
     model = {**asdict(settings.model), "_license": settings.license_password, "_design": settings.design_id}
     if manual:
         model["_manual"] = True  # re-download of one object: kept even if its batch is finished
     con.execute(
-        "INSERT INTO downloads(cache_key,name,compartments,model_json,state,created_at,updated_at,batch_id) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (key, name, comps, json.dumps(model), "queued", db.now(), db.now(), batch_id),
+        "INSERT INTO downloads(cache_key,name,compartments,model_json,state,created_at,updated_at,batch_id,computer_id) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (key, name, comps, json.dumps(model), "queued", db.now(), db.now(), batch_id, computer.ID),
     )
     return 1
 
@@ -161,6 +187,7 @@ def redownload_model(batch_id: int, key: str) -> dict:
     """
     with db.tx() as con:
         b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
+        _require_mine(b)
         if b is None or b["status"] in ("cancelled", "building", "build_requested"):
             raise ValueError("This batch's objects can't be re-downloaded right now")
         settings = _with_current_passwords(con, b)
@@ -215,14 +242,17 @@ def batch_models(batch_id: int) -> list[dict]:
         b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
         if b is None:
             raise KeyError(batch_id)
+        mine = _mine(b)
         settings, orders = _batch_orders(con, b)
         out = []
         by_key: dict[str, list[Order]] = {}
         for o in orders:
             by_key.setdefault(model_key(o, settings), []).append(o)
         for key, os_ in by_key.items():
-            last = con.execute("SELECT * FROM downloads WHERE cache_key=? ORDER BY id DESC LIMIT 1", (key,)).fetchone()
-            have = cache.load_exists(key)
+            last = con.execute("SELECT * FROM downloads WHERE cache_key=? AND computer_id=? ORDER BY id DESC LIMIT 1",
+                               (key, b["computer_id"] or computer.ID)).fetchone()
+            # the files are on the batch's computer: elsewhere, go by its download records
+            have = cache.load_exists(key) if mine else bool(last and last["state"] == "done")
             state = last["state"] if last else None
             if state in ("queued", "claimed"):
                 status = "downloading" if state == "claimed" else "queued"
@@ -237,7 +267,9 @@ def batch_models(batch_id: int) -> list[dict]:
                 "key": key, "name": os_[0].name, "compartments": os_[0].compartments,
                 "copies": len(os_), "colors": sorted({o.color for o in os_}),
                 "status": status, "downloaded": info.get("downloaded"),
-                "watermark": scanned_watermark(key) if have else None,
+                "watermark": (scanned_watermark(key) if mine else (bool(last["watermark"]) if last and
+                              last["watermark"] is not None else None)) if have else None,
+                "pictures": mine,
                 "license_check": info.get("license_check"),
                 "error": last["error"] if last and state in ("failed", "queued") else None,
             })
@@ -245,7 +277,15 @@ def batch_models(batch_id: int) -> list[dict]:
 
 
 def batch_progress(batch: dict) -> dict:
-    """How many of this batch's models are downloaded / failed / still downloading."""
+    """How many of this batch's models are downloaded / failed / still downloading.
+
+    Only the batch's own computer can tell (the models are in its Downloads folder); it saves the
+    numbers in batches.progress, which other computers show."""
+    if not _mine(batch):
+        try:
+            return json.loads(batch.get("progress") or "") or {"models": 0, "ready": 0, "failed": 0}
+        except ValueError:
+            return {"models": 0, "ready": 0, "failed": 0}
     settings = Settings.from_dict(json.loads(batch.get("settings") or "{}"))
     ids = json.loads(batch["order_ids"] or "[]")
     if not ids:
@@ -256,22 +296,26 @@ def batch_progress(batch: dict) -> dict:
         failed = 0
         ready = 0
         for key in need:
-            live = con.execute("SELECT 1 FROM downloads WHERE cache_key=? AND state IN ('queued','claimed')",
-                               (key,)).fetchone()
+            live = con.execute("SELECT 1 FROM downloads WHERE cache_key=? AND computer_id=? AND state IN ('queued','claimed')",
+                               (key, computer.ID)).fetchone()
             if live:
                 continue  # being (re)downloaded right now
             if cache.load_exists(key):
                 ready += 1
-            elif con.execute("SELECT 1 FROM downloads WHERE cache_key=? AND state='failed' "
-                             "AND id=(SELECT MAX(id) FROM downloads WHERE cache_key=?)", (key, key)).fetchone():
+            elif con.execute("SELECT 1 FROM downloads WHERE cache_key=? AND state='failed' AND id=(SELECT MAX(id) "
+                             "FROM downloads WHERE cache_key=? AND computer_id=?)", (key, key, computer.ID)).fetchone():
                 failed += 1
-    return {"models": len(need), "ready": ready, "failed": failed}
+        prog = {"models": len(need), "ready": ready, "failed": failed}
+        if batch.get("id") is not None:
+            con.execute("UPDATE batches SET progress=? WHERE id=?", (json.dumps(prog), batch["id"]))
+    return prog
 
 
 def request_build(batch_id: int) -> None:
     """Queue build: also Rebuild for a finished batch (writes a new Batch N folder; the old one stays)."""
     with db.tx() as con:
         b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
+    _require_mine(b)
     if b is None or b["status"] not in ("waiting", "models_ready") + FINISHED:
         raise ValueError("Queue the download first — plates are built from downloaded models")
     prog = batch_progress(dict(b))
@@ -290,6 +334,7 @@ def cancel_batch(batch_id: int) -> None:
     """Cancel a batch that was never built, or stop a Re-download of a built one (it goes back to done)."""
     with db.tx() as con:
         r = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
+        _require_mine(r)
         if r is None or r["status"] not in ("created", "waiting", "models_ready"):
             raise ValueError("Only a batch that is waiting to download or build can be cancelled")
         if _was_built(r):
@@ -302,16 +347,18 @@ def cancel_batch(batch_id: int) -> None:
 
 
 def _cancel_unneeded_downloads(con) -> None:
-    """Drop queued downloads that no active batch needs any more."""
+    """Drop this computer's queued downloads that none of its active batches needs any more."""
     needed: set[str] = set()
-    for b in db.rows(con, f"SELECT * FROM batches WHERE status IN ({','.join('?' * len(ACTIVE))})", *ACTIVE):
+    for b in db.rows(con, f"SELECT * FROM batches WHERE computer_id=? AND status IN ({','.join('?' * len(ACTIVE))})",
+                     computer.ID, *ACTIVE):
         settings = Settings.from_dict(json.loads(b.get("settings") or "{}"))
         ids = json.loads(b["order_ids"] or "[]")
         if ids:
             rows = db.rows(con, f"SELECT * FROM orders WHERE order_id IN ({','.join('?' * len(ids))})", *ids)
             needed |= set(_needed(_expand(rows, settings), settings))
     for d in db.rows(con, "SELECT d.id, d.cache_key, d.model_json, b.status AS bstatus FROM downloads d "
-                          "LEFT JOIN batches b ON b.id=d.batch_id WHERE d.state='queued'"):
+                          "LEFT JOIN batches b ON b.id=d.batch_id WHERE d.state='queued' AND d.computer_id=?",
+                     computer.ID):
         manual = json.loads(d["model_json"] or "{}").get("_manual")
         if manual and d["bstatus"] in FINISHED:
             continue  # a single object re-downloaded from a built batch
@@ -324,9 +371,10 @@ def _claim_next() -> dict | None:
     t = db.now()
     with db.tx() as con:
         # re-queue claims left behind by a crash / restart
-        con.execute("UPDATE downloads SET state='queued', updated_at=? WHERE state='claimed' AND claimed_at < ?",
-                    (t, t - CLAIM_TIMEOUT_S))
-        d = con.execute("SELECT * FROM downloads WHERE state='queued' ORDER BY id LIMIT 1").fetchone()
+        con.execute("UPDATE downloads SET state='queued', updated_at=? WHERE state='claimed' AND claimed_at < ? "
+                    "AND computer_id=?", (t, t - CLAIM_TIMEOUT_S, computer.ID))
+        d = con.execute("SELECT * FROM downloads WHERE state='queued' AND computer_id=? ORDER BY id LIMIT 1",
+                        (computer.ID,)).fetchone()
         if d is None:
             return None
         con.execute("UPDATE downloads SET state='claimed', claimed_at=?, attempts=attempts+1, updated_at=? WHERE id=?",
@@ -337,7 +385,7 @@ def _claim_next() -> dict | None:
 def _unclaim(job_id: int) -> None:
     """Put a job back without counting the attempt (e.g. login expired)."""
     with db.tx() as con:
-        con.execute("UPDATE downloads SET state='queued', attempts=MAX(attempts-1,0), updated_at=? WHERE id=?",
+        con.execute("UPDATE downloads SET state='queued', attempts=CASE WHEN attempts>0 THEN attempts-1 ELSE 0 END, updated_at=? WHERE id=?",
                     (db.now(), job_id))
 
 
@@ -418,15 +466,16 @@ def store_failure(job_id: int, error: str) -> None:
 
 def retry_failed() -> int:
     with db.tx() as con:
-        n = con.execute("UPDATE downloads SET state='queued', attempts=0, error=NULL, updated_at=? WHERE state='failed'",
-                        (db.now(),)).rowcount
+        n = con.execute("UPDATE downloads SET state='queued', attempts=0, error=NULL, updated_at=? "
+                        "WHERE state='failed' AND computer_id=?", (db.now(), computer.ID)).rowcount
     DOWNLOADER.wake()
     return n
 
 
 def queue_counts() -> dict:
     with db.tx() as con:
-        return {r["state"]: r["n"] for r in db.rows(con, "SELECT state, COUNT(*) n FROM downloads GROUP BY state")}
+        return {r["state"]: r["n"] for r in db.rows(con, "SELECT state, COUNT(*) AS n FROM downloads WHERE computer_id=? "
+                                                         "GROUP BY state", computer.ID)}
 
 
 class Downloader:
@@ -455,8 +504,8 @@ class Downloader:
     def start(self) -> None:
         # resume: anything that was mid-download when SnapSTL stopped goes back in the queue
         with db.tx() as con:
-            con.execute("UPDATE downloads SET state='queued', attempts=MAX(attempts-1,0), updated_at=? WHERE state='claimed'",
-                        (db.now(),))
+            con.execute("UPDATE downloads SET state='queued', attempts=CASE WHEN attempts>0 THEN attempts-1 ELSE 0 END, updated_at=? "
+                        "WHERE state='claimed' AND computer_id=?", (db.now(), computer.ID))
 
     def wake(self) -> None:  # kept for callers; the helper polls
         pass
@@ -533,7 +582,7 @@ class Manager:
             return
         # a build interrupted by a restart goes back to waiting; drop downloads nobody needs
         with db.tx() as con:
-            con.execute("UPDATE batches SET status='waiting' WHERE status='building'")
+            con.execute("UPDATE batches SET status='waiting' WHERE status='building' AND computer_id=?", (computer.ID,))
             _cancel_unneeded_downloads(con)
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
@@ -556,7 +605,8 @@ class Manager:
 
     def _tick(self) -> None:
         with db.tx() as con:
-            batches = db.rows(con, "SELECT * FROM batches WHERE status IN ('waiting','build_requested') ORDER BY id")
+            batches = db.rows(con, "SELECT * FROM batches WHERE status IN ('waiting','build_requested') AND computer_id=? "
+                                   "ORDER BY id", computer.ID)
         for b in batches:
             if b["status"] == "build_requested":
                 self._build(b)  # only when the user pressed Build plates

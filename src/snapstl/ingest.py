@@ -138,6 +138,7 @@ def ingest(data: bytes, filename: str, db_path: Path | None = None) -> IngestSum
     s.rows_total = len(body)
 
     with db.tx(db_path) as con:
+        db.lock(con, "orders")  # two computers uploading at once take turns
         if con.execute("SELECT 1 FROM files WHERE sha256=?", (sha,)).fetchone():
             s.already_seen_file = True
         for r in body:

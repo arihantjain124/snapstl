@@ -1,4 +1,4 @@
-"""SnapSTL — batch name-organizer STL pipeline (local Mac app)."""
+"""SnapSTL — batch name-organizer STL pipeline (local app for macOS and Windows)."""
 from __future__ import annotations
 
 import json
@@ -10,6 +10,9 @@ import threading
 import time
 import urllib.request
 import webbrowser
+
+from . import config  # noqa: F401  (.env first: it may set SNAPSTL_PORT)
+from . import platform_os
 
 # Fixed local address for the web portal (and the app window).
 PORT = int(os.environ.get("SNAPSTL_PORT", "8317"))
@@ -30,16 +33,24 @@ def _is_snapstl(url: str) -> bool:
 
 
 def _keep_awake() -> None:
-    """Stop the Mac from idle-sleeping while SnapSTL is open (ends when the app quits)."""
-    if sys.platform == "darwin":
-        try:
-            subprocess.Popen(["/usr/bin/caffeinate", "-i", "-w", str(os.getpid())])
-        except OSError:
-            pass
+    """Stop the computer from idle-sleeping while SnapSTL is open (ends when the app quits)."""
+    platform_os.keep_awake()
 
 
-LAUNCH_AGENT = "local.snapmagicians.snapstl"
+LAUNCH_AGENT = platform_os.SERVICE_LABEL
 PLIST = os.path.expanduser(f"~/Library/LaunchAgents/{LAUNCH_AGENT}.plist")
+
+
+def _start_service() -> bool:
+    """Start the installed background service, if there is one (it keeps running after the window closes)."""
+    if platform_os.WINDOWS:
+        r = subprocess.run(["schtasks", "/Run", "/TN", platform_os.TASK_NAME], capture_output=True,
+                           creationflags=platform_os.NO_WINDOW)
+        return r.returncode == 0
+    if os.path.exists(PLIST):
+        subprocess.run(["launchctl", "kickstart", f"gui/{os.getuid()}/{LAUNCH_AGENT}"], check=False)
+        return True
+    return False
 
 
 class _WindowApi:
@@ -83,7 +94,7 @@ def _wait_for_server(seconds: float) -> bool:
 
 
 def serve() -> None:
-    """Background service (started at login by launchd): portal + downloads + batch builds, no window."""
+    """Background service (started at login by launchd / Task Scheduler): portal + downloads + builds, no window."""
     if _port_busy(PORT):
         print(f"SnapSTL is already running on port {PORT}")
         return
@@ -109,9 +120,7 @@ def main() -> None:
         print(f"Port {PORT} is used by another program. Quit it or set SNAPSTL_PORT.", file=sys.stderr)
         raise SystemExit(1)
 
-    if os.path.exists(PLIST):
-        # Start the background service; it keeps running after the window closes.
-        subprocess.run(["launchctl", "kickstart", f"gui/{os.getuid()}/{LAUNCH_AGENT}"], check=False)
+    if _start_service():
         if _wait_for_server(30):
             _open_window(URL)
             return
