@@ -179,3 +179,41 @@ def test_3mf_round_trip(tmp_path):
     names = zipfile.ZipFile(p).namelist()
     assert {"[Content_Types].xml", "_rels/.rels", "3D/3dmodel.model"} <= set(names)
     assert 'unit="millimeter"' in zipfile.ZipFile(p).read("3D/3dmodel.model").decode()
+
+
+def test_fit_check_passes_for_scaled_pair():
+    from snapstl.scaling import fit_problems
+
+    _, _, r = scale_pair(base_mesh(length=230), name_mesh(5), 5, ScalingSettings())
+    assert r.fit_errors == []
+    assert r.fit["length_final"] == pytest.approx(r.fit["length_orig"], rel=1e-9)
+    assert r.fit["height_final"] == pytest.approx(r.fit["height_orig"], rel=1e-9)
+    bad = dict(r.fit, height_final=r.fit["height_orig"] * 1.01)  # name 1 % too tall
+    assert fit_problems(bad) and "height" in fit_problems(bad)[0]
+
+
+def test_pipeline_holds_back_a_pair_that_would_not_fit(tmp_path, meshes_for, monkeypatch):
+    from snapstl import pipeline, scaling
+
+    real = scaling.scale_pair
+
+    def tampered(base, name, letters, cfg):
+        b, n, r = real(base, name, letters, cfg)
+        if letters == 5:  # stretch Manvi's name 3 % longer than its base allows
+            n.apply_scale([1.03, 1, 1])
+            r.fit = scaling.fit_metrics(r.base_orig, r.name_orig, b.extents, n.extents)
+            r.fit_errors = scaling.fit_problems(r.fit)
+        return b, n, r
+
+    monkeypatch.setattr(pipeline, "scale_pair", tampered)
+    spec = [("Ayra", "pink"), ("Manvi", "pink"), ("Zoe", "pink")]
+    orders = _orders(spec)
+    res = build(orders, meshes_for([n for n, _ in spec]), Settings(), tmp_path)
+    assert any("Manvi: fit check failed" in e for e in res.errors)
+    assert not res.complete(1)  # Manvi held back
+    assert res.complete(0) and res.complete(2)  # Ayra and Zoe checked again from the written files
+    assert res.fit[0] == "ok" and res.fit[2] == "ok"
+    written = " ".join(p.name for p in tmp_path.rglob("*.3mf"))
+    assert "Manvi" not in written and "Ayra" in written
+    report = (tmp_path / "report.csv").read_text()
+    assert "fit_check" in report and "name_vs_base_length_%" in report

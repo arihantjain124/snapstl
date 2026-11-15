@@ -52,29 +52,45 @@ def object_name(part_key: str) -> str:
     return f"{m.group(1)} · {m.group(2)}" if m else part_key
 
 
-def write_plate(plate: Plate, folder: Path, cfg: PlateSettings, used: set[Path]) -> tuple[Path, list[str]]:
-    """One .3mf per plate: every base / name is its own named object, already in position."""
+def write_plate(plate: Plate, folder: Path, cfg: PlateSettings, used: set[Path]) -> tuple[Path, list[str], dict]:
+    """One .3mf per plate: every base / name is its own named object, already in position.
+
+    Returns (path, problems, sizes): `sizes` maps part key → (X, Y, Z) extents measured from the
+    file read back from disk, un-rotated to the part's own axes (used for the name/base fit check).
+    """
     folder.mkdir(parents=True, exist_ok=True)
     path = _unique(folder / plate_filename(plate), used)
     placed = placed_part_meshes(plate.parts, plate.result)
     objects = [Object3MF(object_name(k), m.vertices, m.faces) for k, m in placed]
     write_3mf(path, objects, title=path.stem)
-    return path, check_written(path, objects, cfg)
+    problems, objs = check_written(path, objects, cfg)
+    rot = {pl.key: pl.rotation for pl in plate.result.placements}
+    sizes = {}
+    for (key, _), obj in zip(placed, objs or []):
+        ext = obj.vertices.max(axis=0) - obj.vertices.min(axis=0)
+        x, y, z = (float(v) for v in ext)
+        sizes[key] = (y, x, z) if rot.get(key, 0) % 180 == 90 else (x, y, z)
+    return path, problems, sizes
 
 
-def check_written(path: Path, expected: list[Object3MF], cfg: PlateSettings) -> list[str]:
+def check_written(path: Path, expected: list[Object3MF], cfg: PlateSettings) -> tuple[list[str], list[Object3MF]]:
     """Read the 3MF back from disk and confirm it matches what we meant to write."""
+    objs, problems = _check_objects(path, expected, cfg)
+    return problems, objs
+
+
+def _check_objects(path: Path, expected: list[Object3MF], cfg: PlateSettings) -> tuple[list[Object3MF], list[str]]:
     problems = []
     try:
         objs = read_3mf(path)
     except Exception as e:  # noqa: BLE001
-        return [f"{path.name}: can't be read back ({e})"]
+        return [], [f"{path.name}: can't be read back ({e})"]
     if len(objs) != len(expected):
         problems.append(f"{path.name}: {len(objs)} objects on disk, expected {len(expected)}")
     if sum(len(o.faces) for o in objs) != sum(len(o.faces) for o in expected):
         problems.append(f"{path.name}: triangle count changed on disk")
     if not objs or any(len(o.vertices) == 0 for o in objs):
-        return problems + [f"{path.name}: empty object"]
+        return objs, problems + [f"{path.name}: empty object"]
     allv = np.vstack([o.vertices for o in objs])
     lo, hi = allv.min(axis=0), allv.max(axis=0)
     tol = 0.01
@@ -86,7 +102,7 @@ def check_written(path: Path, expected: list[Object3MF], cfg: PlateSettings) -> 
         problems.append(f"{path.name}: taller than the bed ({hi[2]:.2f} mm)")
     if abs(lo[2]) > tol:
         problems.append(f"{path.name}: not sitting on the bed (min Z = {lo[2]:.3f})")
-    return problems
+    return objs, problems
 
 
 def preview(plate: Plate, cfg: PlateSettings) -> dict:
@@ -114,6 +130,7 @@ REPORT_COLUMNS = [
     "name_scale_x_%", "name_scale_y_%", "name_scale_z_%",
     "base_final_x", "base_final_y", "base_final_z",
     "name_final_x", "name_final_y", "name_final_z",
+    "name_vs_base_length_%", "name_vs_base_height_%", "fit_check",
     "base_file", "name_file", "status", "warnings",
 ]
 
@@ -142,4 +159,7 @@ def report_row(order, sr: ScaleResult | None) -> dict:
         r[f"name_final_{ax}"] = f(sr.name_final[i])
     r["target_length"] = sr.target_length
     r["target_height"] = sr.target_height
+    if sr.fit:  # name size relative to its base — identical to MakerWorld's own proportions when it fits
+        r["name_vs_base_length_%"] = round(sr.fit["length_final"] * 100, 2)
+        r["name_vs_base_height_%"] = round(sr.fit["height_final"] * 100, 2)
     return r

@@ -30,6 +30,32 @@ class ScaleResult:
     base_final: tuple[float, float, float]
     name_final: tuple[float, float, float]
     warnings: list[str] = field(default_factory=list)
+    fit: dict = field(default_factory=dict)  # name-to-base proportions, before and after scaling
+    fit_errors: list[str] = field(default_factory=list)  # non-empty → the pair must not be printed
+
+
+# ---------------- name ↔ base fit ----------------
+# The name piece is glued onto the base's front, so its size relative to the base must stay exactly
+# what MakerWorld generated:  name length / base length  and  name height / base height.
+# Scaling Rules v1.1 guarantee this (Name X = Base X, Name Y = Base Z); fit_problems() proves it per order.
+FIT_TOL = 0.002  # 0.2 % — far below print tolerance; catches any mismatch, ignores float rounding
+
+
+def fit_metrics(base_orig, name_orig, base_final, name_final) -> dict:
+    bx, _, bz = base_orig
+    nx, ny, _ = name_orig
+    fbx, _, fbz = base_final
+    fnx, fny, _ = name_final
+    return {"length_orig": nx / bx, "length_final": fnx / fbx, "height_orig": ny / bz, "height_final": fny / fbz}
+
+
+def fit_problems(m: dict, tol: float = FIT_TOL) -> list[str]:
+    errs = []
+    for k, label in (("length", "length"), ("height", "height")):
+        o, f = m[f"{k}_orig"], m[f"{k}_final"]
+        if abs(f / o - 1) > tol:
+            errs.append(f"name/base {label} proportion changed from {o * 100:.2f}% to {f * 100:.2f}%")
+    return errs
 
 
 def pick_band(letters: int, bands: list[ScaleBand]) -> ScaleBand:
@@ -76,7 +102,8 @@ def scale_pair(
     sz = H / bz
     sy = cfg.base_y_scale
     base_scale = (sx, sy, sz)
-    name_scale = (sx, sz, cfg.name_z_scale)
+    # The fit rule: the name uses exactly the base's length and height factors.
+    name_scale = (base_scale[0], base_scale[2], cfg.name_z_scale)
 
     stretch = sx / sz
     if not (0.6 <= stretch <= 1.6):
@@ -90,6 +117,7 @@ def scale_pair(
     n = to_origin(name)
     n.apply_transform(_scale_matrix(*name_scale))
 
+    fit = fit_metrics((bx, by, bz), (nx, ny, nz), dims(b), dims(n))
     res = ScaleResult(
         letters=letters,
         target_length=L,
@@ -101,5 +129,9 @@ def scale_pair(
         base_final=dims(b),
         name_final=dims(n),
         warnings=warnings,
+        fit=fit,
+        fit_errors=fit_problems(fit),
     )
+    if fit["height_orig"] > 1.0:
+        warnings.append(f"Name is taller than the base ({fit['height_orig'] * 100:.0f}% of its height, MakerWorld output)")
     return b, n, res
