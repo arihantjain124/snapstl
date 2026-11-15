@@ -19,9 +19,10 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
-from . import auth, cache, computer, db, platform_os, updater
-from .ingest import ingest, reset_to_ready, set_name
+from . import auth, cache, computer, db, platform_os, sync, updater
+from .ingest import ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
 from . import maintenance as M
 from .batches import DOWNLOADER, MANAGER, compartments_for
@@ -42,6 +43,7 @@ async def _lifespan(_app):
     MANAGER.start()  # builds batches once their models arrive
     DOWNLOADER.pause_s = SETTINGS.delay_between_downloads_s
     DOWNLOADER.start()  # re-queues names that were mid-download when the app stopped
+    sync.LOOP.start()   # shared order records (Supabase), if .env sets them up
     yield
 
 
@@ -51,13 +53,13 @@ OPEN_PATHS = {"/login", "/api/login", "/api/auth-check", "/favicon.ico"}
 
 
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]", "::1")
-# Things only the SnapSTL Mac itself may do (helper, Finder, folders, portal setup, reset).
+# Things only the SnapSTL computer itself may do (helper, Finder, folders, portal setup, reset).
 MAC_ONLY_PREFIXES = ("/api/helper/", "/api/downloads/reveal", "/api/portal", "/api/maintenance/reset",
                      "/api/update")
 
 
 def is_local(request: Request) -> bool:
-    """Request comes from this Mac (the app window, a browser here, or the helper)."""
+    """Request comes from this computer (the app window, a browser here, or the helper)."""
     c = request.client.host if request.client else ""
     return c in ("127.0.0.1", "::1") and not request.headers.get("x-forwarded-for")
 
@@ -71,7 +73,7 @@ def _host_name(host: str) -> str:
 def _blocked(request: Request) -> str | None:
     """Why this request must be refused (None = allowed to continue).
 
-    * this Mac: must use 127.0.0.1/localhost (DNS-rebinding guard); no login needed
+    * this computer: must use 127.0.0.1/localhost (DNS-rebinding guard); no login needed
     * other computers: only if Settings → Other computers is on AND a portal password is set; they sign in
     * other websites in any browser: rejected (Origin must match); the Chrome helper only on /api/helper/*
     """
@@ -79,7 +81,7 @@ def _blocked(request: Request) -> str | None:
     host = request.headers.get("host", "")
     local = is_local(request)
     if local and _host_name(host) not in LOCAL_HOSTS:
-        return "Open SnapSTL as http://127.0.0.1:8317 on this Mac"
+        return "Open SnapSTL as http://127.0.0.1:8317 on this computer"
     origin = request.headers.get("origin")
     if origin:
         if origin.startswith("chrome-extension://"):
@@ -89,9 +91,9 @@ def _blocked(request: Request) -> str | None:
             return "Cross-site request blocked"
     if not local:
         if not (SETTINGS.lan_access and auth.enabled()):
-            return "This SnapSTL only accepts connections from its own Mac (Settings → Other computers)"
+            return "This SnapSTL only accepts connections from its own computer (Settings → Other computers)"
         if path.startswith(MAC_ONLY_PREFIXES) or path.endswith("/reveal"):
-            return "Only available on the SnapSTL Mac"
+            return "Only available on the SnapSTL computer"
     return None
 
 
@@ -141,7 +143,7 @@ def auth_check(request: Request):
     raise HTTPException(401)
 
 
-# ---------------- web portal for other computers (this Mac only) ----------------
+# ---------------- web portal for other computers (this computer only) ----------------
 def _portal_urls() -> list[str]:
     urls = [f"http://{platform_os.lan_name()}:{_port()}"]
     urls += [f"http://{ip}:{_port()}" for ip in platform_os.lan_ips()]
@@ -161,7 +163,6 @@ def _restart_service_soon() -> bool:
 
     def go():
         time.sleep(1.0)
-        db.close_pool()
         platform_os.restart_service()
 
     threading.Thread(target=go, daemon=True).start()
@@ -244,7 +245,7 @@ def meta(request: Request):
         "local": is_local(request),  # on the SnapSTL computer itself: no login, folder buttons, folder settings
         "version": _version(),
         "computer": {"id": computer.ID, "name": computer.NAME},
-        "database": db.kind(),  # "postgres" = shared by every SnapSTL computer, "sqlite" = this one only
+        "shared_records": sync.enabled(),  # Supabase order records set up in .env
         "os": "windows" if platform_os.WINDOWS else "mac",
         "file_manager": platform_os.file_manager(),
     }
@@ -258,6 +259,7 @@ def state():
         "counts": counts, "license_set": bool(SETTINGS.license_password),
         "downloader": DOWNLOADER.snapshot(),
         "queue": B.queue_counts(), "building": MANAGER.building, "log": MANAGER.log[-120:],
+        "sync": sync.STATUS.snapshot(),
     }
 
 
@@ -270,10 +272,13 @@ async def upload_report(file: UploadFile = File(...)):
     name = Path(file.filename or "report.xlsx").name
     if not name.lower().endswith((".xlsx", ".xls", ".xlsm", ".csv")):
         raise HTTPException(400, "Upload the .xlsx (or .csv) reconciliation report")
+    if sync.enabled():  # know every computer's batched / bundled / printed orders first (best effort)
+        await run_in_threadpool(sync.sync_now)
     try:
         s = ingest(data, name)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+    sync.LOOP.kick()  # newer webstore statuses go to the shared records
     return s.__dict__
 
 
@@ -287,7 +292,8 @@ def _order_view(r: dict) -> dict:
         "raw_color": r["raw_color"], "special_request": r["special_request"], "name": r["name"],
         "color": r["color"], "name_edited": bool(r["name_edited"]), "review_reason": r["review_reason"],
         "state": r["state"], "batch_id": r["batch_id"], "last_error": r["last_error"], "letters": letters,
-        "batch_computer": r.get("batch_computer") or "",
+        "batch_computer": r.get("batch_computer") or "", "batch_label": r.get("batch_label") or "",
+        "batch_here": bool(r.get("batch_id")), "printed_at": r.get("printed_at"), "bundled_at": r.get("bundled_at"),
         "clubbed": bool(r.get("club_size", 1) > 1),
         "target": [min(band.length, SETTINGS.scaling.max_length), band.height] if band else None,
         "compartments": compartments_for(letters, SETTINGS) if letters else None,
@@ -305,6 +311,7 @@ TABS = {
     "needs_review": "state='needs_review'",
     "in_batch": "state='in_batch'",
     "bundled": "state='bundled'",
+    "printed": "state='printed'",
     "skipped": "state='skipped'",
     "delivered": _NN + "UPPER(source_status)='DELIVERED'",
     "rto": _NN + "UPPER(source_status) LIKE 'RTO%'",
@@ -355,19 +362,21 @@ def list_orders(request: Request, tab: str = "ready", limit: int = 200, offset: 
     limit = max(1, min(limit, 1000))
     with db.tx() as con:
         total = con.execute(f"SELECT COUNT(*) FROM orders WHERE {w}", args).fetchone()[0]
-        rs = db.rows(con, f"SELECT *, {_CLUB} AS club_size, (SELECT computer_name FROM batches b "
-                          f"WHERE b.id=orders.batch_id) AS batch_computer FROM orders WHERE {w} "
+        rs = db.rows(con, f"SELECT *, {_CLUB} AS club_size FROM orders WHERE {w} "
                           "ORDER BY order_date DESC, COALESCE(clubbed_id,''), order_id LIMIT ? OFFSET ?",
                      *args, limit, offset)
     return {"total": total, "orders": [_order_view(r) for r in rs]}
 
 
 @app.get("/api/orders/ids")
-def order_ids(request: Request, tab: str = "ready"):
-    """All selectable (ready) order IDs matching the current tab + filters ('Select all matching')."""
+def order_ids(request: Request, tab: str = "ready", state: str = "ready"):
+    """All selectable order IDs matching the current tab + filters ('Select all matching'):
+    ready ones (Create batch), bundled ones (Mark printed) or printed ones (Back to Bundled)."""
+    if state not in ("ready", "bundled", "printed"):
+        raise HTTPException(400, "Unknown state")
     w, args = _where(request, tab)
     with db.tx() as con:
-        rs = db.rows(con, f"SELECT order_id FROM orders WHERE {w} AND state='ready' ORDER BY order_date, order_id", *args)
+        rs = db.rows(con, f"SELECT order_id FROM orders WHERE {w} AND state=? ORDER BY order_date, order_id", *args, state)
     return [r["order_id"] for r in rs]
 
 
@@ -415,7 +424,18 @@ def reset_order(order_id: str):
         reset_to_ready(order_id)
     except KeyError as e:
         raise HTTPException(404, "No such order") from e
+    sync.LOOP.kick()
     return {"ok": True}
+
+
+@app.post("/api/orders/printed")
+async def orders_printed(req: Request):
+    """Bundled orders a person confirms were printed (→ Printed tab), or printed=false to undo."""
+    body = await req.json()
+    ids = [str(x) for x in body.get("order_ids", [])][:5000]
+    n = set_printed(ids, bool(body.get("printed", True)))
+    sync.LOOP.kick()
+    return {"changed": n}
 
 
 @app.post("/api/orders/{order_id}/skip")
@@ -423,6 +443,7 @@ def skip_order(order_id: str):
     with db.tx() as con:
         con.execute("UPDATE orders SET state='skipped', updated_at=? WHERE order_id=? AND state IN ('ready','needs_review')",
                     (db.now(), order_id))
+    sync.LOOP.kick()
     return {"ok": True}
 
 
@@ -472,7 +493,7 @@ def retry_downloads():
     return {"requeued": B.retry_failed()}
 
 
-# ---------------- SnapSTL Helper (Chrome extension on this Mac) ----------------
+# ---------------- SnapSTL Helper (Chrome extension on this computer) ----------------
 HELPER_DIR = Path(__file__).resolve().parents[2] / "helper"
 
 
@@ -582,6 +603,19 @@ async def maintenance_cleanup(req: Request):
         raise HTTPException(409, str(e)) from e
 
 
+@app.get("/api/sync")
+def sync_status():
+    return sync.STATUS.snapshot()
+
+
+@app.post("/api/sync")
+def sync_run():
+    """Settings → Database → Sync now: push this computer's changes, load everyone's."""
+    if not sync.enabled():
+        raise HTTPException(400, "No shared records set up — add SNAPSTL_DATABASE_URL to the .env file (README → Shared order records)")
+    return sync.sync_now()
+
+
 @app.post("/api/maintenance/reset")
 async def maintenance_reset(req: Request):
     body = await req.json()
@@ -608,7 +642,7 @@ def downloads():
 
 @app.post("/api/downloads/reveal")
 def downloads_reveal(request: Request):
-    """SnapSTL Mac only: open the Downloads folder (saved models) in Finder."""
+    """SnapSTL computer only: open the Downloads folder (saved models) in Finder / File Explorer."""
     if not is_local(request):
         raise HTTPException(404)
     cache.ROOT.mkdir(parents=True, exist_ok=True)
@@ -743,7 +777,7 @@ def batch_file(batch_id: int, path: str):
 
 @app.post("/api/batches/{batch_id}/reveal")
 async def batch_reveal(batch_id: int, req: Request):
-    """SnapSTL Mac only: show the batch folder (or one plate file) in Finder."""
+    """SnapSTL computer only: show the batch folder (or one plate file) in Finder / File Explorer."""
     if not is_local(req):
         raise HTTPException(404)
     body = await req.json()
@@ -789,8 +823,8 @@ async def put_settings(req: Request):
         new = Settings.from_dict(await req.json())
     except (TypeError, ValueError) as e:
         raise HTTPException(400, f"Invalid settings: {e}") from e
-    new.lan_access = SETTINGS.lan_access  # changed only through /api/portal (this Mac)
-    if is_local(req):  # on the SnapSTL Mac: folders can be changed
+    new.lan_access = SETTINGS.lan_access  # changed only through /api/portal (this computer)
+    if is_local(req):  # on the SnapSTL computer: folders can be changed
         out = Path(new.output_dir).expanduser()
         if not out.is_absolute():
             raise HTTPException(400, "Output folder must be a full path (e.g. /Users/you/SnapSTL/output)")
@@ -810,7 +844,7 @@ async def put_settings(req: Request):
     else:
         new.output_dir = SETTINGS.output_dir
         new.downloads_dir = SETTINGS.downloads_dir
-        new.license_passwords = SETTINGS.license_passwords  # passwords are managed on the SnapSTL Mac
+        new.license_passwords = SETTINGS.license_passwords  # passwords are managed on the SnapSTL computer
         new.makerworld_url = SETTINGS.makerworld_url
     errs = new.validate()
     if errs:

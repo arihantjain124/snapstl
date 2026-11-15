@@ -469,86 +469,30 @@ def test_build_holds_back_watermarked_model_and_object_redownload(client):
     assert any("Dev" in n for p in b["summary"]["plates"] for n in p["names"])
 
 
-# ---------------- shared database: batches belong to their computer ----------------
-def test_batches_belong_to_their_computer(client):
-    from snapstl import batches as B
-    from snapstl import computer
+def test_printed_tab_and_report_dates(client):
+    from snapstl.ingest import report_end_date, status_stamp
+
+    from .test_sync import report as dated_report
 
     client.post("/api/maintenance/reset", json={"confirm": "RESET"})
-    client.post("/api/ingest", files={"file": ("r.csv", report([
-        ("M1", "PRINT", "Magicians_35", "Asha", "Pink", 1), ("M2", "PRINT", "Magicians_35", "Ravi", "Blue", 1),
-        ("M3", "PRINT", "Magicians_35", "Neha", "Red", 1)]), "text/csv")})
-
-    # another computer (sharing the database) batches M1: it leaves Ready here too, with its computer's name
+    client.post("/api/ingest", files={"file": ("r.csv", dated_report([("PR1", "PRINT", "Lina", "")]), "text/csv")})
     with db.tx() as con:
-        other = con.execute("INSERT INTO batches(created_at,out_dir,status,order_ids,summary,settings,computer_id,"
-                            "computer_name,progress) VALUES (?,?,?,?,?,?,?,?,?) RETURNING id",
-                            (db.now(), "/elsewhere/Batch 1", "waiting", '["M1"]', "{}", "{}", "other-pc", "Packing PC",
-                             '{"models": 1, "ready": 0, "failed": 0}')).fetchone()["id"]
-        con.execute("UPDATE orders SET state='in_batch', batch_id=? WHERE order_id='M1'", (other,))
-        con.execute("INSERT INTO downloads(cache_key,name,compartments,model_json,state,created_at,updated_at,"
-                    "batch_id,computer_id) VALUES ('k-other','Asha',4,?,'queued',?,?,?,'other-pc')",
-                    ('{"_license": "x"}', db.now(), db.now(), other))
-    ready = [o["order_id"] for o in client.get("/api/orders", params={"tab": "ready"}).json()["orders"]]
-    assert sorted(ready) == ["M2", "M3"]
-    o = client.get("/api/orders", params={"tab": "in_batch"}).json()["orders"][0]
-    assert o["order_id"] == "M1" and o["batch_computer"] == "Packing PC"
-
-    # it's listed with its computer; this computer can't act on it or open its files
-    item = next(b for b in client.get("/api/batches").json() if b["id"] == other)
-    assert item["computer"] == "Packing PC" and item["mine"] is False and item["progress"]["models"] == 1
-    for action in ("download", "build", "cancel"):
-        r = client.post(f"/api/batches/{other}/{action}")
-        assert r.status_code == 400 and "Packing PC" in r.json()["detail"], action
-    assert client.get(f"/api/batches/{other}/zip").status_code == 409
-    assert client.post(f"/api/batches/{other}/reveal", json={}).status_code == 409
-    # its queued download is never handed to this computer's helper, nor shown in this queue
-    assert B.helper_next() is None
-    assert all(d["name"] != "Asha" for d in client.get("/api/downloads").json()["items"])
-
-    # this computer's own batch is marked as its own
-    mine = client.post("/api/batches", json={"order_ids": ["M2"]}).json()["batch_id"]
-    b = client.get(f"/api/batches/{mine}").json()
-    assert b["mine"] is True and b["computer"] == computer.NAME == "Test computer"
-
-    # two computers taking the same order: the one that comes second gets nothing and changes nothing
-    from snapstl import server
-
-    with db.tx() as con:
-        n_before = con.execute("SELECT COUNT(*) FROM batches").fetchone()[0]
-    real_rows = db.rows
-
-    def other_takes_m3(con, sql, *args):  # M3 is ready when read, then the other computer takes it
-        out = real_rows(con, sql, *args)
-        if "state='ready' AND order_id IN" in sql:
-            con.execute("UPDATE orders SET state='in_batch', batch_id=? WHERE order_id='M3'", (other,))
-        return out
-
-    db.rows = other_takes_m3
-    try:
-        with pytest.raises(ValueError, match="another computer"):
-            B.create_batch(["M3"], server.SETTINGS)
-    finally:
-        db.rows = real_rows
-    with db.tx() as con:
-        assert con.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == n_before  # rolled back
-
-
-@pytest.mark.skipif(not db.shared(), reason="needs SNAPSTL_TEST_DATABASE_URL (a throwaway Postgres)")
-def test_move_local_database_to_shared(client, tmp_path):
-    from snapstl import maintenance
-    from snapstl.ingest import ingest
-
-    client.post("/api/maintenance/reset", json={"confirm": "RESET"})
-    local = tmp_path / "local.db"
-    ingest(report([("L1", "PRINT", "Magicians_35", "Lina", "Pink", 1)]), "r.csv", db_path=local)
-    with db.tx(local) as con:
-        bid = db.create_batch(con, ["L1"], "/x")
-    counts = maintenance.copy_local_to_shared(local)
-    assert counts["orders"] == 1 and counts["batches"] == 1
-    with db.tx() as con:
-        assert con.execute("SELECT name FROM orders WHERE order_id='L1'").fetchone()[0] == "Lina"
-        new = db.create_batch(con, [], "/y")
-    assert new > bid  # numbering continues after the copied batches
-    with pytest.raises(RuntimeError, match="already has orders"):
-        maintenance.copy_local_to_shared(local)
+        con.execute("UPDATE orders SET state='bundled', batch_id=7, batch_label='Batch 1 - 2026-11-16' WHERE order_id='PR1'")
+    assert client.post("/api/orders/printed", json={"order_ids": ["PR1"]}).json()["changed"] == 1
+    ids = lambda tab: [o["order_id"] for o in client.get("/api/orders", params={"tab": tab}).json()["orders"]]  # noqa: E731
+    assert ids("printed") == ["PR1"] and ids("bundled") == []
+    o = client.get("/api/orders", params={"tab": "printed"}).json()["orders"][0]
+    assert o["batch_id"] == 7 and o["batch_label"] == "Batch 1 - 2026-11-16" and o["printed_at"]
+    # a newer report updates the status (state stays Printed); an older one doesn't undo it
+    newer = dated_report([("PR1", "DELIVERED", "Lina", "15/11/2026")], range_end="15/11/2026")
+    assert client.post("/api/ingest", files={"file": ("n.csv", newer, "text/csv")}).json()["updated"] == 1
+    older = dated_report([("PR1", "PRINT", "Lina", "")], range_end="12/11/2026")
+    assert client.post("/api/ingest", files={"file": ("o.csv", older, "text/csv")}).json()["kept_newer_status"] == 1
+    o = client.get("/api/orders", params={"tab": "printed"}).json()["orders"][0]
+    assert o["source_status"] == "DELIVERED" and o["state"] == "printed"
+    assert client.post("/api/orders/printed", json={"order_ids": ["PR1"], "printed": False}).json()["changed"] == 1
+    assert ids("bundled") == ["PR1"]
+    assert report_end_date([["Date Range: 30/10/2026 to 14/11/2026"], ["Order ID"]], 1) == "2026-11-14"
+    assert status_stamp("2026-11-15", "2026-11-14", "u2") > status_stamp("", "2026-11-14", "u9")
+    # without shared records set up, Sync now explains what to do
+    assert "SNAPSTL_DATABASE_URL" in client.post("/api/sync").json()["detail"]

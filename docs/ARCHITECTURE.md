@@ -28,7 +28,7 @@ Webstore "Order Reconciliation Report" (.xlsx)
 
 ---
 
-## 2. Runtime (one dedicated Mac, everything local)
+## 2. Runtime (each computer, Mac or Windows; optional shared order records)
 
 | Piece | What / where |
 |---|---|
@@ -39,10 +39,13 @@ Webstore "Order Reconciliation Report" (.xlsx)
 | **Downloaded models** | Settings → Downloads folder (default **`~/SnapSTL/Downloads`**): one readable folder per model, `<Name> - <N> comp - <cache key>/{base.stl, name.stl, info.json}`. **Never deleted by SnapSTL** — the user cleans up in Finder; a deleted model is re-downloaded when a batch needs it. Models from the old hidden `APP_DIR/cache/` are moved here once at startup (`cache.migrate_old_cache`). |
 | **Secrets** | MakerWorld license password **per model** (by designId) in `settings.json` (mode 600), editable in Settings; portal password hash in `auth.json`. Never written to downloaded model folders, logs or git. |
 | **Output** | Settings → output folder (default `~/SnapSTL/output`). |
-| **Log** | `~/Library/Logs/SnapSTL.log` |
+| **Log** | Mac `~/Library/Logs/SnapSTL.log` · Windows `%LOCALAPPDATA%\SnapSTL\SnapSTL.log` |
+| **Windows** | Same, with `APP_DIR = %LOCALAPPDATA%\SnapSTL`, a Task Scheduler task "SnapSTL" instead of launchd and Start-menu shortcuts instead of the `.app` (see *Windows* below). |
+| **Shared order records** | Optional Supabase project in `.env` (`SNAPSTL_DATABASE_URL`): batched / bundled / printed orders of every computer, add-and-update only (see *Shared order records* below). |
 
-Installed by `scripts/make_app.sh` (installs `uv` if missing, `uv sync --no-dev`, writes the plist and
-the `.app`). The app runs **from the project folder** — moving it means re-running the script.
+Installed by `scripts/make_app.sh` on a Mac (installs `uv` if missing, `uv sync --no-dev`, writes the
+plist and the `.app`) or `scripts/windows/install.ps1` on Windows. The app runs **from the project
+folder** (a git clone, updated in-app) — moving it means re-running the installer.
 
 ---
 
@@ -81,9 +84,13 @@ Snapstl/
 │   ├── ARCHITECTURE.md       this file
 │   └── scaling-rules-v1.1-handoff.md   business spec for scaling (historical source)
 ├── pyproject.toml            deps, console scripts            uv.lock      exact versions
-├── .python-version           3.12                             .gitignore   excludes data/reports/output
+├── .python-version           3.12                             .gitignore   excludes data/reports/output/.env
+├── .env.example              keys of the per-computer .env (shared records URL, computer name); .env never in git
+├── .gitattributes            .sh stays LF, .ps1 CRLF
 ├── scripts/
-│   └── make_app.sh           installer: uv, deps, launchd service, ~/Applications/SnapSTL.app
+│   ├── make_app.sh           Mac installer: uv, deps, launchd service, ~/Applications/SnapSTL.app
+│   ├── update.sh             Mac: git pull + uv sync + restart (same as Settings → Updates)
+│   └── windows/              install / run-service / update / restart / uninstall (.ps1) + common.ps1
 ├── helper/                   SnapSTL Helper — Chrome extension (Manifest V3)
 │   ├── manifest.json         permissions: makerworld.com + http://127.0.0.1:8317 only; version
 │   ├── background.js         service worker: relays tab ↔ app (/api/helper/*); working tab; page check
@@ -91,10 +98,18 @@ Snapstl/
 │   ├── inject.js             page world: copies plate_1/plate_2 .obj responses (read-only)
 │   └── popup.html, popup.js  app status, model designId, working tab on/off the page; "Open model page", "Use this tab"
 ├── src/snapstl/
-│   ├── __init__.py           entry points: main() (window), serve() (service); port, caffeinate, folder picker
+│   ├── __init__.py           entry points: main() (window), serve() (service); port, keep awake, folder picker
+│   ├── __main__.py           `python -m snapstl` (Windows shortcuts)
+│   ├── config.py             loads .env (SNAPSTL_DATABASE_URL, SNAPSTL_COMPUTER_NAME, SNAPSTL_PORT)
+│   ├── platform_os.py        every Mac/Windows difference (folders, Finder/Explorer, keep awake, restart, LAN name)
+│   ├── computer.py           this computer's id + name (on batches and in the shared records)
+│   ├── sync.py               shared order records in Supabase: claim, push, pull, merge, background loop
+│   ├── dbtool.py             `snapstl-db check | sync`
+│   ├── updater.py            Settings → Updates (git fetch / pull --ff-only / uv sync)
+│   ├── watermark.py, render.py   watermark detection; plate / object pictures
 │   ├── server.py             FastAPI app: every HTTP endpoint (§11), access control (§13), tab/filter SQL
 │   ├── settings.py           dataclasses + defaults (§12); APP_DIR, CACHE_DIR, output path, MakerWorld URL
-│   ├── db.py                 SQLite schema + MIGRATIONS, tx(), batch helpers (create/finish/release)
+│   ├── db.py                 local SQLite schema + MIGRATIONS + sync triggers, tx(), quiet(), batch helpers
 │   ├── ingest.py             report parsing (XLSX/CSV), name cleaning, upsert by Order ID, review edits
 │   ├── batches.py            batch lifecycle, download queue, helper claim/result/fail, builder thread
 │   ├── cache.py              downloaded models in the visible Downloads folder (readable names, never auto-deleted);
@@ -116,11 +131,12 @@ Snapstl/
     ├── conftest.py           temp SNAPSTL_HOME, synthetic base/name meshes
     ├── test_engine.py        scaling, packing, grouping, file names, 3MF, per-day folders
     ├── test_ingest.py        report filtering, de-dup, review edits, name cleaning
-    └── test_flow.py          HTTP end to end: batch → helper → build; tabs/filters; maintenance; guard
+    ├── test_flow.py          HTTP end to end: batch → helper → build; tabs/filters; printed; maintenance; guard
+    └── test_sync.py          two simulated computers on a throwaway Postgres (skipped without one)
 ```
 
-Not in git (by design): `.venv/`, customer reports (`*.xlsx`, `*.csv`), `output/`, ZIPs, anything in
-`APP_DIR`.
+Not in git (by design): `.venv/`, `.env`, customer reports (`*.xlsx`, `*.csv`), `output/`, ZIPs,
+anything in `APP_DIR`.
 
 ---
 
@@ -140,13 +156,21 @@ columns — the owner's order history lives here.
 | `raw_name`, `raw_color`, `special_request` | as typed in *Product Customisation* |
 | `name`, `color`, `name_edited` | what gets printed; colour lower-cased, gray → grey |
 | `review_reason` | why it needs a human (NULL = fine) |
-| `state` | §6 |
-| `batch_id`, `last_error` | current / last batch; last download error |
+| `state` | §6: ready · needs_review · in_batch · bundled · **printed** · skipped · not_needed |
+| `batch_id`, `last_error` | this computer's batch (NULL when made on another computer); last download error |
 | `first_file`, `last_file`, `first_seen`, `updated_at` | provenance |
+| `state_at` | when `state` last changed (trigger) |
+| `status_at` | how recent `source_status` is: `event date|report date|upload time` (`ingest.status_stamp`) |
+| `in_remote`, `batch_uid`, `batch_label`, `batch_computer`, `batch_computer_id`, `bundled_at`, `printed_at` | shared order records: its batch (also on other computers), when bundled / printed |
 
 **batches** — `id`, `created_at`, `status` (§8), `order_ids` (JSON), `settings` (JSON snapshot at
 creation), `out_dir`, `summary` (JSON: plates + previews, errors, warnings, `folder`, `label`),
-`finished_at`.
+`finished_at`, `computer_id`, `computer_name`, `progress`, `uid` (id in the shared records),
+`synced`.
+
+**sync_outbox / sync_state / sync_flags** — orders waiting to be sent to the shared records, the
+last pull time, and the "quiet" flag for writes that came from the records (see *Shared order
+records*).
 
 **downloads** — the helper queue: `cache_key`, `name`, `compartments`, `model_json`, `state`
 (`queued | claimed | done | failed | cancelled`), `attempts`, `claimed_at`, `error`, `batch_id` (batch
@@ -420,7 +444,11 @@ ever removed by the user in Finder.
 
 ## 15. Testing
 
-`uv run pytest -q` — 26 tests, ~3 s, no network, temporary `SNAPSTL_HOME`:
+`uv run pytest -q` — ~35 tests, ~6 s, no network, temporary `SNAPSTL_HOME`. With
+`SNAPSTL_TEST_DATABASE_URL=postgresql://…` (a throwaway Postgres; its `snapstl` schema is dropped) the
+shared-record tests run too (`test_sync.py`: claims between two computers, bundled/printed/released,
+newer vs older report, refused deletes, local reset + reload, offline = no batch, reset waits for
+unsent changes):
 
 * `test_engine.py` — scaling, fit check (pass, mismatch detected, failing pair held back), packing/nesting,
   grouping, file names, 3MF round trip, per-day folders
@@ -460,6 +488,12 @@ snapstl.server:app --port 8320`.
 | 17 | Optional web portal for other computers (off by default, password, Mac-only actions) | staff can use SnapSTL from other computers; the main Mac runs service + helper |
 | 18 | No license password → no download; helper must confirm the password at Generate; every download and build scans for the watermark | watermarked models slipped through when Generate was pressed before the page took the password; a watermark may differ per model, so prevention (password confirmed) comes first and the scan (`watermark.py`) is the backstop |
 | 19 | Per-object Re-download in a batch's Objects list; Rebuild refused while a re-download is pending | fix one bad object without re-fetching the batch, and rebuild only from fresh files |
+| 21 | Updates by git (per-computer read-only deploy key, Settings → Updates, helper reloads itself) | sharing zips and reinstalling took too long |
+| 22 | Each computer keeps its own local SQLite; Supabase holds only **order records** (batched/bundled/printed/released), add-and-update only, deletes refused by triggers; settings never shared | owner wants to own the order data, keep records for good, and reset a computer without losing them (0.7.0 used Supabase as the live database — replaced) |
+| 23 | Creating a batch claims its orders in the shared records first; unreachable records = no batch | no order may be made twice across computers |
+| 24 | A batch is made entirely on the computer that created it | its models, plates and files live there |
+| 25 | Printed is a separate state set by a person (Bundled → Printed, undoable), keeping the batch | owner tracks what was actually printed |
+| 26 | Report status updates are ordered by row event dates, then the report's date range end, then upload time | the report has no "generated at" time; an older report must never undo a newer status |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -470,7 +504,13 @@ snapstl.server:app --port 8320`.
   `plate_N.obj` names, the "Generate" text). Fix there, then reload the extension in `chrome://extensions`.
 * The MakerWorld tab must stay open, ideally in its own window (Chrome slows hidden tabs).
 * Opening and slicing in Bambu Studio is a manual review step; it isn't automated or tested here.
-* The app runs from the project folder; moving it requires re-running `scripts/make_app.sh`.
+* The app runs from the project folder; moving it requires re-running the installer.
+* The report has no "generated at" time: two reports with the same row dates and date range are
+  ordered by upload time.
+* The Windows version was written and tested on macOS only (scripts and OS functions); its first
+  run on a real Windows PC may need fixes.
+* Creating a batch needs the shared records reachable (by design). Other changes wait in the outbox
+  while offline and are sent later.
 
 ---
 
@@ -501,29 +541,66 @@ batch is building, then restarts the launchd service. The UI checks at start and
 When it differs from the running one, background.js calls `chrome.runtime.reload()` once per version
 (never mid-name). `onInstalled` reloads open model-maker tabs so they run the new content script.
 `scripts/update.sh` does the same from Terminal. Customer data is outside the folder, so a pull
-can't touch it. Plan for a shared cloud database and Windows: docs/PLAN-shared-db-and-windows.md.
+can't touch it. Shared order records and Windows: the sections below.
 
-## Shared database and computers (0.7.0)
+## Shared order records (Supabase) and computers (0.8.0)
 
-- `config.py` loads `.env` from the SnapSTL folder (never in git; `.env.example` lists the keys).
-  `SNAPSTL_DATABASE_URL` set → `db.py` uses Postgres (Supabase, Session pooler) through a small
-  pool (psycopg 3); empty → SQLite as before. The code's SQL stays SQLite-style; `db._pg()` swaps
-  `?`→`%s` and LIKE→ILIKE. Tables live in schema `snapstl`. `_setup_pg` creates and migrates them under
-  an advisory lock and records `meta.schema_version`; a SnapSTL older than the database refuses to run.
-- `computer.py`: this computer's id (generated once, `computer.json` in the app folder) and name
-  (`SNAPSTL_COMPUTER_NAME` or the system name). New batch columns: `computer_id`, `computer_name`,
-  `progress`; downloads get `computer_id`. On SQLite, rows without a computer are this computer's.
-- Ownership: `batches.create_batch` takes the orders under `db.lock(con,"orders")` with
-  `UPDATE … WHERE state='ready'`, and rolls back if any were taken meanwhile. Download claims, builds,
-  restarts and clean-up of queued downloads filter on `computer.ID`. `_require_mine` refuses batch
-  actions on another computer's batch (400). `server._own_batch` refuses its files (409).
-  `batch_progress` runs only on the owner and saves `batches.progress` for the others. The Objects
-  list elsewhere uses the owner's download rows (no pictures).
-- `maintenance`: backups of the shared database are local SQLite copies (`_copy_to_sqlite`).
-  `copy_local_to_shared` (`uv run snapstl-db move-local`) moves one computer's SQLite data into an
-  empty shared database once and resets the id sequences. `snapstl-db check` tests the connection.
+Each computer works in its **own local SQLite** database (`db.py`). `sync.py` keeps the **shared
+order records** in Supabase in step. `config.py` reads `SNAPSTL_DATABASE_URL` from `.env`, which is
+never in git; without it there is no sync.
 
-## Windows (0.7.0)
+- **What's shared:** `snapstl.order_records` holds one row per order that ever entered making, with
+  state `in_batch`, `bundled`, `printed` or `released`. It also stores the batch (uid, label), the
+  owning computer, the order fields, the webstore status and two clocks: `state_at` (epoch seconds)
+  and `status_at` (text, see below). `snapstl.batch_records` holds every computer's batches.
+  Settings are never shared.
+- **Never deleted:** the app has no DELETE on these tables, and `BEFORE DELETE` / `BEFORE TRUNCATE`
+  triggers (`refuse_delete`) reject deletes from anyone. Local reset and clean-up only touch SQLite.
+  Reset refuses while `sync_outbox` isn't empty.
+- **Claim:** `batches.create_batch` → `sync.claim`. `INSERT … ON CONFLICT DO UPDATE … WHERE
+  state='released'` (or this computer's own claim whose batch uid no longer exists locally)
+  `RETURNING order_id`. Orders not returned were taken elsewhere: they're merged locally and left out.
+  If the shared records are unreachable, `SyncError` means no batch is created.
+- **Local bookkeeping by triggers** (`db.POST_SCHEMA`, so no code path can skip them):
+  - `orders.state_at` is set on every state change.
+  - `sync_outbox` gets every order whose state, status or name changed and which is in the records
+    (or now `in_batch`/`bundled`/`printed`).
+  - `batches.synced` becomes 0 when a batch changes.
+  - Writes made by the sync itself run inside `db.quiet()` and are not queued again.
+- **Push:** outbox orders are upserted with rules in SQL (`_WIN`):
+  - A state change applies only if it is at least as new (`state_at`), and only if one of these
+    holds: the record is `released`; the writer owns it; it marks printed or unprinted; or it sends a
+    made order back (`released`).
+  - The webstore status applies only if `status_at` is higher.
+  - The first-written order fields are kept.
+  - `RETURNING *` shows when a change was refused; the stored row is then merged locally
+    (`merge(force=True)`).
+- **Pull:** rows with `updated_at` after the last pull, minus a 120 s overlap, are merged locally
+  (`merge`). Orders unknown here are inserted. Another computer's orders show as `in_batch`,
+  `bundled` or `printed` with `batch_id NULL` plus `batch_label` and `batch_computer`. A claim of
+  this computer whose batch is gone (e.g. after a reset) is released. An order with a pending local
+  change keeps it until the push has run.
+- **When it runs:** `sync.LOOP` runs every 60 s and is woken right after batches finish, orders are
+  marked printed, reset or skipped, and after a report upload. An upload syncs before ingesting too.
+  **Settings → Database → Sync now** runs `/api/sync`. `snapstl-db check | sync` does the same from a
+  terminal.
+- **Report timestamps:** the webstore report has no "generated at" time, so
+  `ingest.status_stamp(event, report, upload)` builds a sortable `status_at` from three parts:
+  - the latest of the row's event dates (Pickup / Delivered / RTO Initiated / RTO Delivered /
+    Return Created / Return Delivered);
+  - the "Date Range … to DD/MM/YYYY" end above the header;
+  - the upload time.
+
+  An existing order's status changes only if the new stamp is at least as high (`kept_newer_status`
+  counts the others), both locally and in the records.
+- **Printed:** a person marks bundled orders printed (`ingest.set_printed`, `/api/orders/printed`)
+  and can undo it. Printed orders keep their batch and get their own tab.
+- **Computers:** `computer.py` gives this computer an id (`computer.json`) and a name
+  (`SNAPSTL_COMPUTER_NAME` or the system name). Batches are always this computer's. Download and
+  build queries filter on `computer.ID`, and the `mine` checks in batches.py / server.py stay as
+  guards.
+
+## Windows
 
 `platform_os.py` holds every OS difference: the app folder (`%LOCALAPPDATA%\SnapSTL`), open/reveal
 (Explorer `/select,`), keep awake (`SetThreadExecutionState`), computer and LAN names, and service
