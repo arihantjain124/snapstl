@@ -386,7 +386,9 @@ class Manager:
             incomplete = {o.order_id for o in orders if not res.complete(o.idx)}
             done_ids = sorted({o.order_id for o in usable} - incomplete)
             errors = res.errors + [f"{n}: model not downloaded — order returned to Ready" for n in missing]
+            fit_ok = sum(1 for v in res.fit.values() if v == "ok")
             summary = {"ok": res.ok and not missing, "errors": errors, "warnings": res.warnings,
+                       "fit": {"checked": len(res.fit), "ok": fit_ok},
                        "plates": [asdict(p) for p in res.plates], "orders": len(done_ids), "organizers": len(usable)}
             summary["folder"] = str(out)  # plain .3mf files — no ZIP is written
             summary["label"] = out.name   # "Batch 1 - 2026-11-15" (numbering restarts every day)

@@ -33,7 +33,7 @@ Webstore "Order Reconciliation Report" (.xlsx)
 | Piece | What / where |
 |---|---|
 | **Service** | `snapstl-serve` → FastAPI/uvicorn on **http://127.0.0.1:8317** (`SNAPSTL_PORT` to change). Started at login by launchd: `~/Library/LaunchAgents/local.snapmagicians.snapstl.plist` (`RunAtLoad`, `KeepAlive`). Hosts the portal, the helper API, the download queue and the batch builder thread. Runs `caffeinate -i` while alive. |
-| **App window** | `~/Applications/SnapSTL.app` → `snapstl` → pywebview window on the same URL (adds native folder picker; text selection on). If the service isn't up it kickstarts it. Closing the window doesn't stop the service. |
+| **App window** | `~/Applications/SnapSTL.app` → `snapstl` → pywebview window on the same URL (adds native folder picker; text selection on). UI = side navigation: Orders · Batches · Settings · Help. If the service isn't up it kickstarts it. Closing the window doesn't stop the service. |
 | **SnapSTL Helper** | Chrome extension (`helper/`, *Load unpacked*) in the user's **normal** Chrome, on the MakerWorld model-maker tab. Generates each queued name on the real page and uploads the files. |
 | **Data** | `~/Library/Application Support/SnapSTL/` (`APP_DIR`, override with `SNAPSTL_HOME`): `snapstl.db`, `cache/<key>/`, `settings.json`, `backups/`, `auth.json` (only if a portal password is set). |
 | **Secrets** | MakerWorld license password → macOS Keychain (service `SnapSTL`). |
@@ -110,7 +110,7 @@ Snapstl/
 │   ├── keychain.py           license password (Keychain; file fallback when SNAPSTL_HOME is set)
 │   ├── auth.py               optional portal password + signed session cookie; `snapstl-admin`
 │   └── static/
-│       ├── index.html        the whole UI (Orders, Batches, Settings)
+│       ├── index.html        the whole UI: side navigation (Orders, Batches, Settings, Help)
 │       └── login.html        used only if a portal password is set
 └── tests/
     ├── conftest.py           temp SNAPSTL_HOME, synthetic base/name meshes
@@ -256,7 +256,24 @@ Name X = Base X                  Name Y = Base Z     Name Z = 50 %   (4 mm → 2
 ```
 
 Height 85–90 mm, length ≤ 240 mm. Warnings, never silent fixes: unusual orientation, name longer
-than base, letter distortion (X/Z scale ratio outside 0.6–1.6). Verified on real output: "Ayra"
+or taller than base, letter distortion (X/Z scale ratio outside 0.6–1.6).
+
+**Name ↔ base fit check (binding).** The name is glued onto its base, so its size *relative to the
+base* must stay exactly MakerWorld's: `name length / base length` and `name height (Y) / base
+height (Z)`. `scale_pair` builds the name scale from the base factors (`name_scale = (base_x,
+base_z, 0.5)`), and `scaling.fit_metrics` / `fit_problems` prove it per order (tolerance
+`FIT_TOL` = 0.2 %), twice:
+1. **After scaling** (`pipeline.build`): a failing pair is **held back** — neither part is packed or
+   written, the order returns to `ready`, the batch is *done with problems*.
+2. **From the written files**: `export.write_plate` reads each .3mf back and returns every part's
+   measured size (un-rotated); `pipeline.build` re-checks each pair from those sizes. A failure is an
+   error and the order is **not** marked bundled.
+
+`BuildResult.complete(idx)` is true only when both parts are written **and** the fit check is `ok`.
+`report.csv` adds `name_vs_base_length_%`, `name_vs_base_height_%`, `fit_check`; the batch summary
+adds `fit: {checked, ok}` and the UI shows "Fit check: N/N". Verified on the 8 real MakerWorld pairs:
+proportions identical before/after (e.g. SONAL 94.67 % length, 84.74 % height). A name and its base
+are always built in the same batch with the same settings snapshot. Verified on real output: "Ayra"
 116.6 % / 93.5 % (handoff: 116.56 / 93.51); "SONAL" → base 210 × 51 × 89 mm, name 198.8 × 75.4 × 2 mm.
 
 ---
@@ -347,9 +364,10 @@ model-cache wipe). A backup is taken first every time; output folders are never 
 
 ## 15. Testing
 
-`uv run pytest -q` — 21 tests, ~3 s, no network, temporary `SNAPSTL_HOME`:
+`uv run pytest -q` — 23 tests, ~3 s, no network, temporary `SNAPSTL_HOME`:
 
-* `test_engine.py` — scaling, packing/nesting, grouping, file names, 3MF round trip, per-day folders
+* `test_engine.py` — scaling, fit check (pass, mismatch detected, failing pair held back), packing/nesting,
+  grouping, file names, 3MF round trip, per-day folders
 * `test_ingest.py` — SKU/status filtering, de-dup across reports, review edits, name cleaning
 * `test_flow.py` — over HTTP: create → start download → helper → models_ready → build; failures and
   retries; pause/release/cancel; resume after restart; tabs/filters/customer fields; maintenance;
@@ -375,6 +393,8 @@ snapstl.server:app --port 8320`.
 | 8 | Customer contact fields stored locally | owner wants them in the Orders table |
 | 9 | Batches: Create → Start download → Build plates | owner wants explicit control |
 | 10 | Output `<date>/Batch N - <date>/Bases, Names/<colour>` | owner's folder structure; N restarts daily |
+| 11 | Name/base fit check, twice (after scaling + from written files); failing pairs never printed | owner must be sure names fit bases after printing |
+| 12 | Side navigation (Orders, Batches, Settings, Help) + in-app Help page | owner's request; Help explains the workflow for staff |
 
 ---
 
@@ -394,6 +414,8 @@ snapstl.server:app --port 8320`.
 |---|---|
 | Add an order column | `MIGRATIONS` (db.py) → fill in `ingest._upsert` → `server._order_view` (+ `FILTERS` if filterable) → column + filter cell in `index.html` → test in `test_flow.py` |
 | Add a setting | field with a default in the right dataclass (`settings.py`) → `validate()` if constrained → `fillSettings` / `readSettings` in `index.html` |
+| Add a page / nav item | a `<section id="t-…">` + a button in `nav#tabs` + the list in `show()` and the startup allow-list (`index.html`) |
+| Update in-app Help | the `<section id="t-help">` cards in `index.html` — keep it in step with README/this file |
 | Add an order tab | `server.TABS` + the `TABS` array in `index.html` + a test |
 | Change scaling targets | `default_bands()` (the owner can also edit them in Settings); keep the §9 axis rules |
 | Change grouping / packing | `grouping.py` / `packing.py`; keep the §10 rules; extend `test_engine.py` |

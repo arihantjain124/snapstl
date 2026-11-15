@@ -122,12 +122,22 @@ def index():
     return FileResponse(STATIC / "index.html")
 
 
+def _version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return version("snapstl")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 @app.get("/api/meta")
 def meta():
     return {
         "fonts": FONTS, "rotate_text": ROTATE_TEXT, "ranges": NUMBER_RANGES,
         "compartment_range": COMPARTMENT_RANGE,
         "local": not auth.enabled(),  # desktop app on this Mac (no login, Finder buttons)
+        "version": _version(),
     }
 
 

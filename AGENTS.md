@@ -21,6 +21,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - **Compartments come from the scaling table**, never from the customer's order text.
 - Names never mix colours on a plate (3 → 2 → 1 by fit). Bases 3 per plate (only the last may have fewer).
 - Parts rotate only about Z; the build face never changes. A name is never scaled separately from its base.
+- **Name/base fit check stays on**: every pair is checked after scaling and again from the written
+  .3mf files; failing pairs are never printed (ARCHITECTURE §9). Don't loosen `FIT_TOL` or skip it.
 - **Order ID is the de-duplication key**; a `bundled` order is never re-made unless the user clicks Remake.
 - **Batches never auto-start or auto-build**: Create → *Start download* → *Build plates*.
 - Output: `<output>/<YYYY-MM-DD>/Batch N - <YYYY-MM-DD>/{Bases/, Names/<colour>/, report.csv}`, one
@@ -47,7 +49,9 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 
 | Request | Edit |
 |---|---|
-| UI text, layout, buttons, columns, tabs | `src/snapstl/static/index.html` |
+| UI text, layout, buttons, columns, tabs, side navigation | `src/snapstl/static/index.html` |
+| In-app Help page | `<section id="t-help">` in `index.html` (update with README when behaviour changes) |
+| Fit check | `scaling.fit_metrics` / `fit_problems`, `pipeline.build`, `export.write_plate` |
 | New order field / column | `db.py` (MIGRATIONS) → `ingest.py` → `server._order_view` / `FILTERS` → `index.html` |
 | Order tabs & filters | `server.TABS`, `server.FILTERS` (+ `TABS` array in `index.html`) |
 | New setting / default | `settings.py` (+ `fillSettings` / `readSettings` in `index.html`) |
@@ -100,5 +104,5 @@ git switch main && git merge --no-ff change/<short-name> && git branch -d change
 
 - `docs/ARCHITECTURE.md` — repository map (§4), data model (§5), states, API table (§11), settings
   (§12), decision log (§16) when a decision changes.
-- `README.md` — when the owner's steps or the output change.
+- `README.md` and the in-app **Help** page — when the owner's steps or the output change.
 - `AGENTS.md` — when rules or workflow change.

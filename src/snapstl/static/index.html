@@ -10,11 +10,21 @@
 *{box-sizing:border-box}
 a{color:var(--accent)}
 body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
-header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;flex-wrap:wrap}
-header h1{font-size:16px;margin:0;font-weight:600}
-nav{display:flex;gap:2px}
-nav button{border:0;background:none;padding:6px 10px;border-radius:7px;color:var(--muted)}
-nav button.on{background:var(--chip);color:var(--text)}
+.app{display:grid;grid-template-columns:210px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:0;height:100vh;background:var(--panel);border-right:1px solid var(--line);padding:16px 10px;display:flex;flex-direction:column;gap:12px}
+.side h1{font-size:17px;margin:0 6px 4px;font-weight:600}
+.side h1 small{display:block;font-size:11px;font-weight:400;color:var(--muted)}
+nav#tabs{display:flex;flex-direction:column;gap:2px}
+nav#tabs button{border:0;background:none;text-align:left;width:100%;padding:8px 10px;border-radius:8px;color:var(--muted);font-size:14px;display:flex;gap:9px;align-items:center}
+nav#tabs button:hover{background:var(--chip);color:var(--text)}
+nav#tabs button.on{background:var(--chip);color:var(--text);font-weight:600}
+nav#tabs .ic{width:18px;text-align:center;font-size:15px}
+.side .foot{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding:0 4px}
+.side .foot .pill{white-space:normal;line-height:1.35;padding:6px 10px;border-radius:8px}
+.topbar{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:9px 16px;display:flex;gap:10px;align-items:center;min-height:40px}
+.help h2{font-size:15px}.help p,.help li{font-size:13.5px;line-height:1.6}.help ol,.help ul{padding-left:20px;margin:6px 0}
+.help code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12px}
+.help .toc{display:flex;gap:6px;flex-wrap:wrap}.help .toc a{font-size:12px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;text-decoration:none}
 button,.btn{font:inherit;padding:6px 12px;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer;white-space:nowrap}
 button:hover{border-color:var(--muted)}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -62,18 +72,29 @@ body,td,th,.hint,.pill,code{-webkit-user-select:text;user-select:text}
 .otable td.addr{max-width:220px;font-size:12px}
 .club{font-size:11px;color:var(--accent)}
 iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;background:#000}
-@media (max-width:700px){header{gap:6px}.bar{display:none}}
+@media (max-width:800px){.app{grid-template-columns:1fr}.side{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:0;border-bottom:1px solid var(--line);padding:8px 10px}
+  nav#tabs{flex-direction:row}nav#tabs button{width:auto;padding:6px 9px}.side .foot{margin:0;flex-direction:row;flex-wrap:wrap}.bar{display:none}}
 </style>
 </head>
 <body>
-<header>
-  <h1>SnapSTL</h1>
-  <nav id="tabs"><button data-t="orders" class="on">Orders</button><button data-t="batches">Batches</button><button data-t="settings">Settings</button></nav>
-  <span class="status grow" id="status"></span>
-  <span class="pill" id="dl" title="MakerWorld downloads">Downloads idle</span>
-  <button id="dlpause" class="small">Pause downloads</button>
-  <button id="logout" class="small">Sign out</button>
-</header>
+<div class="app">
+<aside class="side">
+  <h1>SnapSTL<small>Name organizer plates</small></h1>
+  <nav id="tabs">
+    <button data-t="orders" class="on"><span class="ic">▤</span>Orders</button>
+    <button data-t="batches"><span class="ic">▦</span>Batches</button>
+    <button data-t="settings"><span class="ic">⚙</span>Settings</button>
+    <button data-t="help"><span class="ic">?</span>Help</button>
+  </nav>
+  <div class="foot">
+    <span class="pill" id="dl" title="MakerWorld downloads">Downloads idle</span>
+    <button id="dlpause" class="small">Pause downloads</button>
+    <button id="logout" class="small">Sign out</button>
+  </div>
+</aside>
+<div class="content">
+<div class="topbar"><span class="status grow" id="status"></span></div>
+
 <main>
 <section id="t-orders">
   <div class="card">
@@ -193,7 +214,116 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
   </div>
 </section>
 
+<section id="t-help" class="help" hidden>
+  <div class="card">
+    <h2>Help</h2>
+    <p>SnapSTL turns webstore orders for the <b>Custom Name Desk Organizer</b> (SKU <code>Magicians_35</code>) into print-ready plates: each name is generated on MakerWorld, scaled to the agreed rules, grouped 3 per plate and saved as <b>.3mf</b> files.</p>
+    <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-data">Your data</a></div>
+  </div>
+
+  <div class="card" id="h-start">
+    <h2>Daily workflow</h2>
+    <ol>
+      <li><b>Orders → Upload report (.xlsx)</b> — the webstore <i>Order Reconciliation Report</i>. Only <code>Magicians_35</code> orders are kept. Uploading the same or a newer report never creates duplicates; it only updates statuses.</li>
+      <li><b>Needs review</b> — fix names with spaces, symbols or missing colour, then <b>Approve</b>. Use <b>Skip</b> for orders you don't want to make.</li>
+      <li><b>Ready</b> — tick orders (or use the column filters and <b>Select all matching</b>) → <b>Create batch</b>.</li>
+      <li><b>Batches → Start download</b> — the helper in your MakerWorld tab generates each name, one at a time.</li>
+      <li>When the batch says <b>Ready to build</b> → <b>Build plates</b>.</li>
+      <li><b>Show in Finder</b>, open the plates in Bambu Studio, check, slice and print. Bases in white; names in the colour of their folder.</li>
+    </ol>
+  </div>
+
+  <div class="card" id="h-tabs">
+    <h2>Order tabs</h2>
+    <table>
+      <tr><th>Tab</th><th>What's in it</th></tr>
+      <tr><td>Ready → Single</td><td>Orders to make where the clubbed order ID has only this one name.</td></tr>
+      <tr><td>Ready → Clubbed</td><td>Orders to make that share a clubbed order ID with other names (one customer, several organizers).</td></tr>
+      <tr><td>Needs review</td><td>Report says PRINT, but the name or colour needs a human (space in the name, symbols, missing colour, special request).</td></tr>
+      <tr><td>In a batch</td><td>Reserved by a batch that isn't built yet.</td></tr>
+      <tr><td>Bundled</td><td>Already made in a batch. Never made again unless you press <b>Remake</b>.</td></tr>
+      <tr><td>Skipped</td><td>You pressed Skip. <b>Make anyway</b> moves it back to Ready.</td></tr>
+      <tr><td>Delivered · RTO · In Transit · Cancelled · Others</td><td>The report says these don't need making (Others = e.g. PACK).</td></tr>
+    </table>
+    <p>Filter any column with the box under its heading — filters combine. <b>Export CSV</b> exports what you're looking at.</p>
+  </div>
+
+  <div class="card" id="h-batches">
+    <h2>Batches</h2>
+    <table>
+      <tr><th>Status</th><th>Meaning</th><th>What to do</th></tr>
+      <tr><td>Created — not started</td><td>Orders are reserved; nothing is downloading.</td><td><b>Start download</b> (or Cancel)</td></tr>
+      <tr><td>Downloading</td><td>The helper is generating the models.</td><td>Wait; or <b>Build plates now</b> with what's ready</td></tr>
+      <tr><td>Ready to build</td><td>All models are downloaded.</td><td><b>Build plates</b></td></tr>
+      <tr><td>Done / Done with problems</td><td>Plates are written. Problems are listed on the batch.</td><td>Show in Finder</td></tr>
+    </table>
+    <p>Orders whose model failed or didn't pass the fit check go back to <b>Ready</b> automatically. The <b>Download queue</b> shows every name: Waiting, Generating, Done or Failed (with <b>Retry failed</b>).</p>
+  </div>
+
+  <div class="card" id="h-helper">
+    <h2>The SnapSTL Helper (Chrome)</h2>
+    <p>The helper is a small Chrome extension that does the MakerWorld part in <b>your normal Chrome</b>, where you're signed in. For each name it fills the model-maker page (NO AMS, the name, compartments from the scaling table, your font settings), presses Generate and sends the two files to SnapSTL.</p>
+    <ul>
+      <li>Install once: <code>chrome://extensions</code> → Developer mode → <b>Load unpacked</b> → the <code>helper</code> folder (or download it from Settings).</li>
+      <li>Keep the MakerWorld model-maker tab open, ideally in its own window — Chrome slows down hidden tabs.</li>
+      <li>If MakerWorld shows a security check in that tab, complete it; the helper waits and carries on.</li>
+      <li>The sidebar shows the helper's status. <b>Pause downloads</b> stops it after the current name.</li>
+    </ul>
+  </div>
+
+  <div class="card" id="h-output">
+    <h2>Output files</h2>
+<pre class="hint" style="white-space:pre-wrap">&lt;output folder&gt;/2026-11-15/                 one folder per day
+    Batch 1 - 2026-11-15/                  numbering restarts at 1 each day
+        Bases/{Ayra,pink},{Manvi,pink},{Riya,pink}.3mf
+        Names/pink/{Ayra,pink},{Manvi,pink},{Riya,pink}.3mf
+        Names/blue/{Kabir,blue}.3mf        one folder per name colour
+        report.csv                         sizes, scale %, fit check, warnings</pre>
+    <p>Each .3mf is one plate; every base or name is its own named object in Bambu Studio, already placed on the 256 × 256 mm bed. Names: one colour per plate, up to 3. Bases: 3 per plate (the last plate may have fewer). No ZIP files are created.</p>
+  </div>
+
+  <div class="card" id="h-fit">
+    <h2>Fit &amp; scaling</h2>
+    <p>Every organizer is resized to a target length and height by letter count (Settings → Scaling). The name piece always gets <b>exactly the same length and height factors as its base</b> (Name X = Base X, Name Y = Base Z; thickness 50 %), so it keeps MakerWorld's proportions and fits the base after printing.</p>
+    <p><b>Fit check:</b> for every order SnapSTL checks that the name's size relative to its base (length % and height %) is unchanged — once after scaling and again by measuring the .3mf files it wrote. A pair that fails is <b>not printed</b>: it's left out of the plates and its order returns to Ready. The batch page shows "Fit check: N/N", and <code>report.csv</code> lists <i>name_vs_base_length_%</i>, <i>name_vs_base_height_%</i> and <i>fit_check</i> per order.</p>
+    <p>A name and its base are always built in the same batch with the same settings — don't print a name from one batch with a base from another after changing scaling settings.</p>
+  </div>
+
+  <div class="card" id="h-settings">
+    <h2>Settings</h2>
+    <ul>
+      <li><b>Model maker options</b> — font, font size, thickness, outline, rotate text; same for every name. Changing them makes new models (old ones stay cached).</li>
+      <li><b>MakerWorld license password</b> — removes the anti-sale markings; stored in the Mac Keychain.</li>
+      <li><b>Scaling and compartments</b> — target length/height and compartments per letter count (Scaling Rules v1.1).</li>
+      <li><b>Plate and fit</b> — bed size, edge margin, gap between parts, names/bases per plate, allowed rotations (flat on the bed only).</li>
+      <li><b>Output folder</b> — where dated batch folders go. <b>Pause between downloads</b> — seconds between names.</li>
+      <li><b>Database</b> — back up, clean up old records (orders already made are always kept), or reset.</li>
+    </ul>
+  </div>
+
+  <div class="card" id="h-trouble">
+    <h2>Troubleshooting</h2>
+    <table>
+      <tr><th>You see</th><th>Do</th></tr>
+      <tr><td>Helper not connected</td><td>Open the MakerWorld model maker tab in Chrome; check the helper is on in <code>chrome://extensions</code>.</td></tr>
+      <tr><td>Complete the MakerWorld security check</td><td>Click the check in that tab.</td></tr>
+      <tr><td>A name is Failed in the download queue</td><td>Read the detail; <b>Retry failed</b>.</td></tr>
+      <tr><td>Fit check failed on a batch</td><td>That order wasn't printed and is back in Ready; create a new batch for it. If it keeps failing, check the scaling table.</td></tr>
+      <tr><td>Batch stays Downloading</td><td>Check the sidebar and Download queue; Pause/Resume; or Build plates now.</td></tr>
+      <tr><td>Can't copy text in the window</td><td>Quit and reopen SnapSTL.app.</td></tr>
+      <tr><td>Portal doesn't open</td><td>Terminal: <code>launchctl kickstart -k gui/$(id -u)/local.snapmagicians.snapstl</code>; log: <code>~/Library/Logs/SnapSTL.log</code>.</td></tr>
+    </table>
+  </div>
+
+  <div class="card" id="h-data">
+    <h2>Your data</h2>
+    <p>Everything stays on this Mac. Orders database, model cache, settings and backups: <code>~/Library/Application Support/SnapSTL</code>. Output: your chosen output folder. Customer names, phones and addresses are only stored in the local database. SnapSTL runs in the background (it starts at login); the window is just a view — you can also open <code>http://127.0.0.1:8317</code> in a browser.</p>
+    <p class="hint" id="helpversion"></p>
+  </div>
+</section>
 </main>
+</div>
+</div>
 <script>
 const $=id=>document.getElementById(id);
 const COLORS={pink:'#f4a7c0','hot pink':'#ff4fa0','baby pink':'#f9c9d9',lavender:'#b9a3e3',red:'#e5534b',orange:'#f39a3d',yellow:'#f2d04b',green:'#5fb36a',blue:'#4a86d9','baby blue':'#9fd0f3','sky blue':'#7cc4f0',purple:'#9a6bd1',black:'#333',white:'#fafafa',grey:'#999',lightgray:'#ccc'};
@@ -210,7 +340,7 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 // tabs
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
-  for(const s of ['orders','batches','settings'])$('t-'+s).hidden=s!==t;
+  for(const s of ['orders','batches','settings','help'])$('t-'+s).hidden=s!==t;
   if(t==='orders')loadOrders(); if(t==='batches'){loadBatches();loadQueue()} if(t==='settings')loadDb(); try{localStorage.setItem('tab',t)}catch{}}
 
 // ---------- orders ----------
@@ -298,7 +428,8 @@ async function openBatchDetail(id,quiet){openBatch=id;const b=await api('/api/ba
   $('bdetail').hidden=false;$('btitle').textContent=`${s.label||'Batch #'+id} · ${b.order_ids.length} orders`;$('bzip').href=`/api/batches/${id}/zip`;$('bzip').hidden=!b.status.startsWith('done');
   if(b.progress){const P=b.progress;const msg=b.status==='created'?`Not started: press <b>Start download</b> (${P.ready} of ${P.models} models already downloaded).`:b.status==='models_ready'?`All models downloaded (${P.ready}/${P.models}${P.failed?`, ${P.failed} failed`:''}) — press <b>Build plates</b>.`:`Downloading from MakerWorld: ${P.ready} of ${P.models} models done${P.failed?`, ${P.failed} failed`:''}.`;
     $('bmsgs').innerHTML=`<div class="w">${msg}</div>`;$('bbases').innerHTML=$('bnames').innerHTML='<div class="empty">Plates appear when the batch is built</div>';return}
-  $('bmsgs').innerHTML=(s.folder?`<div class="o">Saved to ${esc(s.folder)}</div>`:'')+(s.errors||[]).map(e=>`<div class="e">${esc(e)}</div>`).join('')+(s.warnings||[]).map(w=>`<div class="w">${esc(w)}</div>`).join('')+(s.ok&&!(s.warnings||[]).length?'<div class="o">All plates passed the checks.</div>':'');
+  const F=s.fit;const fitMsg=F&&F.checked?(F.ok===F.checked?`<div class="o">Fit check: ${F.ok}/${F.checked} name/base pairs keep their MakerWorld proportions — they'll fit after printing.</div>`:`<div class="e">Fit check: only ${F.ok}/${F.checked} pairs passed — the others were not printed (see below).</div>`):'';
+  $('bmsgs').innerHTML=(s.folder?`<div class="o">Saved to ${esc(s.folder)}</div>`:'')+fitMsg+(s.errors||[]).map(e=>`<div class="e">${esc(e)}</div>`).join('')+(s.warnings||[]).map(w=>`<div class="w">${esc(w)}</div>`).join('')+(s.ok&&!(s.warnings||[]).length?'<div class="o">All plates passed the checks.</div>':'');
   for(const k of ['bases','names']){const ps=(s.plates||[]).filter(p=>p.kind===k);
     $('b'+k).innerHTML=ps.length?ps.map(p=>`<a class="plate" data-file="${esc(p.file)}" href="/api/batches/${id}/file?path=${encodeURIComponent(p.file)}">${plateSVG(p)}<div class="fn">${esc(p.file.split('/').pop())}</div>${p.warnings.map(w=>`<div class="hint" style="color:var(--warn)">${esc(w)}</div>`).join('')}</a>`).join(''):'<div class="empty">None</div>'}
   $('bfinder').hidden=!(META.local&&b.status.startsWith('done'));
@@ -372,7 +503,7 @@ async function refresh(){try{const st=await api('/api/state');
   const log=$('log');const atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-4;log.textContent=st.log.join('\n');if(atEnd)log.scrollTop=log.scrollHeight;
 }catch(e){}}
 function refreshAll(){lastKey='';refresh()}
-(async()=>{META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;let t='orders';try{t=localStorage.getItem('tab')||'orders'}catch{}if(!['orders','batches','settings'].includes(t))t='orders';show(t);refresh();setInterval(refresh,2000)})();
+(async()=>{META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;let t='orders';try{t=localStorage.getItem('tab')||'orders'}catch{}if(!['orders','batches','settings','help'].includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;show(t);refresh();setInterval(refresh,2000)})();
 </script>
 </body>
 </html>

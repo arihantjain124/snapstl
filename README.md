@@ -54,8 +54,13 @@ launchctl bootout gui/$(id -u)/local.snapmagicians.snapstl && rm ~/Library/Launc
    a time; the header and *Download queue* show progress. If MakerWorld shows a security check in
    that tab, complete it — it carries on.
 5. When the batch says **Ready to build** → **Build plates**.
-6. **Show in Finder**, open the plates in Bambu Studio, check, slice, print. Bases in white; names in
+6. Check the batch says **Fit check: N/N** (every name keeps its base's proportions, so it fits after
+   printing; a pair that fails is never printed and goes back to Ready).
+7. **Show in Finder**, open the plates in Bambu Studio, check, slice, print. Bases in white; names in
    their colour folder's colour.
+
+The app has a side menu — **Orders**, **Batches**, **Settings**, **Help**. Help explains every tab,
+status, file and setting.
 
 Output:
 
@@ -91,7 +96,7 @@ backups). The license password is in the macOS Keychain.
 
 ```bash
 uv sync                 # install dependencies (incl. dev)
-uv run pytest -q        # 21 tests: scaling, packing, grouping, 3MF, ingest, batches, helper API, maintenance
+uv run pytest -q        # 23 tests: scaling, packing, grouping, 3MF, ingest, batches, helper API, maintenance
 SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn snapstl.server:app --port 8320
                         # a throwaway dev instance with its own data
 ```
