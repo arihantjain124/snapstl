@@ -187,7 +187,7 @@ that queued it), timestamps.
 **print_jobs** — one row per plate pushed to a printer (`farm.py`): `batch_id`, `plate` (path in the
 batch folder), `kind`, `color`, `printer_id` / `printer_name` (Bambuddy's), `state` (`queued | slicing
 | uploading | sent | printing | done | failed | cancelled`), `sliced` (file used), `file_id` /
-`queue_item_id` (Bambuddy's), `progress`, `error`, timestamps, `computer_id`. Local only (never in the
+`queue_item_id` (Bambuddy's), `progress`, `error`, `options` (JSON print options, set on the queue item after it's queued), timestamps, `computer_id`. Local only (never in the
 shared records); Clean up removes finished ones, Reset empties it.
 
 ---
@@ -405,8 +405,8 @@ the files. Clashing file names get ` (2)`; names over 200 characters are shorten
 | Helper | `GET /api/helper/config`, `GET /api/helper/next`, `POST /api/helper/ping`, `POST /api/helper/jobs/{id}/result`, `…/fail`, `…/release`, `GET /api/helper.zip` |
 | Settings | `GET` / `PUT /api/settings` (includes `makerworld_url`, `license_passwords`), `POST /api/settings/reset` |
 | Portal | `GET /api/portal` (on/off, password set, addresses), `POST /api/portal` `{enabled, password}` — this Mac only |
-| Print farm | `GET /api/farm` (Bambuddy status, printers + job + live state, slicing settings, recent jobs; connects by itself on a fresh install), `POST /api/farm/connect` `{url, api_key}`, `PUT /api/farm/settings` `{slicer_url, printer_preset, process_preset, filament_preset}`, `POST /api/farm/printers` `{name, ip, serial, access_code, model, role, colors}`, `POST /api/farm/printers/{id}` `{role, colors}`, `POST /api/farm/printers/{id}/clear-plate` — `/api/farm/*` this computer only |
-| Push to queue | `GET /api/batches/{id}/plates` (plates, sliced file, latest job, suggested printer, choices with why-not), `POST /api/batches/{id}/push` `{plates:[{file, printer_id}], again}`, `GET /api/print-jobs?batch_id=`, `POST /api/print-jobs/{id}/retry`, `POST /api/print-jobs/{id}/cancel` |
+| Print farm | `GET /api/farm` (read only: Bambuddy status, printers with role from Location, live state and filament per slot, slicing settings, recent jobs with printer choices; connects by itself on a fresh install), `POST /api/farm/connect` `{url, api_key}`, `PUT /api/farm/settings` `{slicer_url, printer_preset, process_preset, filament_preset}`, `POST /api/farm/printers/{id}/clear-plate` — `/api/farm/*` this computer only. Printers and filament are set up in Bambuddy, never in SnapSTL |
+| Push to queue | `GET /api/batches/{id}/plates` (plates, sliced file, latest job, suggested printer, choices with why-not), `POST /api/batches/{id}/push` `{plates:[{file, printer_id}], again}`, `GET /api/print-jobs?batch_id=`, `POST /api/print-jobs/{id}/print` `{printer_id, options:{bed_levelling, flow_cali, timelapse}}` (Printers → Print jobs: change a waiting job, move one waiting in Bambuddy's queue, or print a failed/cancelled/printed plate again as a new job), `POST /api/print-jobs/{id}/retry`, `POST /api/print-jobs/{id}/cancel` |
 | Maintenance | `GET /api/maintenance`, `POST /api/maintenance/backup`, `POST /api/maintenance/cleanup` `{older_than_days}`, `POST /api/maintenance/reset` `{confirm:"RESET", clear_cache}` |
 
 Order list parameters: `tab` (`ready ready_single ready_clubbed needs_review in_batch bundled skipped
@@ -431,8 +431,9 @@ Unknown keys are ignored on load, so older settings files keep working.
 Print farm settings are separate: `APP_DIR/farm.json` (mode 600, `farm.py`): `bambuddy_url`
 (default `http://127.0.0.1:8000`, env `SNAPSTL_BAMBUDDY_URL`), `api_key` (SnapSTL's Bambuddy key — never
 sent to the UI), `slicer_url` ("" = sliced by hand), `printer_preset` / `process_preset` /
-`filament_preset` (Bambu system preset names; default A1 0.4 / 0.20mm Standard / Bambu PLA Basic) and
-`roles` (Bambuddy printer id → `{role: bases|names, colors: [...]}`). Settings → Defaults doesn't touch it.
+`filament_preset` (Bambu system preset names; default A1 0.4 / 0.20mm Standard / Bambu PLA Basic), edited
+in Settings → Print farm. Settings → Defaults doesn't touch it. Printers, what they make and their
+filament are not stored by SnapSTL — they're read from Bambuddy.
 
 ---
 
@@ -447,11 +448,11 @@ sent to the UI), `slicer_url` ("" = sliced by hand), `printer_preset` / `process
   start; toggling restarts it via `launchctl kickstart -k`). They must sign in (scrypt hash + signed
   30-day cookie, `auth.json`; cookie `Secure` only over https). Never allowed from other computers:
   `/api/helper/*`, Finder (`…/reveal`), `/api/portal`, `/api/maintenance/reset`, `/api/farm/*`
-  (Bambuddy connection, adding printers, printer jobs, clear plate), and changing folders, the model
+  (Bambuddy connection, slicing settings, clear plate), and changing folders, the model
   link or license passwords. They may see the Printers page and use Push to queue.
 * Bambuddy listens on 127.0.0.1 only (its login is off by default). SnapSTL's Bambuddy API key lives
-  only in `farm.json` (mode 600). Printer **access codes** go straight to Bambuddy and are never stored
-  by SnapSTL. Plates (file names carry the printed first names) go only to this computer's Bambuddy.
+  only in `farm.json` (mode 600). SnapSTL never handles printer access codes (printers are added in
+  Bambuddy). Plates (file names carry the printed first names) go only to this computer's Bambuddy.
 * Customer name / phone / address are stored only in the local database (owner's request) — never sent
   anywhere, never in git. License passwords live only in `settings.json` (mode 600); `info.json` in
   model folders never contains them.
@@ -483,8 +484,10 @@ unsent changes):
   move from the old cache; reset keeps models; other computers refused until the portal is on, must sign
   in, and can never reach the helper / Finder / portal / reset
 
-* `test_farm.py` — Printers page connects (own API key, never shown), adds printers (refusal in
-  Bambuddy's words), roles/colours, clear plate; Push to queue suggestions and why-not, wrong printer
+* `test_farm.py` — Printers page connects (own API key, never shown) and reads printers, Location roles
+  and filament per AMS slot / external spool (colour names from Bambuddy's catalogue), no setup
+  endpoints, clear plate; colour matching (exact / same family / none) and suggestions; Print button
+  (move a queued job with options, print again as a new job, refusals); Push to queue suggestions and why-not, wrong printer
   refused, not sliced → clear error, hand-sliced file → Bambuddy library + queue, no double push,
   slicer service (inherits presets, name colour), pending → printing → printed, cancel, Bambuddy login
   on (pasted key), `/api/farm/*` this computer only, SD-card-safe file names
@@ -528,7 +531,7 @@ snapstl.server:app --port 8320`.
 | 26 | Report status updates are ordered by row event dates, then the report's date range end, then upload time | the report has no "generated at" time; an older report must never undo a newer status |
 | 27 | Print farm through **Bambuddy** (open source, self-hosted), installed with SnapSTL at a pinned version, on 127.0.0.1 only; SnapSTL never talks to printers itself. Each plate is pushed to a printer the person picks (pre-filled suggestion); Bambuddy waits for "Clear plate" before every next print | owner wants plates to go to a chosen printer automatically without a cloud service (SimplyPrint/Printago would send plate files with customer first names off the computer; Bambu Farm Manager has no API) |
 | 28 | Slicing: by hand in Bambu Studio (Export plate sliced file → `Sliced/…`) or Bambuddy's slicer service (Docker HTTP wrapper around the CLI). **Bambu Studio's macOS command line can't slice** — tested 02.05.00.66: it segfaults in `PartPlateList::generate_print_polygon` (calls the GUI `plater()` in CLI mode); the same code is in 2.6–2.9 | don't retry the local Bambu Studio CLI on a Mac |
-| 29 | A printer's job (Bases / Names + colours loaded) is kept by SnapSTL (`farm.json`); Push to queue refuses a plate on the wrong printer or colour | names never print in the wrong colour; bases only on base printers |
+| 29 | Printers page is read only: printers, filament and settings live in Bambuddy. What a printer makes comes from its **Location** in Bambuddy ("Bases…" / "Names…", else both); colours come from the filament Bambuddy reports per AMS slot / external spool, named by its colour catalogue. A plate needs its colour loaded (bases: white); exact name before same family ("Hot Pink" for pink); wrong printer/colour refused | owner manages printers and filament in Bambuddy only, with no second place to keep in step (0.10.0 kept roles/colours in SnapSTL — replaced) |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -602,11 +605,17 @@ Bambuddy: one queue per printer; starts the next print only after "Clear plate" 
   (`POST /api/v1/api-keys/`: queue, read status, library, control printer) and keeps it in `farm.json`;
   the worker does this at startup, so the Printers page is connected the first time it opens. Login on →
   the owner pastes a key made in Bambuddy → Settings → API Keys.
-* **Printers:** `GET /api/v1/printers/` + `/{id}/status` (state, %, time left, HMS errors,
-  `awaiting_plate_clear`); add = `POST /api/v1/printers/` (Bambuddy tests the MQTT connection and
-  refuses otherwise); role → Bambuddy `location` "Bases"/"Names" too (display only).
-* **Suggestion** (`farm.suggest`): printers that fit (role; names: colour loaded), connected first,
-  then fewest SnapSTL jobs on their way + busy/awaiting clear, spread across plates.
+* **Printers (read only):** `GET /api/v1/printers/` + `/{id}/status` (state, %, time left, layer,
+  temperatures, HMS errors, `awaiting_plate_clear`, `ams[].tray[]`, `vt_tray[]`); colour names from
+  `GET /api/v1/inventory/colors/map` (`by_material["PLA Basic|hex"]`, then `colors[hex]`; cached 10 min;
+  no name → nearest SnapSTL colour, shown "≈"). Role = `location` prefix (`farm.role_of`).
+* **Suggestion** (`farm.suggest`): printers that fit (Location role; the plate's colour loaded — white for
+  bases), exact colour before same family, then fewest SnapSTL jobs on their way + busy/awaiting
+  clear, dedicated (Location) printers before "both", spread across plates.
+* **Print jobs → Print** (`farm.print_job`): queued → printer/options changed; sent (pending in
+  Bambuddy) → `PATCH /api/v1/queue/{id}` `{printer_id, bed_levelling, flow_cali, timelapse}`;
+  failed / cancelled / done → new job. Options of a new job are PATCHed on its queue item right after
+  add-to-queue (that route doesn't take them; also works around Bambuddy #3397).
 * **Slicer service** (`farm.slice_plate`): `POST {slicer_url}/slice` multipart `file`, `printerProfile`,
   `presetProfile`, `filamentProfile` — each `{"from": "User", "inherits": "<system preset name>"}` (the
   sidecar resolves the chain), filament colour = the name colour; `exportType=3mf`; no arrange/orient,

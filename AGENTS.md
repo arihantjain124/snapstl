@@ -32,9 +32,11 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   **.3mf** per plate, file names `{name,color},{name2,color2}.3mf`, **never write ZIP files**. Sliced
   plates (print farm) go only in that batch's `Sliced/` folder, same path + `.gcode.3mf`.
 - **Print farm (Bambuddy):** plates reach printers only through Bambuddy on this computer, only after a
-  person presses **Push to queue** (never automatically after a build), and only on a printer that fits
-  (Bases → Bases printers; Names → Names printers with that colour loaded). Never skip Bambuddy's
-  "Clear plate" step. SnapSTL never talks to printers directly.
+  person presses **Push to queue** or **Print** (never automatically after a build), and only on a
+  printer that fits: its Location in Bambuddy allows the kind and the plate's colour is loaded (white
+  for bases). Never skip Bambuddy's "Clear plate" step. SnapSTL never talks to printers directly.
+- Printers, filament and printer settings are managed in Bambuddy; the Printers page stays read only
+  (no adding printers, filament or roles in SnapSTL).
 
 **Technical rules**
 - MakerWorld models come **only** from the SnapSTL Helper (`helper/`) in the user's own Chrome.
@@ -69,8 +71,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - Customer name/phone/address live only in the local database and the owner's shared order records
   (Supabase, Mumbai). Never send them anywhere else, log them, or put them in git. **The repository is public:** every secret — license passwords, the Supabase connection string (`config.py`, `shared-records.json`, mode 600), the portal password — is entered in the app's Settings and stays in the app folder; never add a secrets file to the repo or ask users to edit one. License passwords live only in `settings.json` (per model) — never in model folders
   (`info.json`), logs, reports or git. The helper's `check` carries only booleans/"sent" — never the password.
-- SnapSTL's Bambuddy API key lives only in `farm.json` (mode 600) and is never sent to the UI; printer
-  access codes go straight to Bambuddy and are never stored by SnapSTL. Plate files go only to this
+- SnapSTL's Bambuddy API key lives only in `farm.json` (mode 600) and is never sent to the UI; SnapSTL
+  never handles printer access codes. Plate files go only to this
   computer's Bambuddy (and a slicer service the owner set), never to a cloud print service.
 - Never weaken the license guard: no download without the model's password, no saving a download the
   helper didn't confirm or that still has the watermark (decision log #18).

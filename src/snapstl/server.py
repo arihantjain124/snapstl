@@ -55,7 +55,7 @@ OPEN_PATHS = {"/login", "/api/login", "/api/auth-check", "/favicon.ico"}
 
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]", "::1")
 # Things only the SnapSTL computer itself may do (helper, Finder, folders, portal setup, reset, print-farm
-# setup: Bambuddy connection, adding printers with their access codes, printer jobs, clearing a bed).
+# setup: Bambuddy connection, slicing settings, clearing a bed).
 MAC_ONLY_PREFIXES = ("/api/helper/", "/api/downloads/reveal", "/api/portal", "/api/maintenance/reset",
                      "/api/update", "/api/shared-records", "/api/setup", "/api/farm/")
 
@@ -662,8 +662,7 @@ def _farm_setup() -> dict:
             n = len(farm.printers(cfg, with_status=False))
         except farm.FarmError as e:
             st["error"] = str(e)
-    return {"connected": st["connected"], "error": st["error"], "printers": n,
-            "roles": sum(1 for r in cfg["roles"].values() if r.get("role"))}
+    return {"connected": st["connected"], "error": st["error"], "printers": n}
 
 
 @app.post("/api/setup/helper-folder")
@@ -888,13 +887,19 @@ def _farm_err(e: farm.FarmError) -> HTTPException:
 def _job_view(j: dict | None) -> dict | None:
     if not j:
         return None
-    return {k: j.get(k) for k in ("id", "plate", "kind", "color", "printer_id", "printer_name", "state", "sliced",
-                                  "progress", "error", "created_at", "updated_at", "batch_id")}
+    v = {k: j.get(k) for k in ("id", "plate", "kind", "color", "printer_id", "printer_name", "state", "sliced",
+                               "progress", "error", "created_at", "updated_at", "batch_id")}
+    try:
+        v["options"] = json.loads(j.get("options") or "{}")
+    except ValueError:
+        v["options"] = {}
+    return v
 
 
 @app.get("/api/farm")
 def farm_info(request: Request):
-    """Printers page: Bambuddy connection, printers with their job and live state, slicing settings."""
+    """Printers page (read only): Bambuddy connection, printers with live state and filament loaded,
+    recent print jobs; slicing settings (shown in Settings)."""
     cfg = farm.load_config()
     st = farm.status(cfg)
     if st["reachable"] and not st["connected"] and is_local(request):
@@ -909,8 +914,17 @@ def farm_info(request: Request):
             prs = farm.printers(cfg)
         except farm.FarmError as e:
             st["error"] = str(e)
-    return {"status": st, "config": farm.public_config(cfg), "printers": prs, "models": farm.MODELS,
-            "jobs": [_job_view(j) for j in farm.jobs(limit=60)], "worker": {"current": farm.WORKER.current,
+    jobs, seen = [], set()
+    for j in farm.jobs(limit=60):  # newest first; only a plate's newest job can be printed / moved
+        v = _job_view(j)
+        key = (j["batch_id"], j["plate"])
+        v["latest"] = key not in seen
+        seen.add(key)
+        if v["latest"] and prs and j["state"] not in ("slicing", "uploading", "printing"):
+            v["choices"] = farm.job_choices(j, prs)
+        jobs.append(v)
+    return {"status": st, "config": farm.public_config(cfg), "printers": prs, "jobs": jobs,
+            "options": {k: list(v) for k, v in farm.OPTIONS.items()}, "worker": {"current": farm.WORKER.current,
                                                                           "log": farm.WORKER.log[-20:]},
             "local": is_local(request)}
 
@@ -943,34 +957,6 @@ async def farm_settings(req: Request):
     if cfg["slicer_url"]:
         out["slicer_problem"] = await run_in_threadpool(farm.check_slicer, cfg["slicer_url"])
     return out
-
-
-@app.post("/api/farm/printers")
-async def farm_add_printer(req: Request):
-    """Add a printer to Bambuddy (it tests the connection first). The access code isn't kept by SnapSTL."""
-    b = await req.json()
-    colors = b.get("colors") or []
-    if isinstance(colors, str):
-        colors = [c for c in re.split(r"[,;]", colors)]
-    try:
-        return await run_in_threadpool(farm.add_printer, str(b.get("name", "")), str(b.get("ip", "")),
-                                       str(b.get("serial", "")), str(b.get("access_code", "")),
-                                       str(b.get("model", "")), str(b.get("role", "")), colors)
-    except farm.FarmError as e:
-        raise _farm_err(e) from e
-
-
-@app.post("/api/farm/printers/{pid}")
-async def farm_printer_role(pid: int, req: Request):
-    """What this printer makes (Bases / Names) and which colours are loaded."""
-    b = await req.json()
-    colors = b.get("colors") or []
-    if isinstance(colors, str):
-        colors = [c for c in re.split(r"[,;]", colors)]
-    try:
-        return await run_in_threadpool(farm.set_role, pid, str(b.get("role", "")), colors)
-    except farm.FarmError as e:
-        raise _farm_err(e) from e
 
 
 @app.post("/api/farm/printers/{pid}/clear-plate")
@@ -1006,7 +992,8 @@ def _plates_view(b: dict) -> dict:
     sugg = farm.suggest(plates, prs, farm.active_counts()) if prs else {}
     for pl in plates:
         pl["suggested"] = sugg.get(pl["file"])
-        pl["choices"] = [{"id": p["id"], "name": p["name"], "why_not": farm.eligible(pl, p),
+        pl["need"] = farm.needed_color(pl)
+        pl["choices"] = [{"id": p["id"], "name": p["name"], "why_not": farm.eligible(pl, p), "note": farm.match_note(pl, p),
                           "state": (p.get("status") or {}).get("state", ""),
                           "connected": (p.get("status") or {}).get("connected", False)} for p in prs]
     done = bool(plates) and all(pl["job"] and pl["job"]["state"] == "done" for pl in plates)
@@ -1036,7 +1023,7 @@ async def batch_push(batch_id: int, req: Request):
     if not picks:
         raise HTTPException(400, "Choose a printer for at least one plate")
     try:
-        prs = await run_in_threadpool(farm.printers, None, False)
+        prs = await run_in_threadpool(farm.printers)  # with live filament: the colour check uses it
         return farm.queue_jobs(b, picks, prs, again=bool(body.get("again")))
     except farm.FarmError as e:
         raise _farm_err(e) from e
@@ -1045,6 +1032,19 @@ async def batch_push(batch_id: int, req: Request):
 @app.get("/api/print-jobs")
 def print_jobs(batch_id: int | None = None):
     return {"jobs": [_job_view(j) for j in farm.jobs(batch_id)]}
+
+
+@app.post("/api/print-jobs/{job_id}/print")
+async def print_job_print(job_id: int, req: Request):
+    """Printers page → Print: {printer_id, options: {bed_levelling, flow_cali, timelapse}}."""
+    b = await req.json()
+    if not b.get("printer_id"):
+        raise HTTPException(400, "Choose a printer")
+    try:
+        prs = await run_in_threadpool(farm.printers)
+        return await run_in_threadpool(farm.print_job, job_id, int(b["printer_id"]), b.get("options") or {}, prs)
+    except farm.FarmError as e:
+        raise _farm_err(e) from e
 
 
 @app.post("/api/print-jobs/{job_id}/{action}")

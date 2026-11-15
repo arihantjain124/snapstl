@@ -38,15 +38,34 @@ def _part(body: bytes, field: str) -> bytes:
     return m.group(1) if m else b""
 
 
+def tray(i, hex_, material="PLA Basic", remain=80):
+    return {"id": i, "tray_color": hex_ + "FF", "tray_type": "PLA", "tray_sub_brands": material, "remain": remain,
+            "state": 11, "exists": True}
+
+
 class FakeBambuddy:
     """Just enough of Bambuddy v1.3's API (and its slicer sidecar) for SnapSTL."""
 
     def __init__(self, auth_enabled=False):
         self.auth_enabled = auth_enabled
-        self.printers = {1: {"id": 1, "name": "Base 1", "model": "A1", "serial_number": "S1", "ip_address": "10.0.0.11",
-                             "location": None, "is_active": True}}
-        self.status = {1: {"connected": True, "state": "IDLE"}}
-        self.files, self.queue, self.keys, self.slices, self.cleared = {}, {}, [], [], []
+        self.printers = {
+            1: {"id": 1, "name": "Base 1", "model": "A1", "serial_number": "S1", "ip_address": "10.0.0.11",
+                "location": "Bases", "is_active": True},
+            2: {"id": 2, "name": "Names A", "model": "A1", "serial_number": "S2", "ip_address": "10.0.0.21",
+                "location": "Names row", "is_active": True},
+            3: {"id": 3, "name": "Names B", "model": "A1", "serial_number": "S3", "ip_address": "10.0.0.22",
+                "location": "Names row", "is_active": True},
+        }
+        self.status = {
+            1: {"connected": True, "state": "IDLE", "temperatures": {"nozzle": 25.0, "bed": 24.0},
+                "vt_tray": [tray(254, "FFFFFF")]},                                   # Jade White, external spool
+            2: {"connected": True, "state": "IDLE", "ams": [{"id": 0, "tray": [tray(0, "F55A74"), tray(1, "0A2989"),
+                                                                              {"id": 2, "state": 9}]}]},  # Pink, Blue, empty
+            3: {"connected": True, "state": "IDLE", "ams": [{"id": 0, "tray": [tray(0, "F5547C")]}]},  # Hot Pink
+        }
+        self.colors = {"colors": {"ffffff": "Jade White", "f55a74": "Pink", "f5547c": "Hot Pink", "0a2989": "Blue"},
+                       "by_material": {}}
+        self.files, self.queue, self.keys, self.slices, self.cleared, self.patches = {}, {}, [], [], [], []
         self.calls = []
 
     def __call__(self, method, url, headers, body, timeout):
@@ -69,19 +88,10 @@ class FakeBambuddy:
         if method == "POST" and path == "/api/v1/api-keys/":
             self.keys.append("bb_secret_key")
             return 200, json.dumps({"id": 1, "key": "bb_secret_key"}).encode()
+        if method == "GET" and path == "/api/v1/inventory/colors/map":
+            return 200, json.dumps(self.colors).encode()
         if method == "GET" and path == "/api/v1/printers/":
             return 200, json.dumps(list(self.printers.values())).encode()
-        if method == "POST" and path == "/api/v1/printers/":
-            b = json.loads(body)
-            if b["ip_address"].startswith("192.0.2."):
-                return 400, json.dumps({"detail": {"code": "printer_connection_failed",
-                                                   "message": "Could not connect to the printer."}}).encode()
-            pid = max(self.printers) + 1
-            self.printers[pid] = {"id": pid, "name": b["name"], "model": b["model"], "serial_number": b["serial_number"],
-                                  "ip_address": b["ip_address"], "location": b["location"], "is_active": True}
-            self.status[pid] = {"connected": True, "state": "IDLE"}
-            assert "access_code" in b
-            return 200, json.dumps(self.printers[pid]).encode()
         m = re.fullmatch(r"/api/v1/printers/(\d+)(/status|/clear-plate)?", path)
         if m:
             pid = int(m.group(1))
@@ -90,9 +100,6 @@ class FakeBambuddy:
             if m.group(2) == "/clear-plate":
                 self.cleared.append(pid)
                 return 200, b'{"ok":true}'
-            if method == "PATCH":
-                self.printers[pid].update(json.loads(body))
-                return 200, json.dumps(self.printers[pid]).encode()
         if method == "POST" and path.startswith("/api/v1/library/files") and path.endswith("files"):
             fid = len(self.files) + 1
             self.files[fid] = {"filename": _filename(body), "data": _part(body, "file")}
@@ -110,6 +117,12 @@ class FakeBambuddy:
                 return 404, b'{"detail":"Queue item not found"}'
             if m.group(2):
                 self.queue[qid]["status"] = "cancelled"
+            elif method == "PATCH":
+                if self.queue[qid]["status"] != "pending":
+                    return 400, b'{"detail":"Can only update pending items"}'
+                patch = json.loads(body)
+                self.patches.append((qid, patch))
+                self.queue[qid].update(patch)
             return 200, json.dumps(self.queue[qid]).encode()
         return 404, b'{"detail":"Not Found"}'
 
@@ -125,6 +138,7 @@ def bb(monkeypatch, tmp_path):
     monkeypatch.setattr(farm, "_request", fake)
     farm.CONFIG_PATH.unlink(missing_ok=True)
     farm._status_cache.clear()
+    monkeypatch.setattr(farm, "_color_map", (0.0, {}))
     old_out, old_cache = MANAGER.output_dir, cache.ROOT
     MANAGER.output_dir = str(tmp_path / "output")
     cache.set_root(str(tmp_path / "Downloads"))
@@ -137,7 +151,7 @@ def bb(monkeypatch, tmp_path):
         con.execute("DELETE FROM print_jobs")
         con.execute("DELETE FROM downloads WHERE batch_id > ?", (first,))
         con.execute("DELETE FROM batches WHERE id > ?", (first,))
-        con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%'")
+        con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%' OR order_id LIKE 'PB%'")
     farm.CONFIG_PATH.unlink(missing_ok=True)
 
 
@@ -159,55 +173,63 @@ def job_of(c, bid, plate):
     return next(j for j in c.get(f"/api/print-jobs?batch_id={bid}").json()["jobs"][::-1] if j["plate"] == plate)
 
 
-def test_printers_page_connects_and_adds_printers(client, bb):
+def test_printers_page_reads_printers_and_filament_from_bambuddy(client, bb):
     r = client.get("/api/farm").json()
     assert r["status"]["connected"] and r["status"]["reachable"]
     assert "api_key" not in r["config"] and "bb_secret_key" not in json.dumps(r)  # never shown
-    assert [p["name"] for p in r["printers"]] == ["Base 1"] and r["printers"][0]["role"] == ""
+    prs = {p["name"]: p for p in r["printers"]}
+    assert prs["Base 1"]["role"] == "bases" and prs["Names A"]["role"] == "names"
+    assert prs["Base 1"]["colors"] == ["jade white"] and prs["Base 1"]["spools"][0]["slot"] == "External"
+    assert prs["Names A"]["colors"] == ["blue", "pink"]  # the empty AMS slot is left out
+    sp = prs["Names A"]["spools"][0]
+    assert (sp["slot"], sp["name"], sp["material"], sp["hex"], sp["remain"]) == ("AMS 1 · 1", "Pink", "PLA Basic", "#F55A74", 80)
+    assert prs["Base 1"]["status"]["nozzle"] == 25.0
+    # nothing to set up in SnapSTL any more: no add-printer / role endpoints
+    assert client.post("/api/farm/printers", json={"name": "x"}).status_code in (404, 405)
 
-    # a printer Bambuddy can't reach is refused with its own words
-    bad = client.post("/api/farm/printers", json={"name": "X", "ip": "192.0.2.5", "serial": "s9", "access_code": "1234",
-                                                  "model": "A1", "role": "names", "colors": "pink"})
-    assert bad.status_code == 400 and "Could not connect to the printer" in bad.json()["detail"]
-    ok = client.post("/api/farm/printers", json={"name": "Names 1", "ip": "10.0.0.21", "serial": "s2", "access_code": "1234",
-                                                 "model": "A1", "role": "names", "colors": "Pink, blue"})
-    assert ok.status_code == 200, ok.text
-    assert client.post("/api/farm/printers/1", json={"role": "bases", "colors": ""}).status_code == 200
-    prs = {p["name"]: p for p in client.get("/api/farm").json()["printers"]}
-    assert prs["Names 1"]["role"] == "names" and prs["Names 1"]["colors"] == ["blue", "pink"]
-    assert prs["Base 1"]["role"] == "bases" and bb.printers[1]["location"] == "Bases"
-    assert "1234" not in farm.CONFIG_PATH.read_text()  # access codes are never kept by SnapSTL
-    assert oct(farm.CONFIG_PATH.stat().st_mode & 0o777) == "0o600"
-
-    bb.status[1] = {"connected": True, "state": "FINISH", "awaiting_plate_clear": True}
+    bb.status[1].update(state="FINISH", awaiting_plate_clear=True)
     farm._status_cache.clear()
     assert client.get("/api/farm").json()["printers"][0]["status"]["awaiting_plate_clear"]
     assert client.post("/api/farm/printers/1/clear-plate").status_code == 200 and bb.cleared == [1]
 
 
+def test_colour_matching_and_location_roles():
+    plate_pink = {"kind": "names", "colors": ["pink"], "file": "p"}
+    plate_base = {"kind": "bases", "colors": ["pink"], "file": "b"}
+    ok = {"connected": True}
+    base = {"id": 1, "name": "B", "role": "bases", "colors": ["jade white"], "status": ok}
+    exact = {"id": 2, "name": "N1", "role": "names", "colors": ["blue", "pink"], "status": ok}
+    close = {"id": 3, "name": "N2", "role": "names", "colors": ["hot pink"], "status": ok}
+    both = {"id": 4, "name": "Any", "role": "", "colors": ["jade white", "pink"], "status": ok}
+    assert farm.eligible(plate_base, base) == "" and farm.match_note(plate_base, base) == "loaded: jade white"
+    assert "makes bases" in farm.eligible(plate_pink, base)
+    assert farm.eligible(plate_pink, exact) == "" and farm.match_note(plate_pink, exact) == ""
+    assert farm.eligible(plate_pink, close) == "" and farm.match_note(plate_pink, close) == "loaded: hot pink"
+    assert "needs blue" in farm.eligible({"kind": "names", "colors": ["blue"]}, close)
+    assert farm.eligible(plate_pink, dict(exact, status={"connected": False})) == "offline"
+    # exact colour first, then the least busy; a printer with no Location takes both kinds
+    sug = farm.suggest([plate_pink, dict(plate_pink, file="p2"), plate_base], [base, exact, close, both], {})
+    assert sug["p"] == 2 and sug["p2"] == 4 and sug["b"] == 1
+    assert farm.role_of("Bases – left rack") == "bases" and farm.role_of("names") == "names" and farm.role_of("Shed") == ""
+
+
 def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     client.get("/api/farm")
-    client.post("/api/farm/printers/1", json={"role": "bases"})
-    client.post("/api/farm/printers", json={"name": "Names pink", "ip": "10.0.0.21", "serial": "s2", "access_code": "1",
-                                            "model": "A1", "role": "names", "colors": "pink"})
-    client.post("/api/farm/printers", json={"name": "Names blue", "ip": "10.0.0.22", "serial": "s3", "access_code": "1",
-                                            "model": "A1", "role": "names", "colors": "blue"})
     bid, folder = built_batch(client, "PQ")
     base_plate, pink, blue = "Bases/{Ayra,pink},{Riya,blue}.3mf", "Names/pink/{Ayra,pink}.3mf", "Names/blue/{Riya,blue}.3mf"
 
     v = client.get(f"/api/batches/{bid}/plates").json()
     by = {p["file"]: p for p in v["plates"]}
-    names = {p["id"]: p["name"] for p in client.get("/api/farm").json()["printers"]}
     assert set(by) == {base_plate, pink, blue}
-    assert names[by[base_plate]["suggested"]] == "Base 1"
-    assert names[by[pink]["suggested"]] == "Names pink" and names[by[blue]["suggested"]] == "Names blue"
+    assert by[base_plate]["suggested"] == 1 and by[pink]["suggested"] == 2 and by[blue]["suggested"] == 2
+    assert by[base_plate]["need"] == "white" and by[pink]["need"] == "pink"
     assert all(p["sliced"] is None for p in v["plates"]) and not v["farm"]["slicer"]
-    why = {c["name"]: c["why_not"] for c in by[pink]["choices"]}
-    assert why["Names pink"] == "" and "needs Names" in why["Base 1"] and "needs pink" in why["Names blue"]
+    ch = {c["name"]: c for c in by[pink]["choices"]}
+    assert ch["Names A"]["why_not"] == "" and ch["Names B"]["note"] == "loaded: hot pink" and "makes bases" in ch["Base 1"]["why_not"]
 
     # wrong printer for a plate is refused
-    r = client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": pink, "printer_id": by[blue]["suggested"]}]})
-    assert r.status_code == 400 and "needs pink" in r.json()["detail"]
+    r = client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": blue, "printer_id": 3}]})
+    assert r.status_code == 400 and "needs blue" in r.json()["detail"]
 
     # not sliced and no slicer service: the job fails with what to do
     r = client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": base_plate, "printer_id": 1}]})
@@ -231,7 +253,7 @@ def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     # slicer service: the names plates are sliced when pushed, with the name colour as filament colour
     r = client.put("/api/farm/settings", json={"slicer_url": SLICER})
     assert r.status_code == 200 and r.json()["slicer_problem"] == ""
-    picks = [{"file": pink, "printer_id": by[pink]["suggested"]}, {"file": blue, "printer_id": by[blue]["suggested"]}]
+    picks = [{"file": pink, "printer_id": 2}, {"file": blue, "printer_id": 2}]
     assert client.post(f"/api/batches/{bid}/push", json={"plates": picks}).json()["queued"] == 2
     wait_for(lambda: all(job_of(client, bid, f)["state"] == "sent" for f in (pink, blue)))
     assert (folder / "Sliced" / "Names" / "pink" / "{Ayra,pink}.gcode.3mf").is_file()
@@ -250,6 +272,39 @@ def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     assert all(p["job"]["state"] == "done" for p in v["plates"]) and v["all_printed"]
 
 
+def test_print_button_moves_reprints_and_sets_options(client, bb):
+    client.get("/api/farm")
+    bid, folder = built_batch(client, "PB")
+    pink = "Names/pink/{Ayra,pink}.3mf"
+    (folder / "Names" / "pink" / "{Ayra,pink}.gcode.3mf").write_bytes(sliced_bytes())  # sliced, next to the plate
+    client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": pink, "printer_id": 2}]})
+    j = wait_for(lambda: (lambda j: j if j["state"] == "sent" else None)(job_of(client, bid, pink)))
+
+    jobs = client.get("/api/farm").json()["jobs"]
+    row = next(x for x in jobs if x["id"] == j["id"])
+    assert row["latest"] and {c["name"]: c["why_not"] for c in row["choices"]}["Names B"] == ""
+
+    # waiting in Bambuddy's queue → Move to another printer with options (set on the queue item)
+    r = client.post(f"/api/print-jobs/{j['id']}/print", json={"printer_id": 3, "options": {"bed_levelling": "on", "timelapse": True}})
+    assert r.status_code == 200 and r.json()["moved"]
+    assert bb.queue[1]["printer_id"] == 3 and bb.queue[1]["bed_levelling"] == "on" and bb.queue[1]["timelapse"] is True
+    j2 = job_of(client, bid, pink)
+    assert j2["printer_name"] == "Names B" and j2["options"] == {"bed_levelling": "on", "timelapse": True}
+    # a printer without the colour, a bad option, and a printing job are refused
+    assert "makes bases" in client.post(f"/api/print-jobs/{j['id']}/print", json={"printer_id": 1}).json()["detail"]
+    assert client.post(f"/api/print-jobs/{j['id']}/print", json={"printer_id": 2, "options": {"flow_cali": "maybe"}}).status_code == 400
+
+    # printed → Print again = a new job with its options, applied after it reaches the queue
+    bb.queue[1]["status"] = "completed"
+    farm.WORKER.refresh()
+    r = client.post(f"/api/print-jobs/{j['id']}/print", json={"printer_id": 2, "options": {"flow_cali": "off"}})
+    assert r.status_code == 200 and not r.json()["moved"] and r.json()["job_id"] != j["id"]
+    wait_for(lambda: job_of(client, bid, pink)["state"] == "sent")
+    assert bb.queue[2]["printer_id"] == 2 and bb.queue[2]["flow_cali"] == "off"
+    old = next(x for x in client.get("/api/farm").json()["jobs"] if x["id"] == j["id"])
+    assert not old["latest"] and "choices" not in old  # only a plate's newest job has a Print button
+
+
 def test_cancel_and_login_on_bambuddy(client, bb):
     bb.auth_enabled = True
     r = client.post("/api/farm/connect", json={})
@@ -257,7 +312,6 @@ def test_cancel_and_login_on_bambuddy(client, bb):
     bb.keys.append("bb_made_by_hand")
     r = client.post("/api/farm/connect", json={"api_key": "bb_made_by_hand"})
     assert r.status_code == 200 and r.json()["connected"]
-    client.post("/api/farm/printers/1", json={"role": "bases"})
     bid, folder = built_batch(client, "PC")
     plate = "Bases/{Ayra,pink},{Riya,blue}.3mf"
     (folder / "Bases" / "{Ayra,pink},{Riya,blue}.gcode.3mf").write_bytes(sliced_bytes())  # next to the plate works too
@@ -278,7 +332,7 @@ def test_farm_setup_only_on_this_computer(monkeypatch):
 
     monkeypatch.setattr(server.SETTINGS, "lan_access", True)
     monkeypatch.setattr(auth, "enabled", lambda: True)
-    for path in ("/api/farm/connect", "/api/farm/printers", "/api/farm/printers/1/clear-plate", "/api/farm/settings"):
+    for path in ("/api/farm/connect", "/api/farm/printers/1/clear-plate", "/api/farm/settings"):
         assert server._blocked(_req(path, "192.168.1.30")) == "Only available on the SnapSTL computer"
     assert server._blocked(_req("/api/farm", "192.168.1.30")) is None  # others may look
     assert server._blocked(_req("/api/batches/1/push", "192.168.1.30")) is None  # and push (files stay here)
