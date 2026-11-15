@@ -1,8 +1,8 @@
 """Make It tab: the plates of built batches, waiting to be printed, by Bases and by Names.
 
 * **Bases**: every base plate still to print, with a printer pre-selected — the next *available*
-  printer (connected, idle, bed cleared, nothing of ours on its way) that can print bases and has
-  white loaded, the one with the most filament left on that spool first.
+  printer (connected, idle, bed cleared, nothing of ours on its way) with white loaded, the one with
+  the most filament left on that spool first.
 * **Names**: every name plate with its colour; pre-selected only when an available printer has that
   colour loaded (read from Bambuddy).
 * A print starts only when a person presses **Start print**: the plate is sliced if needed, uploaded,
@@ -86,7 +86,7 @@ def available(printer: dict, load: int) -> bool:
 
 def choose(plates: list[dict], prs: list[dict], active: dict[int, int]) -> dict[str, int | None]:
     """Pre-selected printer per plate: only an *available* printer that fits; exact colour first, then
-    the most filament left, then dedicated (Location) printers. Each pick makes that printer busy for
+    the most filament left. Each pick makes that printer busy for
     the next plate, so plates spread over the free printers."""
     load = {p["id"]: active.get(p["id"], 0) for p in prs}
     out: dict[str, int | None] = {}
@@ -99,7 +99,7 @@ def choose(plates: list[dict], prs: list[dict], active: dict[int, int]) -> dict[
             out[pl["file"]] = None
             continue
         best = min(ok, key=lambda p: (-farm.color_match(need, p.get("colors") or [])[0], -spool_left(p, need),
-                                      not p.get("role"), p["name"]))
+                                      p["name"]))
         out[pl["file"]] = best["id"]
         load[best["id"]] += 1
     return out
