@@ -398,6 +398,7 @@ def store_result(job_id: int, plate_1: bytes, plate_2: bytes, check: dict | None
                     "WHERE id=?", (lic, db.now(), job_id))
     DOWNLOADER.done_count += 1
     DOWNLOADER.current = None
+    DOWNLOADER.next_after = time.time() + DOWNLOADER.pause_s
     MANAGER.wake()
     return {"base": [round(v, 1) for v in dims(base)], "name": [round(v, 1) for v in dims(name)]}
 
@@ -408,6 +409,8 @@ def store_failure(job_id: int, error: str) -> None:
         if d is None:
             raise KeyError(job_id)
         state = "queued" if d["attempts"] < MAX_ATTEMPTS else "failed"
+        # a failure waits longer before the next name: Time break × tries so far (1×, 2×, 3× …)
+        DOWNLOADER.next_after = time.time() + DOWNLOADER.pause_s * max(1, d["attempts"])
         con.execute("UPDATE downloads SET state=?, error=?, updated_at=? WHERE id=?",
                     (state, error[:500], db.now(), job_id))
     MANAGER.wake()
@@ -444,6 +447,7 @@ class Downloader:
         self.current: str | None = None
         self.done_count = 0
         self.pause_s = 3.0
+        self.next_after = 0.0  # no name is handed out before this time (Time break; longer after a failure)
         self.last_seen = 0.0
         self.claimed_at = 0.0
         self.on_page = False  # helper's tab is on the configured MakerWorld model page
@@ -480,6 +484,8 @@ class Downloader:
 def helper_next() -> dict | None:
     """Claim the next queued model for the helper (None when paused or nothing to do)."""
     if DOWNLOADER.paused:
+        return None
+    if time.time() < DOWNLOADER.next_after:  # enforced here too, so retries keep the gap
         return None
     while True:
         job = _claim_next()
