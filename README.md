@@ -91,7 +91,7 @@ has a button that takes you to the right place.
 3. **SnapSTL Helper.** The list shows ✓ once the helper is connected and on the model page.
 4. **Shared order records** (only if you use more than one computer). See below.
 5. **Print farm (Bambuddy)** (optional). Connected by itself; **Settings → Print farm** has the
-   address and the slicer service. See [4. Your printers](#4-your-printers-print-farm).
+   address (slicing presets are chosen in Make It → Slice). See [4. Your printers](#4-your-printers-print-farm).
 
 Everything you enter stays on this computer. Nothing goes into the public code repository.
 
@@ -153,14 +153,11 @@ Bambuddy**). SnapSTL only reads them.
    Bambuddy, with Bambu's colour names (e.g. *Hot Pink*, *Jade White*). Base plates need white loaded;
    a name plate needs its colour. A close colour (e.g. *Hot Pink* for a *pink* order) is offered, but
    marked *loaded: hot pink*. The exact colour is suggested first.
-4. **Slicing.** Printers only print sliced plates. There are two ways:
-   - **By hand:** open the plate in Bambu Studio → **Slice plate** → **Export plate sliced file**. Save
-     it in the batch folder's `Sliced` folder under the same path and name, e.g.
-     `Sliced/Bases/{Ayra,pink},{Manvi,pink}.gcode.3mf` (next to the plate also works).
-   - **Slicer service** (automatic): run Bambuddy's slicer service (Docker), then enter its address in
-     **Settings → Print farm**, e.g. `http://127.0.0.1:3001`, with the Bambu printer, process and
-     filament preset names. SnapSTL then slices each plate when you push it. Bambu Studio's own
-     command line can't slice on a Mac, so this needs the service.
+4. **Slicing** is done by **Bambuddy's slicer** only. In Bambuddy open **Settings → Slicer**, start its
+   slicer service (Docker; on an Apple-silicon Mac it runs under emulation, slower) and turn on **Use
+   Slicer API**. Then in SnapSTL: **Make It → Slice** → choose the printer, process and filament
+   presets from Bambuddy's list → **Save presets**. If Bambuddy lists none, its slicer isn't running
+   yet; Bambu's standard A1 presets are used until then.
 
 **Make It** (sidebar) is where plates are printed. It has four parts:
 
@@ -170,23 +167,33 @@ Bambuddy**). SnapSTL only reads them.
   other printer that fits.
 - **Names**: every name plate with its colour. You can only pick printers that have that colour
   loaded, as Bambuddy reports it. One is pre-selected when such a printer is available.
+- **Slice**: the presets, **Slice all waiting plates**, and every plate's slicing state. Each plate
+  is sliced by Bambuddy, one at a time in the background, and shows *Waiting to slice* →
+  *Slicing %* → *Sliced*. If it fails it shows why. A slice that makes no progress for 20 minutes
+  is stopped with a message, so nothing stays stuck.
 - **Completed**: printed plates. **Reprint** is there only for a print that failed: it asks first,
   then the plate goes back to Bases or Names.
+- **Removed**: plates you took off Bases or Names with **Remove** (for example printed by hand).
+  Nothing is deleted. **Put back** returns a plate.
 - **Printers**: each printer's state and the filament in every slot, with **Clear plate** when a bed
   must be cleared.
 
-**Nothing prints until you click Start print.** That click sends the plate to the chosen printer
-(slicing it first if a slicer service is set) and starts it. Bambuddy then prints it as soon as the
+Each plate has a **Slice** button, which slices it now, and **Remove**.
+
+**Nothing prints until you click Start print.** That click sends the sliced plate to the chosen
+printer and starts it. A plate that isn't sliced yet is sliced first and sent when that's done. Bambuddy then prints it as soon as the
 printer is free and its bed has been cleared. Each row also has **Options** (bed levelling, flow
 calibration, timelapse; default = Bambuddy's settings). If Bambuddy warns, for example about too
 little filament, SnapSTL asks before starting anyway. When a plate is printed it moves to
 **Completed**. Once an order's base **and** its name are both printed, the order appears in
 **Orders → Ready to ship**.
 
-**Printer status** (sidebar) shows *everything* Bambuddy reports about each printer: its record, the
-full live status (temperatures, fans, every AMS unit and tray, nozzles, errors, print options,
-network…) and its queue, plus Bambuddy's system info. Expand any part, or **Download JSON** to keep a
-copy. It's read only, and access codes and keys are hidden.
+**Printer status** (sidebar) explains each printer in plain words: its state and current print
+(progress, time left, layer, speed), temperatures and fans, the filament in each slot and the AMS
+humidity, any errors, network, SD card, door, nozzle and firmware, and its queue in Bambuddy. At the
+top, **Slicing** shows what Bambuddy is slicing for SnapSTL, what's waiting and what failed. Each
+printer card ends with **All fields**, everything Bambuddy reports as it comes, and **Download JSON**
+keeps a copy. It's read only, and access codes and keys are hidden.
 
 ## Daily use
 
@@ -288,7 +295,8 @@ was tested with (`scripts/bambuddy-version.txt`) at the same time.
 | Settings → Database shows changes waiting | They're sent on the next sync; **Sync now** shows any problem |
 | Make It: **Bambuddy isn't answering** | Run the install command again (it repairs Bambuddy); log: `~/Library/Logs/Bambuddy` (Windows: `%LOCALAPPDATA%\Bambuddy\logs`) |
 | Adding a printer in Bambuddy fails | Check the IP, serial and access code, and that LAN Only Mode **and** Developer Mode are on |
-| A plate **Not sliced** / push fails with "Not sliced yet" | Slice it in Bambu Studio and save it in the batch's `Sliced` folder, or set a slicer service; then **Start print** again (Make It) |
+| A plate shows **Slicing failed** | Read the message. "Bambuddy's slicer isn't running" → in Bambuddy, Settings → Slicer → start the slicer service and turn on Use Slicer API; then click **Slice** again |
+| A plate stays **Slicing** | It's stopped after 20 minutes without progress, with a message. Check Bambuddy → Settings → Slicer, then **Slice** again |
 | A printer is greyed out in Make It | It makes the other part (its **Location** in Bambuddy), it's offline, or that colour isn't loaded — load the spool; Make It → Printers shows what Bambuddy sees |
 | A pushed plate waits in Bambuddy | Its printer is busy or waiting for the bed to be cleared: **Clear plate** |
 | SnapSTL doesn't open | Run the install command again; it repairs and restarts SnapSTL |

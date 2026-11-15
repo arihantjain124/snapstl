@@ -945,7 +945,7 @@ def makeit_board():
         except farm.FarmError as e:
             st["error"] = str(e)
     return {"status": st, "printers": prs, **makeit.board(prs),
-            "options": {k: list(v) for k, v in farm.OPTIONS.items()}, "slicer": bool(cfg["slicer_url"]),
+            "options": {k: list(v) for k, v in farm.OPTIONS.items()}, "presets": farm.chosen_presets(cfg),
             "worker": {"log": farm.WORKER.log[-20:]}}
 
 
@@ -966,6 +966,63 @@ async def makeit_start(req: Request):
         raise _farm_err(e) from e
 
 
+@app.get("/api/makeit/presets")
+def makeit_presets():
+    """Make It → Slice: Bambuddy's slicer presets and the ones chosen."""
+    try:
+        avail = farm.bambuddy_presets()
+    except farm.FarmError as e:
+        raise _farm_err(e) from e
+    chosen = farm.chosen_presets(None, avail)
+    for slot, v in chosen.items():  # a default Bambuddy doesn't list (its slicer isn't running) is still offered
+        key = f"{v['source']}:{v['id']}"
+        if not any(p["key"] == key for p in avail[slot]):
+            avail[slot].insert(0, {"key": key, "name": v["name"], "source": v["source"]})
+    return {"available": avail, "chosen": {k: f"{v['source']}:{v['id']}" for k, v in chosen.items()},
+            "names": {k: v["name"] for k, v in chosen.items()}, "bambuddy_listed": sum(map(len, avail.values())) > 3}
+
+
+@app.put("/api/makeit/presets")
+async def makeit_presets_save(req: Request):
+    b = await req.json()
+    try:
+        chosen = await run_in_threadpool(farm.set_presets, b)
+    except farm.FarmError as e:
+        raise _farm_err(e) from e
+    return {"names": {k: v["name"] for k, v in chosen.items()}}
+
+
+@app.post("/api/makeit/slice")
+async def makeit_slice(req: Request):
+    """Slice plates with Bambuddy's slicer: {plates: [{batch_id, file}], again}. Runs in the background."""
+    b = await req.json()
+    todo = []
+    for p in [p for p in b.get("plates", []) if isinstance(p, dict)][:500]:
+        bid, file = int(p.get("batch_id") or 0), str(p.get("file", ""))
+        _own_batch(bid)
+        try:
+            _, plate = makeit._plate(bid, file)
+        except farm.FarmError as e:
+            raise _farm_err(e) from e
+        todo.append((bid, file, plate["kind"], (plate.get("colors") or [""])[0]))
+    if not todo:
+        raise HTTPException(400, "Choose the plates to slice")
+    if not farm.chosen_presets(None, await run_in_threadpool(farm.bambuddy_presets)).keys() >= {"printer", "process", "filament"}:
+        raise HTTPException(400, "Choose the printer, process and filament presets in Make It → Slice first")
+    return {"queued": farm.request_slices(todo, again=bool(b.get("again")))}
+
+
+@app.post("/api/makeit/remove")
+async def makeit_remove(req: Request):
+    """Take a plate off Bases / Names (e.g. printed by hand); Put back returns it."""
+    b = await req.json()
+    _own_batch(int(b.get("batch_id") or 0))
+    try:
+        return makeit.remove(int(b["batch_id"]), str(b.get("file", "")), bool(b.get("put_back")))
+    except farm.FarmError as e:
+        raise _farm_err(e) from e
+
+
 @app.post("/api/makeit/reprint")
 async def makeit_reprint(req: Request):
     """Completed → back to the queue (a person confirmed the print failed)."""
@@ -982,6 +1039,7 @@ def printer_status_all(download: int = 0):
     """Printer status tab: everything Bambuddy reports about every printer (read only, no secrets).
     ?download=1 → the same as a JSON file."""
     data = farm.everything()
+    data["slicing"] = makeit.slicing_summary()
     if download:
         name = time.strftime("bambuddy-printers-%Y-%m-%d-%H%M.json")
         return StreamingResponse(iter([json.dumps(data, indent=2, default=str)]), media_type="application/json",
@@ -997,26 +1055,6 @@ async def farm_connect(req: Request):
                                        str(body.get("api_key") or "") or None)
     except farm.FarmError as e:
         raise _farm_err(e) from e
-
-
-@app.put("/api/farm/settings")
-async def farm_settings(req: Request):
-    """Slicer service and the Bambu presets it slices with."""
-    body = await req.json()
-    changes = {}
-    for k in ("slicer_url", "printer_preset", "process_preset", "filament_preset"):
-        if k in body:
-            changes[k] = str(body[k] or "").strip()
-    if changes.get("slicer_url") and not changes["slicer_url"].startswith(("http://", "https://")):
-        raise HTTPException(400, "The slicer service address starts with http:// (e.g. http://127.0.0.1:3001)")
-    for k in ("printer_preset", "process_preset", "filament_preset"):
-        if k in changes and not changes[k]:
-            raise HTTPException(400, "Fill in the printer, process and filament preset names")
-    cfg = farm.update_config(**changes)
-    out = farm.public_config(cfg)
-    if cfg["slicer_url"]:
-        out["slicer_problem"] = await run_in_threadpool(farm.check_slicer, cfg["slicer_url"])
-    return out
 
 
 @app.post("/api/farm/printers/{pid}/clear-plate")
@@ -1058,7 +1096,7 @@ def _plates_view(b: dict) -> dict:
                           "connected": (p.get("status") or {}).get("connected", False)} for p in prs]
     done = bool(plates) and all(pl["job"] and pl["job"]["state"] == "done" for pl in plates)
     return {"plates": plates, "farm": {"connected": st["connected"], "error": st["error"],
-                                       "slicer": bool(cfg["slicer_url"]), "printers": len(prs)},
+                                       "printers": len(prs)},
             "all_printed": done, "folder": str(out_dir) if out_dir else ""}
 
 

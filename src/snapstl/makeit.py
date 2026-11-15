@@ -10,6 +10,11 @@
   else starts a print.
 * A printed plate leaves the queue for **Completed**. **Reprint** (only after a person confirms the
   print failed) puts it back in the queue.
+* **Slice** (Make It → Slice): plates are sliced by Bambuddy's slicer with the presets chosen there,
+  one at a time in the background; each row shows Sliced / Slicing % / failed. Start print sends the
+  sliced file, or slices first and sends it when that's done.
+* **Remove** takes a plate off Bases / Names (e.g. printed by hand); **Removed** lists them with
+  **Put back**. Nothing is deleted.
 * An order is **Ready to ship** (`orders.made_at`, Orders → Ready to ship) once every base plate and
   name plate holding it is printed.
 
@@ -103,12 +108,13 @@ def choose(plates: list[dict], prs: list[dict], active: dict[int, int]) -> dict[
 # ---------------- the board ----------------
 def board(prs: list[dict] | None = None) -> dict:
     """Bases queue, Names queue and Completed, with printer choices and pre-selections."""
+    slices = farm.latest_slices()
     with db.tx() as con:
         batches = _batches(con)
         latest: dict[tuple[int, str], dict] = {}
         for j in db.rows(con, "SELECT * FROM print_jobs WHERE computer_id=? ORDER BY id", computer.ID):
             latest[(j["batch_id"], j["plate"])] = j
-        rows = []
+        rows, removed = [], []
         for b in batches:
             summ = json.loads(b.get("summary") or "{}")
             plates = summ.get("plates") or []
@@ -119,16 +125,25 @@ def board(prs: list[dict] | None = None) -> dict:
             for p in plates:
                 j = latest.get((b["id"], p["file"]))
                 ids = on.get(p["file"], [])
+                if j and j["state"] == "removed":
+                    removed.append({"batch_id": b["id"], "batch": summ.get("label") or f"Batch #{b['id']}",
+                                    "file": p["file"], "kind": p["kind"], "names": p.get("names", []),
+                                    "colors": p.get("colors", []), "removed_at": j["updated_at"]})
+                    continue
                 open_orders = [i for i in ids if state_of.get(i) == "bundled"]
                 active = bool(j and j["state"] in farm.ACTIVE)
                 done = bool(j and j["state"] == "done")
                 if not (open_orders or active or done):
                     continue  # its orders were marked printed / made again elsewhere
                 sliced = farm.find_sliced(out_dir, p["file"]) if out_dir else None
+                sj = slices.get((b["id"], p["file"]))
+                slice_info = ({"state": "done", "by": "file"} if sliced else
+                              {"state": sj["state"], "progress": sj["progress"], "error": sj["error"]} if sj else None)
                 rows.append({
                     "batch_id": b["id"], "batch": summ.get("label") or f"Batch #{b['id']}", "file": p["file"],
                     "kind": p["kind"], "names": p.get("names", []), "colors": p.get("colors", []),
-                    "order_ids": ids, "sliced": bool(sliced), "job": _job(j), "job_active": active, "done": done,
+                    "order_ids": ids, "sliced": bool(sliced) or bool(sj and sj["state"] == "done"),
+                    "slice": slice_info, "job": _job(j), "job_active": active, "done": done,
                     "need": farm.needed_color(p),
                 })
     prs = prs or []
@@ -144,7 +159,7 @@ def board(prs: list[dict] | None = None) -> dict:
     done = sorted([r for r in rows if r["done"]], key=lambda r: -(r["job"] or {}).get("updated_at", 0))[:300]
     return {"bases": [r for r in pending if r["kind"] == "bases"],
             "names": [r for r in pending if r["kind"] == "names"],
-            "completed": done}
+            "completed": done, "removed": removed}
 
 
 def _job(j: dict | None) -> dict | None:
@@ -223,6 +238,43 @@ def reprint(batch_id: int, file: str) -> dict:
                     (batch_id, file, j["kind"], j["color"], now, now, computer.ID))
     update_made(batch_id)
     return {"ok": True}
+
+
+def remove(batch_id: int, file: str, put_back: bool = False) -> dict:
+    """Take a plate off Bases / Names (nothing is deleted), or put it back."""
+    _, plate = _plate(batch_id, file)
+    j = _latest(batch_id, file)
+    if put_back:
+        if not j or j["state"] != "removed":
+            raise farm.FarmError("This plate isn't removed")
+        state = "reprint"  # back in the queue, not started
+    else:
+        if j and j["state"] in farm.ACTIVE:
+            raise farm.FarmError(f"It's on its way ({j['state']}) — cancel it in Bambuddy first")
+        state = "removed"
+    now = db.now()
+    with db.tx() as con:
+        con.execute("INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,created_at,updated_at,"
+                    "computer_id) VALUES (?,?,?,?,0,'',?,?,?,?)",
+                    (batch_id, file, plate["kind"], (plate.get("colors") or [""])[0], state, now, now, computer.ID))
+    return {"ok": True}
+
+
+def slicing_summary() -> dict:
+    """For the Printer status page: what Bambuddy is slicing for SnapSTL right now and recently."""
+    with db.tx() as con:
+        rs = db.rows(con, "SELECT s.*, b.summary FROM slices s LEFT JOIN batches b ON b.id=s.batch_id "
+                          "WHERE s.computer_id=? ORDER BY s.id DESC LIMIT 40", computer.ID)
+    items = []
+    for r in rs:
+        label = json.loads(r.pop("summary") or "{}").get("label") or f"Batch #{r['batch_id']}"
+        items.append({"batch": label, "plate": r["plate"], "kind": r["kind"], "color": r["color"], "state": r["state"],
+                      "progress": r["progress"], "error": r["error"], "updated_at": r["updated_at"],
+                      "presets": {k: v.get("name") for k, v in json.loads(r["presets"] or "{}").items()}})
+    count = lambda st: sum(1 for i in items if i["state"] == st)  # noqa: E731
+    saved = {k: v["name"] for k, v in farm.chosen_presets().items()}
+    return {"presets": saved or {k: f"{v} (Bambu standard)" for k, v in farm.DEFAULT_PRESETS.items()}, "items": items,
+            "counts": {st: count(st) for st in ("queued", "uploading", "slicing", "done", "failed")}}
 
 
 def update_made(batch_id: int) -> None:

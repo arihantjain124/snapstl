@@ -108,7 +108,7 @@ Snapstl/
 │   ├── computer.py           this computer's id + name (on batches and in the shared records)
 │   ├── sync.py               shared order records in Supabase: claim, push, pull, merge, background loop
 │   ├── farm.py               print farm: Bambuddy client (stdlib HTTP), printers + their job (farm.json),
-│   │                         sliced files / slicer service, print jobs + background worker
+│   │                         slicing with Bambuddy's slicer, print jobs + background worker
 │   ├── makeit.py             Make It tab: Bases / Names queues across batches, printer pre-selection,
 │   │                         Start print, Completed + Reprint, Ready to ship (orders.made_at)
 │   ├── dbtool.py             `snapstl-db check | sync`
@@ -139,7 +139,7 @@ Snapstl/
     ├── test_engine.py        scaling, packing, grouping, file names, 3MF, per-day folders
     ├── test_ingest.py        report filtering, de-dup, review edits, name cleaning
     ├── test_flow.py          HTTP end to end: batch → helper → build; tabs/filters; printed; maintenance; guard
-    ├── test_farm.py          print farm against a fake Bambuddy + slicer service (HTTP layer)
+    ├── test_farm.py          print farm + Make It against a fake Bambuddy, its slicer included (HTTP layer)
     └── test_sync.py          two simulated computers on a throwaway Postgres (skipped without one)
 ```
 
@@ -411,8 +411,8 @@ the files. Clashing file names get ` (2)`; names over 200 characters are shorten
 | Helper | `GET /api/helper/config`, `GET /api/helper/next`, `POST /api/helper/ping`, `POST /api/helper/jobs/{id}/result`, `…/fail`, `…/release`, `GET /api/helper.zip` |
 | Settings | `GET` / `PUT /api/settings` (includes `makerworld_url`, `license_passwords`), `POST /api/settings/reset` |
 | Portal | `GET /api/portal` (on/off, password set, addresses), `POST /api/portal` `{enabled, password}` — this Mac only |
-| Print farm | `GET /api/farm` (read only: Bambuddy status, printers with role from Location, live state and filament per slot, slicing settings, recent jobs with printer choices; connects by itself on a fresh install), `POST /api/farm/connect` `{url, api_key}`, `PUT /api/farm/settings` `{slicer_url, printer_preset, process_preset, filament_preset}`, `POST /api/farm/printers/{id}/clear-plate` — `/api/farm/*` this computer only. Printers and filament are set up in Bambuddy, never in SnapSTL |
-| Make It | `GET /api/makeit` (Bases / Names plates still to print with printer choices + pre-selection, Completed, printers, options), `POST /api/makeit/start` `{batch_id, file, printer_id, options, force}` (Start print: send + start, or start / move a held one; 409 = Bambuddy's warning → `force`), `POST /api/makeit/reprint` `{batch_id, file}` (Completed → back to the queue) |
+| Print farm | `GET /api/farm` (read only: Bambuddy status, printers with role from Location, live state and filament per slot, recent jobs with printer choices; connects by itself on a fresh install), `POST /api/farm/connect` `{url, api_key}`, `POST /api/farm/printers/{id}/clear-plate` — `/api/farm/*` this computer only. Printers and filament are set up in Bambuddy, never in SnapSTL |
+| Make It | `GET /api/makeit` (Bases / Names plates still to print with printer choices + pre-selection, Completed, printers, options), `POST /api/makeit/start` `{batch_id, file, printer_id, options, force}` (Start print: send + start, or start / move a held one; 409 = Bambuddy's warning → `force`), `POST /api/makeit/reprint` `{batch_id, file}` (Completed → back to the queue), `GET` / `PUT /api/makeit/presets` (Bambuddy's slicer presets / the chosen printer, process, filament as `source:id`), `POST /api/makeit/slice` `{plates:[{batch_id, file}], again}` (slice with Bambuddy, background), `POST /api/makeit/remove` `{batch_id, file, put_back}` |
 | Push to queue (API only, no UI since 0.13) | `GET /api/batches/{id}/plates` (plates, sliced file, latest job, suggested printer, choices with why-not), `POST /api/batches/{id}/push` `{plates:[{file, printer_id}], again}`, `GET /api/print-jobs?batch_id=`, `POST /api/print-jobs/{id}/print` `{printer_id, options:{bed_levelling, flow_cali, timelapse}}` (Printers → Print jobs: change a waiting job, move one waiting in Bambuddy's queue, or print a failed/cancelled/printed plate again as a new job), `POST /api/print-jobs/{id}/start` `{force}` (the only way a print starts; 409 = Bambuddy's warning, e.g. filament short → `force`), `POST /api/print-jobs/{id}/retry`, `POST /api/print-jobs/{id}/cancel` |
 | Printer status | `GET /api/printer-status` (`?download=1` = JSON file): every printer's Bambuddy record, full live status and queue + `/system/info`, secrets redacted (`farm.redact`) |
 | Maintenance | `GET /api/maintenance`, `POST /api/maintenance/backup`, `POST /api/maintenance/cleanup` `{older_than_days}`, `POST /api/maintenance/reset` `{confirm:"RESET", clear_cache}` |
@@ -438,9 +438,9 @@ Unknown keys are ignored on load, so older settings files keep working.
 
 Print farm settings are separate: `APP_DIR/farm.json` (mode 600, `farm.py`): `bambuddy_url`
 (default `http://127.0.0.1:8000`, env `SNAPSTL_BAMBUDDY_URL`), `api_key` (SnapSTL's Bambuddy key — never
-sent to the UI), `slicer_url` ("" = sliced by hand), `printer_preset` / `process_preset` /
-`filament_preset` (Bambu system preset names; default A1 0.4 / 0.20mm Standard / Bambu PLA Basic), edited
-in Settings → Print farm. Settings → Defaults doesn't touch it. Printers, what they make and their
+sent to the UI), `presets` (Bambuddy slicer presets `{printer|process|filament: {source, id, name}}`,
+chosen in Make It → Slice; until then Bambu's standard A1 0.4 / 0.20mm Standard / Bambu PLA Basic by
+name). SnapSTL has no slicer settings of its own. Settings → Defaults doesn't touch it. Printers, what they make and their
 filament are not stored by SnapSTL — they're read from Bambuddy.
 
 ---
@@ -456,7 +456,7 @@ filament are not stored by SnapSTL — they're read from Bambuddy.
   start; toggling restarts it via `launchctl kickstart -k`). They must sign in (scrypt hash + signed
   30-day cookie, `auth.json`; cookie `Secure` only over https). Never allowed from other computers:
   `/api/helper/*`, Finder (`…/reveal`), `/api/portal`, `/api/maintenance/reset`, `/api/farm/*`
-  (Bambuddy connection, slicing settings, clear plate), and changing folders, the model
+  (Bambuddy connection, clear plate), and changing folders, the model
   link or license passwords. They may see the Printers page and use Push to queue.
 * Bambuddy listens on 127.0.0.1 only (its login is off by default). SnapSTL's Bambuddy API key lives
   only in `farm.json` (mode 600). SnapSTL never handles printer access codes (printers are added in
@@ -505,7 +505,7 @@ unsent changes):
   endpoints, clear plate; colour matching (exact / same family / none) and suggestions; Print button
   (move a queued job with options, print again as a new job, refusals); Push to queue suggestions and why-not, wrong printer
   refused, not sliced → clear error, hand-sliced file → Bambuddy library + queue, no double push,
-  slicer service (inherits presets, name colour), pending → printing → printed, cancel, Bambuddy login
+  Bambuddy slicing (slicer not running → clear failure; sliced file queued, nothing written locally), pending → printing → printed, cancel, Bambuddy login
   on (pasted key), `/api/farm/*` this computer only, SD-card-safe file names
 
 The helper is exercised by calling `/api/helper/*` directly — tests never contact MakerWorld. Bambuddy
@@ -552,6 +552,8 @@ snapstl.server:app --port 8320`.
 | 31 | Printer status tab shows Bambuddy's raw data for every printer (record, live status, queue, system info), redacted, downloadable as JSON | owner wants all available information visible for future use |
 | 32 | Shared-records passwords may contain symbols: `config.encode_password` percent-encodes the part between the user's ':' and the last '@'; schema also as `docs/supabase-schema.sql` (`snapstl-db schema`, test keeps them equal) | owner's Supabase password has symbols; tables can be made in the SQL Editor without giving SnapSTL the password |
 | 33 | **Make It** replaces the Printers page and the batch's Push to queue panel: Bases / Names queues across all built batches (plates whose orders are still Bundled, or with a print on its way); pre-selection only of an *available* printer (connected, idle, bed cleared, none of our jobs on it), exact colour → most filament left → dedicated printer; **Start print** (one click) sends and starts; printed → Completed (Reprint only after confirming a failure); both parts printed → order Ready to ship. Plates record `order_ids` (new builds; older matched by name/colour) | owner's workflow: one place per part, pick printer, click to print, see what can ship |
+| 34 | **Slicing only by Bambuddy's slicer** (`POST /library/files/{id}/slice` with presets from Bambuddy's list, chosen in Make It → Slice); SnapSTL's own slicer settings and sidecar client removed. Slices run in the background one at a time, polled (`/slice-jobs/{id}`), stopped after 20 min without progress; Start print slices first if needed. Plates can be **Removed** from Make It and put back | owner wants one slicer (Bambuddy's), a Slice menu in SnapSTL, and no plate stuck "slicing" (the 0.12 client sliced inline on the worker thread, up to 15 min per plate, holding everything behind it) |
+| 35 | Printer status page explains each printer in plain words (`farm.summarize`) + slicing status; raw fields only under "All fields" | owner found the raw dump hard to read |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -561,9 +563,10 @@ snapstl.server:app --port 8320`.
 * MakerWorld's page is undocumented: a redesign can break `helper/content.js` (form labels,
   `plate_N.obj` names, the "Generate" text). Fix there, then reload the extension in `chrome://extensions`.
 * The MakerWorld tab must stay open, ideally in its own window (Chrome slows hidden tabs).
-* Slicing is by hand in Bambu Studio unless Bambuddy's slicer service (Docker; amd64 images, emulated
-  on Apple-silicon Macs) is set up. SnapSTL's slicer-service client follows Bambuddy's own client
-  (`slicer_api.py`) but was tested only against a fake service.
+* Slicing needs Bambuddy's slicer service running (Docker; its images are amd64, emulated and slower
+  on Apple-silicon Macs). Without it Bambuddy lists no presets and every slice fails with "slicer
+  isn't running". Tested against a real Bambuddy v1.3.1 without the service (request accepted, clear
+  failure) and against a fake for a successful slice — not yet with Bambuddy's slicer running.
 * The print farm was tested against a real Bambuddy v1.3.1 with a simulated printer (upload, queue,
   status, cancel) — not yet with a real printer; Bambuddy's API paths change between versions, so bump
   `scripts/bambuddy-version.txt` only after checking `farm.py` against the new release.
@@ -613,8 +616,8 @@ can't touch it. Shared order records and Windows: the sections below.
 ```
 Batch built → Make It → Bases / Names (per plate: printer pre-selected if one is available) → Start print
   → print_jobs row 'queued' → farm.Worker (one at a time, oldest first):
-      sliced file? Sliced/<plate>.gcode.3mf or <plate>.gcode.3mf next to it  (else slicer service → Sliced/…)
-      → POST /api/v1/library/files (name "<Batch label> - <Bases|Names colour> - <plate>.gcode.3mf")
+      sliced by Bambuddy (slices row done) → its library file; or a sliced file in the batch folder → upload;
+      else → slice now (job waits as 'slicing') and continue when the slice is done
       → POST /api/v1/queue/ {library_file_id, printer_id, manual_start: true, options} → 'sent', held
   → autostart (the Start print click) → POST /api/v1/queue/{id}/start (409 → stays held; the person
     confirms → ?skip_filament_check=true). Jobs from the API's Push to queue stay held until Start.
@@ -640,11 +643,18 @@ free and for "Clear plate" (a person).
   failed / cancelled / done → new job (queued held, like every job). Options go in the create call
   (`POST /queue/` takes them and `manual_start` in one go — no window where Bambuddy could start it;
   `add-to-queue` can't do either with Bambuddy's login off).
-* **Slicer service** (`farm.slice_plate`): `POST {slicer_url}/slice` multipart `file`, `printerProfile`,
-  `presetProfile`, `filamentProfile` — each `{"from": "User", "inherits": "<system preset name>"}` (the
-  sidecar resolves the chain), filament colour = the name colour; `exportType=3mf`; no arrange/orient,
-  so parts stay where SnapSTL put them. The result must contain `Metadata/plate_N.gcode`.
-* A restart re-queues jobs cut off while slicing/uploading. Bambuddy is installed/updated by
+* **Slicing** (`Worker.slice_next` / `poll_slices`, table `slices`): one plate at a time — upload the plain
+  plate (`POST /api/v1/library/files`), `POST /api/v1/library/files/{id}/slice` `{printer_preset,
+  process_preset, filament_presets:[…], filament_colours:[name colour], plate: 1, export_3mf: true}` (no
+  arrange: parts stay where SnapSTL put them) → 202 `{job_id}`; poll `GET /api/v1/slice-jobs/{id}` every
+  ~2 s: completed → `result.library_file_id` (the sliced file, queued as is), failed → `error_detail`
+  (`farm.slicer_hint` explains "sidecar unreachable"), any change of `progress` = still working, none
+  for `SLICE_TIMEOUT_S` → failed. Presets: `GET /api/v1/slicer/presets` (tiers local, orca_cloud,
+  cloud, standard). Print jobs waiting for a slice sit in state `slicing` (`check_waiting`).
+* **Printer status** (`farm.everything` → `summarize`): per printer the state, current print, temps,
+  fans, spools + AMS humidity, HMS errors, nozzle, network, SD card, door, AI checks and its Bambuddy
+  queue, plus `makeit.slicing_summary()`; the raw record / status / queue stay under "All fields".
+* A restart re-queues jobs and slices cut off while uploading. Bambuddy is installed/updated by
   `scripts/bambuddy-mac.sh` / `scripts/windows/bambuddy.ps1` (from the installers, `update.sh` /
   `update.ps1`, and in the background after an in-app update via `platform_os.update_bambuddy`).
 
