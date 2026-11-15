@@ -19,7 +19,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
-from . import auth, db
+from . import auth, cache, db
 from .ingest import ingest, reset_to_ready, set_name
 from . import batches as B
 from . import maintenance as M
@@ -37,6 +37,8 @@ SETTINGS: Settings = load_settings()
 @asynccontextmanager
 async def _lifespan(_app):
     MANAGER.output_dir = SETTINGS.output_dir
+    cache.set_root(SETTINGS.downloads_dir)  # downloaded models: visible folder, kept until deleted in Finder
+    cache.migrate_old_cache()               # one-time move from the old hidden cache folder
     MANAGER.start()  # builds batches once their models arrive
     DOWNLOADER.pause_s = SETTINGS.delay_between_downloads_s
     DOWNLOADER.start()  # re-queues names that were mid-download when the app stopped
@@ -329,9 +331,11 @@ async def new_batch(req: Request):
 
 
 @app.post("/api/batches/{batch_id}/download")
-def batch_download(batch_id: int):
+async def batch_download(batch_id: int, req: Request):
+    """Queue download; with {"force": true} it's Re-download (every model fetched again)."""
+    body = await req.json() if (await req.body()) else {}
     try:
-        return B.start_download(batch_id)
+        return B.start_download(batch_id, force=bool(body.get("force")))
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
@@ -450,7 +454,7 @@ async def maintenance_reset(req: Request):
     if body.get("confirm") != "RESET":
         raise HTTPException(400, 'Type RESET to confirm')
     try:
-        return M.reset(clear_cache=bool(body.get("clear_cache")))
+        return M.reset()
     except RuntimeError as e:
         raise HTTPException(409, str(e)) from e
 
@@ -459,12 +463,24 @@ async def maintenance_reset(req: Request):
 def downloads():
     """Download queue for the UI: active + failed first, then the 30 most recent finished."""
     with db.tx() as con:
-        active = db.rows(con, "SELECT id,name,compartments,state,attempts,error,updated_at FROM downloads "
+        active = db.rows(con, "SELECT id,name,compartments,state,attempts,error,updated_at,batch_id FROM downloads "
                               "WHERE state IN ('claimed','queued','failed') "
                               "ORDER BY CASE state WHEN 'claimed' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, id LIMIT 500")
-        recent = db.rows(con, "SELECT id,name,compartments,state,attempts,error,updated_at FROM downloads "
+        recent = db.rows(con, "SELECT id,name,compartments,state,attempts,error,updated_at,batch_id FROM downloads "
                               "WHERE state='done' ORDER BY updated_at DESC LIMIT 30")
-    return {"items": active + recent, "downloader": DOWNLOADER.snapshot()}
+    return {"items": active + recent, "downloader": DOWNLOADER.snapshot(), "folder": cache.stats()}
+
+
+@app.post("/api/downloads/reveal")
+def downloads_reveal():
+    """Desktop app only: open the Downloads folder (saved models) in Finder."""
+    if auth.enabled():
+        raise HTTPException(404)
+    import subprocess
+
+    cache.ROOT.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["open", str(cache.ROOT)], check=False)
+    return {"opened": str(cache.ROOT)}
 
 
 @app.post("/api/downloader/{action}")
@@ -582,14 +598,24 @@ async def put_settings(req: Request):
         except OSError as e:
             raise HTTPException(400, f"Can't use that output folder: {e}") from e
         new.output_dir = str(out)
+        dl = Path(new.downloads_dir).expanduser()
+        if not dl.is_absolute():
+            raise HTTPException(400, "Downloads folder must be a full path (e.g. /Users/you/SnapSTL/Downloads)")
+        try:
+            dl.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise HTTPException(400, f"Can't use that downloads folder: {e}") from e
+        new.downloads_dir = str(dl)
     else:
         new.output_dir = SETTINGS.output_dir
+        new.downloads_dir = SETTINGS.downloads_dir
     errs = new.validate()
     if errs:
         raise HTTPException(400, "; ".join(errs))
     SETTINGS = new
     save_settings(SETTINGS)
     MANAGER.output_dir = SETTINGS.output_dir
+    cache.set_root(SETTINGS.downloads_dir)
     DOWNLOADER.pause_s = SETTINGS.delay_between_downloads_s
     return SETTINGS.to_dict()
 
@@ -597,7 +623,7 @@ async def put_settings(req: Request):
 @app.post("/api/settings/reset")
 def reset_settings():
     global SETTINGS
-    SETTINGS = Settings(output_dir=SETTINGS.output_dir)
+    SETTINGS = Settings(output_dir=SETTINGS.output_dir, downloads_dir=SETTINGS.downloads_dir)
     save_settings(SETTINGS)
     return SETTINGS.to_dict()
 

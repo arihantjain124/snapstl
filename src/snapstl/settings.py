@@ -13,8 +13,10 @@ from pathlib import Path
 # SNAPSTL_HOME lets tests/dev runs use a separate settings + cache folder.
 APP_DIR = Path(os.environ.get("SNAPSTL_HOME") or Path.home() / "Library" / "Application Support" / "SnapSTL")
 SETTINGS_PATH = APP_DIR / "settings.json"
-CACHE_DIR = APP_DIR / "cache"
-DEFAULT_OUTPUT_DIR = (APP_DIR / "output") if os.environ.get("SNAPSTL_HOME") else Path.home() / "SnapSTL" / "output"
+_DEV = bool(os.environ.get("SNAPSTL_HOME"))
+DEFAULT_OUTPUT_DIR = (APP_DIR / "output") if _DEV else Path.home() / "SnapSTL" / "output"
+# Downloaded MakerWorld models: a visible folder the user can browse/clean in Finder (cache.py).
+DEFAULT_DOWNLOADS_DIR = (APP_DIR / "downloads") if _DEV else Path.home() / "SnapSTL" / "Downloads"
 
 MAKERWORLD_URL = (
     "https://makerworld.com/en/makerlab/parametricModelMaker?designId=2600234"
@@ -106,6 +108,7 @@ class Settings:
     scaling: ScalingSettings = field(default_factory=ScalingSettings)
     plate: PlateSettings = field(default_factory=PlateSettings)
     output_dir: str = str(DEFAULT_OUTPUT_DIR)
+    downloads_dir: str = str(DEFAULT_DOWNLOADS_DIR)  # downloaded models, kept until deleted in Finder
     delay_between_downloads_s: float = 3.0
 
     def to_dict(self) -> dict:
@@ -123,7 +126,7 @@ class Settings:
             s.scaling = ScalingSettings(bands=bands, **_known(ScalingSettings, {**_scalar_fields(s.scaling), **rest}))
         if "plate" in d:
             s.plate = PlateSettings(**_known(PlateSettings, {**asdict(s.plate), **d["plate"]}))
-        for k in ("output_dir", "delay_between_downloads_s"):
+        for k in ("output_dir", "downloads_dir", "delay_between_downloads_s"):
             if k in d:
                 setattr(s, k, d[k])
         return s

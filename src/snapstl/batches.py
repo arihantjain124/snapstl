@@ -77,13 +77,27 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
             "models": len(_needed(orders, settings, pw))}
 
 
-def start_download(batch_id: int) -> dict:
-    """Queue every model this batch still needs; the helper then downloads them."""
+FINISHED = ("done", "done_with_problems", "failed")
+
+
+def _was_built(b) -> bool:
+    return bool(b["out_dir"])
+
+
+def start_download(batch_id: int, force: bool = False) -> dict:
+    """Queue this batch's models for the helper.
+
+    force=False (Queue download): only models that aren't in the Downloads folder yet.
+    force=True  (Re-download):    every model again — the new download replaces the saved one.
+    Allowed before building and, for Re-download, on finished batches too.
+    """
     pw = get_password()
     with db.tx() as con:
         b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
-        if b is None or b["status"] not in ("created", "waiting", "models_ready"):
-            raise ValueError("This batch can't start downloading (it's finished or being built)")
+        allowed = ("created", "waiting", "models_ready") + (FINISHED if force else ())
+        if b is None or b["status"] not in allowed:
+            raise ValueError("This batch can't be queued for download right now"
+                             + ("" if force else " — use Re-download for a finished batch"))
         settings = Settings.from_dict(json.loads(b["settings"] or "{}"))
         ids = json.loads(b["order_ids"] or "[]")
         rows = db.rows(con, f"SELECT * FROM orders WHERE order_id IN ({','.join('?' * len(ids))})", *ids)
@@ -91,7 +105,7 @@ def start_download(batch_id: int) -> dict:
         con.execute("UPDATE batches SET status='waiting' WHERE id=?", (batch_id,))
         queued = 0
         for key, (name, comps) in _needed(orders, settings, pw).items():
-            if cache.load_exists(key):
+            if not force and cache.load_exists(key):
                 continue
             live = con.execute(
                 "SELECT id FROM downloads WHERE cache_key=? AND state IN ('queued','claimed')", (key,)
@@ -99,8 +113,9 @@ def start_download(batch_id: int) -> dict:
             if live:
                 continue
             con.execute(
-                "INSERT INTO downloads(cache_key,name,compartments,model_json,state,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
-                (key, name, comps, json.dumps(asdict(settings.model)), "queued", db.now(), db.now()),
+                "INSERT INTO downloads(cache_key,name,compartments,model_json,state,created_at,updated_at,batch_id) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (key, name, comps, json.dumps(asdict(settings.model)), "queued", db.now(), db.now(), batch_id),
             )
             queued += 1
     MANAGER.wake()
@@ -108,7 +123,7 @@ def start_download(batch_id: int) -> dict:
 
 
 def batch_progress(batch: dict) -> dict:
-    """How many of this batch's models are cached / failed / pending."""
+    """How many of this batch's models are downloaded / failed / still downloading."""
     settings = Settings.from_dict(json.loads(batch.get("settings") or "{}"))
     pw = get_password()
     ids = json.loads(batch["order_ids"] or "[]")
@@ -120,6 +135,10 @@ def batch_progress(batch: dict) -> dict:
         failed = 0
         ready = 0
         for key in need:
+            live = con.execute("SELECT 1 FROM downloads WHERE cache_key=? AND state IN ('queued','claimed')",
+                               (key,)).fetchone()
+            if live:
+                continue  # being (re)downloaded right now
             if cache.load_exists(key):
                 ready += 1
             elif con.execute("SELECT 1 FROM downloads WHERE cache_key=? AND state='failed' "
@@ -129,25 +148,31 @@ def batch_progress(batch: dict) -> dict:
 
 
 def request_build(batch_id: int) -> None:
+    """Queue build: also Rebuild for a finished batch (writes a new Batch N folder; the old one stays)."""
     with db.tx() as con:
         b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
-    if b is None or b["status"] not in ("waiting", "models_ready"):
-        raise ValueError("Start the download first — plates are built from downloaded models")
+    if b is None or b["status"] not in ("waiting", "models_ready") + FINISHED:
+        raise ValueError("Queue the download first — plates are built from downloaded models")
     if batch_progress(dict(b))["ready"] == 0:
-        raise ValueError("No models are downloaded for this batch yet — wait for some, or cancel it")
+        raise ValueError("None of this batch's models are in the Downloads folder — queue a download first")
     with db.tx() as con:
-        con.execute("UPDATE batches SET status='build_requested' WHERE id=? AND status IN ('waiting','models_ready')",
-                    (batch_id,))
+        con.execute("UPDATE batches SET status='build_requested' WHERE id=? AND status IN (?,?,?,?,?)",
+                    (batch_id, "waiting", "models_ready", *FINISHED))
     MANAGER.wake()
 
 
 def cancel_batch(batch_id: int) -> None:
+    """Cancel a batch that was never built, or stop a Re-download of a built one (it goes back to done)."""
     with db.tx() as con:
-        r = con.execute("SELECT status FROM batches WHERE id=?", (batch_id,)).fetchone()
+        r = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
         if r is None or r["status"] not in ("created", "waiting", "models_ready"):
-            raise ValueError("Only a batch that hasn't been built yet can be cancelled")
-        con.execute("UPDATE batches SET status='cancelled', finished_at=? WHERE id=?", (db.now(), batch_id))
-        db.release_batch_orders(con, batch_id)
+            raise ValueError("Only a batch that is waiting to download or build can be cancelled")
+        if _was_built(r):
+            ok = json.loads(r["summary"] or "{}").get("ok")
+            con.execute("UPDATE batches SET status=? WHERE id=?", ("done" if ok else "done_with_problems", batch_id))
+        else:
+            con.execute("UPDATE batches SET status='cancelled', finished_at=? WHERE id=?", (db.now(), batch_id))
+            db.release_batch_orders(con, batch_id)
         _cancel_unneeded_downloads(con)
 
 
@@ -198,7 +223,9 @@ def store_result(job_id: int, plate_1: bytes, plate_2: bytes) -> dict:
     if dims(name)[2] > 15 or dims(base)[2] < 20:
         raise ValueError(f"Unexpected parts {dims(base)} / {dims(name)} — was Print version NO AMS?")
     cache.store(d["cache_key"], base, name, {"name": d["name"], "compartments": d["compartments"],
-                                             "model": json.loads(d["model_json"]), "source": "makerworld"})
+                                             "model": json.loads(d["model_json"]), "source": "makerworld",
+                                             "downloaded": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                             "batch": d["batch_id"] if "batch_id" in d.keys() else None})
     with db.tx() as con:
         con.execute("UPDATE downloads SET state='done', error=NULL, updated_at=? WHERE id=?", (db.now(), job_id))
     DOWNLOADER.done_count += 1
@@ -385,13 +412,15 @@ class Manager:
             res = build(usable, meshes, settings, out, self._log)
             incomplete = {o.order_id for o in orders if not res.complete(o.idx)}
             done_ids = sorted({o.order_id for o in usable} - incomplete)
-            errors = res.errors + [f"{n}: model not downloaded — order returned to Ready" for n in missing]
+            errors = res.errors + [f"{n}: model not in the Downloads folder — left out of these plates" for n in missing]
             fit_ok = sum(1 for v in res.fit.values() if v == "ok")
             summary = {"ok": res.ok and not missing, "errors": errors, "warnings": res.warnings,
                        "fit": {"checked": len(res.fit), "ok": fit_ok},
                        "plates": [asdict(p) for p in res.plates], "orders": len(done_ids), "organizers": len(usable)}
             summary["folder"] = str(out)  # plain .3mf files — no ZIP is written
             summary["label"] = out.name   # "Batch 1 - 2026-11-15" (numbering restarts every day)
+            old = json.loads(b.get("summary") or "{}")  # a Rebuild keeps the earlier folders on disk
+            summary["previous_folders"] = old.get("previous_folders", []) + ([old["folder"]] if old.get("folder") else [])
             with db.tx() as con:
                 db.finish_batch(con, batch_id, "done" if summary["ok"] else "done_with_problems", summary, done_ids)
             self._log(f"Batch #{batch_id} done: {len(res.plates)} plates")
