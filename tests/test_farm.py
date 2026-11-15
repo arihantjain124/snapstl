@@ -1,6 +1,6 @@
-"""Print farm: Printers page ↔ Bambuddy, Push to queue (sliced by hand or by the slicer service), job tracking.
+"""Print farm: Make It ↔ Bambuddy — printers, slicing with Bambuddy's slicer, print jobs, Ready to ship.
 
-Bambuddy and the slicer service are faked at the HTTP layer (`farm._request`); nothing leaves this process.
+Bambuddy (its slicer included) is faked at the HTTP layer (`farm._request`); nothing leaves this process.
 """
 import io
 import json
@@ -16,7 +16,6 @@ from snapstl import farm
 from .test_flow import build_and_wait, client, helper_work, wait_for  # noqa: F401  (client is a fixture)
 from .test_ingest import report
 
-SLICER = "http://slicer.test:3001"
 
 
 def sliced_bytes(note: str = "") -> bytes:
@@ -44,7 +43,7 @@ def tray(i, hex_, material="PLA Basic", remain=80):
 
 
 class FakeBambuddy:
-    """Just enough of Bambuddy v1.3's API (and its slicer sidecar) for SnapSTL."""
+    """Just enough of Bambuddy v1.3's API (its slicer included) for SnapSTL."""
 
     def __init__(self, auth_enabled=False):
         self.auth_enabled = auth_enabled
@@ -65,22 +64,21 @@ class FakeBambuddy:
         }
         self.colors = {"colors": {"ffffff": "Jade White", "f55a74": "Pink", "f5547c": "Hot Pink", "0a2989": "Blue"},
                        "by_material": {}}
-        self.files, self.queue, self.keys, self.slices, self.cleared, self.patches = {}, {}, [], [], [], []
+        self.files, self.queue, self.keys, self._unused, self.cleared, self.patches = {}, {}, [], [], [], []
         self.short_filament = False
+        self.slicer = "unreachable"  # Bambuddy's slicer sidecar: "ok" | "unreachable" | "hang"
+        self.slice_jobs, self.slice_bodies = {}, []
+        self.presets = {"standard": {
+            "printer": [{"id": "Bambu Lab A1 0.4 nozzle", "name": "Bambu Lab A1 0.4 nozzle", "source": "standard"}],
+            "process": [{"id": "0.20mm Standard @BBL A1", "name": "0.20mm Standard @BBL A1", "source": "standard"}],
+            "filament": [{"id": "Bambu PLA Basic @BBL A1", "name": "Bambu PLA Basic @BBL A1", "source": "standard"}]},
+            "local": {"process": [{"id": "7", "name": "Organizer 0.24mm", "source": "local"}]}}
         self.calls = []
 
     def __call__(self, method, url, headers, body, timeout):
         path = url.split("://", 1)[1].split("/", 1)[1]
         path = "/" + path
         self.calls.append((method, url))
-        if url.startswith(SLICER):
-            if path == "/health":
-                return 200, b'{"ok":true}'
-            assert path == "/slice" and b'name="exportType"' in body
-            prof = json.loads(_part(body, "filamentProfile"))
-            self.slices.append({"file": _filename(body), "printer": json.loads(_part(body, "printerProfile")),
-                                "filament": prof})
-            return 200, sliced_bytes(_filename(body))
         key_ok = (not self.auth_enabled) or headers.get("X-API-Key") in self.keys
         if path == "/api/v1/auth/status":
             return 200, json.dumps({"auth_enabled": self.auth_enabled}).encode()
@@ -111,6 +109,28 @@ class FakeBambuddy:
             self.queue[qid] = {"id": qid, "status": "pending", "printer_id": b["printer_id"], "library_file_id": b["file_ids"][0]}
             return 200, json.dumps({"added": [{"file_id": b["file_ids"][0], "filename": "x", "queue_item_id": qid}],
                                     "errors": []}).encode()
+        if method == "GET" and path == "/api/v1/slicer/presets":
+            return 200, json.dumps(self.presets).encode()
+        m = re.fullmatch(r"/api/v1/library/files/(\d+)/slice", path)
+        if m and method == "POST":
+            b = json.loads(body)
+            self.slice_bodies.append((int(m.group(1)), b))
+            jid = len(self.slice_jobs) + 1
+            if self.slicer == "ok":
+                fid = len(self.files) + 1
+                src = self.files[int(m.group(1))]["filename"]
+                self.files[fid] = {"filename": src.replace(".3mf", ".gcode.3mf"), "data": sliced_bytes("bambuddy")}
+                self.slice_jobs[jid] = {"job_id": jid, "status": "completed", "result": {"library_file_id": fid}}
+            elif self.slicer == "hang":
+                self.slice_jobs[jid] = {"job_id": jid, "status": "running", "progress": None}
+            else:
+                self.slice_jobs[jid] = {"job_id": jid, "status": "failed", "error_status": 503,
+                                        "error_detail": "Slicer sidecar unreachable: connection refused"}
+            return 202, json.dumps({"job_id": jid, "status": "pending"}).encode()
+        m = re.fullmatch(r"/api/v1/slice-jobs/(\d+)", path)
+        if m:
+            j = self.slice_jobs.get(int(m.group(1)))
+            return (200, json.dumps(j).encode()) if j else (404, b'{"detail":"Slice job not found or expired"}')
         if method == "GET" and path == "/api/v1/system/info":
             return 200, b'{"app": {"version": "1.3.1"}, "printers": {"total": 3}}'
         if method == "GET" and path.startswith("/api/v1/queue/?printer_id="):
@@ -165,9 +185,10 @@ def bb(monkeypatch, tmp_path):
     cache.set_root(str(old_cache))
     with db.tx() as con:
         con.execute("DELETE FROM print_jobs")
+        con.execute("DELETE FROM slices")
         con.execute("DELETE FROM downloads WHERE batch_id > ?", (first,))
         con.execute("DELETE FROM batches WHERE id > ?", (first,))
-        con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%' OR order_id LIKE 'PB%' OR order_id LIKE 'PS%' OR order_id LIKE 'PM%'")
+        con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%' OR order_id LIKE 'PB%' OR order_id LIKE 'PS%' OR order_id LIKE 'PM%' OR order_id LIKE 'PK%'")
     farm.CONFIG_PATH.unlink(missing_ok=True)
 
 
@@ -239,7 +260,7 @@ def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     assert set(by) == {base_plate, pink, blue}
     assert by[base_plate]["suggested"] == 1 and by[pink]["suggested"] == 2 and by[blue]["suggested"] == 2
     assert by[base_plate]["need"] == "white" and by[pink]["need"] == "pink"
-    assert all(p["sliced"] is None for p in v["plates"]) and not v["farm"]["slicer"]
+    assert all(p["sliced"] is None for p in v["plates"])
     ch = {c["name"]: c for c in by[pink]["choices"]}
     assert ch["Names A"]["why_not"] == "" and ch["Names B"]["note"] == "loaded: hot pink" and "makes bases" in ch["Base 1"]["why_not"]
 
@@ -247,11 +268,11 @@ def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     r = client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": blue, "printer_id": 3}]})
     assert r.status_code == 400 and "needs blue" in r.json()["detail"]
 
-    # not sliced and no slicer service: the job fails with what to do
+    # not sliced, and Bambuddy's slicer isn't running: the job fails with what to do (it never hangs)
     r = client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": base_plate, "printer_id": 1}]})
     assert r.status_code == 200 and r.json()["queued"] == 1
     j = wait_for(lambda: (lambda j: j if j["state"] == "failed" else None)(job_of(client, bid, base_plate)))
-    assert "Export plate sliced file" in j["error"]
+    assert "Slicing failed" in j["error"] and "Use Slicer API" in j["error"]
 
     # sliced by hand in Bambu Studio → Sliced/<same path>.gcode.3mf → Try again → in Bambuddy's queue
     hand = folder / "Sliced" / "Bases" / "{Ayra,pink},{Riya,blue}.gcode.3mf"
@@ -260,7 +281,7 @@ def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     assert client.get(f"/api/batches/{bid}/plates").json()["plates"][0]["sliced"]
     assert client.post(f"/api/print-jobs/{j['id']}/retry").status_code == 200
     j = wait_for(lambda: (lambda j: j if j["state"] == "sent" else None)(job_of(client, bid, base_plate)))
-    sent = bb.files[1]
+    sent = bb.files[bb.queue[1]["library_file_id"]]
     assert sent["filename"] == f"{folder.name} - Bases - {{Ayra,pink}},{{Riya,blue}}.gcode.3mf"
     assert b"by hand" in sent["data"] and bb.queue[1]["printer_id"] == 1
     assert bb.queue[1]["manual_start"] is True and j["held"]  # never starts by itself
@@ -268,15 +289,17 @@ def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     # pushing the same plate again is skipped while it's on its way
     assert client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": base_plate, "printer_id": 1}]}).json()["skipped"] == 1
 
-    # slicer service: the names plates are sliced when pushed, with the name colour as filament colour
-    r = client.put("/api/farm/settings", json={"slicer_url": SLICER})
-    assert r.status_code == 200 and r.json()["slicer_problem"] == ""
+    # Bambuddy's slicer running: name plates are sliced by Bambuddy when pushed, then the sliced file is queued
+    bb.slicer = "ok"
     picks = [{"file": pink, "printer_id": 2}, {"file": blue, "printer_id": 2}]
     assert client.post(f"/api/batches/{bid}/push", json={"plates": picks}).json()["queued"] == 2
     wait_for(lambda: all(job_of(client, bid, f)["state"] == "sent" for f in (pink, blue)))
-    assert (folder / "Sliced" / "Names" / "pink" / "{Ayra,pink}.gcode.3mf").is_file()
-    s = next(x for x in bb.slices if "Ayra" in x["file"])
-    assert s["printer"]["inherits"] == "Bambu Lab A1 0.4 nozzle" and s["filament"]["filament_colour"] == ["#F4A7C0"]
+    src_id, body = next((fid, b) for fid, b in bb.slice_bodies if "Names pink" in bb.files[fid]["filename"])
+    assert bb.files[src_id]["filename"].endswith("{Ayra,pink}.3mf")  # the plain plate went up, Bambuddy sliced it
+    assert body["printer_preset"] == {"source": "standard", "id": "Bambu Lab A1 0.4 nozzle"}
+    assert body["filament_colours"] == ["#F4A7C0"] and body["export_3mf"] is True
+    qi = next(q for q in bb.queue.values() if bb.files[q["library_file_id"]]["filename"].endswith("{Ayra,pink}.gcode.3mf"))
+    assert qi["manual_start"] is True and not (folder / "Sliced" / "Names").exists()  # nothing written locally
 
     # Bambuddy prints them: pending → printing → completed
     for q in bb.queue.values():
@@ -475,3 +498,56 @@ def test_plate_orders_for_batches_built_before_order_ids():
               {"order_id": "R1", "name": "Riya", "color": "pink", "quantity": 1}]
     on = makeit.plate_order_ids(plates, orders)
     assert sorted(on["B"]) == ["A1", "A2", "R1"] and on["N1"] == ["A1"] and on["N2"] == ["A2"]
+
+
+def test_make_it_slice_with_bambuddy_and_remove(client, bb, monkeypatch):
+    client.get("/api/farm")
+    bid, folder = built_batch(client, "PK")
+    base, pink = "Bases/{Ayra,pink},{Riya,blue}.3mf", "Names/pink/{Ayra,pink}.3mf"
+
+    # presets come from Bambuddy; Bambu's standard A1 ones are chosen until someone picks others
+    p = client.get("/api/makeit/presets").json()
+    assert p["names"] == {"printer": "Bambu Lab A1 0.4 nozzle", "process": "0.20mm Standard @BBL A1",
+                          "filament": "Bambu PLA Basic @BBL A1"}
+    assert [x["key"] for x in p["available"]["process"]] == ["local:7", "standard:0.20mm Standard @BBL A1"]
+    r = client.put("/api/makeit/presets", json={**p["chosen"], "process": "local:7"})
+    assert r.status_code == 200 and r.json()["names"]["process"] == "Organizer 0.24mm"
+    assert client.put("/api/makeit/presets", json={**p["chosen"], "process": "local:99"}).status_code == 400
+
+    # Slice: Bambuddy slices it in the background; the row shows it sliced; nothing is queued to print
+    bb.slicer = "ok"
+    assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": base}]}).json()["queued"] == 1
+    wait_for(lambda: makeit_row(client, "bases", base)["sliced"])
+    assert bb.slice_bodies[-1][1]["process_preset"] == {"source": "local", "id": "7"} and bb.queue == {}
+    assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": base}]}).json()["queued"] == 0
+    # Start print then sends Bambuddy's sliced file — no second slice, nothing written locally
+    n = len(bb.slice_bodies)
+    client.post("/api/makeit/start", json={"batch_id": bid, "file": base, "printer_id": 1})
+    wait_for(lambda: bb.queue and bb.queue[1].get("manual_start") is False)
+    assert len(bb.slice_bodies) == n and bb.files[bb.queue[1]["library_file_id"]]["filename"].endswith(".gcode.3mf")
+    assert not (folder / "Sliced").exists()
+
+    # a slice that makes no progress is given up with a clear message (never stuck)
+    bb.slicer = "hang"
+    monkeypatch.setattr(farm, "SLICE_TIMEOUT_S", 0)
+    client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink}]})
+    s = wait_for(lambda: (lambda s: s if s and s["state"] == "failed" else None)(makeit_row(client, "names", pink)["slice"]))
+    assert "no progress" in s["error"]
+    st = client.get("/api/printer-status").json()["slicing"]
+    assert st["counts"]["failed"] == 1 and st["counts"]["done"] == 1 and st["presets"]["process"] == "Organizer 0.24mm"
+
+    # Remove takes a plate off Names (nothing deleted); Put back returns it
+    assert client.post("/api/makeit/remove", json={"batch_id": bid, "file": pink}).status_code == 200
+    m = client.get("/api/makeit").json()
+    assert pink not in [r["file"] for r in m["names"]] and [r["file"] for r in m["removed"]] == [pink]
+    assert client.post("/api/makeit/remove", json={"batch_id": bid, "file": base}).status_code == 400  # on its way
+    assert client.post("/api/makeit/remove", json={"batch_id": bid, "file": pink, "put_back": True}).status_code == 200
+    m = client.get("/api/makeit").json()
+    assert pink in [r["file"] for r in m["names"]] and m["removed"] == []
+
+
+def test_no_presets_listed_falls_back_to_standard(client, bb):
+    bb.presets = {}  # Bambuddy's slicer isn't running: it lists nothing
+    p = client.get("/api/makeit/presets").json()
+    assert not p["bambuddy_listed"] and p["chosen"]["printer"] == "standard:Bambu Lab A1 0.4 nozzle"
+    assert client.put("/api/makeit/presets", json=p["chosen"]).status_code == 200

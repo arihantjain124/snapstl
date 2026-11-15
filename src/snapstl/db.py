@@ -95,6 +95,27 @@ CREATE TABLE IF NOT EXISTS print_jobs (
     computer_id   TEXT
 );
 CREATE INDEX IF NOT EXISTS print_jobs_state ON print_jobs(state, id);
+-- Make It → Slice (farm.py): one row per plate sliced by Bambuddy's slicer; a plate's newest row counts.
+CREATE TABLE IF NOT EXISTS slices (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id       INTEGER NOT NULL,
+    plate          TEXT NOT NULL,   -- plate file, relative to the batch folder
+    kind           TEXT NOT NULL,   -- bases | names
+    color          TEXT,
+    state          TEXT NOT NULL,   -- queued | uploading | slicing | done | failed
+    source_file_id INTEGER,         -- the plain plate in Bambuddy's library
+    slice_job_id   INTEGER,         -- Bambuddy's slice job
+    sliced_file_id INTEGER,         -- the sliced plate (.gcode.3mf) in Bambuddy's library
+    progress       REAL,
+    last_progress  TEXT,            -- Bambuddy's last progress snapshot (any change = still working)
+    error          TEXT,
+    presets        TEXT,            -- JSON presets used
+    started_at     REAL,
+    created_at     REAL,
+    updated_at     REAL,            -- last change (progress included): no change for 20 min = given up
+    computer_id    TEXT
+);
+CREATE INDEX IF NOT EXISTS slices_state ON slices(state, id);
 CREATE INDEX IF NOT EXISTS print_jobs_batch ON print_jobs(batch_id);
 """
 

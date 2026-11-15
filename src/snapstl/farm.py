@@ -17,12 +17,13 @@ SnapSTL:
     to Bambuddy's library and added to that printer's queue; the job is followed until it's printed.
     Bambuddy waits for a person to clear the bed before each next print.
 
-Printers only print *sliced* plates. A plate is sliced either
-  * by hand in Bambu Studio (open the plate → Slice → Export plate sliced file), saved in the batch
-    folder as `Sliced/<same path>.gcode.3mf` (or `<plate name>.gcode.3mf` next to the plate), or
-  * by a slicer service, when one is set (Bambuddy's slicer sidecar — an HTTP wrapper around the
-    Bambu Studio / OrcaSlicer command line, Docker). The result is saved as `Sliced/….gcode.3mf`.
-The Bambu Studio app's own command line can't slice on macOS (it crashes; ARCHITECTURE decision log #28).
+Printers only print *sliced* plates. Slicing is done by **Bambuddy's slicer** only (Make It → Slice):
+SnapSTL uploads the plate to Bambuddy's library and asks Bambuddy to slice it with the printer /
+process / filament presets chosen in Make It → Slice (from Bambuddy's own preset list); the sliced file
+stays in Bambuddy's library and is what gets queued. Slicing runs in the background, one plate at a
+time, followed until it's done, failed or timed out (`SLICE_TIMEOUT_S`) — never blocking printing.
+A sliced file already in the batch folder (`Sliced/<plate>.gcode.3mf`, e.g. exported by hand) is used
+as it is. The Bambu Studio app's own command line can't slice on macOS (ARCHITECTURE decision log #28).
 
 Secrets: the Bambuddy API key is kept only in `farm.json` in the app folder (this user only). SnapSTL
 never sees printer access codes.
@@ -61,11 +62,13 @@ COLOR_HEX = {"pink": "#F4A7C0", "hot pink": "#FF4FA0", "baby pink": "#F9C9D9", "
 DEFAULTS = {
     "bambuddy_url": DEFAULT_URL,
     "api_key": "",
-    "slicer_url": "",  # e.g. http://127.0.0.1:3001 (Bambuddy's Bambu Studio sidecar); "" = sliced by hand
-    "printer_preset": "Bambu Lab A1 0.4 nozzle",
-    "process_preset": "0.20mm Standard @BBL A1",
-    "filament_preset": "Bambu PLA Basic @BBL A1",
+    # Bambuddy slicer presets chosen in Make It → Slice: {"printer"|"process"|"filament": {source, id, name}}
+    "presets": {},
 }
+# A Bambu "standard" preset is picked by name when nothing was chosen yet (if Bambuddy lists it).
+DEFAULT_PRESETS = {"printer": "Bambu Lab A1 0.4 nozzle", "process": "0.20mm Standard @BBL A1",
+                   "filament": "Bambu PLA Basic @BBL A1"}
+SLICE_TIMEOUT_S = 20 * 60  # a slice with no progress for this long is given up (it never blocks printing)
 
 
 class FarmError(Exception):
@@ -385,6 +388,7 @@ def everything(cfg: dict | None = None) -> dict:
 
     out = {"fetched_at": time.time(), "bambuddy_url": cfg["bambuddy_url"], "system": redact(get("/system/info")),
            "printers": []}
+    cmap = color_names(cfg)
     plist = get("/printers/")
     if isinstance(plist, dict):  # error
         out["error"] = plist.get("error", "")
@@ -393,9 +397,61 @@ def everything(cfg: dict | None = None) -> dict:
         pid = int(p["id"])
         status = get(f"/printers/{pid}/status")
         _status_cache[pid] = (time.time(), status if "error" not in status else {"connected": False, **status})
-        out["printers"].append({"id": pid, "name": p.get("name") or f"Printer {pid}", "printer": redact(p),
-                                "status": redact(status), "queue": redact(get(f"/queue/?printer_id={pid}"))})
+        queue = get(f"/queue/?printer_id={pid}")
+        out["printers"].append({"id": pid, "name": p.get("name") or f"Printer {pid}",
+                                "summary": summarize(p, status, queue, cmap), "printer": redact(p),
+                                "status": redact(status), "queue": redact(queue)})
     return out
+
+
+SPEEDS = {1: "Silent", 2: "Standard", 3: "Sport", 4: "Ludicrous"}
+SEVERITY = {1: "Error — print stopped", 2: "Warning — print paused", 3: "Notice"}
+STATES = {"IDLE": "Idle", "RUNNING": "Printing", "PAUSE": "Paused", "FINISH": "Finished", "FAILED": "Failed",
+          "PREPARE": "Preparing", "SLICING": "Slicing", "INIT": "Starting"}
+
+
+def summarize(p: dict, s: dict, queue, cmap: dict) -> dict:
+    """The parts of Bambuddy's printer data a person needs, in plain words (Printer status page)."""
+    s = s if isinstance(s, dict) else {}
+    t = s.get("temperatures") or {}
+    state = str(s.get("state") or "").upper()
+    units = []
+    for u in s.get("ams") or []:
+        units.append({"name": f"AMS {int(u.get('id', 0)) + 1}" + (" (AMS HT)" if u.get("is_ams_ht") else ""),
+                      "humidity": u.get("humidity"), "temp": u.get("temp"),
+                      "drying": bool(u.get("dry_time")), "dry_minutes_left": u.get("dry_time") or 0})
+    items = queue if isinstance(queue, list) else []
+    return {
+        "connected": bool(s.get("connected")) and "error" not in s, "error": s.get("error", ""),
+        "state": STATES.get(state, state.title() or "Unknown"), "raw_state": state,
+        "makes": {"bases": "Bases", "names": "Names"}.get(role_of(p.get("location") or ""), "Bases & names"),
+        "location": p.get("location") or "", "model": p.get("model") or "", "ip": p.get("ip_address") or "",
+        "serial": p.get("serial_number") or "", "firmware": s.get("firmware_version"),
+        "developer_mode": s.get("developer_mode"),
+        "job": {"file": s.get("subtask_name") or s.get("current_print") or s.get("gcode_file") or "",
+                "progress": s.get("progress"), "remaining_min": s.get("remaining_time"),
+                "layer": s.get("layer_num"), "layers": s.get("total_layers"), "stage": s.get("stg_cur_name") or "",
+                "speed": SPEEDS.get(s.get("speed_level"), "")} if state in ("RUNNING", "PAUSE", "PREPARE") else None,
+        "awaiting_plate_clear": bool(s.get("awaiting_plate_clear")),
+        "temps": {"nozzle": t.get("nozzle"), "nozzle_target": t.get("nozzle_target"), "bed": t.get("bed"),
+                  "bed_target": t.get("bed_target"), "chamber": t.get("chamber")},
+        "fans": {"part": s.get("cooling_fan_speed"), "aux": s.get("left_aux_fan_speed") or s.get("big_fan1_speed"),
+                 "heatbreak": s.get("heatbreak_fan_speed")},
+        "spools": spools(s, cmap), "ams_units": units,
+        "nozzles": [f"{n.get('nozzle_diameter') or '?'} mm {str(n.get('nozzle_type') or '').replace('_', ' ')}".strip()
+                    for n in s.get("nozzles") or []],
+        "errors": [{"code": e.get("code"), "severity": SEVERITY.get(e.get("severity"), "Message"),
+                    "actions": e.get("actions") or []} for e in s.get("hms_errors") or []],
+        "print_error": s.get("print_error") or 0,
+        "network": {"wired": bool(s.get("wired_network")), "wifi_dbm": s.get("wifi_signal")},
+        "sdcard": s.get("sdcard"), "door_open": bool(s.get("door_open")), "timelapse": bool(s.get("timelapse")),
+        "camera": bool(s.get("ipcam")),
+        "ai": {k: v for k, v in (s.get("print_options") or {}).items() if isinstance(v, bool) and v},
+        "queue": [{"id": q.get("id"), "status": q.get("status"), "held": bool(q.get("manual_start")),
+                   "file": q.get("library_file_name") or q.get("file_name") or q.get("archive_name")
+                   or (q.get("library_file") or {}).get("filename") or f"item {q.get('id')}"} for q in items
+                  if isinstance(q, dict)],
+    }
 
 
 def clear_plate(pid: int) -> None:
@@ -430,45 +486,112 @@ def check_sliced(data: bytes) -> None:
         raise FarmError("The 3MF has no sliced plate inside (Metadata/plate_1.gcode) — slice it first")
 
 
-def slicer_profiles(cfg: dict, color: str | None) -> list[tuple[str, str, bytes, str]]:
-    """Printer / process / filament as user presets that inherit Bambu's system presets (by name)."""
-    def prof(typ: str, parent: str, **extra) -> bytes:
-        return json.dumps({"type": typ, "name": f"SnapSTL {parent}"[:120], "from": "User", "inherits": parent,
-                           **extra}).encode()
+# ---------------- slicing (Bambuddy's slicer only) ----------------
+def bambuddy_presets(cfg: dict | None = None) -> dict:
+    """Bambuddy's slicer presets for the Slice menu: {printer|process|filament: [{key, name, source}]}."""
+    r = api("GET", "/slicer/presets", cfg=cfg, timeout=20) or {}
+    out: dict[str, list[dict]] = {"printer": [], "process": [], "filament": []}
+    for tier in ("local", "orca_cloud", "cloud", "standard"):  # Bambuddy's priority order
+        for slot in out:
+            for p in (r.get(tier) or {}).get(slot) or []:
+                out[slot].append({"key": f"{p.get('source', tier)}:{p['id']}", "name": p.get("name") or p["id"],
+                                  "source": p.get("source", tier)})
+    return out
 
-    fil = {"filament_colour": [COLOR_HEX[color]]} if color in COLOR_HEX else {}
-    return [("printerProfile", "printer.json", prof("machine", cfg["printer_preset"]), "application/json"),
-            ("presetProfile", "preset.json", prof("process", cfg["process_preset"]), "application/json"),
-            ("filamentProfile", "filament_1.json", prof("filament", cfg["filament_preset"], **fil), "application/json")]
 
-
-def slice_plate(src: Path, dst: Path, color: str | None, cfg: dict | None = None) -> Path:
-    """Slice one plate with the slicer service; parts stay exactly where SnapSTL put them (no arrange)."""
+def chosen_presets(cfg: dict | None = None, available: dict | None = None) -> dict:
+    """The presets slicing uses: those chosen in Make It → Slice, else Bambu's standard A1 ones by name."""
     cfg = cfg or load_config()
-    if not cfg["slicer_url"]:
-        raise FarmError("Not sliced yet: open the plate in Bambu Studio → Slice → Export plate sliced file, "
-                        f"save it as {dst.name} in the batch's Sliced folder — or set a slicer service on the Printers page")
-    files = [("file", src.name, src.read_bytes(), "application/vnd.ms-package.3dmanufacturing-3dmodel+xml")]
-    files += slicer_profiles(cfg, color)
-    st, data = _call(cfg["slicer_url"], "POST", "/slice", fields={"exportType": "3mf"}, files=files, timeout=900,
-                     what="the slicer service")
-    if st >= 400:
-        raise FarmError(f"Slicer service: {_detail(st, data)}")
-    check_sliced(data)
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dst.with_name(dst.name + ".part")
-    tmp.write_bytes(data)
-    os.replace(tmp, dst)
-    return dst
+    chosen = dict(cfg.get("presets") or {})
+    if available is not None:
+        for slot, name in DEFAULT_PRESETS.items():
+            if slot not in chosen:
+                hit = next((p for p in available.get(slot, []) if p["name"] == name), None)
+                src, pid = hit["key"].split(":", 1) if hit else ("standard", name)  # the slicer resolves it by name
+                chosen[slot] = {"source": src, "id": pid, "name": name}
+    return chosen
 
 
-def check_slicer(url: str) -> str:
-    """'' if the slicer service answers its health check, else why not."""
-    try:
-        st, data = _call(url, "GET", "/health", timeout=5, what="the slicer service")
-    except FarmError as e:
-        return str(e)
-    return "" if st < 400 else f"The slicer service answered HTTP {st}"
+def set_presets(keys: dict) -> dict:
+    """Make It → Slice: save the printer / process / filament preset ("source:id" from Bambuddy's list)."""
+    avail = bambuddy_presets()
+    chosen = {}
+    for slot in ("printer", "process", "filament"):
+        key = str(keys.get(slot) or "")
+        hit = next((p for p in avail[slot] if p["key"] == key), None)
+        if hit is None and key == f"standard:{DEFAULT_PRESETS[slot]}":
+            hit = {"name": DEFAULT_PRESETS[slot]}
+        if hit is None:
+            raise FarmError(f"Choose a {slot} preset from Bambuddy's list")
+        src, pid = key.split(":", 1)
+        chosen[slot] = {"source": src, "id": pid, "name": hit["name"]}
+    update_config(presets=chosen)
+    return chosen
+
+
+def slice_request(presets: dict, color: str | None) -> dict:
+    missing = [s for s in ("printer", "process", "filament") if s not in presets]
+    if missing:
+        raise FarmError(f"Choose the {', '.join(missing)} preset in Make It → Slice")
+    ref = lambda s: {"source": presets[s]["source"], "id": presets[s]["id"]}  # noqa: E731
+    body = {"printer_preset": ref("printer"), "process_preset": ref("process"), "filament_presets": [ref("filament")],
+            "export_3mf": True, "plate": 1}
+    if color in COLOR_HEX:
+        body["filament_colours"] = [COLOR_HEX[color]]
+    return body
+
+
+def _slice_set(slice_id: int, **cols) -> None:
+    cols["updated_at"] = db.now()
+    with db.tx() as con:
+        con.execute(f"UPDATE slices SET {', '.join(k + '=?' for k in cols)} WHERE id=?", (*cols.values(), slice_id))
+
+
+def latest_slices(batch_id: int | None = None) -> dict[tuple[int, str], dict]:
+    """(batch, plate) → its newest slice."""
+    with db.tx() as con:
+        rs = db.rows(con, "SELECT * FROM slices WHERE computer_id=?" + (" AND batch_id=?" if batch_id else "") +
+                     " ORDER BY id", computer.ID, *([batch_id] if batch_id else []))
+    return {(r["batch_id"], r["plate"]): r for r in rs}
+
+
+def request_slices(plates: list[tuple[int, str, str, str]], again: bool = False) -> int:
+    """Slice these plates [(batch_id, plate, kind, color)] with Bambuddy (one at a time, in the background).
+    A plate that is being sliced or already sliced is skipped unless `again`."""
+    cur = latest_slices()
+    n = 0
+    now = db.now()
+    with db.tx() as con:
+        for bid, plate, kind, color in plates:
+            s = cur.get((bid, plate))
+            if s and s["state"] in ("queued", "uploading", "slicing") or (s and s["state"] == "done" and not again):
+                continue
+            con.execute("INSERT INTO slices(batch_id,plate,kind,color,state,created_at,updated_at,computer_id) "
+                        "VALUES (?,?,?,?,'queued',?,?,?)", (bid, plate, kind, color or "", now, now, computer.ID))
+            n += 1
+    WORKER.kick()
+    return n
+
+
+def _percent(snap) -> float | None:
+    """A percentage from Bambuddy's slice progress snapshot (its keys vary by slicer version)."""
+    if isinstance(snap, (int, float)):
+        return float(snap) if snap > 1 else float(snap) * 100
+    if isinstance(snap, dict):
+        for k in ("percent", "total_percent", "overall_percent", "progress", "pct"):
+            v = snap.get(k)
+            if isinstance(v, (int, float)):
+                return float(v) if v > 1 else float(v) * 100
+    return None
+
+
+def slicer_hint(err: str) -> str:
+    """Plain English for Bambuddy's slicer errors."""
+    low = (err or "").lower()
+    if "unreachable" in low or "sidecar" in low or "connection refused" in low:
+        return ("Bambuddy's slicer isn't running: in Bambuddy open Settings → Slicer, start its slicer service "
+                "(Docker) and turn on Use Slicer API. Details: " + err)
+    return err
 
 
 # ---------------- plates of a batch → printers ----------------
@@ -729,9 +852,11 @@ class Worker:
         self.log: list[str] = []
 
     def start(self) -> None:
-        with db.tx() as con:  # a job cut off by a restart starts over (an upload never became a queue item)
+        with db.tx() as con:  # work cut off by a restart starts over (an upload never became a queue item)
             con.execute("UPDATE print_jobs SET state='queued', updated_at=? WHERE state IN ('slicing','uploading') "
                         "AND computer_id=?", (db.now(), computer.ID))
+            con.execute("UPDATE slices SET state='queued', updated_at=? WHERE state='uploading' AND computer_id=?",
+                        (db.now(), computer.ID))
         if self._thread is None or not self._thread.is_alive():
             self._thread = threading.Thread(target=self._loop, name="farm", daemon=True)
             self._thread.start()
@@ -748,6 +873,9 @@ class Worker:
             self._wake.wait(2.0)
             self._wake.clear()
             try:
+                self.poll_slices()
+                self.slice_next()
+                self.check_waiting()
                 while self.run_next():
                     pass
                 if time.time() - self.last_refresh > self.REFRESH_S:
@@ -788,17 +916,28 @@ class Worker:
             raise FarmError(f"The plate file is gone: {src}")
         cfg = load_config()
         sliced = find_sliced(out, j["plate"])
-        if sliced is None:
-            _set(j["id"], state="slicing", error=None)
-            sliced = slice_plate(src, sliced_target(out, j["plate"]), j["color"] or None, cfg)
-        data = sliced.read_bytes()
-        check_sliced(data)
-        _set(j["id"], state="uploading", error=None, sliced=str(sliced.relative_to(out)) if out in sliced.parents else str(sliced))
-        label = Path(b["out_dir"]).name  # "Batch 2 - 2026-11-16"
-        kind = "Bases" if j["kind"] == "bases" else f"Names {j['color']}".strip()
-        filename = _upload_name(label, kind, sliced.name)
-        up = api("POST", "/library/files", cfg=cfg, files=[("file", filename, data, "application/octet-stream")], timeout=300)
-        file_id = int(up["id"])
+        if sliced is not None:  # a sliced file in the batch folder: upload it as it is
+            data = sliced.read_bytes()
+            check_sliced(data)
+            _set(j["id"], state="uploading", error=None,
+                 sliced=str(sliced.relative_to(out)) if out in sliced.parents else str(sliced))
+            label = Path(b["out_dir"]).name  # "Batch 2 - 2026-11-16"
+            kind = "Bases" if j["kind"] == "bases" else f"Names {j['color']}".strip()
+            up = api("POST", "/library/files", cfg=cfg, timeout=300,
+                     files=[("file", _upload_name(label, kind, sliced.name), data, "application/octet-stream")])
+            file_id = int(up["id"])
+        else:  # sliced by Bambuddy (Make It → Slice), or slice it now and send it when that's done
+            s = latest_slices(j["batch_id"]).get((j["batch_id"], j["plate"]))
+            if s and s["state"] == "done" and s["sliced_file_id"]:
+                file_id = int(s["sliced_file_id"])
+                _set(j["id"], sliced=f"Bambuddy library #{file_id}")
+            elif s and s["state"] == "failed" and s["created_at"] >= j["created_at"]:
+                raise FarmError(f"Slicing failed: {s['error']}")
+            else:
+                if not (s and s["state"] in ("queued", "uploading", "slicing")):
+                    request_slices([(j["batch_id"], j["plate"], j["kind"], j["color"])], again=True)
+                _set(j["id"], state="slicing", error=None)  # sent once Bambuddy has sliced it
+                return
         # Held (manual_start): Bambuddy never starts it by itself — a person presses Start.
         opts = clean_options(json.loads(j.get("options") or "{}"))
         item = api("POST", "/queue/", cfg=cfg, json_body={"library_file_id": file_id, "printer_id": j["printer_id"],
@@ -814,6 +953,86 @@ class Worker:
                 _set(j["id"], error=f"{e} — press Start print again to start anyway")
             except FarmError as e:
                 _set(j["id"], error=f"Queued, but not started: {e}")
+
+    # ---- slicing with Bambuddy (one plate at a time) ----
+    def slice_next(self) -> None:
+        with db.tx() as con:
+            if con.execute("SELECT 1 FROM slices WHERE state IN ('uploading','slicing') AND computer_id=?",
+                           (computer.ID,)).fetchone():
+                return
+            s = con.execute("SELECT * FROM slices WHERE state='queued' AND computer_id=? ORDER BY id LIMIT 1",
+                            (computer.ID,)).fetchone()
+            b = con.execute("SELECT out_dir FROM batches WHERE id=?", (s["batch_id"],)).fetchone() if s else None
+        if s is None:
+            return
+        s = dict(s)
+        try:
+            if not b or not b["out_dir"] or not (Path(b["out_dir"]) / s["plate"]).is_file():
+                raise FarmError("The plate file is gone")
+            cfg = load_config()
+            presets = chosen_presets(cfg, bambuddy_presets(cfg))
+            body = slice_request(presets, s["color"] or None)
+            _slice_set(s["id"], state="uploading", error=None, presets=json.dumps(presets))
+            src = Path(b["out_dir"]) / s["plate"]
+            kind = "Bases" if s["kind"] == "bases" else f"Names {s['color']}".strip()
+            name = _upload_name(Path(b["out_dir"]).name, kind, src.name, suffix=".3mf")
+            up = api("POST", "/library/files", cfg=cfg, timeout=300,
+                     files=[("file", name, src.read_bytes(), "application/octet-stream")])
+            r = api("POST", f"/library/files/{int(up['id'])}/slice", cfg=cfg, json_body=body, timeout=60)
+            _slice_set(s["id"], state="slicing", source_file_id=int(up["id"]), slice_job_id=int(r["job_id"]),
+                       progress=0, started_at=db.now())
+            self._log(f"Slicing {src.name} in Bambuddy")
+        except FarmError as e:
+            _slice_set(s["id"], state="failed", error=slicer_hint(str(e)))
+            self._log(f"Slicing {Path(s['plate']).name}: {e}")
+
+    def poll_slices(self) -> None:
+        with db.tx() as con:
+            rs = db.rows(con, "SELECT * FROM slices WHERE state='slicing' AND computer_id=?", computer.ID)
+        if not rs:
+            return
+        cfg = load_config()
+        for s in rs:
+            try:
+                r = api("GET", f"/slice-jobs/{s['slice_job_id']}", cfg=cfg, timeout=8) or {}
+            except FarmError as e:
+                if "not found" in str(e).lower() or "expired" in str(e).lower():
+                    _slice_set(s["id"], state="failed", error="Bambuddy lost this slice (restarted?) — slice it again")
+                continue
+            st = r.get("status")
+            if st == "completed":
+                fid = (r.get("result") or {}).get("library_file_id")
+                if fid:
+                    _slice_set(s["id"], state="done", sliced_file_id=int(fid), progress=100, error=None)
+                    self._log(f"Sliced {Path(s['plate']).name}")
+                else:
+                    _slice_set(s["id"], state="failed", error="Bambuddy finished but returned no sliced file")
+            elif st == "failed":
+                _slice_set(s["id"], state="failed",
+                           error=slicer_hint(str(r.get("error_detail") or r.get("error_status") or "slicing failed")))
+            else:
+                snap = r.get("progress")
+                key = json.dumps(snap, sort_keys=True, default=str) if snap is not None else None
+                if key is not None and key != s.get("last_progress"):  # any change = still working
+                    _slice_set(s["id"], last_progress=key, progress=_percent(snap) if _percent(snap) is not None else s["progress"])
+                elif time.time() - (s["updated_at"] or s["started_at"] or 0) > SLICE_TIMEOUT_S:
+                    _slice_set(s["id"], state="failed",
+                               error=f"Bambuddy's slicer made no progress for {SLICE_TIMEOUT_S // 60} min — check "
+                                     "Bambuddy → Settings → Slicer, then slice again")
+
+    def check_waiting(self) -> None:
+        """Print jobs waiting for their slice: sliced → send; slice failed → the job fails with why."""
+        with db.tx() as con:
+            js = db.rows(con, "SELECT * FROM print_jobs WHERE state='slicing' AND computer_id=?", computer.ID)
+        if not js:
+            return
+        sl = latest_slices()
+        for j in js:
+            s = sl.get((j["batch_id"], j["plate"]))
+            if s is None or s["state"] == "done":
+                _set(j["id"], state="queued")
+            elif s["state"] == "failed":
+                _set(j["id"], state="failed", error=f"Slicing failed: {s['error']}")
 
     def refresh(self) -> None:
         """Follow jobs sent to Bambuddy: waiting → printing → printed (or failed / cancelled there)."""
@@ -853,9 +1072,8 @@ class Worker:
                     makeit.update_made(j["batch_id"])  # both parts printed → Ready to ship
 
 
-def _upload_name(label: str, kind: str, name: str) -> str:
+def _upload_name(label: str, kind: str, name: str, suffix: str = ".gcode.3mf") -> str:
     """File name in Bambuddy and on the printer's SD card (no characters FAT cards refuse; ≤ 200 bytes)."""
-    suffix = ".gcode.3mf"
     body = f"{label} - {kind} - {name[:-len(suffix)] if name.endswith(suffix) else name}"
     for ch in '<>:"/\\|?*':
         body = body.replace(ch, "_")
