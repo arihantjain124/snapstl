@@ -11,11 +11,12 @@ import io
 import time
 import json
 import os
+import re
 import tempfile
 import zipfile
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
@@ -484,14 +485,20 @@ async def helper_ping(req: Request):
 
 
 @app.post("/api/helper/jobs/{job_id}/result")
-async def helper_result(job_id: int, plate_1: UploadFile = File(...), plate_2: UploadFile = File(...)):
+async def helper_result(job_id: int, plate_1: UploadFile = File(...), plate_2: UploadFile = File(...),
+                        check: str = Form("")):
+    """`check` (JSON from helper 2.2.0+): did the License password box hold the password at Generate?"""
     DOWNLOADER.seen("Uploading")
+    try:
+        chk = json.loads(check) if check else None
+    except json.JSONDecodeError:
+        chk = None
     a = await plate_1.read(MAX_UPLOAD + 1)
     b = await plate_2.read(MAX_UPLOAD + 1)
     if len(a) > MAX_UPLOAD or len(b) > MAX_UPLOAD:
         raise HTTPException(413, "Model too large")
     try:
-        return B.store_result(job_id, a, b)
+        return B.store_result(job_id, a, b, chk)
     except KeyError as e:
         raise HTTPException(404, "No such job") from e
     except ValueError as e:
@@ -565,10 +572,10 @@ async def maintenance_reset(req: Request):
 def downloads():
     """Download queue for the UI: active + failed first, then the 30 most recent finished."""
     with db.tx() as con:
-        active = db.rows(con, "SELECT id,name,compartments,state,attempts,error,updated_at,batch_id FROM downloads "
+        active = db.rows(con, "SELECT id,name,compartments,state,attempts,error,updated_at,batch_id,watermark,license_check FROM downloads "
                               "WHERE state IN ('claimed','queued','failed') "
                               "ORDER BY CASE state WHEN 'claimed' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, id LIMIT 500")
-        recent = db.rows(con, "SELECT id,name,compartments,state,attempts,error,updated_at,batch_id FROM downloads "
+        recent = db.rows(con, "SELECT id,name,compartments,state,attempts,error,updated_at,batch_id,watermark,license_check FROM downloads "
                               "WHERE state='done' ORDER BY updated_at DESC LIMIT 30")
     return {"items": active + recent, "downloader": DOWNLOADER.snapshot(), "folder": cache.stats()}
 
@@ -630,6 +637,65 @@ def batch(batch_id: int):
     return {"id": r["id"], "created_at": r["created_at"], "status": r["status"],
             "order_ids": json.loads(r["order_ids"] or "[]"), "summary": json.loads(r["summary"] or "{}"),
             "progress": B.batch_progress(r) if r["status"] in B.OPEN else None}
+
+
+@app.get("/api/batches/{batch_id}/models")
+def batch_models(batch_id: int):
+    """The batch's objects (one per distinct name/compartments) with download + watermark state."""
+    try:
+        return {"items": B.batch_models(batch_id)}
+    except KeyError as e:
+        raise HTTPException(404, "No such batch") from e
+
+
+@app.post("/api/batches/{batch_id}/models/redownload")
+async def batch_model_redownload(batch_id: int, req: Request):
+    body = await req.json()
+    try:
+        return B.redownload_model(batch_id, str(body.get("key", "")))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+KEY_RE = re.compile(r"^[0-9a-f]{24}$")
+
+
+@app.get("/api/models/{key}/view.png")
+def model_view(key: str, side: str = "back"):
+    """Picture of a downloaded base (side=back shows where MakerWorld puts its watermark; top = from above).
+    Watermark faces are painted red. Cached in the app's previews folder."""
+    from . import render, watermark
+
+    if not KEY_RE.match(key) or side not in ("back", "top"):
+        raise HTTPException(404)
+    d = cache.find(key)
+    if not d or not (d / "base.stl").exists():
+        raise HTTPException(404, "Not downloaded")
+    stamp = int((d / "base.stl").stat().st_mtime)
+    out = B.PREVIEW_DIR / "models" / f"{key}-{side}-{stamp}.png"
+    if not out.exists():
+        got = cache.load(key)
+        if not got:
+            raise HTTPException(404, "Can't read the model")
+        base = got[0]
+        out.parent.mkdir(parents=True, exist_ok=True)
+        for old in out.parent.glob(f"{key}-{side}-*.png"):
+            old.unlink(missing_ok=True)
+        out.write_bytes(render.render([(base, watermark.detect(base).faces)], view=side, px=0.4,
+                                      max_samples=1_200_000))
+    return FileResponse(out, media_type="image/png", headers={"Cache-Control": "max-age=60"})
+
+
+@app.get("/api/batches/{batch_id}/plate-image")
+def batch_plate_image(batch_id: int, f: str):
+    """Top-view picture of a base plate, drawn when the plates were built."""
+    b = _batch(batch_id)
+    label = Path(b["out_dir"] or "").name
+    root = (B.PREVIEW_DIR / f"batch-{batch_id}" / label).resolve()
+    target = (root / f).resolve()
+    if not label or root not in target.parents or not target.is_file() or target.suffix != ".png":
+        raise HTTPException(404, "No picture")
+    return FileResponse(target, media_type="image/png")
 
 
 @app.get("/api/batches/{batch_id}/file")

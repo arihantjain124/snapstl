@@ -38,7 +38,8 @@ launchctl bootout gui/$(id -u)/local.snapmagicians.snapstl && rm ~/Library/Launc
    `chrome://extensions` → turn on **Developer mode** → **Load unpacked** → choose the `helper`
    folder in this project.
 2. In SnapSTL **Settings**: check the **MakerWorld model page link**, enter the **license password for
-   this model** (each model keeps its own), choose the output and downloads folders, check the model
+   this model** (each model keeps its own — **downloads are refused without it**, so models never
+   carry MakerWorld's watermark), choose the output and downloads folders, check the model
    options and the scaling / compartments table → **Save settings**.
 3. In that Chrome, sign in to MakerWorld, click the helper icon → **Open model page** (or open the page
    and click **Use this tab**). The helper only works in that tab and only on that exact page. Keep it

@@ -20,8 +20,12 @@ def client():
     """Acts as the SnapSTL Mac itself (127.0.0.1): no login needed, helper allowed."""
     from snapstl import server
 
+    from snapstl.settings import save_settings
+
     c = TestClient(server.app, base_url="http://127.0.0.1:8317", client=("127.0.0.1", 50000))
     c.__enter__()
+    server.SETTINGS.license_passwords = {server.SETTINGS.design_id: TEST_PW}  # downloads need the password
+    save_settings(server.SETTINGS)
     DOWNLOADER.paused = False
     DOWNLOADER.pause_s = 0
     yield c
@@ -42,7 +46,21 @@ def obj(mesh) -> bytes:
     return mesh.export(file_type="obj").encode()
 
 
-def helper_work(c, fail_names=(), max_jobs=50):
+TEST_PW = "test-license"
+CONFIRMED = '{"password_set": true, "request": "sent"}'
+
+
+def watermarked(base: "trimesh.Trimesh") -> "trimesh.Trimesh":
+    """Add a MakerWorld-like raised text strip 1 mm proud of the back wall."""
+    import trimesh
+
+    lo, hi = base.bounds
+    strip = trimesh.creation.box([91, 1, 6])
+    strip.apply_translation([(lo[0] + hi[0]) / 2, hi[1] + 0.5, lo[2] + 5.7])
+    return trimesh.util.concatenate([base, strip])
+
+
+def helper_work(c, fail_names=(), max_jobs=50, watermark_names=(), check=CONFIRMED):
     """Act like the Chrome helper until the queue is empty. Returns [(name, compartments)]."""
     seen = []
     for _ in range(max_jobs):
@@ -51,14 +69,19 @@ def helper_work(c, fail_names=(), max_jobs=50):
             break
         seen.append((job["name"], job["compartments"]))
         assert job["params"]["name"] == job["name"]
+        assert job["license_password"] == TEST_PW
         if job["name"] in fail_names:
             c.post(f"/api/helper/jobs/{job['job_id']}/fail", json={"error": "MakerWorld said no"})
             continue
         k = sum(ch.isalpha() for ch in job["name"])
         # plate order deliberately swapped: the app must tell base from name by shape
+        base = base_mesh(length=48 * k + 10)
+        if job["name"] in watermark_names:
+            base = watermarked(base)
         files = {"plate_1": ("plate_1.obj", obj(name_mesh(k)), "text/plain"),
-                 "plate_2": ("plate_2.obj", obj(base_mesh(length=48 * k + 10)), "text/plain")}
-        assert c.post(f"/api/helper/jobs/{job['job_id']}/result", files=files).status_code == 200
+                 "plate_2": ("plate_2.obj", obj(base), "text/plain")}
+        r = c.post(f"/api/helper/jobs/{job['job_id']}/result", files=files, data={"check": check} if check else None)
+        assert r.status_code == (400 if job["name"] in watermark_names or check != CONFIRMED else 200), r.text
     return seen
 
 
@@ -128,7 +151,7 @@ def test_failed_download_retries_then_batch_builds_without_it(client):
     bid = client.post("/api/batches", json={"order_ids": ["G1", "G2"]}).json()["batch_id"]
     client.post(f"/api/batches/{bid}/download")
     seen = helper_work(client, fail_names=("Broken",))
-    assert [n for n, _ in seen].count("Broken") == 2  # one retry, then failed
+    assert [n for n, _ in seen].count("Broken") == 3  # two retries, then failed
     b = build_and_wait(client, bid)
     assert b["status"] == "done_with_problems" and any("Broken" in e for e in b["summary"]["errors"])
     o = {x["order_id"]: x["state"] for x in client.get("/api/orders", params={"q": "G", "tab": "all"}).json()["orders"]}
@@ -341,3 +364,104 @@ def test_tabs_filters_clubbed_and_customer_fields(client):
     assert o["customer_name"] == "Asha K" and o["phone"] == "9000000001" and o["address"] == "12 Main Rd, Pune, MH, 411001"
     facets = client.get("/api/orders/facets", params={"tab": "all"}).json()
     assert facets["tabs"]["ready_clubbed"] == 2 and "PACK" in facets["statuses"] and "pink" in facets["colors"]
+
+
+# ---------------- license password + watermark ----------------
+def test_download_needs_license_password(client):
+    from snapstl import server
+    from snapstl.settings import save_settings
+
+    client.post("/api/ingest", files={"file": ("r.csv", report([("P1", "PRINT", "Magicians_35", "Tara", "Pink", 1)]),
+                                               "text/csv")})
+    bid = client.post("/api/batches", json={"order_ids": ["P1"]}).json()["batch_id"]
+    server.SETTINGS.license_passwords = {}
+    save_settings(server.SETTINGS)
+    r = client.post(f"/api/batches/{bid}/download")
+    assert r.status_code == 400 and "license password" in r.json()["detail"]
+    # added later in Settings: the existing batch picks it up
+    server.SETTINGS.license_passwords = {server.SETTINGS.design_id: TEST_PW}
+    save_settings(server.SETTINGS)
+    assert client.post(f"/api/batches/{bid}/download").json()["downloads_queued"] == 1
+    assert helper_work(client) == [("Tara", 4)]
+
+
+def test_unconfirmed_or_watermarked_download_is_not_saved(client):
+    from snapstl import cache
+
+    client.post("/api/ingest", files={"file": ("r.csv", report([
+        ("W1", "PRINT", "Magicians_35", "Ishaan", "Blue", 1),
+        ("W2", "PRINT", "Magicians_35", "Mira", "Blue", 1),
+    ]), "text/csv")})
+    bid = client.post("/api/batches", json={"order_ids": ["W1", "W2"]}).json()["batch_id"]
+    client.post(f"/api/batches/{bid}/download")
+    # old helper (no confirmation) → rejected every time → failed
+    seen = helper_work(client, check="")
+    assert len(seen) == 6  # 2 names × 3 tries
+    items = client.get("/api/downloads").json()["items"]
+    assert all(x["state"] == "failed" and "license password" in x["error"] for x in items if x["batch_id"] == bid)
+    assert not any(cache.load_exists(m["key"]) for m in client.get(f"/api/batches/{bid}/models").json()["items"])
+
+    # watermark still on the base → rejected and retried; Mira comes in clean
+    client.post("/api/downloads/retry")
+    seen = helper_work(client, watermark_names=("Ishaan",))
+    assert [n for n, _ in seen].count("Ishaan") == 3
+    models = {m["name"]: m for m in client.get(f"/api/batches/{bid}/models").json()["items"]}
+    assert models["Mira"]["status"] == "ready" and models["Mira"]["watermark"] is False
+    assert models["Mira"]["license_check"].startswith("confirmed")
+    assert models["Ishaan"]["status"] == "failed" and "watermark" in models["Ishaan"]["error"]
+    wm = [x for x in client.get("/api/downloads").json()["items"] if x["name"] == "Ishaan"]
+    assert wm and wm[0]["watermark"] == 1
+    info = (cache.find(models["Mira"]["key"]) / "info.json").read_text()
+    assert TEST_PW not in info and '"watermark": false' in info
+
+    # pictures of the downloaded base
+    for side in ("back", "top"):
+        r = client.get(f"/api/models/{models['Mira']['key']}/view.png", params={"side": side})
+        assert r.status_code == 200 and r.content[:4] == b"\x89PNG"
+    assert client.get("/api/models/../view.png").status_code == 404
+
+
+def test_build_holds_back_watermarked_model_and_object_redownload(client):
+    from snapstl import cache
+
+    client.post("/api/ingest", files={"file": ("r.csv", report([
+        ("H1", "PRINT", "Magicians_35", "Dev", "Pink", 1),
+        ("H2", "PRINT", "Magicians_35", "Anu", "Pink", 1),
+    ]), "text/csv")})
+    bid = client.post("/api/batches", json={"order_ids": ["H1", "H2"]}).json()["batch_id"]
+    client.post(f"/api/batches/{bid}/download")
+    helper_work(client)
+    models = {m["name"]: m for m in client.get(f"/api/batches/{bid}/models").json()["items"]}
+    # simulate an old download that still carries the watermark (saved before this check existed)
+    d = cache.find(models["Dev"]["key"])
+    base, name = cache.load(models["Dev"]["key"])
+    watermarked(base).export(d / "base.stl")
+
+    b = build_and_wait(client, bid)
+    s = b["summary"]
+    assert b["status"] == "done_with_problems"
+    assert s["watermark"] == {"checked": 2, "found": 1}
+    assert any("Dev" in e and "watermark" in e for e in s["errors"])
+    assert all("Dev" not in n for p in s["plates"] for n in p["names"])
+    bases = [p for p in s["plates"] if p["kind"] == "bases"]
+    assert bases and all(p["image"] for p in bases)
+    r = client.get(f"/api/batches/{bid}/plate-image", params={"f": bases[0]["image"]})
+    assert r.status_code == 200 and r.content[:4] == b"\x89PNG"
+    assert client.get(f"/api/batches/{bid}/plate-image", params={"f": "../../snapstl.db"}).status_code == 404
+    o = {x["order_id"]: x["state"] for x in client.get("/api/orders", params={"tab": "all"}).json()["orders"]}
+    assert o["H1"] == "ready" and o["H2"] == "bundled"
+
+    # re-download just Dev from the batch's Objects list; rebuild waits for it
+    r = client.post(f"/api/batches/{bid}/models/redownload", json={"key": models["Dev"]["key"]})
+    assert r.status_code == 200 and r.json()["queued"] == 1
+    assert status(client, bid) == "done_with_problems"  # a built batch keeps its status
+    assert client.post(f"/api/batches/{bid}/build").status_code == 400  # still downloading
+    assert client.post(f"/api/batches/{bid}/models/redownload", json={"key": "nope"}).status_code == 400
+    assert helper_work(client) == [("Dev", 4)]
+    fresh = {m["name"]: m for m in client.get(f"/api/batches/{bid}/models").json()["items"]}["Dev"]
+    assert fresh["status"] == "ready" and fresh["watermark"] is False
+    assert client.post(f"/api/batches/{bid}/build").status_code == 200
+    b = wait_for(lambda: (lambda d: d if d["status"].startswith("done") and d["summary"].get("label") != s["label"]
+                          else None)(client.get(f"/api/batches/{bid}").json()))
+    assert b["summary"]["watermark"] == {"checked": 2, "found": 0}
+    assert any("Dev" in n for p in b["summary"]["plates"] for n in p["names"])

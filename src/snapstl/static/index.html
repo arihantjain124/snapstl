@@ -59,7 +59,10 @@ th{color:var(--muted);font-weight:500;font-size:12px;white-space:nowrap}
 .plate{border:1px solid var(--line);border-radius:8px;padding:8px;display:block;color:inherit;text-decoration:none}
 .plate:hover{border-color:var(--muted)}
 .plate .fn{font-size:12px;word-break:break-all;margin-top:6px}
-.plate svg{width:100%;height:auto;display:block}
+.plate svg,.plate img{width:100%;height:auto;display:block;border-radius:4px}
+.objs td{vertical-align:middle}.objs img{height:46px;width:auto;max-width:180px;border:1px solid var(--line);border-radius:4px;background:#ecebe6;cursor:zoom-in}
+.zoomimg{max-width:100%;border:1px solid var(--line);border-radius:6px;background:#ecebe6}
+details.objsbox summary{cursor:pointer;font-weight:600;margin:10px 0 6px}
 .msgs div{font-size:13px;padding:6px 10px;border-radius:6px;margin:4px 0}
 .msgs .e{background:var(--errbg);color:var(--err)}.msgs .w{background:var(--warnbg);color:var(--warn)}.msgs .o{background:var(--okbg);color:var(--ok)}
 .log{font:12px/1.5 ui-monospace,Menlo,monospace;max-height:260px;overflow:auto;white-space:pre-wrap;color:var(--muted)}
@@ -109,8 +112,8 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <div class="chips" id="chips"></div>
     <div class="chips" id="subchips"></div>
     <div class="toolbar">
-      <button id="fclear" class="small">Clear filters</button>
-      <span class="grow hint">Type in the boxes under the column names to filter; filters combine.</span>
+      <button id="fclear" class="small" title="Clear every column filter and show all orders">Clear all filters</button>
+      <span class="grow hint" id="fstate">Type in the boxes under the column names to filter; filters combine.</span>
       <a class="btn" id="csvlink" href="/api/orders.csv?tab=all">Export CSV</a>
     </div>
     <div class="toolbar" id="selbar">
@@ -135,9 +138,14 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
   <div class="card" id="bdetail" hidden>
     <div class="toolbar"><h2 style="margin:0" id="btitle"></h2><span class="grow"></span><button id="bfinder" hidden>Show in Finder</button> <a class="btn primary" id="bzip">Download ZIP</a></div>
     <div class="msgs" id="bmsgs"></div>
+    <details class="objsbox" id="bobjsbox"><summary id="bobjsum">Objects</summary>
+      <p class="hint">Every name in this batch as downloaded. The picture shows the back of the base, where MakerWorld puts its "SALE NOT PERMITTED" watermark (painted <b style="color:#dc2828">red</b> if found) — click it for the top view. <b>Re-download</b> fetches one object again; then press <b>Rebuild plates</b> so the plates use the fresh download.</p>
+      <div class="tw"><table class="objs"><thead><tr><th>Name</th><th>Comp.</th><th>Copies</th><th>Back of base</th><th>Watermark</th><th>Download</th><th></th></tr></thead><tbody id="bobjs"></tbody></table></div>
+      <div id="bzoom"></div>
+    </details>
     <h3>Bases</h3><div class="plates" id="bbases"></div>
     <h3>Names</h3><div class="plates" id="bnames"></div>
-    <p class="hint">Top view of each plate. Click a plate to get its .3mf. Review in Bambu Studio before printing.</p>
+    <p class="hint">Bases are shown from the top as they'll sit on the plate (any watermark found is painted red); names as outlines. Click a plate to get its .3mf. Review in Bambu Studio before printing.</p>
   </div>
   <div class="card"><h2>Activity</h2><div class="log" id="log"></div></div>
 </section>
@@ -147,7 +155,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <div class="toolbar"><h2 style="margin:0">Download queue</h2><span class="grow hint" id="dlsession"></span>
       <button id="qpause" class="small">Pause</button><button id="retry2" class="small">Retry failed</button></div>
     <p class="hint">Names queued by <b>Queue download</b> / <b>Re-download</b> on the Batches page. The SnapSTL Helper in your MakerWorld tab works through them one at a time, oldest first.</p>
-    <div class="tw" style="max-height:60vh;overflow:auto"><table><thead><tr><th>#</th><th>Name</th><th>Comp.</th><th>Batch</th><th>State</th><th>Tries</th><th>Detail</th></tr></thead><tbody id="dlq"></tbody></table></div>
+    <div class="tw" style="max-height:60vh;overflow:auto"><table><thead><tr><th>#</th><th>Name</th><th>Comp.</th><th>Batch</th><th>State</th><th>Watermark</th><th>Tries</th><th>Detail</th></tr></thead><tbody id="dlq"></tbody></table></div>
   </div>
   <div class="card">
     <div class="toolbar"><h2 style="margin:0">Downloaded models</h2><span class="grow"></span><button id="dlfinder" class="small">Show in Finder</button></div>
@@ -301,6 +309,18 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
       <li>The sidebar shows the helper's status. <b>Pause downloads</b> stops it after the current name.</li>
     </ul>
   </div>
+  <div class="card" id="h-watermark">
+    <h2>License password &amp; watermark</h2>
+    <p>Without the model's license password MakerWorld adds a watermark (for this organizer: raised "SALE NOT PERMITTED" text on the back of the base). SnapSTL makes sure that never reaches your plates:</p>
+    <ul>
+      <li><b>No password, no download.</b> Queue download / Re-download are refused until the password for this model is entered in <b>Settings</b>. A batch made earlier picks up the password automatically.</li>
+      <li><b>The helper confirms the password before and after Generate.</b> It types the password first and again last, waits for the page to take it, checks the box still holds it right before pressing Generate and right after, and watches the page's own Generate request for it. If any check fails, the download is <b>not saved</b> and is tried again (3 tries).</li>
+      <li><b>Every download is scanned.</b> If the watermark is still on the base, the download is not saved and is tried again. The Downloads page has a <b>Watermark</b> column.</li>
+      <li><b>Every build checks again.</b> A base with a watermark is held back and its order returns to Ready; the batch says "Watermark check: found on N".</li>
+      <li><b>See it yourself.</b> Open a batch → <b>Objects</b>: a picture of the back of every base (watermark painted red), click it for the top view, and <b>Re-download</b> any single object. Then press <b>Rebuild plates</b> — it waits until re-downloads are in, so the plates use the fresh files. Base plates are drawn from the top.</li>
+    </ul>
+    <p class="hint">The automatic scan knows this model's watermark. A different model may put a different watermark elsewhere — that's why downloads are refused without the password and the helper must confirm it; still glance at the pictures for a new model.</p>
+  </div>
 
   <div class="card" id="h-downloads">
     <h2>Downloads</h2>
@@ -347,7 +367,9 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
       <tr><td>A name is Failed in the download queue</td><td>Read the detail; <b>Retry failed</b>.</td></tr>
       <tr><td>Fit check failed on a batch</td><td>That order wasn't printed and is back in Ready; create a new batch for it. If it keeps failing, check the scaling table.</td></tr>
       <tr><td>Batch stays Downloading</td><td>Check the sidebar and the Downloads page; Pause/Resume; or Build now with what's ready.</td></tr>
-      <tr><td>A model looks wrong</td><td>Batches → <b>Re-download</b>, then <b>Rebuild plates</b>.</td></tr>
+      <tr><td>A model looks wrong</td><td>Batches → Open → <b>Objects</b> → <b>Re-download</b> that one (or Re-download the whole batch), then <b>Rebuild plates</b>.</td></tr>
+      <tr><td>"watermark still on the base" / "didn't confirm the license password"</td><td>Check the license password in Settings, reload the SnapSTL Helper (2.2.0) in <code>chrome://extensions</code>, then <b>Retry failed</b> on Downloads.</td></tr>
+      <tr><td>Queue download says "Add the license password"</td><td>Settings → MakerWorld model → License password → Save.</td></tr>
       <tr><td>Can't copy text in the window</td><td>Quit and reopen SnapSTL.app.</td></tr>
       <tr><td>Portal doesn't open</td><td>Terminal: <code>launchctl kickstart -k gui/$(id -u)/local.snapmagicians.snapstl</code>; log: <code>~/Library/Logs/SnapSTL.log</code>.</td></tr>
     </table>
@@ -395,6 +417,7 @@ function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.cl
 // ---------- orders ----------
 async function loadOrders(){
   const p=filterParams({limit:LIMIT,offset:filter.offset});
+  showFilterState();
   const r=await api('/api/orders?'+p);
   $('pageinfo').textContent=r.total?`${filter.offset+1}–${Math.min(filter.offset+LIMIT,r.total)} of ${r.total}`:'';
   $('prev').disabled=filter.offset===0; $('next').disabled=filter.offset+LIMIT>=r.total;
@@ -430,7 +453,10 @@ $('selall').onclick=async()=>{const ids=await api('/api/orders/ids?'+filterParam
 function filterParams(extra){const p=new URLSearchParams({tab:filter.tab,...extra});for(const [k,v] of Object.entries(filter.f))if(v)p.set('f_'+k,v);return p}
 let ft;document.querySelectorAll('.frow [data-f]').forEach(el=>{const go=()=>{filter.f[el.dataset.f]=el.value.trim();filter.offset=0;loadOrders()};
   if(el.tagName==='SELECT')el.onchange=go;else el.oninput=()=>{clearTimeout(ft);ft=setTimeout(go,250)}});
-$('fclear').onclick=()=>{filter.f={};document.querySelectorAll('.frow [data-f]').forEach(el=>el.value='');filter.offset=0;loadOrders()};
+$('fclear').onclick=()=>{filter.f={};filter.tab='all';document.querySelectorAll('.frow [data-f]').forEach(el=>el.value='');filter.offset=0;loadFacets();loadOrders()};
+function showFilterState(){const n=Object.values(filter.f).filter(Boolean).length;
+  $('fclear').classList.toggle('primary',n>0);$('fclear').textContent=n?`Clear all filters (${n})`:'Clear all filters';
+  $('fstate').innerHTML=n?`<b>Filtered</b> by ${n} column${n>1?'s':''} — press <b>Clear all filters</b> to see every order again.`:'Type in the boxes under the column names to filter; filters combine.'}
 async function loadFacets(){FACETS=await api('/api/orders/facets?tab='+filter.tab);renderChips(FACETS.tabs);
   for(const [k,vals] of [['status',FACETS.statuses],['color',FACETS.colors]]){const el=document.querySelector(`.frow [data-f="${k}"]`);const cur=el.value;
     el.innerHTML='<option value="">all</option>'+vals.map(v=>`<option ${v===cur?'selected':''}>${esc(v)}</option>`).join('')}}
@@ -477,14 +503,29 @@ async function loadBatches(){const bs=await api('/api/batches');
 function plateSVG(p){const [bx,by]=p.preview.bed,m=p.preview.margin;const fill=p.kind==='bases'?'#ffffff':(COLORS[p.colors[0]]||'#bbb');
   const parts=p.preview.parts.map(pt=>`<path d="${pt.rings.map(r=>'M'+r.map(([x,y])=>`${x},${by-y}`).join('L')+'Z').join('')}" fill="${fill}" fill-rule="evenodd" stroke="#777" stroke-width="0.8"><title>${esc(pt.key)} (${pt.rotation}°)</title></path>`).join('');
   return `<svg viewBox="-2 -2 ${bx+4} ${by+4}"><rect width="${bx}" height="${by}" rx="4" fill="var(--bed)" stroke="var(--line)"/><rect x="${m}" y="${m}" width="${bx-2*m}" height="${by-2*m}" fill="none" stroke="var(--line)" stroke-dasharray="3 3"/>${parts}</svg>`}
-async function openBatchDetail(id,quiet){openBatch=id;const b=await api('/api/batches/'+id);const s=b.summary||{};
+const WMS={true:['Watermark found','err'],false:['No watermark','ok']};
+const OST={ready:['Downloaded','ok'],queued:['Waiting','info'],downloading:['Generating','info'],failed:['Failed','err'],'not downloaded':['Not downloaded','']};
+async function loadObjects(id,status){let r;try{r=await api(`/api/batches/${id}/models`)}catch{return}
+  const can=!['cancelled','building','build_requested'].includes(status);
+  const bad=r.items.filter(m=>m.watermark===true).length,pend=r.items.filter(m=>['queued','downloading'].includes(m.status)).length;
+  $('bobjsum').textContent=`Objects · ${r.items.length}`+(bad?` · ${bad} with watermark`:'')+(pend?` · ${pend} downloading`:'');
+  if(bad)$('bobjsbox').open=true;
+  $('bobjs').innerHTML=r.items.map(m=>{const st=OST[m.status]||[m.status,''];const wm=m.status==='ready'?(WMS[m.watermark]||['Not checked yet','warn']):['—',''];
+    const img=m.status==='ready'?`<img loading="lazy" data-key="${m.key}" src="/api/models/${m.key}/view.png?side=back&t=${encodeURIComponent(m.downloaded||'')}" alt="back of ${esc(m.name)} base">`:'';
+    return `<tr><td>${esc(m.name)}</td><td>${m.compartments}</td><td>${m.copies}</td><td>${img}</td><td><span class="pill ${wm[1]}">${wm[0]}</span>${m.license_check?`<div class="hint">password ${esc(m.license_check)}</div>`:''}</td><td><span class="pill ${st[1]}">${st[0]}</span>${m.downloaded?`<div class="hint">${esc(m.downloaded)}</div>`:''}${m.error?`<div class="reason">${esc(m.error)}</div>`:''}</td><td>${can&&!['queued','downloading'].includes(m.status)?`<button class="small" data-objdl="${m.key}">Re-download</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="7" class="empty">No objects</td></tr>';
+  document.querySelectorAll('[data-objdl]').forEach(x=>x.onclick=async()=>{try{const r=await post(`/api/batches/${id}/models/redownload`,{key:x.dataset.objdl});$('queueinfo').textContent=r.queued?`${r.name} queued for re-download — press Rebuild plates once it's in`:`${r.name} is already queued`}catch(e){alert(e.message)}openBatchDetail(id,true);loadBatches()});
+  document.querySelectorAll('.objs img[data-key]').forEach(i=>i.onclick=()=>{$('bzoom').innerHTML=`<div class="toolbar" style="margin-top:10px"><b>Top view</b><span class="grow"></span><button class="small" id="bzclose">Close</button></div><img class="zoomimg" src="/api/models/${i.dataset.key}/view.png?side=top"><div class="toolbar" style="margin-top:6px"><b>Back</b></div><img class="zoomimg" src="${i.src}">`;$('bzclose').onclick=()=>$('bzoom').innerHTML=''})}
+async function openBatchDetail(id,quiet){const changed=openBatch!==id;openBatch=id;const b=await api('/api/batches/'+id);const s=b.summary||{};
+  if(changed){$('bobjsbox').open=false;$('bzoom').innerHTML=''}
+  loadObjects(id,b.status);
   $('bdetail').hidden=false;$('btitle').textContent=`${s.label||'Batch #'+id} · ${b.order_ids.length} orders`;$('bzip').href=`/api/batches/${id}/zip`;$('bzip').hidden=!b.status.startsWith('done');
   if(b.progress){const P=b.progress;const msg=b.status==='created'?`Not queued yet: press <b>Queue download</b> (${P.ready} of ${P.models} models already downloaded).`:b.status==='models_ready'?`All models downloaded (${P.ready}/${P.models}${P.failed?`, ${P.failed} failed`:''}) — press <b>Queue build</b>.`:`Downloading from MakerWorld: ${P.ready} of ${P.models} models done${P.failed?`, ${P.failed} failed`:''}.`;
     $('bmsgs').innerHTML=`<div class="w">${msg}</div>`;$('bbases').innerHTML=$('bnames').innerHTML='<div class="empty">Plates appear when the batch is built</div>';return}
+  const W=s.watermark;const wmMsg=W&&W.checked?(W.found?`<div class="e">Watermark check: found on ${W.found} of ${W.checked} downloaded bases — those orders were held back.</div>`:`<div class="o">Watermark check: none of the ${W.checked} downloaded bases has MakerWorld's watermark.</div>`):'';
   const F=s.fit;const fitMsg=F&&F.checked?(F.ok===F.checked?`<div class="o">Fit check: ${F.ok}/${F.checked} name/base pairs keep their MakerWorld proportions — they'll fit after printing.</div>`:`<div class="e">Fit check: only ${F.ok}/${F.checked} pairs passed — the others were not printed (see below).</div>`):'';
-  $('bmsgs').innerHTML=(s.folder?`<div class="o">Saved to ${esc(s.folder)}</div>`:'')+fitMsg+(s.errors||[]).map(e=>`<div class="e">${esc(e)}</div>`).join('')+(s.warnings||[]).map(w=>`<div class="w">${esc(w)}</div>`).join('')+(s.ok&&!(s.warnings||[]).length?'<div class="o">All plates passed the checks.</div>':'');
+  $('bmsgs').innerHTML=(s.folder?`<div class="o">Saved to ${esc(s.folder)}</div>`:'')+fitMsg+wmMsg+(s.errors||[]).map(e=>`<div class="e">${esc(e)}</div>`).join('')+(s.warnings||[]).map(w=>`<div class="w">${esc(w)}</div>`).join('')+(s.ok&&!(s.warnings||[]).length?'<div class="o">All plates passed the checks.</div>':'');
   for(const k of ['bases','names']){const ps=(s.plates||[]).filter(p=>p.kind===k);
-    $('b'+k).innerHTML=ps.length?ps.map(p=>`<a class="plate" data-file="${esc(p.file)}" href="/api/batches/${id}/file?path=${encodeURIComponent(p.file)}">${plateSVG(p)}<div class="fn">${esc(p.file.split('/').pop())}</div>${p.warnings.map(w=>`<div class="hint" style="color:var(--warn)">${esc(w)}</div>`).join('')}</a>`).join(''):'<div class="empty">None</div>'}
+    $('b'+k).innerHTML=ps.length?ps.map(p=>`<a class="plate" data-file="${esc(p.file)}" href="/api/batches/${id}/file?path=${encodeURIComponent(p.file)}">${p.image?`<img loading="lazy" src="/api/batches/${id}/plate-image?f=${encodeURIComponent(p.image)}" alt="top view of the plate">`:plateSVG(p)}<div class="fn">${esc(p.file.split('/').pop())}</div>${p.warnings.map(w=>`<div class="hint" style="color:var(--warn)">${esc(w)}</div>`).join('')}</a>`).join(''):'<div class="empty">None</div>'}
   $('bfinder').hidden=!(META.local&&b.status.startsWith('done'));
   $('bfinder').onclick=()=>post(`/api/batches/${id}/reveal`,{});
   if(META.local)document.querySelectorAll('.plate[data-file]').forEach(a=>a.onclick=e=>{e.preventDefault();post(`/api/batches/${id}/reveal`,{file:a.dataset.file})});
@@ -494,7 +535,7 @@ async function loadQueue(){const r=await api('/api/downloads');const d=r.downloa
   $('dlsession').textContent=d.online?`Helper: ${d.status}`:'Helper not connected';
   $('qpause').textContent=d.paused?'Resume':'Pause';$('qpause').dataset.paused=d.paused?'1':'0';
   const f=r.folder;$('dlfolder').innerHTML=`Folder: <code>${esc(f.path)}</code> · ${f.models} model${f.models===1?'':'s'} · ${(f.bytes/1048576).toFixed(1)} MB`;$('dlfinder').hidden=!META.local;
-  $('dlq').innerHTML=r.items.length?r.items.map(x=>{const st=DST[x.state]||[x.state,''];return `<tr><td>${x.id}</td><td>${esc(x.name)}</td><td>${x.compartments}</td><td>${x.batch_id?'#'+x.batch_id:'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${x.attempts}</td><td class="hint">${esc(x.error||'')}</td></tr>`}).join(''):'<tr><td colspan="7" class="empty">Nothing queued — on Batches press Queue download</td></tr>'}
+  $('dlq').innerHTML=r.items.length?r.items.map(x=>{const st=DST[x.state]||[x.state,''];return `<tr><td>${x.id}</td><td>${esc(x.name)}</td><td>${x.compartments}</td><td>${x.batch_id?'#'+x.batch_id:'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${x.watermark===1?'<span class="pill err">Found</span>':x.watermark===0?'<span class="pill ok">None</span>':'—'}</td><td>${x.attempts}</td><td class="hint">${esc(x.error||'')}</td></tr>`}).join(''):'<tr><td colspan="8" class="empty">Nothing queued — on Batches press Queue download</td></tr>'}
 $('dlfinder').onclick=()=>post('/api/downloads/reveal');
 $('qpause').onclick=async()=>{await post('/api/downloader/'+($('qpause').dataset.paused==='1'?'resume':'pause'));loadQueue();refresh()};
 $('retry2').onclick=async()=>{await post('/api/downloads/retry');loadQueue()};

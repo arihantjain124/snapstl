@@ -81,6 +81,8 @@ MIGRATIONS = [
     ("orders", "phone", "TEXT"),
     ("orders", "address", "TEXT"),         # address, city, state, pincode joined
     ("downloads", "batch_id", "INTEGER"),  # batch that queued this download (shown in the queue)
+    ("downloads", "watermark", "INTEGER"),  # 1 = MakerWorld watermark found on the base, 0 = clean
+    ("downloads", "license_check", "TEXT"),  # what the helper confirmed about the license password
 ]
 
 
