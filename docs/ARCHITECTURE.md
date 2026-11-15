@@ -21,8 +21,8 @@ in the customer's colour), glued together after printing.
 Webstore "Order Reconciliation Report" (.xlsx)
   → keep SKU Magicians_35, read name/colour/customer, de-duplicate by Order ID    ingest.py, db.py
   → review odd names; select orders → Create batch                                 server.py, index.html
-  → Start download: each name generated on MakerWorld by the SnapSTL Helper        helper/, batches.py
-  → Build plates: scale (Rules v1.1) → group 3 per plate → pack on 256×256 bed      scaling, grouping, packing
+  → Queue download: each name generated on MakerWorld by the SnapSTL Helper        helper/, batches.py
+  → Queue build: scale (Rules v1.1) → group 3 per plate → pack on 256×256 bed       scaling, grouping, packing
   → <output>/<date>/Batch N - <date>/{Bases/, Names/<colour>/, report.csv} (.3mf)  pipeline.py, export.py
 ```
 
@@ -33,9 +33,10 @@ Webstore "Order Reconciliation Report" (.xlsx)
 | Piece | What / where |
 |---|---|
 | **Service** | `snapstl-serve` → FastAPI/uvicorn on **http://127.0.0.1:8317** (`SNAPSTL_PORT` to change). Started at login by launchd: `~/Library/LaunchAgents/local.snapmagicians.snapstl.plist` (`RunAtLoad`, `KeepAlive`). Hosts the portal, the helper API, the download queue and the batch builder thread. Runs `caffeinate -i` while alive. |
-| **App window** | `~/Applications/SnapSTL.app` → `snapstl` → pywebview window on the same URL (adds native folder picker; text selection on). UI = side navigation: Orders · Batches · Settings · Help. If the service isn't up it kickstarts it. Closing the window doesn't stop the service. |
+| **App window** | `~/Applications/SnapSTL.app` → `snapstl` → pywebview window on the same URL (adds native folder picker; text selection on). UI = side navigation: Orders · Batches · Downloads · Settings · Help. If the service isn't up it kickstarts it. Closing the window doesn't stop the service. |
 | **SnapSTL Helper** | Chrome extension (`helper/`, *Load unpacked*) in the user's **normal** Chrome, on the MakerWorld model-maker tab. Generates each queued name on the real page and uploads the files. |
-| **Data** | `~/Library/Application Support/SnapSTL/` (`APP_DIR`, override with `SNAPSTL_HOME`): `snapstl.db`, `cache/<key>/`, `settings.json`, `backups/`, `auth.json` (only if a portal password is set). |
+| **Data** | `~/Library/Application Support/SnapSTL/` (`APP_DIR`, override with `SNAPSTL_HOME`): `snapstl.db`, `settings.json`, `backups/`, `auth.json` (only if a portal password is set). |
+| **Downloaded models** | Settings → Downloads folder (default **`~/SnapSTL/Downloads`**): one readable folder per model, `<Name> - <N> comp - <cache key>/{base.stl, name.stl, info.json}`. **Never deleted by SnapSTL** — the user cleans up in Finder; a deleted model is re-downloaded when a batch needs it. Models from the old hidden `APP_DIR/cache/` are moved here once at startup (`cache.migrate_old_cache`). |
 | **Secrets** | MakerWorld license password → macOS Keychain (service `SnapSTL`). |
 | **Output** | Settings → output folder (default `~/SnapSTL/output`). |
 | **Log** | `~/Library/Logs/SnapSTL.log` |
@@ -97,7 +98,8 @@ Snapstl/
 │   ├── db.py                 SQLite schema + MIGRATIONS, tx(), batch helpers (create/finish/release)
 │   ├── ingest.py             report parsing (XLSX/CSV), name cleaning, upsert by Order ID, review edits
 │   ├── batches.py            batch lifecycle, download queue, helper claim/result/fail, builder thread
-│   ├── cache.py              unscaled mesh cache; key = name + options + compartments + license hash
+│   ├── cache.py              downloaded models in the visible Downloads folder (readable names, never auto-deleted);
+│   │                         key = name + options + compartments + license hash; one-time move from old cache
 │   ├── meshes.py             OBJ → trimesh, dims, to_origin
 │   ├── scaling.py            Scaling Rules v1.1 (pick_band, scale_pair)
 │   ├── grouping.py           names by colour 3→2→1; bases 3 per plate (colour groups first)
@@ -110,7 +112,7 @@ Snapstl/
 │   ├── keychain.py           license password (Keychain; file fallback when SNAPSTL_HOME is set)
 │   ├── auth.py               optional portal password + signed session cookie; `snapstl-admin`
 │   └── static/
-│       ├── index.html        the whole UI: side navigation (Orders, Batches, Settings, Help)
+│       ├── index.html        the whole UI: side navigation (Orders, Batches, Downloads, Settings, Help)
 │       └── login.html        used only if a portal password is set
 └── tests/
     ├── conftest.py           temp SNAPSTL_HOME, synthetic base/name meshes
@@ -149,7 +151,8 @@ creation), `out_dir`, `summary` (JSON: plates + previews, errors, warnings, `fol
 `finished_at`.
 
 **downloads** — the helper queue: `cache_key`, `name`, `compartments`, `model_json`, `state`
-(`queued | claimed | done | failed | cancelled`), `attempts`, `claimed_at`, `error`, timestamps.
+(`queued | claimed | done | failed | cancelled`), `attempts`, `claimed_at`, `error`, `batch_id` (batch
+that queued it), timestamps.
 
 **files** — each report upload: `filename`, `sha256`, `ingested_at`, `summary` (JSON).
 
@@ -221,23 +224,29 @@ called in within 25 s or a name is being generated.
 
 ## 8. Batches & download queue (`batches.py`)
 
-Batches **never start or build by themselves**:
+Batches **never start, download or build by themselves** — every step is a button (a manual queue):
 
 | Status | Meaning | UI buttons |
 |---|---|---|
-| `created` | orders reserved (`in_batch`) | **Start download**, Cancel |
-| `waiting` ("Downloading") | missing models queued for the helper | Build plates now (partial), Cancel |
-| `models_ready` | every model downloaded (or failed) | **Build plates**, Cancel |
-| `build_requested` → `building` | builder thread working | — |
-| `done` / `done_with_problems` / `failed` / `cancelled` | finished | Open, Show in Finder, Download ZIP (on demand) |
+| `created` ("Created — not queued") | orders reserved (`in_batch`) | **Queue download**, Cancel |
+| `waiting` ("Downloading") | its missing models are in the download queue | Build now with what's ready, Cancel / Stop |
+| `models_ready` ("Ready to build") | every model downloaded (or failed) | **Queue build**, Cancel / Stop |
+| `build_requested` → `building` ("Queued to build") | builder thread, one batch at a time | — |
+| `done` / `done_with_problems` / `failed` | finished | Open, Show in Finder, Download ZIP (on demand), **Re-download**, **Rebuild plates** |
+| `cancelled` | never built and cancelled | — |
 
-* `create_batch` → `created`; `start_download` queues missing models (de-duplicated by cache key).
+* `create_batch` → `created`. `start_download(force=False)` (**Queue download**) queues only models not
+  in the Downloads folder; downloads are processed oldest first (de-duplicated by cache key).
+* **Re-download** = `start_download(force=True)`: queues **every** model of a finished batch again; the
+  new result overwrites the saved model folder. Progress counts models with a live download as not ready.
+* **Rebuild plates** = `request_build` on a finished batch: builds again from the saved models into a
+  **new** `Batch N - <date>` folder; the old folder stays (`summary.previous_folders`). No downloads.
+* **Cancel** a never-built batch → `cancelled`, orders back to `ready`. **Stop** (same endpoint) on a
+  batch that was built before (re-download in progress) → back to `done`, plates untouched.
 * `Manager` thread: `waiting` with nothing pending → `models_ready`; it builds only `build_requested`.
-* Orders whose models are missing at build time go back to `ready`; complete orders → `bundled`.
-* Downloads no active batch needs are cancelled automatically (at startup and after each build/cancel).
+* First build: orders with a missing model or a failed fit check go back to `ready`; complete → `bundled`.
+* Downloads no active batch needs are cancelled automatically (startup and after each build/cancel).
 * Each batch snapshots the settings at creation (model options, scaling, plate rules).
-
----
 
 ## 9. Scaling Rules v1.1 (`scaling.py`; defaults in `settings.default_bands`) — binding
 
@@ -315,8 +324,8 @@ the files. Clashing file names get ` (2)`; names over 200 characters are shorten
 | Auth (optional) | `POST /api/login`, `POST /api/logout`, `GET /api/auth-check` |
 | State | `GET /api/meta`, `GET /api/state` (counts, downloader, queue, builder log) |
 | Orders | `POST /api/ingest` (multipart `file`), `GET /api/orders`, `GET /api/orders/ids`, `GET /api/orders/facets`, `GET /api/orders.csv`, `POST /api/orders/{id}/name` `{name,color}`, `POST /api/orders/{id}/reset`, `POST /api/orders/{id}/skip` |
-| Batches | `POST /api/batches` `{order_ids}`, `POST /api/batches/{id}/download`, `POST /api/batches/{id}/build`, `POST /api/batches/{id}/cancel`, `GET /api/batches`, `GET /api/batches/{id}`, `GET /api/batches/{id}/file?path=`, `POST /api/batches/{id}/reveal` (local only), `GET /api/batches/{id}/zip` |
-| Queue | `GET /api/downloads`, `POST /api/downloads/retry`, `POST /api/downloader/pause`, `POST /api/downloader/resume` |
+| Batches | `POST /api/batches` `{order_ids}`, `POST /api/batches/{id}/download` (`{force:true}` = Re-download), `POST /api/batches/{id}/build` (also Rebuild), `POST /api/batches/{id}/cancel`, `GET /api/batches`, `GET /api/batches/{id}`, `GET /api/batches/{id}/file?path=`, `POST /api/batches/{id}/reveal` (local only), `GET /api/batches/{id}/zip` |
+| Downloads | `GET /api/downloads` (queue + Downloads folder stats), `POST /api/downloads/retry`, `POST /api/downloads/reveal` (local only), `POST /api/downloader/pause`, `POST /api/downloader/resume` |
 | Helper | `GET /api/helper/next`, `POST /api/helper/ping`, `POST /api/helper/jobs/{id}/result`, `…/fail`, `…/release`, `GET /api/helper.zip` |
 | Settings | `GET` / `PUT /api/settings`, `POST /api/settings/reset`, `POST /api/license` `{password}` |
 | Maintenance | `GET /api/maintenance`, `POST /api/maintenance/backup`, `POST /api/maintenance/cleanup` `{older_than_days}`, `POST /api/maintenance/reset` `{confirm:"RESET", clear_cache}` |
@@ -335,7 +344,7 @@ f_status f_name f_color f_qty`, `q`, `limit`, `offset`.
 | model | `Font_size` 30–120 / `Thickness` 30–120 / `Outline` 4–15 / `Rotate_text` | 60 / 50 / 6 / no |
 | scaling | `bands` (table §9), `base_y_scale`, `name_z_scale`, `min_height`, `max_height`, `max_length` | 1.0, 0.5, 85, 90, 240 |
 | plate | `bed_x/y/z`, `margin`, `gap`, `max_names_per_plate`, `bases_per_plate`, `rotations` | 256, 5, 5, 3, 3, [0, 180] |
-| top level | `output_dir` (editable in local mode only), `delay_between_downloads_s` | ~/SnapSTL/output, 3 |
+| top level | `output_dir`, `downloads_dir` (both editable in local mode only), `delay_between_downloads_s` | ~/SnapSTL/output, ~/SnapSTL/Downloads, 3 |
 
 Unknown keys are ignored on load, so older settings files keep working.
 
@@ -357,21 +366,23 @@ Unknown keys are ignored on load, so older settings files keep working.
 
 **Back up now** (SQLite online backup → `backups/`, newest 20 kept). **Clean up** records older than
 N days (not-needed orders, finished batches, download history, upload records) — **bundled orders
-are always kept** so printed orders can never come back as ready. **Reset** (type RESET; optional
-model-cache wipe). A backup is taken first every time; output folders are never deleted.
+are always kept** so printed orders can never come back as ready. **Reset** (type RESET). A backup is
+taken first every time. **None of these delete files**: batch folders and downloaded models are only
+ever removed by the user in Finder.
 
 ---
 
 ## 15. Testing
 
-`uv run pytest -q` — 23 tests, ~3 s, no network, temporary `SNAPSTL_HOME`:
+`uv run pytest -q` — 25 tests, ~3 s, no network, temporary `SNAPSTL_HOME`:
 
 * `test_engine.py` — scaling, fit check (pass, mismatch detected, failing pair held back), packing/nesting,
   grouping, file names, 3MF round trip, per-day folders
 * `test_ingest.py` — SKU/status filtering, de-dup across reports, review edits, name cleaning
 * `test_flow.py` — over HTTP: create → start download → helper → models_ready → build; failures and
   retries; pause/release/cancel; resume after restart; tabs/filters/customer fields; maintenance;
-  cross-site guard
+  cross-site guard; Rebuild (new folder, old kept); Re-download (+ Stop); readable Downloads folders;
+  move from the old cache; reset keeps models
 
 The helper is exercised by calling `/api/helper/*` directly — tests never contact MakerWorld.
 Dev instance with its own data: `SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn
@@ -391,10 +402,12 @@ snapstl.server:app --port 8320`.
 | 6 | No local CAD model generation for now | owner paused it (an original OpenSCAD design was proposed) |
 | 7 | 3MF per plate instead of STL; no ZIP output | named parts, ~5× smaller; the owner zips by hand when needed |
 | 8 | Customer contact fields stored locally | owner wants them in the Orders table |
-| 9 | Batches: Create → Start download → Build plates | owner wants explicit control |
+| 9 | Batches: Create → Queue download → Queue build (nothing automatic) | owner wants explicit control |
 | 10 | Output `<date>/Batch N - <date>/Bases, Names/<colour>` | owner's folder structure; N restarts daily |
 | 11 | Name/base fit check, twice (after scaling + from written files); failing pairs never printed | owner must be sure names fit bases after printing |
-| 12 | Side navigation (Orders, Batches, Settings, Help) + in-app Help page | owner's request; Help explains the workflow for staff |
+| 12 | Side navigation (Orders, Batches, Downloads, Settings, Help) + in-app Help page | owner's request; Help explains the workflow for staff |
+| 13 | Downloaded models in a visible folder (`~/SnapSTL/Downloads`), readable names, never auto-deleted | owner wants to see and clean them in Finder |
+| 14 | Re-download / Rebuild for finished batches; Queue download / Queue build buttons | owner wants to redo batches and queue steps manually |
 
 ---
 
@@ -420,5 +433,6 @@ snapstl.server:app --port 8320`.
 | Change scaling targets | `default_bands()` (the owner can also edit them in Settings); keep the §9 axis rules |
 | Change grouping / packing | `grouping.py` / `packing.py`; keep the §10 rules; extend `test_engine.py` |
 | Change output layout / names | `pipeline.new_batch_dir`, `pipeline.plate_folder`, `export.plate_filename`; update §10 and README |
+| Change where / how models are saved | `cache.py` (keep: readable folder names ending in the key; never auto-delete) |
 | Change MakerWorld interaction | `helper/content.js` / `inject.js`; bump `helper/manifest.json` version |
 | Add an endpoint | `server.py`; anything the helper calls must live under `/api/helper/` |

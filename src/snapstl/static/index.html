@@ -83,6 +83,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
   <nav id="tabs">
     <button data-t="orders" class="on"><span class="ic">▤</span>Orders</button>
     <button data-t="batches"><span class="ic">▦</span>Batches</button>
+    <button data-t="downloads"><span class="ic">⇣</span>Downloads</button>
     <button data-t="settings"><span class="ic">⚙</span>Settings</button>
     <button data-t="help"><span class="ic">?</span>Help</button>
   </nav>
@@ -131,11 +132,6 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <div class="toolbar"><h2 style="margin:0">Batches</h2><span class="grow hint" id="queueinfo"></span><button id="retry" class="small" hidden>Retry failed downloads</button></div>
     <div class="tw"><table><thead><tr><th>#</th><th>Folder</th><th>Created</th><th>Orders</th><th>Models</th><th>Plates</th><th>Status</th><th></th></tr></thead><tbody id="batches"></tbody></table></div>
   </div>
-  <div class="card">
-    <div class="toolbar"><h2 style="margin:0">Download queue</h2><span class="grow hint" id="dlsession"></span>
-      <button id="qpause" class="small">Pause</button><button id="retry2" class="small">Retry failed</button></div>
-    <div class="tw" style="max-height:340px;overflow:auto"><table><thead><tr><th>#</th><th>Name</th><th>Comp.</th><th>State</th><th>Tries</th><th>Detail</th></tr></thead><tbody id="dlq"></tbody></table></div>
-  </div>
   <div class="card" id="bdetail" hidden>
     <div class="toolbar"><h2 style="margin:0" id="btitle"></h2><span class="grow"></span><button id="bfinder" hidden>Show in Finder</button> <a class="btn primary" id="bzip">Download ZIP</a></div>
     <div class="msgs" id="bmsgs"></div>
@@ -144,6 +140,20 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <p class="hint">Top view of each plate. Click a plate to get its .3mf. Review in Bambu Studio before printing.</p>
   </div>
   <div class="card"><h2>Activity</h2><div class="log" id="log"></div></div>
+</section>
+
+<section id="t-downloads" hidden>
+  <div class="card">
+    <div class="toolbar"><h2 style="margin:0">Download queue</h2><span class="grow hint" id="dlsession"></span>
+      <button id="qpause" class="small">Pause</button><button id="retry2" class="small">Retry failed</button></div>
+    <p class="hint">Names queued by <b>Queue download</b> / <b>Re-download</b> on the Batches page. The SnapSTL Helper in your MakerWorld tab works through them one at a time, oldest first.</p>
+    <div class="tw" style="max-height:60vh;overflow:auto"><table><thead><tr><th>#</th><th>Name</th><th>Comp.</th><th>Batch</th><th>State</th><th>Tries</th><th>Detail</th></tr></thead><tbody id="dlq"></tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="toolbar"><h2 style="margin:0">Downloaded models</h2><span class="grow"></span><button id="dlfinder" class="small">Show in Finder</button></div>
+    <p class="hint" id="dlfolder"></p>
+    <p class="hint">Every model downloaded from MakerWorld is kept here — one folder per name (e.g. <code>SONAL - 5 comp - …</code> with <code>base.stl</code>, <code>name.stl</code>, <code>info.json</code>). SnapSTL never deletes them; clean up in Finder whenever you like. A deleted model is simply downloaded again the next time a batch needs it. Change the folder in Settings.</p>
+  </div>
 </section>
 
 <section id="t-settings" hidden>
@@ -188,6 +198,8 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <div id="rots" style="display:flex;gap:12px;font-size:13px"></div>
     <label>Output folder (each batch gets a folder + ZIP here)</label>
     <div class="row2" style="grid-template-columns:1fr auto"><input id="o_dir"><button id="o_pick" hidden>Choose…</button></div>
+    <label>Downloads folder (models from MakerWorld, kept until you delete them)</label>
+    <div class="row2" style="grid-template-columns:1fr auto"><input id="o_dl"><button id="o_dlpick" hidden>Choose…</button></div>
     <label>Pause between downloads (s)</label><input id="o_delay" type="number" step="0.5" min="0">
     <div style="display:flex;gap:8px;margin-top:12px"><button id="save" class="primary">Save settings</button><button id="reset">Defaults</button></div>
     <p class="hint" id="savehint"></p>
@@ -218,7 +230,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
   <div class="card">
     <h2>Help</h2>
     <p>SnapSTL turns webstore orders for the <b>Custom Name Desk Organizer</b> (SKU <code>Magicians_35</code>) into print-ready plates: each name is generated on MakerWorld, scaled to the agreed rules, grouped 3 per plate and saved as <b>.3mf</b> files.</p>
-    <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-data">Your data</a></div>
+    <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-data">Your data</a></div>
   </div>
 
   <div class="card" id="h-start">
@@ -227,8 +239,8 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
       <li><b>Orders → Upload report (.xlsx)</b> — the webstore <i>Order Reconciliation Report</i>. Only <code>Magicians_35</code> orders are kept. Uploading the same or a newer report never creates duplicates; it only updates statuses.</li>
       <li><b>Needs review</b> — fix names with spaces, symbols or missing colour, then <b>Approve</b>. Use <b>Skip</b> for orders you don't want to make.</li>
       <li><b>Ready</b> — tick orders (or use the column filters and <b>Select all matching</b>) → <b>Create batch</b>.</li>
-      <li><b>Batches → Start download</b> — the helper in your MakerWorld tab generates each name, one at a time.</li>
-      <li>When the batch says <b>Ready to build</b> → <b>Build plates</b>.</li>
+      <li><b>Batches → Queue download</b> — the helper in your MakerWorld tab generates each name, one at a time (watch it on <b>Downloads</b>).</li>
+      <li>When the batch says <b>Ready to build</b> → <b>Queue build</b>.</li>
       <li><b>Show in Finder</b>, open the plates in Bambu Studio, check, slice and print. Bases in white; names in the colour of their folder.</li>
     </ol>
   </div>
@@ -252,12 +264,18 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <h2>Batches</h2>
     <table>
       <tr><th>Status</th><th>Meaning</th><th>What to do</th></tr>
-      <tr><td>Created — not started</td><td>Orders are reserved; nothing is downloading.</td><td><b>Start download</b> (or Cancel)</td></tr>
-      <tr><td>Downloading</td><td>The helper is generating the models.</td><td>Wait; or <b>Build plates now</b> with what's ready</td></tr>
-      <tr><td>Ready to build</td><td>All models are downloaded.</td><td><b>Build plates</b></td></tr>
-      <tr><td>Done / Done with problems</td><td>Plates are written. Problems are listed on the batch.</td><td>Show in Finder</td></tr>
+      <tr><td>Created — not queued</td><td>Orders are reserved; nothing happens until you queue it.</td><td><b>Queue download</b> (or Cancel)</td></tr>
+      <tr><td>Downloading</td><td>Its names are in the download queue.</td><td>Wait; or <b>Build now with what's ready</b></td></tr>
+      <tr><td>Ready to build</td><td>All models are downloaded.</td><td><b>Queue build</b></td></tr>
+      <tr><td>Queued to build / Building</td><td>Plates are being made (one batch at a time).</td><td>—</td></tr>
+      <tr><td>Done / Done with problems</td><td>Plates are written. Problems are listed on the batch.</td><td>Show in Finder · <b>Re-download</b> · <b>Rebuild plates</b></td></tr>
     </table>
-    <p>Orders whose model failed or didn't pass the fit check go back to <b>Ready</b> automatically. The <b>Download queue</b> shows every name: Waiting, Generating, Done or Failed (with <b>Retry failed</b>).</p>
+    <p>Nothing starts by itself: you queue each batch for download and for building. Batches queued for download are worked through in order.</p>
+    <ul>
+      <li><b>Re-download</b> — fetches every model of the batch again from MakerWorld (e.g. after changing the license password or if a model looked wrong). The new downloads replace the saved ones. Then <b>Queue build</b> / <b>Rebuild plates</b>. <b>Stop</b> cancels a re-download and leaves the batch as it was.</li>
+      <li><b>Rebuild plates</b> — makes the plates again from the downloaded models (e.g. after changing plate settings). A new <i>Batch N</i> folder is written; the old one stays.</li>
+    </ul>
+    <p>Orders whose model failed or didn't pass the fit check aren't printed; on a first build they go back to <b>Ready</b>.</p>
   </div>
 
   <div class="card" id="h-helper">
@@ -269,6 +287,12 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
       <li>If MakerWorld shows a security check in that tab, complete it; the helper waits and carries on.</li>
       <li>The sidebar shows the helper's status. <b>Pause downloads</b> stops it after the current name.</li>
     </ul>
+  </div>
+
+  <div class="card" id="h-downloads">
+    <h2>Downloads</h2>
+    <p>The <b>Downloads</b> page shows the queue — every name waiting, being generated, done or failed, and which batch asked for it — with <b>Pause</b> and <b>Retry failed</b>.</p>
+    <p>Downloaded models are saved in the <b>Downloads folder</b> (default <code>~/SnapSTL/Downloads</code>, change it in Settings): one folder per name, e.g. <code>SONAL - 5 comp - …</code> with <code>base.stl</code> and <code>name.stl</code> exactly as MakerWorld made them. They're reused by every later batch and are <b>never deleted by SnapSTL</b> — clean them up in Finder (<b>Show in Finder</b> on the Downloads page). If you delete one, it's downloaded again the next time a batch needs it.</p>
   </div>
 
   <div class="card" id="h-output">
@@ -296,8 +320,8 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
       <li><b>MakerWorld license password</b> — removes the anti-sale markings; stored in the Mac Keychain.</li>
       <li><b>Scaling and compartments</b> — target length/height and compartments per letter count (Scaling Rules v1.1).</li>
       <li><b>Plate and fit</b> — bed size, edge margin, gap between parts, names/bases per plate, allowed rotations (flat on the bed only).</li>
-      <li><b>Output folder</b> — where dated batch folders go. <b>Pause between downloads</b> — seconds between names.</li>
-      <li><b>Database</b> — back up, clean up old records (orders already made are always kept), or reset.</li>
+      <li><b>Output folder</b> — where dated batch folders go. <b>Downloads folder</b> — where downloaded models are kept. <b>Pause between downloads</b> — seconds between names.</li>
+      <li><b>Database</b> — back up, clean up old records (orders already made are always kept), or reset. None of these delete files.</li>
     </ul>
   </div>
 
@@ -309,7 +333,8 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
       <tr><td>Complete the MakerWorld security check</td><td>Click the check in that tab.</td></tr>
       <tr><td>A name is Failed in the download queue</td><td>Read the detail; <b>Retry failed</b>.</td></tr>
       <tr><td>Fit check failed on a batch</td><td>That order wasn't printed and is back in Ready; create a new batch for it. If it keeps failing, check the scaling table.</td></tr>
-      <tr><td>Batch stays Downloading</td><td>Check the sidebar and Download queue; Pause/Resume; or Build plates now.</td></tr>
+      <tr><td>Batch stays Downloading</td><td>Check the sidebar and the Downloads page; Pause/Resume; or Build now with what's ready.</td></tr>
+      <tr><td>A model looks wrong</td><td>Batches → <b>Re-download</b>, then <b>Rebuild plates</b>.</td></tr>
       <tr><td>Can't copy text in the window</td><td>Quit and reopen SnapSTL.app.</td></tr>
       <tr><td>Portal doesn't open</td><td>Terminal: <code>launchctl kickstart -k gui/$(id -u)/local.snapmagicians.snapstl</code>; log: <code>~/Library/Logs/SnapSTL.log</code>.</td></tr>
     </table>
@@ -317,7 +342,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
 
   <div class="card" id="h-data">
     <h2>Your data</h2>
-    <p>Everything stays on this Mac. Orders database, model cache, settings and backups: <code>~/Library/Application Support/SnapSTL</code>. Output: your chosen output folder. Customer names, phones and addresses are only stored in the local database. SnapSTL runs in the background (it starts at login); the window is just a view — you can also open <code>http://127.0.0.1:8317</code> in a browser.</p>
+    <p>Everything stays on this Mac. Orders database, settings and backups: <code>~/Library/Application Support/SnapSTL</code>. Downloaded models: your Downloads folder. Plates: your output folder. SnapSTL never deletes downloaded models or batch folders — you clean them up in Finder. Customer names, phones and addresses are only stored in the local database. SnapSTL runs in the background (it starts at login); the window is just a view — you can also open <code>http://127.0.0.1:8317</code> in a browser.</p>
     <p class="hint" id="helpversion"></p>
   </div>
 </section>
@@ -340,8 +365,8 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 // tabs
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
-  for(const s of ['orders','batches','settings','help'])$('t-'+s).hidden=s!==t;
-  if(t==='orders')loadOrders(); if(t==='batches'){loadBatches();loadQueue()} if(t==='settings')loadDb(); try{localStorage.setItem('tab',t)}catch{}}
+  for(const s of ['orders','batches','downloads','settings','help'])$('t-'+s).hidden=s!==t;
+  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='downloads')loadQueue(); if(t==='settings')loadDb(); try{localStorage.setItem('tab',t)}catch{}}
 
 // ---------- orders ----------
 async function loadOrders(){
@@ -388,7 +413,7 @@ async function loadFacets(){FACETS=await api('/api/orders/facets?tab='+filter.ta
 $('selclear').onclick=()=>{SEL.clear();loadOrders()};
 $('mkbatch').onclick=async()=>{if(!SEL.size)return;
   try{const r=await post('/api/batches',{order_ids:[...SEL]});SEL.clear();
-    $('ingestres').innerHTML=`<div class="o">Batch #${r.batch_id} created with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped — not ready)`:''}. Go to <b>Batches</b> and press <b>Start download</b>.</div>`;
+    $('ingestres').innerHTML=`<div class="o">Batch #${r.batch_id} created with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped — not ready)`:''}. Go to <b>Batches</b> and press <b>Queue download</b>.</div>`;
     refreshAll()}catch(e){alert(e.message)}};
 function renderChips(counts){
   const top=filter.tab.startsWith('ready')?'ready':filter.tab;
@@ -405,28 +430,32 @@ $('report').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('ingestm
     refreshAll()}catch(err){$('ingestmsg').textContent='';$('ingestres').innerHTML=`<div class="e">${esc(err.message)}</div>`}e.target.value=''};
 
 // ---------- batches ----------
-const BST={created:['Created — not started',''],waiting:['Downloading','info'],models_ready:['Ready to build','ok'],build_requested:['Building soon','info'],building:['Building','info'],done:['Done','ok'],done_with_problems:['Done with problems','warn'],failed:['Failed','err'],cancelled:['Cancelled','']};
+const BST={created:['Created — not queued',''],waiting:['Downloading','info'],models_ready:['Ready to build','ok'],build_requested:['Queued to build','info'],building:['Building','info'],done:['Done','ok'],done_with_problems:['Done with problems','warn'],failed:['Failed','err'],cancelled:['Cancelled','']};
 async function loadBatches(){const bs=await api('/api/batches');
   $('batches').innerHTML=bs.length?bs.map(b=>{const st=BST[b.status]||[b.status,''];const p=b.progress;const active=!!p;const finished=b.status.startsWith('done');
     const models=p?`${p.ready}/${p.models}${p.failed?` <span class="reason">${p.failed} failed</span>`:''}<div class="bar" style="margin-top:4px"><i style="width:${p.models?100*p.ready/p.models:0}%"></i></div>`:'—';
     const acts=[`<button class="small" data-b="${b.id}">Open</button>`];
     if(finished)acts.push(`<a class="btn small" href="/api/batches/${b.id}/zip">ZIP</a>`);
-    if(b.status==='created')acts.push(`<button class="small primary" data-dl="${b.id}">Start download</button>`);
-    if(b.status==='models_ready')acts.push(`<button class="small primary" data-build="${b.id}">Build plates</button>`);
-    if(b.status==='waiting')acts.push(`<button class="small" data-build="${b.id}" data-partial="1" title="Build with the models that are ready; orders still missing a model go back to Ready">Build plates now</button>`);
-    if(['created','waiting','models_ready'].includes(b.status))acts.push(`<button class="small" data-cancel="${b.id}">Cancel</button>`);
+    const built=['done','done_with_problems','failed'].includes(b.status);
+    if(b.status==='created')acts.push(`<button class="small primary" data-dl="${b.id}">Queue download</button>`);
+    if(b.status==='models_ready')acts.push(`<button class="small primary" data-build="${b.id}">Queue build</button>`);
+    if(b.status==='waiting')acts.push(`<button class="small" data-build="${b.id}" data-partial="1" title="Build with the models that are ready; orders still missing a model are left out">Build now with what's ready</button>`);
+    if(built)acts.push(`<button class="small" data-redl="${b.id}" title="Fetch every model of this batch again from MakerWorld (replaces the saved ones)">Re-download</button>`,`<button class="small" data-rebuild="${b.id}" title="Make the plates again from the downloaded models — writes a new Batch folder; the old one stays">Rebuild plates</button>`);
+    if(['created','waiting','models_ready'].includes(b.status))acts.push(`<button class="small" data-cancel="${b.id}">${b.label?'Stop':'Cancel'}</button>`);
     return `<tr><td>${b.id}</td><td>${esc(b.label||'—')}</td><td>${new Date(b.created_at*1000).toLocaleString()}</td><td>${b.orders}</td><td>${models}</td><td>${b.plates||'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${acts.join(' ')}</td></tr>`}).join(''):'<tr><td colspan="8" class="empty">No batches yet — select orders on the Orders tab</td></tr>';
   document.querySelectorAll('[data-b]').forEach(x=>x.onclick=()=>openBatchDetail(+x.dataset.b));
-  document.querySelectorAll('[data-dl]').forEach(x=>x.onclick=async()=>{try{const r=await post(`/api/batches/${x.dataset.dl}/download`);$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for the helper`}catch(e){alert(e.message)}loadBatches();loadQueue()});
+  document.querySelectorAll('[data-dl]').forEach(x=>x.onclick=async()=>{try{const r=await post(`/api/batches/${x.dataset.dl}/download`);$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for the helper — see Downloads`}catch(e){alert(e.message)}loadBatches()});
+  document.querySelectorAll('[data-redl]').forEach(x=>x.onclick=async()=>{if(!confirm('Re-download every model of this batch from MakerWorld? The new downloads replace the saved ones. Then use Queue build / Rebuild plates.'))return;try{const r=await post(`/api/batches/${x.dataset.redl}/download`,{force:true});$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for re-download — see Downloads`}catch(e){alert(e.message)}loadBatches()});
+  document.querySelectorAll('[data-rebuild]').forEach(x=>x.onclick=async()=>{if(!confirm('Rebuild the plates from the downloaded models? A new Batch folder is written; the old folder stays.'))return;try{await post(`/api/batches/${x.dataset.rebuild}/build`)}catch(e){alert(e.message)}loadBatches()});
   document.querySelectorAll('[data-build]').forEach(x=>x.onclick=async()=>{if(x.dataset.partial&&!confirm('Build now with the models that are ready? Orders still missing a model go back to Ready.'))return;try{await post(`/api/batches/${x.dataset.build}/build`)}catch(e){alert(e.message)}loadBatches()});
-  document.querySelectorAll('[data-cancel]').forEach(x=>x.onclick=async()=>{if(confirm('Cancel this batch? Its orders go back to Ready.')){try{await post(`/api/batches/${x.dataset.cancel}/cancel`)}catch(e){alert(e.message)}refreshAll();loadBatches()}});
+  document.querySelectorAll('[data-cancel]').forEach(x=>x.onclick=async()=>{if(confirm(x.textContent==='Stop'?'Stop this re-download? The batch goes back to done; its plates are unchanged.':'Cancel this batch? Its orders go back to Ready.')){try{await post(`/api/batches/${x.dataset.cancel}/cancel`)}catch(e){alert(e.message)}refreshAll();loadBatches()}});
   if(openBatch&&!$('bdetail').hidden)openBatchDetail(openBatch,true)}
 function plateSVG(p){const [bx,by]=p.preview.bed,m=p.preview.margin;const fill=p.kind==='bases'?'#ffffff':(COLORS[p.colors[0]]||'#bbb');
   const parts=p.preview.parts.map(pt=>`<path d="${pt.rings.map(r=>'M'+r.map(([x,y])=>`${x},${by-y}`).join('L')+'Z').join('')}" fill="${fill}" fill-rule="evenodd" stroke="#777" stroke-width="0.8"><title>${esc(pt.key)} (${pt.rotation}°)</title></path>`).join('');
   return `<svg viewBox="-2 -2 ${bx+4} ${by+4}"><rect width="${bx}" height="${by}" rx="4" fill="var(--bed)" stroke="var(--line)"/><rect x="${m}" y="${m}" width="${bx-2*m}" height="${by-2*m}" fill="none" stroke="var(--line)" stroke-dasharray="3 3"/>${parts}</svg>`}
 async function openBatchDetail(id,quiet){openBatch=id;const b=await api('/api/batches/'+id);const s=b.summary||{};
   $('bdetail').hidden=false;$('btitle').textContent=`${s.label||'Batch #'+id} · ${b.order_ids.length} orders`;$('bzip').href=`/api/batches/${id}/zip`;$('bzip').hidden=!b.status.startsWith('done');
-  if(b.progress){const P=b.progress;const msg=b.status==='created'?`Not started: press <b>Start download</b> (${P.ready} of ${P.models} models already downloaded).`:b.status==='models_ready'?`All models downloaded (${P.ready}/${P.models}${P.failed?`, ${P.failed} failed`:''}) — press <b>Build plates</b>.`:`Downloading from MakerWorld: ${P.ready} of ${P.models} models done${P.failed?`, ${P.failed} failed`:''}.`;
+  if(b.progress){const P=b.progress;const msg=b.status==='created'?`Not queued yet: press <b>Queue download</b> (${P.ready} of ${P.models} models already downloaded).`:b.status==='models_ready'?`All models downloaded (${P.ready}/${P.models}${P.failed?`, ${P.failed} failed`:''}) — press <b>Queue build</b>.`:`Downloading from MakerWorld: ${P.ready} of ${P.models} models done${P.failed?`, ${P.failed} failed`:''}.`;
     $('bmsgs').innerHTML=`<div class="w">${msg}</div>`;$('bbases').innerHTML=$('bnames').innerHTML='<div class="empty">Plates appear when the batch is built</div>';return}
   const F=s.fit;const fitMsg=F&&F.checked?(F.ok===F.checked?`<div class="o">Fit check: ${F.ok}/${F.checked} name/base pairs keep their MakerWorld proportions — they'll fit after printing.</div>`:`<div class="e">Fit check: only ${F.ok}/${F.checked} pairs passed — the others were not printed (see below).</div>`):'';
   $('bmsgs').innerHTML=(s.folder?`<div class="o">Saved to ${esc(s.folder)}</div>`:'')+fitMsg+(s.errors||[]).map(e=>`<div class="e">${esc(e)}</div>`).join('')+(s.warnings||[]).map(w=>`<div class="w">${esc(w)}</div>`).join('')+(s.ok&&!(s.warnings||[]).length?'<div class="o">All plates passed the checks.</div>':'');
@@ -440,7 +469,9 @@ const DST={claimed:['Generating','info'],queued:['Waiting',''],failed:['Failed',
 async function loadQueue(){const r=await api('/api/downloads');const d=r.downloader;
   $('dlsession').textContent=d.online?`Helper: ${d.status}`:'Helper not connected';
   $('qpause').textContent=d.paused?'Resume':'Pause';$('qpause').dataset.paused=d.paused?'1':'0';
-  $('dlq').innerHTML=r.items.length?r.items.map(x=>{const st=DST[x.state]||[x.state,''];return `<tr><td>${x.id}</td><td>${esc(x.name)}</td><td>${x.compartments}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${x.attempts}</td><td class="hint">${esc(x.error||'')}</td></tr>`}).join(''):'<tr><td colspan="6" class="empty">Nothing queued — create a batch on the Orders tab</td></tr>'}
+  const f=r.folder;$('dlfolder').innerHTML=`Folder: <code>${esc(f.path)}</code> · ${f.models} model${f.models===1?'':'s'} · ${(f.bytes/1048576).toFixed(1)} MB`;$('dlfinder').hidden=!META.local;
+  $('dlq').innerHTML=r.items.length?r.items.map(x=>{const st=DST[x.state]||[x.state,''];return `<tr><td>${x.id}</td><td>${esc(x.name)}</td><td>${x.compartments}</td><td>${x.batch_id?'#'+x.batch_id:'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${x.attempts}</td><td class="hint">${esc(x.error||'')}</td></tr>`}).join(''):'<tr><td colspan="7" class="empty">Nothing queued — on Batches press Queue download</td></tr>'}
+$('dlfinder').onclick=()=>post('/api/downloads/reveal');
 $('qpause').onclick=async()=>{await post('/api/downloader/'+($('qpause').dataset.paused==='1'?'resume':'pause'));loadQueue();refresh()};
 $('retry2').onclick=async()=>{await post('/api/downloads/retry');loadQueue()};
 $('retry').onclick=async()=>{const r=await post('/api/downloads/retry');$('queueinfo').textContent=`${r.requeued} download(s) re-queued`;loadBatches()};
@@ -453,7 +484,7 @@ function fillSettings(){const m=S.model;
   for(const k of ['bed_x','bed_y','bed_z','margin','gap','max_names_per_plate','bases_per_plate'])$('p_'+k).value=S.plate[k];
   $('rots').innerHTML=[0,90,180,270].map(r=>`<label style="margin:0;color:var(--text)"><input type="checkbox" value="${r}" ${S.plate.rotations.includes(r)?'checked':''}> ${r}°</label>`).join('');
   $('bands').innerHTML=S.scaling.bands.map((b,i)=>`<tr><td>${b.min_letters}${b.max_letters>=999?'+':b.max_letters!==b.min_letters?'–'+b.max_letters:''}</td><td><input data-b="${i}" data-k="length" type="number" step="0.5" value="${b.length}"></td><td><input data-b="${i}" data-k="height" type="number" step="0.5" value="${b.height}"></td><td><input data-b="${i}" data-k="compartments" type="number" step="1" min="1" max="10" value="${b.compartments}"></td></tr>`).join('');
-  $('s_name_z').value=Math.round(S.scaling.name_z_scale*100);$('s_max_length').value=S.scaling.max_length;$('o_delay').value=S.delay_between_downloads_s;$('o_dir').value=S.output_dir;$('o_dir').disabled=!META.local}
+  $('s_name_z').value=Math.round(S.scaling.name_z_scale*100);$('s_max_length').value=S.scaling.max_length;$('o_delay').value=S.delay_between_downloads_s;$('o_dir').value=S.output_dir;$('o_dir').disabled=!META.local;$('o_dl').value=S.downloads_dir;$('o_dl').disabled=!META.local}
 function readSettings(){const s=structuredClone(S);
   s.model.Font=$('m_Font').value;s.model.Rotate_text=$('m_Rotate_text').value;
   for(const k of ['Font_size','Thickness','Outline'])s.model[k]=parseInt($('m_'+k).value,10);
@@ -462,7 +493,7 @@ function readSettings(){const s=structuredClone(S);
   s.plate.rotations=[...document.querySelectorAll('#rots input:checked')].map(i=>+i.value);
   document.querySelectorAll('#bands input').forEach(i=>{const v=parseFloat(i.value);s.scaling.bands[+i.dataset.b][i.dataset.k]=i.dataset.k==='compartments'?Math.round(v):v});
   s.scaling.name_z_scale=parseFloat($('s_name_z').value)/100;s.scaling.max_length=parseFloat($('s_max_length').value);
-  s.delay_between_downloads_s=parseFloat($('o_delay').value)||0;s.output_dir=$('o_dir').value.trim();return s}
+  s.delay_between_downloads_s=parseFloat($('o_delay').value)||0;s.output_dir=$('o_dir').value.trim();s.downloads_dir=$('o_dl').value.trim();return s}
 $('save').onclick=async()=>{try{S=await api('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(readSettings())});fillSettings();$('savehint').textContent='Saved';$('savehint').style.color='';loadOrders()}catch(e){$('savehint').textContent=e.message;$('savehint').style.color='var(--err)'}};
 $('reset').onclick=async()=>{if(!confirm('Restore default settings?'))return;S=await post('/api/settings/reset');fillSettings();$('savehint').textContent='Defaults restored'};
 $('licsave').onclick=async()=>{const r=await post('/api/license',{password:$('lic').value});$('lic').value='';licHint(r.license_set)};
@@ -471,17 +502,18 @@ function licHint(set){$('lichint').textContent=set?'Saved on the server':'Not se
 // ---------- database ----------
 const fmtMB=b=>(b/1048576).toFixed(1)+' MB';
 async function loadDb(){const m=await api('/api/maintenance');const o=m.orders,sum=x=>Object.values(x).reduce((a,b)=>a+b,0);
-  $('dbinfo').textContent=`${sum(o)} orders (${o.ready||0} ready, ${o.needs_review||0} to review, ${o.in_batch||0} in a batch, ${o.bundled||0} made, ${o.not_needed||0} not needed) · ${sum(m.batches)} batches · ${m.reports_uploaded} report uploads · database ${fmtMB(m.db_bytes)} · model cache ${m.cache_models} (${fmtMB(m.cache_bytes)}) · ${m.backups} backups${m.last_backup?` (latest ${m.last_backup})`:''}`}
+  $('dbinfo').textContent=`${sum(o)} orders (${o.ready||0} ready, ${o.needs_review||0} to review, ${o.in_batch||0} in a batch, ${o.bundled||0} made, ${o.not_needed||0} not needed) · ${sum(m.batches)} batches · ${m.reports_uploaded} report uploads · database ${fmtMB(m.db_bytes)} · downloaded models ${m.cache_models} (${fmtMB(m.cache_bytes)}) · ${m.backups} backups${m.last_backup?` (latest ${m.last_backup})`:''}`}
 $('cleanup').onclick=async()=>{const d=parseInt($('cleandays').value,10);if(isNaN(d)||d<0){$('dbmsg').textContent='Enter a number of days';return}
   if(!confirm(`Remove records older than ${d} days? Orders already made are kept. A backup is saved first.`))return;
   try{const r=await post('/api/maintenance/cleanup',{older_than_days:d});$('dbmsg').textContent=`Removed ${r.orders_removed} orders, ${r.batches_removed} batches, ${r.downloads_removed} downloads, ${r.reports_removed} upload records. Backup: ${r.backup}`;loadDb();refreshAll()}catch(e){$('dbmsg').textContent=e.message}};
 $('backupnow').onclick=async()=>{const r=await post('/api/maintenance/backup');$('dbmsg').textContent='Backup saved: '+r.backup;loadDb()};
-$('resetdb').onclick=async()=>{const t=prompt('This empties the database: all orders, batches and history. Orders you already made could come back as new if you upload an old report again. A backup is saved first.\n\nType RESET to continue.');
-  if(t!=='RESET')return;const cache=confirm('Also delete the downloaded model cache? (OK = delete, Cancel = keep)');
-  try{const r=await post('/api/maintenance/reset',{confirm:'RESET',clear_cache:cache});$('dbmsg').textContent='Database emptied. Backup: '+r.backup;SEL.clear();loadDb();refreshAll()}catch(e){$('dbmsg').textContent=e.message}};
+$('resetdb').onclick=async()=>{const t=prompt('This empties the database: all orders, batches and history. Orders you already made could come back as new if you upload an old report again. A backup is saved first. Batch folders and downloaded models are NOT deleted.\n\nType RESET to continue.');
+  if(t!=='RESET')return;
+  try{const r=await post('/api/maintenance/reset',{confirm:'RESET'});$('dbmsg').textContent='Database emptied. Backup: '+r.backup;SEL.clear();loadDb();refreshAll()}catch(e){$('dbmsg').textContent=e.message}};
 $('dlpause').onclick=async()=>{const paused=$('dlpause').dataset.paused==='1';await post('/api/downloader/'+(paused?'resume':'pause'));refresh()};
 $('o_pick').onclick=async()=>{const p=await window.pywebview.api.choose_folder();if(p){$('o_dir').value=p}};
-window.addEventListener('pywebviewready',()=>{$('o_pick').hidden=false});
+$('o_dlpick').onclick=async()=>{const p=await window.pywebview.api.choose_folder();if(p){$('o_dl').value=p}};
+window.addEventListener('pywebviewready',()=>{$('o_pick').hidden=false;$('o_dlpick').hidden=false});
 $('logout').onclick=async()=>{await post('/api/logout');location.href='/login'};
 
 // ---------- polling ----------
@@ -499,11 +531,11 @@ async function refresh(){try{const st=await api('/api/state');
   const key=JSON.stringify(st.counts)+JSON.stringify(q)+st.building;
   if(key!==lastKey){lastKey=key;loadFacets();
     if(tab==='orders')loadOrders(); if(tab==='batches')loadBatches()}
-  if(tab==='batches')loadQueue();
+  if(tab==='downloads')loadQueue();
   const log=$('log');const atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-4;log.textContent=st.log.join('\n');if(atEnd)log.scrollTop=log.scrollHeight;
 }catch(e){}}
 function refreshAll(){lastKey='';refresh()}
-(async()=>{META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;let t='orders';try{t=localStorage.getItem('tab')||'orders'}catch{}if(!['orders','batches','settings','help'].includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;show(t);refresh();setInterval(refresh,2000)})();
+(async()=>{META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;let t='orders';try{t=localStorage.getItem('tab')||'orders'}catch{}if(!['orders','batches','downloads','settings','help'].includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;show(t);refresh();setInterval(refresh,2000)})();
 </script>
 </body>
 </html>

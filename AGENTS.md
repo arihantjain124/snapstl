@@ -24,7 +24,10 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - **Name/base fit check stays on**: every pair is checked after scaling and again from the written
   .3mf files; failing pairs are never printed (ARCHITECTURE §9). Don't loosen `FIT_TOL` or skip it.
 - **Order ID is the de-duplication key**; a `bundled` order is never re-made unless the user clicks Remake.
-- **Batches never auto-start or auto-build**: Create → *Start download* → *Build plates*.
+- **Batches never auto-start, auto-download or auto-build**: Create → *Queue download* → *Queue build*;
+  finished batches offer *Re-download* and *Rebuild plates* (new folder; old one kept).
+- **Never delete downloaded models or batch folders** in code (cleanup, reset, migrations included) —
+  the user cleans `~/SnapSTL/Downloads` and the output folder in Finder.
 - Output: `<output>/<YYYY-MM-DD>/Batch N - <YYYY-MM-DD>/{Bases/, Names/<colour>/, report.csv}`, one
   **.3mf** per plate, file names `{name,color},{name2,color2}.3mf`, **never write ZIP files**.
 
@@ -60,7 +63,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Output folders / file names | `pipeline.new_batch_dir`, `pipeline.plate_folder`, `export.plate_filename` |
 | 3MF writing | `threemf.py`, `export.write_plate` |
 | Report import / review rules | `ingest.py` |
-| Batch lifecycle / download queue | `batches.py` (+ endpoints in `server.py`) |
+| Batch lifecycle / download queue / Re-download / Rebuild | `batches.py` (+ endpoints in `server.py`) |
+| Downloads page (queue + folder) | `<section id="t-downloads">` in `index.html`; `cache.py` for the folder |
 | MakerWorld page interaction | `helper/content.js`, `helper/inject.js` (bump `helper/manifest.json` version; reload extension) |
 | Backups / clean-up / reset | `maintenance.py` |
 | Install / service / window | `scripts/make_app.sh`, `src/snapstl/__init__.py` |

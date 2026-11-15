@@ -248,3 +248,67 @@ def test_tabs_filters_clubbed_and_customer_fields(client):
     assert o["customer_name"] == "Asha K" and o["phone"] == "9000000001" and o["address"] == "12 Main Rd, Pune, MH, 411001"
     facets = client.get("/api/orders/facets", params={"tab": "all"}).json()
     assert facets["tabs"]["ready_clubbed"] == 2 and "PACK" in facets["statuses"] and "pink" in facets["colors"]
+
+
+def test_rebuild_and_redownload_finished_batch(client):
+    from snapstl import cache
+
+    client.post("/api/ingest", files={"file": ("r.csv", report([
+        ("R1", "PRINT", "Magicians_35", "Neha", "Pink", 1),
+        ("R2", "PRINT", "Magicians_35", "Ritu", "Pink", 1),
+    ]), "text/csv")})
+    bid = client.post("/api/batches", json={"order_ids": ["R1", "R2"]}).json()["batch_id"]
+    assert client.post(f"/api/batches/{bid}/download").json()["downloads_queued"] == 2
+    helper_work(client)
+    first = build_and_wait(client, bid)
+    folder1 = first["summary"]["folder"]
+
+    # Rebuild: new Batch folder from the saved models, old folder kept
+    assert client.post(f"/api/batches/{bid}/build").status_code == 200
+    again = wait_for(lambda: (lambda d: d if d["status"].startswith("done") and d["summary"]["folder"] != folder1 else None)(
+        client.get(f"/api/batches/{bid}").json()))
+    assert Path(folder1).is_dir() and Path(again["summary"]["folder"]).is_dir()
+    assert again["summary"]["previous_folders"] == [folder1]
+    assert client.get("/api/helper/next").json()["job"] is None  # rebuild downloads nothing
+
+    # Re-download: every model queued again even though it's saved; progress counts it as not ready
+    assert client.post(f"/api/batches/{bid}/download").status_code == 400  # plain queue refused on a finished batch
+    assert client.post(f"/api/batches/{bid}/download", json={"force": True}).json()["downloads_queued"] == 2
+    b = client.get(f"/api/batches/{bid}").json()
+    assert b["status"] == "waiting" and b["progress"]["ready"] == 0
+    q = client.get("/api/downloads").json()["items"]
+    assert {x["batch_id"] for x in q if x["state"] == "queued"} == {bid}
+    # Stop the re-download: batch goes back to done, plates untouched
+    assert client.post(f"/api/batches/{bid}/cancel").status_code == 200
+    assert client.get(f"/api/batches/{bid}").json()["status"] == "done"
+    assert client.get("/api/helper/next").json()["job"] is None
+
+    # models live in readable folders in the Downloads folder
+    names = sorted(p.name.split(" - ")[0] for p in cache.ROOT.iterdir() if p.is_dir())
+    assert "Neha" in names and "Ritu" in names
+    neha = next(p for p in cache.ROOT.iterdir() if p.name.startswith("Neha - 4 comp - "))
+    assert (neha / "base.stl").is_file() and (neha / "name.stl").is_file() and (neha / "info.json").is_file()
+    # reset never deletes downloaded models
+    client.post("/api/maintenance/reset", json={"confirm": "RESET"})
+    assert neha.is_dir()
+
+
+def test_old_cache_is_moved_to_downloads_folder(tmp_path, monkeypatch):
+    import json as _json
+
+    from snapstl import cache
+
+    from .conftest import base_mesh as bm, name_mesh as nm
+
+    old = tmp_path / "oldcache"
+    key = "abc123def456abc123def456"
+    (old / key).mkdir(parents=True)
+    bm().export(old / key / "base.stl")
+    nm(4).export(old / key / "name.stl")
+    (old / key / "meta.json").write_text(_json.dumps({"name": "Ayra", "compartments": 4}))
+    monkeypatch.setattr(cache, "OLD_CACHE_DIR", old)
+    root = tmp_path / "Downloads"
+    assert cache.migrate_old_cache(root) == 1
+    d = root / f"Ayra - 4 comp - {key}"
+    assert (d / "base.stl").is_file() and (d / "info.json").is_file()
+    assert cache.load_exists(key, root) and not old.exists()

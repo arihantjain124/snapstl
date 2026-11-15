@@ -6,13 +6,13 @@ backup copy of the database first (APP_DIR/backups, newest 20 kept).
 """
 from __future__ import annotations
 
-import shutil
 import sqlite3
 import time
 from pathlib import Path
 
 from . import db
-from .settings import APP_DIR, CACHE_DIR
+from . import cache
+from .settings import APP_DIR
 
 BACKUP_DIR = APP_DIR / "backups"
 KEEP_BACKUPS = 20
@@ -34,8 +34,8 @@ def stats() -> dict:
     backups = sorted(BACKUP_DIR.glob("snapstl-*.db")) if BACKUP_DIR.is_dir() else []
     return {
         "orders": orders, "batches": batches, "downloads": downloads, "reports_uploaded": reports,
-        "db_bytes": _size(db.DB_PATH), "cache_bytes": _size(CACHE_DIR),
-        "cache_models": len(list(CACHE_DIR.iterdir())) if CACHE_DIR.is_dir() else 0,
+        "db_bytes": _size(db.DB_PATH), "cache_bytes": cache.stats()["bytes"],
+        "cache_models": cache.stats()["models"], "downloads_dir": str(cache.ROOT),
         "backups": len(backups), "last_backup": backups[-1].name if backups else None,
     }
 
@@ -90,8 +90,11 @@ def cleanup(older_than_days: int = 30) -> dict:
     return res
 
 
-def reset(clear_cache: bool = False) -> dict:
-    """Empty the database (after a backup). Batch folders/ZIPs on disk are left alone."""
+def reset() -> dict:
+    """Empty the database (after a backup).
+
+    Never touches files: batch folders and downloaded models stay until the user deletes them in Finder.
+    """
     path = backup()
     with db.tx() as con:
         if _busy(con):
@@ -100,9 +103,7 @@ def reset(clear_cache: bool = False) -> dict:
             con.execute(f"DELETE FROM {t}")
         con.execute("DELETE FROM sqlite_sequence WHERE name IN ('downloads','batches','files')")
     _vacuum()
-    if clear_cache and CACHE_DIR.is_dir():
-        shutil.rmtree(CACHE_DIR)
-    return {"backup": str(path), "cache_cleared": clear_cache}
+    return {"backup": str(path)}
 
 
 def _vacuum() -> None:

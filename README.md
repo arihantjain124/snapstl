@@ -50,16 +50,24 @@ launchctl bootout gui/$(id -u)/local.snapmagicians.snapstl && rm ~/Library/Launc
    Skipped, Delivered, RTO, In Transit, Cancelled, Others, All. Use the filter boxes under each
    column heading; filters combine. In *Needs review*, fix the name/colour and **Approve**.
 3. Tick orders (or **Select all matching**) → **Create batch**.
-4. **Batches** tab → **Start download**. The helper generates each name in your MakerWorld tab, one at
-   a time; the header and *Download queue* show progress. If MakerWorld shows a security check in
-   that tab, complete it — it carries on.
-5. When the batch says **Ready to build** → **Build plates**.
+4. **Batches** → **Queue download**. The helper generates each name in your MakerWorld tab, one at a
+   time; watch it on the **Downloads** page. If MakerWorld shows a security check in that tab,
+   complete it — it carries on.
+5. When the batch says **Ready to build** → **Queue build**. Nothing starts by itself.
 6. Check the batch says **Fit check: N/N** (every name keeps its base's proportions, so it fits after
    printing; a pair that fails is never printed and goes back to Ready).
 7. **Show in Finder**, open the plates in Bambu Studio, check, slice, print. Bases in white; names in
    their colour folder's colour.
 
-The app has a side menu — **Orders**, **Batches**, **Settings**, **Help**. Help explains every tab,
+Finished batches can be redone: **Re-download** fetches every model again from MakerWorld;
+**Rebuild plates** makes the plates again from the downloaded models into a new Batch folder (the old
+one stays).
+
+Downloaded models are kept in **`~/SnapSTL/Downloads`** (one folder per name, e.g.
+`SONAL - 5 comp - …`), reused by later batches, and **never deleted by SnapSTL** — clean up in Finder
+(Downloads page → *Show in Finder*). The folder can be changed in Settings.
+
+The app has a side menu — **Orders**, **Batches**, **Downloads**, **Settings**, **Help**. Help explains every tab,
 status, file and setting.
 
 Output:
@@ -84,19 +92,21 @@ are created (the *Download ZIP* button is optional and saves nothing).
 | **Helper not connected** | open the MakerWorld model maker tab in Chrome; check the helper is enabled in `chrome://extensions` |
 | Helper says **Complete the MakerWorld security check** | click the check in that tab |
 | A name shows **Failed** in the download queue | read *Detail*; **Retry failed** |
-| Batch stays *Downloading* | check the header / download queue; **Pause / Resume**; *Build plates now* builds with what's ready |
+| Batch stays *Downloading* | check the sidebar and the **Downloads** page; **Pause / Resume**; *Build now with what's ready* |
+| A model looks wrong | Batches → **Re-download**, then **Rebuild plates** |
 | Can't select / copy text in the window | quit and reopen SnapSTL.app |
 | Portal doesn't open | `launchctl kickstart -k gui/$(id -u)/local.snapmagicians.snapstl`; see `~/Library/Logs/SnapSTL.log` |
 | Database getting big | Settings → Database → **Clean up** (orders already made are kept; a backup is saved first) |
 
-Your data lives in `~/Library/Application Support/SnapSTL` (orders database, model cache, settings,
-backups). The license password is in the macOS Keychain.
+Your data: orders database, settings and backups in `~/Library/Application Support/SnapSTL`;
+downloaded models in `~/SnapSTL/Downloads`; plates in `~/SnapSTL/output`. The license password is in
+the macOS Keychain. SnapSTL never deletes downloaded models or batch folders.
 
 ## Development
 
 ```bash
 uv sync                 # install dependencies (incl. dev)
-uv run pytest -q        # 23 tests: scaling, packing, grouping, 3MF, ingest, batches, helper API, maintenance
+uv run pytest -q        # 25 tests: scaling, packing, grouping, 3MF, ingest, batches, helper API, maintenance
 SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn snapstl.server:app --port 8320
                         # a throwaway dev instance with its own data
 ```

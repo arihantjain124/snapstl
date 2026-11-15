@@ -80,6 +80,7 @@ MIGRATIONS = [
     ("orders", "customer_name", "TEXT"),   # shown in the UI (owner's request, local only)
     ("orders", "phone", "TEXT"),
     ("orders", "address", "TEXT"),         # address, city, state, pincode joined
+    ("downloads", "batch_id", "INTEGER"),  # batch that queued this download (shown in the queue)
 ]
 
 
