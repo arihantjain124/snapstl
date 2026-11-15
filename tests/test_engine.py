@@ -174,6 +174,14 @@ def test_3mf_round_trip(tmp_path):
     objs = read_3mf(p)
     assert [o.name for o in objs] == ['Ayra - Base · "x" & <y>', "Ayra - Name"]
     assert np.allclose(objs[0].vertices, a.vertices, atol=1e-4) and (objs[1].faces == b.faces).all()
+    # Bambu Studio / PrusaSlicer take object names from their own config, not the core name
+    import xml.etree.ElementTree as ET
+    import zipfile
+    with zipfile.ZipFile(p) as z:
+        for cfg in ("Metadata/model_settings.config", "Metadata/Slic3r_PE_model.config"):
+            root = ET.fromstring(z.read(cfg))
+            got = {o.get("id"): o.find("metadata[@key='name']").get("value") for o in root.findall("object")}
+            assert got == {"1": 'Ayra - Base · "x" & <y>', "2": "Ayra - Name"}
     import zipfile
 
     names = zipfile.ZipFile(p).namelist()

@@ -60,7 +60,7 @@ the `.app`). The app runs **from the project folder** — moving it means re-run
 | Numerics | numpy | 2.5.4 |
 | Spreadsheets | python-calamine (the webstore XLSX has a stylesheet openpyxl rejects) | 0.9.1 |
 | Storage | SQLite (WAL) via stdlib `sqlite3` | — |
-| Plate format | **3MF core spec**, own writer/reader (`threemf.py`, stdlib zip/xml) | — |
+| Plate format | **3MF core spec**, own writer/reader (`threemf.py`, stdlib zip/xml), plus a names-only `Metadata/model_settings.config` (+ `Slic3r_PE_model.config`) because Bambu Studio ignores the core object name | — |
 | Browser side | Chrome extension, Manifest V3, vanilla JS | helper 2.0.1 |
 | Tests | pytest, httpx (FastAPI TestClient), mapbox-earcut (test meshes) | 9.2.0 / 0.28.1 / 2.1.0 |
 | Packaging | `uv_build` backend; console scripts `snapstl`, `snapstl-serve`, `snapstl-admin` | — |

@@ -2,8 +2,10 @@
 
 SnapSTL writes one .3mf per plate. Each part (a base or a name) is its own named
 object, in millimetres, already placed at its plate position — Bambu Studio and other
-slicers show every part individually. Only the core 3MF spec is used (no slicer-specific
-project data), so files stay valid across Bambu Studio updates.
+slicers show every part individually. Geometry is core 3MF only; the one slicer-specific bit
+is a small names-only config (Metadata/model_settings.config, Metadata/Slic3r_PE_model.config)
+because Bambu Studio ignores the core object name and shows the file name instead. No slicer
+settings, so files stay valid across Bambu Studio updates.
 
 Dependency-free on purpose (stdlib zipfile + xml); `read_3mf` is used to re-check files
 after writing.
@@ -21,6 +23,8 @@ import numpy as np
 
 CORE_NS = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 MODEL_PATH = "3D/3dmodel.model"
+BAMBU_CONFIG = "Metadata/model_settings.config"  # object names for Bambu Studio
+PRUSA_CONFIG = "Metadata/Slic3r_PE_model.config"  # same, for PrusaSlicer/OrcaSlicer
 
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -68,11 +72,27 @@ def write_3mf(path: Path, objects: list[Object3MF], title: str = "") -> None:
     parts += [f'<item objectid="{i + 1}"/>' for i in range(len(objects))]
     parts.append("</build></model>")
     tmp = path.with_suffix(path.suffix + ".part")
+    names = _names_config(objects)
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
         z.writestr("[Content_Types].xml", CONTENT_TYPES)
         z.writestr("_rels/.rels", RELS)
         z.writestr(MODEL_PATH, "\n".join(parts))
+        # Bambu Studio (and PrusaSlicer) ignore the core `name` attribute and call every object after
+        # the file; they take object names from their own config file instead. Names only — no
+        # slicer settings — so the file stays a plain geometry 3MF.
+        z.writestr(BAMBU_CONFIG, names)
+        z.writestr(PRUSA_CONFIG, names)
     tmp.replace(path)
+
+
+def _names_config(objects: list[Object3MF]) -> str:
+    rows = [f'  <object id="{i + 1}">\n    <metadata type="object" key="name" value="{_attr(o.name)}"/>\n  </object>'
+            for i, o in enumerate(objects)]
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n' + "\n".join(rows) + "\n</config>\n"
+
+
+def _attr(s: str) -> str:  # for a double-quoted attribute
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
 def _esc(s: str) -> str:
