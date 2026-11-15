@@ -311,6 +311,7 @@ def spools(s: dict, cmap: dict) -> list[dict]:
         slot = (f"AMS {int(unit.get('id', 0)) + 1} · {int(t.get('id', 0)) % 4 + 1}" if unit is not None
                 else "External")
         out.append({"slot": slot, "hex": f"#{h.upper()}" if h else "", "name": name, "material": material,
+                    "color": _norm(name or _nearest_palette(h)),
                     "remain": t.get("remain") if isinstance(t.get("remain"), int) and t.get("remain") >= 0 else None,
                     "approx": "" if name else _nearest_palette(h)})
     return out
@@ -805,6 +806,14 @@ class Worker:
         qid = int((item or {})["id"])
         _set(j["id"], state="sent", file_id=file_id, queue_item_id=qid, held=1, error=None)
         self._log(f"{Path(j['plate']).name} → in {j['printer_name']}'s queue, waiting for Start")
+        if j.get("autostart"):  # a person pressed Start print (Make It): release it now that it's queued
+            try:
+                start_job(j["id"])
+                self._log(f"{Path(j['plate']).name} → started on {j['printer_name']}")
+            except StartBlocked as e:
+                _set(j["id"], error=f"{e} — press Start print again to start anyway")
+            except FarmError as e:
+                _set(j["id"], error=f"Queued, but not started: {e}")
 
     def refresh(self) -> None:
         """Follow jobs sent to Bambuddy: waiting → printing → printed (or failed / cancelled there)."""
@@ -838,6 +847,10 @@ class Worker:
                     changes["progress"] = float(s["progress"])
             if changes:
                 _set(j["id"], **changes)
+                if changes.get("state") == "done":
+                    from . import makeit
+
+                    makeit.update_made(j["batch_id"])  # both parts printed → Ready to ship
 
 
 def _upload_name(label: str, kind: str, name: str) -> str:

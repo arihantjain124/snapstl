@@ -33,7 +33,7 @@ Webstore "Order Reconciliation Report" (.xlsx)
 | Piece | What / where |
 |---|---|
 | **Service** | `snapstl-serve` → FastAPI/uvicorn on **http://127.0.0.1:8317** (`SNAPSTL_PORT` to change); on `0.0.0.0:8317` only when Settings → *Other computers* is on (see §13). Started at login by launchd: `~/Library/LaunchAgents/local.snapmagicians.snapstl.plist` (`RunAtLoad`, `KeepAlive`). Hosts the portal, the helper API, the download queue and the batch builder thread. Runs `caffeinate -i` while alive. |
-| **App window** | `~/Applications/SnapSTL.app` → `snapstl` → pywebview window on the same URL (adds native folder picker; text selection on). UI = side navigation: Orders · Batches · Downloads · Printers · Printer status · Settings · Help. If the service isn't up it kickstarts it. Closing the window doesn't stop the service. |
+| **App window** | `~/Applications/SnapSTL.app` → `snapstl` → pywebview window on the same URL (adds native folder picker; text selection on). UI = side navigation: Orders · Batches · Downloads · Make It · Printer status · Settings · Help. If the service isn't up it kickstarts it. Closing the window doesn't stop the service. |
 | **SnapSTL Helper** | Chrome extension (`helper/`, *Load unpacked*) in the user's **normal** Chrome, on the MakerWorld model-maker tab. Generates each queued name on the real page and uploads the files. |
 | **Data** | `~/Library/Application Support/SnapSTL/` (`APP_DIR`, override with `SNAPSTL_HOME`): `snapstl.db`, `settings.json`, `backups/`, `auth.json` (only if a portal password is set). |
 | **Downloaded models** | Settings → Downloads folder (default **`~/SnapSTL/Downloads`**): one readable folder per model, `<Name> - <N> comp - <cache key>/{base.stl, name.stl, info.json}`. **Never deleted by SnapSTL** — the user cleans up in Finder; a deleted model is re-downloaded when a batch needs it. Models from the old hidden `APP_DIR/cache/` are moved here once at startup (`cache.migrate_old_cache`). |
@@ -108,7 +108,9 @@ Snapstl/
 │   ├── computer.py           this computer's id + name (on batches and in the shared records)
 │   ├── sync.py               shared order records in Supabase: claim, push, pull, merge, background loop
 │   ├── farm.py               print farm: Bambuddy client (stdlib HTTP), printers + their job (farm.json),
-│   │                         sliced files / slicer service, Push to queue jobs + background worker
+│   │                         sliced files / slicer service, print jobs + background worker
+│   ├── makeit.py             Make It tab: Bases / Names queues across batches, printer pre-selection,
+│   │                         Start print, Completed + Reprint, Ready to ship (orders.made_at)
 │   ├── dbtool.py             `snapstl-db check | sync`
 │   ├── updater.py            Settings → Updates (git fetch / pull --ff-only / uv sync)
 │   ├── watermark.py, render.py   watermark detection; plate / object pictures
@@ -168,6 +170,7 @@ columns — the owner's order history lives here.
 | `state_at` | when `state` last changed (trigger) |
 | `status_at` | how recent `source_status` is: `event date|report date|upload time` (`ingest.status_stamp`) |
 | `in_remote`, `batch_uid`, `batch_label`, `batch_computer`, `batch_computer_id`, `bundled_at`, `printed_at` | shared order records: its batch (also on other computers), when bundled / printed |
+| `made_at` | base and name both printed in Make It (`makeit.update_made`) → tab **Ready to ship** (`state='bundled' AND made_at IS NOT NULL`; **Bundled** = not made yet). Local only |
 
 **batches** — `id`, `created_at`, `status` (§8), `order_ids` (JSON), `settings` (JSON snapshot at
 creation), `out_dir`, `summary` (JSON: plates + previews, errors, warnings, `folder`, `label`),
@@ -188,6 +191,8 @@ that queued it), timestamps.
 batch folder), `kind`, `color`, `printer_id` / `printer_name` (Bambuddy's), `state` (`queued | slicing
 | uploading | sent | printing | done | failed | cancelled`), `sliced` (file used), `file_id` /
 `queue_item_id` (Bambuddy's), `progress`, `error`, `options` (JSON print options, sent with the queue item), `held` (1 = waiting in Bambuddy for Start),
+`autostart` (1 = made by Make It → Start print: released right after it's queued), state `reprint` (a
+person sent a printed plate back to the queue; no printer yet),
 timestamps, `computer_id`. Local only (never in the
 shared records); Clean up removes finished ones, Reset empties it.
 
@@ -407,7 +412,8 @@ the files. Clashing file names get ` (2)`; names over 200 characters are shorten
 | Settings | `GET` / `PUT /api/settings` (includes `makerworld_url`, `license_passwords`), `POST /api/settings/reset` |
 | Portal | `GET /api/portal` (on/off, password set, addresses), `POST /api/portal` `{enabled, password}` — this Mac only |
 | Print farm | `GET /api/farm` (read only: Bambuddy status, printers with role from Location, live state and filament per slot, slicing settings, recent jobs with printer choices; connects by itself on a fresh install), `POST /api/farm/connect` `{url, api_key}`, `PUT /api/farm/settings` `{slicer_url, printer_preset, process_preset, filament_preset}`, `POST /api/farm/printers/{id}/clear-plate` — `/api/farm/*` this computer only. Printers and filament are set up in Bambuddy, never in SnapSTL |
-| Push to queue | `GET /api/batches/{id}/plates` (plates, sliced file, latest job, suggested printer, choices with why-not), `POST /api/batches/{id}/push` `{plates:[{file, printer_id}], again}`, `GET /api/print-jobs?batch_id=`, `POST /api/print-jobs/{id}/print` `{printer_id, options:{bed_levelling, flow_cali, timelapse}}` (Printers → Print jobs: change a waiting job, move one waiting in Bambuddy's queue, or print a failed/cancelled/printed plate again as a new job), `POST /api/print-jobs/{id}/start` `{force}` (the only way a print starts; 409 = Bambuddy's warning, e.g. filament short → `force`), `POST /api/print-jobs/{id}/retry`, `POST /api/print-jobs/{id}/cancel` |
+| Make It | `GET /api/makeit` (Bases / Names plates still to print with printer choices + pre-selection, Completed, printers, options), `POST /api/makeit/start` `{batch_id, file, printer_id, options, force}` (Start print: send + start, or start / move a held one; 409 = Bambuddy's warning → `force`), `POST /api/makeit/reprint` `{batch_id, file}` (Completed → back to the queue) |
+| Push to queue (API only, no UI since 0.13) | `GET /api/batches/{id}/plates` (plates, sliced file, latest job, suggested printer, choices with why-not), `POST /api/batches/{id}/push` `{plates:[{file, printer_id}], again}`, `GET /api/print-jobs?batch_id=`, `POST /api/print-jobs/{id}/print` `{printer_id, options:{bed_levelling, flow_cali, timelapse}}` (Printers → Print jobs: change a waiting job, move one waiting in Bambuddy's queue, or print a failed/cancelled/printed plate again as a new job), `POST /api/print-jobs/{id}/start` `{force}` (the only way a print starts; 409 = Bambuddy's warning, e.g. filament short → `force`), `POST /api/print-jobs/{id}/retry`, `POST /api/print-jobs/{id}/cancel` |
 | Printer status | `GET /api/printer-status` (`?download=1` = JSON file): every printer's Bambuddy record, full live status and queue + `/system/info`, secrets redacted (`farm.redact`) |
 | Maintenance | `GET /api/maintenance`, `POST /api/maintenance/backup`, `POST /api/maintenance/cleanup` `{older_than_days}`, `POST /api/maintenance/reset` `{confirm:"RESET", clear_cache}` |
 
@@ -486,6 +492,11 @@ unsent changes):
   move from the old cache; reset keeps models; other computers refused until the portal is on, must sign
   in, and can never reach the helper / Finder / portal / reset
 
+* `test_farm.py` (Make It) — Bases pre-select the available base printer with most white left; Names
+  pre-select only an available printer with the colour; nothing sent before Start print; Start print
+  sends + starts with options; warning → held → force; done → Completed; base + name printed → Ready to
+  ship (Bundled tab excludes it); Reprint → back to queue and out of Ready to ship; old batches'
+  plate → order matching
 * `test_config.py` — passwords with symbols are encoded (already-encoded left alone), schema file =
   `sync.schema_sql()`
 * `test_farm.py` — every print waits held until Start (409 warning → force), Printer status has every
@@ -540,6 +551,7 @@ snapstl.server:app --port 8320`.
 | 30 | **No print starts by itself**: every plate goes to Bambuddy held (`manual_start`) and only a person's **Start** releases it; plates reach Bambuddy only on Push to queue / Print | owner wants every print clicked by a person |
 | 31 | Printer status tab shows Bambuddy's raw data for every printer (record, live status, queue, system info), redacted, downloadable as JSON | owner wants all available information visible for future use |
 | 32 | Shared-records passwords may contain symbols: `config.encode_password` percent-encodes the part between the user's ':' and the last '@'; schema also as `docs/supabase-schema.sql` (`snapstl-db schema`, test keeps them equal) | owner's Supabase password has symbols; tables can be made in the SQL Editor without giving SnapSTL the password |
+| 33 | **Make It** replaces the Printers page and the batch's Push to queue panel: Bases / Names queues across all built batches (plates whose orders are still Bundled, or with a print on its way); pre-selection only of an *available* printer (connected, idle, bed cleared, none of our jobs on it), exact colour → most filament left → dedicated printer; **Start print** (one click) sends and starts; printed → Completed (Reprint only after confirming a failure); both parts printed → order Ready to ship. Plates record `order_ids` (new builds; older matched by name/colour) | owner's workflow: one place per part, pick printer, click to print, see what can ship |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -579,7 +591,7 @@ snapstl.server:app --port 8320`.
 | Change output layout / names | `pipeline.new_batch_dir`, `pipeline.plate_folder`, `export.plate_filename`; update §10 and README |
 | Change where / how models are saved | `cache.py` (keep: readable folder names ending in the key; never auto-delete) |
 | Change MakerWorld interaction | `helper/content.js` / `inject.js`; bump `helper/manifest.json` version |
-| Change the print farm | `farm.py` (Bambuddy calls, suggestions, worker) + Printers page / Push to queue panel in `index.html`; new Bambuddy version → check its routes, then `scripts/bambuddy-version.txt`; extend the fake in `test_farm.py` |
+| Change the print farm | `farm.py` (Bambuddy calls, worker), `makeit.py` (queues, pre-selection, Start print, Ready to ship) + Make It tab in `index.html`; new Bambuddy version → check its routes, then `scripts/bambuddy-version.txt`; extend the fake in `test_farm.py` |
 | Add an endpoint | `server.py`; anything the helper calls must live under `/api/helper/`; anything that touches this Mac's files or setup must be Mac-only (`MAC_ONLY_PREFIXES` / `is_local`) |
 
 ## Updates (git)
@@ -599,12 +611,13 @@ can't touch it. Shared order records and Windows: the sections below.
 ## Print farm — Bambuddy (0.10.0)
 
 ```
-Batch built → Push to queue (per plate: printer picked, suggestion pre-filled)
+Batch built → Make It → Bases / Names (per plate: printer pre-selected if one is available) → Start print
   → print_jobs row 'queued' → farm.Worker (one at a time, oldest first):
       sliced file? Sliced/<plate>.gcode.3mf or <plate>.gcode.3mf next to it  (else slicer service → Sliced/…)
       → POST /api/v1/library/files (name "<Batch label> - <Bases|Names colour> - <plate>.gcode.3mf")
       → POST /api/v1/queue/ {library_file_id, printer_id, manual_start: true, options} → 'sent', held
-  → a person presses Start → POST /api/v1/queue/{id}/start (409 → confirm → ?skip_filament_check=true)
+  → autostart (the Start print click) → POST /api/v1/queue/{id}/start (409 → stays held; the person
+    confirms → ?skip_filament_check=true). Jobs from the API's Push to queue stay held until Start.
   → every 15 s GET /api/v1/queue/{id}: pending → sent, printing → printing (+ %), completed → done,
     failed → failed, cancelled/skipped → cancelled
 Bambuddy: one queue per printer; a held item never starts; after Start it waits for the printer to be

@@ -34,6 +34,7 @@ class PlateOut:
     preview: dict
     warnings: list[str] = field(default_factory=list)
     image: str = ""  # top-view picture (bases), relative to the batch's preview folder
+    order_ids: list[str] = field(default_factory=list)  # webstore Order ID per part (Make It → Ready to ship)
 
 
 @dataclass
@@ -141,6 +142,7 @@ def build(
                 file=f"{rel}/{path.name}",
                 names=[o.name for o in plate.orders],
                 colors=plate.colors,
+                order_ids=[o.order_id for o in plate.orders],
                 preview=export.preview(plate, settings.plate),
                 warnings=plate.warnings + problems,
             )

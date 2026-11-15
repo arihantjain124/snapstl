@@ -93,6 +93,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
 .kv td.k{color:var(--muted);white-space:nowrap;width:1%;font-family:ui-monospace,Menlo,monospace}.kv td.v{font-family:ui-monospace,Menlo,monospace;word-break:break-word}
 details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{margin-left:4px}
 .pscard{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:10px 0;background:var(--bg)}
+.mktable td{vertical-align:middle}.mktable select{min-width:190px}.mktable .fn{font-size:12px;word-break:break-all;max-width:260px}
 .prgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:8px}
 .prcard{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--bg)}
 .prcard .top{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.prcard .top b{font-size:14px}
@@ -111,7 +112,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <button data-t="orders" class="on"><span class="ic">▤</span>Orders</button>
     <button data-t="batches"><span class="ic">▦</span>Batches</button>
     <button data-t="downloads"><span class="ic">⇣</span>Downloads</button>
-    <button data-t="printers"><span class="ic">⎙</span>Printers</button>
+    <button data-t="makeit"><span class="ic">⚒</span>Make It</button>
     <button data-t="pstatus"><span class="ic">◉</span>Printer status</button>
     <button data-t="settings"><span class="ic">⚙</span>Settings</button>
     <button data-t="help"><span class="ic">?</span>Help</button>
@@ -165,16 +166,9 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="tw"><table><thead><tr><th>#</th><th>Folder</th><th>Computer</th><th>Created</th><th>Orders</th><th>Models</th><th>Plates</th><th>Status</th><th></th></tr></thead><tbody id="batches"></tbody></table></div>
   </div>
   <div class="card" id="bdetail" hidden>
-    <div class="toolbar"><h2 style="margin:0" id="btitle"></h2><span class="grow"></span><button id="bpushbtn" class="primary" hidden title="Send these plates to your printers' queues in Bambuddy">Push to queue</button> <button id="bfinder" hidden class="fm">Show in Finder</button> <a class="btn primary" id="bzip">Download ZIP</a></div>
+    <div class="toolbar"><h2 style="margin:0" id="btitle"></h2><span class="grow"></span><button id="bmakeit" class="primary" hidden title="Print these plates: Make It → Bases / Names">Make it</button> <button id="bfinder" hidden class="fm">Show in Finder</button> <a class="btn primary" id="bzip">Download ZIP</a></div>
     <div class="msgs" id="bother" hidden></div>
     <div class="msgs" id="bmsgs"></div>
-    <div id="bpush" class="pushbox" hidden>
-      <div class="toolbar"><h3 style="margin:0">Push to queue → Bambuddy</h3><span class="grow"></span><button class="small" id="bpauto" title="Pick the best printer for every plate that isn't on its way yet">Suggest printers</button><button class="small" id="bpclose">Close</button></div>
-      <div class="msgs" id="bpmsgs"></div>
-      <div class="tw"><table class="pushtable"><thead><tr><th><input type="checkbox" id="bpall" title="All plates"></th><th>Plate</th><th>Prints on</th><th>Sliced file</th><th>Printer</th><th>Status</th><th></th></tr></thead><tbody id="bplates"></tbody></table></div>
-      <div class="toolbar" style="margin-top:8px"><span class="hint grow" id="bpinfo"></span><button class="primary" id="bpgo" disabled>Push to queue</button></div>
-      <p class="hint">Each plate goes to its printer's queue in Bambuddy and <b>waits there until you press Start</b> — nothing prints by itself. After Start, Bambuddy prints it once the printer is free and someone has cleared its bed (<b>Clear plate</b> on the printer card in Bambuddy, or on the <b>Printers</b> page). A plate is offered only to printers that have its colour loaded in Bambuddy (white for bases); <i>loaded: Hot Pink</i> means a close colour, not the exact one.</p>
-    </div>
     <details class="objsbox" id="bobjsbox"><summary id="bobjsum">Objects</summary>
       <p class="hint">Every name in this batch as downloaded. The picture shows the back of the base, where MakerWorld puts its "SALE NOT PERMITTED" watermark (painted <b style="color:#dc2828">red</b> if found) — click it for the top view. <b>Re-download</b> fetches one object again; then press <b>Rebuild plates</b> so the plates use the fresh download.</p>
       <div class="tw"><table class="objs"><thead><tr><th>Name</th><th>Comp.</th><th>Copies</th><th>Back of base</th><th>Watermark</th><th>Download</th><th></th></tr></thead><tbody id="bobjs"></tbody></table></div>
@@ -201,17 +195,28 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
 </section>
 
-<section id="t-printers" hidden>
-  <div class="card" id="farmcard">
-    <div class="toolbar"><h2 style="margin:0">Printers · from Bambuddy</h2><span class="grow hint" id="prinfo"></span><button class="small" id="prrefresh">Refresh</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
-    <p class="hint">What your printers are doing and the filament loaded in each one, read live from <b>Bambuddy</b>. Printers, filament and their settings are managed in Bambuddy. <b>Push to queue</b> offers a plate only to printers that have its colour loaded (white for bases). A printer whose <b>Location</b> in Bambuddy starts with <i>Bases</i> or <i>Names</i> only gets those plates.</p>
-    <div class="msgs" id="farmstate"></div>
-    <div class="prgrid" id="printers"></div>
-  </div>
+<section id="t-makeit" hidden>
   <div class="card">
-    <h2>Print jobs</h2>
-    <div class="tw" style="max-height:50vh;overflow:auto"><table><thead><tr><th></th><th>Printer</th><th>Print options</th><th>#</th><th>Batch</th><th>Plate</th><th>Status</th><th>Detail</th></tr></thead><tbody id="pjobs"></tbody></table></div>
-    <div class="log" id="farmlog" style="margin-top:8px;max-height:120px"></div>
+    <div class="toolbar"><h2 style="margin:0">Make It</h2><span class="grow hint" id="mkinfo"></span><button class="small" id="mkrefresh">Refresh</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
+    <div class="msgs" id="mkmsgs"></div>
+    <div class="chips" id="mktabs"></div>
+    <div id="mk-bases" class="mkpane">
+      <p class="hint">Base plates of your built batches. A printer is pre-selected: the next <b>available</b> printer that makes bases, with white loaded and the most filament left. Nothing prints until you press <b>Start print</b>.</p>
+      <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Plate</th><th>Sliced</th><th>Printer</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mkbases"></tbody></table></div>
+    </div>
+    <div id="mk-names" class="mkpane" hidden>
+      <p class="hint">Name plates by colour. Only printers with that colour loaded (read from Bambuddy) can be chosen; one is pre-selected when it's available. Nothing prints until you press <b>Start print</b>.</p>
+      <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Sliced</th><th>Printer</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mknames"></tbody></table></div>
+    </div>
+    <div id="mk-completed" class="mkpane" hidden>
+      <p class="hint">Printed plates. When an order's base and its name are both printed it shows in <b>Orders → Ready to ship</b>. <b>Reprint</b> only if a print failed — it goes back to Bases / Names to send again.</p>
+      <div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Printed on</th><th>When</th><th></th></tr></thead><tbody id="mkdone"></tbody></table></div>
+    </div>
+    <div id="mk-printers" class="mkpane" hidden>
+      <p class="hint">Live from Bambuddy: what each printer makes (its <b>Location</b> in Bambuddy: <i>Bases…</i> / <i>Names…</i>, else both), its state and the filament in every slot. Printers and filament are managed in Bambuddy. Full details: <b>Printer status</b>.</p>
+      <div class="prgrid" id="printers"></div>
+      <div class="log" id="farmlog" style="margin-top:10px;max-height:120px"></div>
+    </div>
   </div>
 </section>
 
@@ -355,7 +360,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <div class="card">
     <h2>Help</h2>
     <p>SnapSTL turns webstore orders for the <b>Custom Name Desk Organizer</b> (SKU <code>Magicians_35</code>) into print-ready plates: each name is generated on MakerWorld, scaled to the agreed rules, grouped 3 per plate and saved as <b>.3mf</b> files.</p>
-    <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-printers">Printers</a><a href="#h-pstatus">Printer status</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-portal">Other computers</a><a href="#h-data">Your data</a></div>
+    <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-printers">Make It</a><a href="#h-pstatus">Printer status</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-portal">Other computers</a><a href="#h-data">Your data</a></div>
   </div>
 
   <div class="card" id="h-start">
@@ -366,8 +371,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Ready</b> — tick orders (or use the column filters and <b>Select all matching</b>) → <b>Create batch</b>.</li>
       <li><b>Batches → Queue download</b> — the helper in your MakerWorld tab generates each name, one at a time (watch it on <b>Downloads</b>).</li>
       <li>When the batch says <b>Ready to build</b> → <b>Queue build</b>.</li>
-      <li><b>Push to queue</b> on the built batch sends each plate to a printer's queue in Bambuddy (see <a href="#h-printers">Printers</a>) — or <b>Show in Finder</b>, open the plates in Bambu Studio, check, slice and print by hand. Bases in white; names in the colour of their folder.</li>
-      <li>When the plates are printed: <b>Mark these orders printed</b> (Push to queue panel) or the <b>Bundled</b> tab → <b>Mark printed</b>.</li>
+      <li><b>Make It</b> → <b>Bases</b> / <b>Names</b>: check the printer on each plate and click <b>Start print</b> — or <b>Show in Finder</b> on the batch, open the plates in Bambu Studio and print by hand. Bases in white; names in the colour of their folder.</li>
+      <li><b>Orders → Ready to ship</b> lists orders whose base and name are both printed; tick them → <b>Mark printed</b> (orders printed by hand: <b>Bundled</b> tab).</li>
     </ol>
   </div>
 
@@ -379,7 +384,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <tr><td>Ready → Clubbed</td><td>Orders to make that share a clubbed order ID with other names (one customer, several organizers).</td></tr>
       <tr><td>Needs review</td><td>Report says PRINT, but the name or colour needs a human (space in the name, symbols, missing colour, special request).</td></tr>
       <tr><td>In a batch</td><td>Reserved by a batch that isn't built yet.</td></tr>
-      <tr><td>Bundled</td><td>Already made in a batch. Never made again unless you press <b>Remake</b>.</td></tr>
+      <tr><td>Bundled</td><td>Made into plates in a batch, not printed yet. Never made again unless you press <b>Remake</b>.</td></tr>
+      <tr><td>Ready to ship</td><td>Base and name both printed (Make It). Tick them → <b>Mark printed</b> once shipped.</td></tr>
       <tr><td>Skipped</td><td>You pressed Skip. <b>Make anyway</b> moves it back to Ready.</td></tr>
       <tr><td>Delivered · RTO · In Transit · Cancelled · Others</td><td>The report says these don't need making (Others = e.g. PACK).</td></tr>
     </table>
@@ -435,17 +441,15 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
 
   <div class="card" id="h-printers">
-    <h2>Printers (print farm)</h2>
+    <h2>Make It (print farm)</h2>
     <p><b>Bambuddy</b>, the open-source print-farm manager, is installed with SnapSTL on this computer (<code>http://127.0.0.1:8000</code>). It's connected to your Bambu printers and keeps a queue per printer. SnapSTL connects to it by itself; the <b>Printers</b> page shows it.</p>
     <ol>
       <li><b>On each printer:</b> Settings → Network → <b>LAN Only Mode</b> on, then <b>Developer Mode</b> on. Developer Mode disconnects the printer from Bambu Cloud and the Handy app.</li>
-      <li><b>In Bambuddy</b> (Printers → <b>Open Bambuddy</b>): add each printer. Its <b>Location</b> says what it makes: starting with <i>Bases</i> or <i>Names</i>; anything else = both.</li>
+      <li><b>In Bambuddy</b> (Make It → <b>Open Bambuddy</b>): add each printer. Its <b>Location</b> says what it makes: starting with <i>Bases</i> or <i>Names</i>; anything else = both.</li>
       <li><b>Filament</b> is read from Bambuddy: every AMS slot and external spool with Bambu's colour name (<i>Hot Pink</i>, <i>Jade White</i>). Nothing to type in SnapSTL — load the spool and it shows up.</li>
     </ol>
-    <p>The <b>Printers</b> page is read-only: what each printer makes, its state (%, time left, layer, temperatures), the filament per slot, and <b>Clear plate</b> when the bed must be cleared. <b>Print jobs</b> below it: per plate a <b>printer</b>, <b>Print options</b> (bed levelling, flow calibration, timelapse — default = Bambuddy's) and <b>Print</b> — <i>Print</i> sends a failed/cancelled plate again, <i>Print again</i> reprints a printed one, <i>Move</i> moves a plate still waiting in Bambuddy's queue to another printer.</p>
-    <p><b>Push to queue</b> (Batches → open a built batch) lists every plate with a suggested printer: a printer with the plate's colour loaded (white for bases) whose Location fits — the exact colour first (a close one is marked <i>loaded: hot pink</i>), least busy first. Printers that don't fit are greyed out with the reason. Pushed plates go to that printer's queue in Bambuddy; the <b>Status</b> column follows them: <i>Waiting to send → Slicing → Sending → In Bambuddy queue → Printing → Printed</i>. A plate already on its way isn't pushed twice; <b>Try again</b> / <b>Cancel</b> are on each row.</p>
-    <p><b>Nothing prints by itself.</b> A plate goes to Bambuddy only when you press <b>Push to queue</b> or <b>Print</b>, and waits there held (<i>Waiting for Start</i>) until you press <b>Start</b> (Push to queue panel or Printers → Print jobs). If Bambuddy warns (e.g. too little filament), SnapSTL asks before starting anyway.</p>
-    <p><b>Clear plate:</b> after Start, Bambuddy still starts a print only after someone confirms the bed is empty — the <b>Clear plate</b> button on the Printers page (or in Bambuddy).</p>
+    <p><b>Make It</b> (sidebar) has four parts. <b>Bases</b>: every base plate still to print, with the next <b>available</b> printer that makes bases, has white loaded and the most filament left already chosen. <b>Names</b>: every name plate with its colour — only printers with that colour loaded (from Bambuddy) can be chosen; one is pre-selected when available. <b>Completed</b>: printed plates, with <b>Reprint</b> only for a failed print. <b>Printers</b>: state, filament per slot, and <b>Clear plate</b>.</p>
+    <p><b>Nothing prints until you click Start print</b> on a plate: that click sends it to the chosen printer (with its <b>Options</b>: bed levelling, flow calibration, timelapse) and starts it. Bambuddy then prints it as soon as the printer is free and its bed has been cleared (<b>Clear plate</b>, in Bambuddy or Make It → Printers). If Bambuddy warns (e.g. too little filament), SnapSTL asks before starting anyway. A printed plate moves to <b>Completed</b>; once an order's base and name are both printed it shows in <b>Orders → Ready to ship</b>.</p>
     <p><b>Slicing:</b> printers only print sliced plates. Either slice by hand — open the plate in Bambu Studio → <b>Slice plate</b> → <b>Export plate sliced file</b> → save it in the batch folder's <code>Sliced</code> folder under the same path (e.g. <code>Sliced/Names/pink/{Ayra,pink}.gcode.3mf</code>) — or set a <b>slicer service</b> (Bambuddy's slicer sidecar, Docker) in <b>Settings → Print farm</b> and SnapSTL slices each plate as it's pushed, without moving any part. The plate list shows <i>Sliced</i> / <i>Not sliced</i>.</p>
   </div>
 
@@ -497,8 +501,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <tr><td>"watermark still on the base" / "didn't confirm the license password"</td><td>Check the license password in Settings, reload the SnapSTL Helper (2.2.1) in <code>chrome://extensions</code>, then <b>Retry failed</b> on Downloads.</td></tr>
       <tr><td>Queue download says "Add the license password"</td><td>Settings → MakerWorld model → License password → Save.</td></tr>
       <tr><td>Printers: Bambuddy isn't answering</td><td>Run the SnapSTL install command again (it repairs Bambuddy). Log: <code>~/Library/Logs/Bambuddy</code>.</td></tr>
-      <tr><td>Push fails: "Not sliced yet"</td><td>Slice the plate in Bambu Studio → Export plate sliced file into the batch's <code>Sliced</code> folder (or set a slicer service), then <b>Print</b> (Printers → Print jobs).</td></tr>
-      <tr><td>A pushed plate stays "In Bambuddy queue"</td><td>Its printer is busy or waiting for the bed to be cleared: Printers → <b>Clear plate</b>.</td></tr>
+      <tr><td>Start print fails: "Not sliced yet"</td><td>Slice the plate in Bambu Studio → Export plate sliced file into the batch's <code>Sliced</code> folder (or set a slicer service), then <b>Start print</b> again (Make It).</td></tr>
+      <tr><td>A started plate stays "Started · in queue"</td><td>Its printer is busy or waiting for the bed to be cleared: Make It → Printers → <b>Clear plate</b>.</td></tr>
       <tr><td>Can't copy text in the window</td><td>Quit and reopen SnapSTL.app.</td></tr>
       <tr><td>Portal doesn't open</td><td>Terminal: <code>launchctl kickstart -k gui/$(id -u)/local.snapmagicians.snapstl</code>; log: <code>~/Library/Logs/SnapSTL.log</code>.</td></tr>
     </table>
@@ -530,7 +534,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 const $=id=>document.getElementById(id);
 const COLORS={pink:'#f4a7c0','hot pink':'#ff4fa0','baby pink':'#f9c9d9',lavender:'#b9a3e3',red:'#e5534b',orange:'#f39a3d',yellow:'#f2d04b',green:'#5fb36a',blue:'#4a86d9','baby blue':'#9fd0f3','sky blue':'#7cc4f0',purple:'#9a6bd1',black:'#333',white:'#fafafa',grey:'#999',lightgray:'#ccc'};
 const STATES=[['ready','Ready','ok'],['needs_review','Needs review','warn'],['in_batch','In a batch','info'],['bundled','Bundled','info'],['printed','Printed','ok'],['skipped','Skipped',''],['not_needed','Not needed','']];
-const TABS=[['ready','Ready'],['needs_review','Needs review'],['in_batch','In a batch'],['bundled','Bundled'],['printed','Printed'],['skipped','Skipped'],['delivered','Delivered'],['rto','RTO'],['in_transit','In Transit'],['cancelled','Cancelled'],['others','Others'],['all','All']];
+const TABS=[['ready','Ready'],['needs_review','Needs review'],['in_batch','In a batch'],['bundled','Bundled'],['ready_to_ship','Ready to ship'],['printed','Printed'],['skipped','Skipped'],['delivered','Delivered'],['rto','RTO'],['in_transit','In Transit'],['cancelled','Cancelled'],['others','Others'],['all','All']];
 const SUBTABS=[['ready','All ready'],['ready_single','Single'],['ready_clubbed','Clubbed']];
 let S=null,META=null,filter={tab:'ready',f:{},offset:0},LIMIT=100,openBatch=null,tab='orders',FACETS=null;
 const SEL=new Set();
@@ -543,14 +547,14 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   for(const s of PAGES)$('t-'+s).hidden=s!==t;
-  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='downloads')loadQueue(); if(t==='printers')loadFarm(); if(t==='pstatus')loadStatusAll(); if(t==='settings'){loadSetup();loadShared();loadFarmSettings();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
-const PAGES=['orders','batches','downloads','printers','pstatus','settings','help'];
+  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='downloads')loadQueue(); if(t==='makeit')loadMakeIt(); if(t==='pstatus')loadStatusAll(); if(t==='settings'){loadSetup();loadShared();loadFarmSettings();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
+const PAGES=['orders','batches','downloads','makeit','pstatus','settings','help'];
 
 // ---------- orders ----------
 // What can be ticked depends on the tab: Ready orders (→ Create batch), Bundled (→ Mark printed),
 // Printed (→ Back to Bundled).
 let SELKIND='ready';
-const selKind=()=>filter.tab==='bundled'?'bundled':filter.tab==='printed'?'printed':'ready';
+const selKind=()=>['bundled','ready_to_ship'].includes(filter.tab)?'bundled':filter.tab==='printed'?'printed':'ready';
 async function loadOrders(){
   if(selKind()!==SELKIND){SEL.clear();SELKIND=selKind()}
   const p=filterParams({limit:LIMIT,offset:filter.offset});
@@ -644,12 +648,12 @@ async function loadBatches(){const bs=await api('/api/batches');
     if(b.status==='created')acts.push(`<button class="small primary" data-dl="${b.id}">Queue download</button>`);
     if(b.status==='models_ready')acts.push(`<button class="small primary" data-build="${b.id}">Queue build</button>`);
     if(b.status==='waiting')acts.push(`<button class="small" data-build="${b.id}" data-partial="1" title="Build with the models that are ready; orders still missing a model are left out">Build now with what's ready</button>`);
-    if(finished)acts.push(`<button class="small primary" data-push="${b.id}" title="Send the plates to your printers' queues in Bambuddy">Push to queue</button>`);
+    if(finished)acts.push(`<button class="small primary" data-make="${b.id}" title="Print these plates: Make It → Bases / Names">Make it</button>`);
     if(built)acts.push(`<button class="small" data-redl="${b.id}" title="Fetch every model of this batch again from MakerWorld (replaces the saved ones)">Re-download</button>`,`<button class="small" data-rebuild="${b.id}" title="Make the plates again from the downloaded models — writes a new Batch folder; the old one stays">Rebuild plates</button>`);
     if(['created','waiting','models_ready'].includes(b.status))acts.push(`<button class="small" data-cancel="${b.id}">${b.label?'Stop':'Cancel'}</button>`);
     return `<tr><td>${b.id}</td><td>${esc(b.label||'—')}</td><td>${pc}</td><td>${new Date(b.created_at*1000).toLocaleString()}</td><td>${b.orders}</td><td>${models}</td><td>${b.plates||'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${acts.join(' ')}</td></tr>`}).join(''):'<tr><td colspan="9" class="empty">No batches yet — select orders on the Orders tab</td></tr>';
   document.querySelectorAll('[data-b]').forEach(x=>x.onclick=()=>openBatchDetail(+x.dataset.b));
-  document.querySelectorAll('[data-push]').forEach(x=>x.onclick=async()=>{await openBatchDetail(+x.dataset.push,true);openPush(+x.dataset.push)});
+  document.querySelectorAll('[data-make]').forEach(x=>x.onclick=()=>show('makeit'));
   document.querySelectorAll('[data-dl]').forEach(x=>x.onclick=async()=>{try{const r=await post(`/api/batches/${x.dataset.dl}/download`);$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for the helper — see Downloads`}catch(e){alert(e.message)}loadBatches()});
   document.querySelectorAll('[data-redl]').forEach(x=>x.onclick=async()=>{if(!confirm('Re-download every model of this batch from MakerWorld? The new downloads replace the saved ones. Then use Queue build / Rebuild plates.'))return;try{const r=await post(`/api/batches/${x.dataset.redl}/download`,{force:true});$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for re-download — see Downloads`}catch(e){alert(e.message)}loadBatches()});
   document.querySelectorAll('[data-rebuild]').forEach(x=>x.onclick=async()=>{if(!confirm('Rebuild the plates from the downloaded models? A new Batch folder is written; the old folder stays.'))return;try{await post(`/api/batches/${x.dataset.rebuild}/build`)}catch(e){alert(e.message)}loadBatches()});
@@ -672,9 +676,8 @@ async function loadObjects(id,status,mine){let r;try{r=await api(`/api/batches/$
   document.querySelectorAll('[data-objdl]').forEach(x=>x.onclick=async()=>{try{const r=await post(`/api/batches/${id}/models/redownload`,{key:x.dataset.objdl});$('queueinfo').textContent=r.queued?`${r.name} queued for re-download — press Rebuild plates once it's in`:`${r.name} is already queued`}catch(e){alert(e.message)}openBatchDetail(id,true);loadBatches()});
   document.querySelectorAll('.objs img[data-key]').forEach(i=>i.onclick=()=>{$('bzoom').innerHTML=`<div class="toolbar" style="margin-top:10px"><b>Top view</b><span class="grow"></span><button class="small" id="bzclose">Close</button></div><img class="zoomimg" src="/api/models/${i.dataset.key}/view.png?side=top"><div class="toolbar" style="margin-top:6px"><b>Back</b></div><img class="zoomimg" src="${i.src}">`;$('bzclose').onclick=()=>$('bzoom').innerHTML=''})}
 async function openBatchDetail(id,quiet){const changed=openBatch!==id;openBatch=id;const b=await api('/api/batches/'+id);const s=b.summary||{};
-  if(changed){$('bobjsbox').open=false;$('bzoom').innerHTML='';$('bpush').hidden=true;PUSH=null}
-  $('bpushbtn').hidden=!(b.mine&&b.status.startsWith('done'));$('bpushbtn').onclick=()=>openPush(id);
-  if(PUSH&&PUSH.id===id&&!$('bpush').hidden)loadPush(id,true);
+  if(changed){$('bobjsbox').open=false;$('bzoom').innerHTML=''}
+  $('bmakeit').hidden=!(b.mine&&b.status.startsWith('done'));$('bmakeit').onclick=()=>show('makeit');
   loadObjects(id,b.status,b.mine);
   $('bdetail').hidden=false;$('btitle').textContent=`${s.label||'Batch #'+id} · ${b.order_ids.length} orders · ${b.computer||'this computer'}`;$('bzip').href=`/api/batches/${id}/zip`;$('bzip').hidden=!b.status.startsWith('done')||!b.mine;
   $('bother').hidden=b.mine;$('bother').innerHTML=b.mine?'':`<div class="w">This batch belongs to <b>${esc(b.computer||'another computer')}</b>: its models are downloaded and its plates built and saved there. You can follow its progress here; open SnapSTL on ${esc(b.computer||'that computer')} to change it or get its files.</div>`;
@@ -701,57 +704,10 @@ $('qpause').onclick=async()=>{await post('/api/downloader/'+($('qpause').dataset
 $('retry2').onclick=async()=>{await post('/api/downloads/retry');loadQueue()};
 $('retry').onclick=async()=>{const r=await post('/api/downloads/retry');$('queueinfo').textContent=`${r.requeued} download(s) re-queued`;loadBatches()};
 
-// ---------- push to queue (batch → Bambuddy) ----------
+// ---------- print job status ----------
 const JST={queued:['Waiting to send','info'],slicing:['Slicing','info'],uploading:['Sending','info'],sent:['In Bambuddy queue','info'],printing:['Printing','info'],done:['Printed','ok'],failed:['Failed','err'],cancelled:['Cancelled','']};
 const jobPill=j=>{if(!j)return '<span class="hint">not pushed</span>';const st=j.state==='sent'?(j.held?['Waiting for Start','warn']:['Started · in queue','info']):(JST[j.state]||[j.state,'']);
   return `<span class="pill ${st[1]}">${st[0]}${j.state==='printing'&&j.progress!=null?' '+Math.round(j.progress)+'%':''}</span> <span class="hint">${esc(j.printer_name||'')}</span>${j.error?`<div class="reason">${esc(j.error)}</div>`:''}`};
-// Start: the only way a print begins (Bambuddy holds every plate until then)
-async function startJob(id,after){if(!confirm('Start this print? Bambuddy prints it as soon as the printer is free and its bed has been cleared.'))return;
-  try{await post(`/api/print-jobs/${id}/start`)}catch(e){
-    if(/Not enough|filament|409/i.test(e.message)&&confirm(e.message+'\n\nStart anyway?')){try{await post(`/api/print-jobs/${id}/start`,{force:true})}catch(e2){alert(e2.message)}}else alert(e.message)}
-  after&&after()}
-let PUSH=null; // {id, data, sel:{file: printer id}, on:Set(file)}
-async function openPush(id){PUSH={id,data:null,sel:{},on:new Set(),init:false};$('bpush').hidden=false;$('bpmsgs').innerHTML='<div class="w">Loading plates and printers…</div>';await loadPush(id);$('bpush').scrollIntoView({behavior:'smooth',block:'start'})}
-$('bpclose').onclick=()=>{$('bpush').hidden=true;PUSH=null};
-async function loadPush(id){let r;try{r=await api(`/api/batches/${id}/plates`)}catch(e){$('bpmsgs').innerHTML=`<div class="e">${esc(e.message)}</div>`;return}
-  if(!PUSH||PUSH.id!==id)return;PUSH.data=r;
-  if(!PUSH.init){PUSH.init=true;for(const p of r.plates){PUSH.sel[p.file]=p.suggested??'';if(!p.job_active&&!(p.job&&p.job.state==='done')&&p.suggested!=null)PUSH.on.add(p.file)}}
-  const f=r.farm,unsliced=r.plates.filter(p=>!p.sliced&&!p.job_active).length;
-  $('bpmsgs').innerHTML=(!f.connected?`<div class="e">Bambuddy isn't connected${f.error?': '+esc(f.error):''} — see <a href="#" data-go="settings">Settings → Print farm</a>.</div>`:'')
-    +(f.connected&&!f.printers?'<div class="w">No printers in Bambuddy yet — add them in Bambuddy (<a href="#" data-go="printers">Printers</a> → Open Bambuddy).</div>':'')
-    +(unsliced&&!f.slicer?`<div class="w">${unsliced} plate${unsliced>1?'s are':' is'} not sliced yet. Open ${unsliced>1?'each':'it'} in Bambu Studio → <b>Slice plate</b> → <b>Export plate sliced file</b> and save it in <code>${esc(r.folder)}/Sliced/</code> under the same path (e.g. <code>Sliced/Bases/…gcode.3mf</code>), or set a slicer service in <a href="#" data-go="settings">Settings → Print farm</a>.</div>`:'')
-    +(r.all_printed?'<div class="o">Every plate of this batch is printed. <button class="small primary" id="bpprinted">Mark these orders printed</button></div>':'');
-  document.querySelectorAll('#bpmsgs [data-go]').forEach(a=>a.onclick=e=>{e.preventDefault();show(a.dataset.go)});
-  if($('bpprinted'))$('bpprinted').onclick=async()=>{const b=await api('/api/batches/'+id);if(!confirm(`Mark the ${b.order_ids.length} order(s) of this batch as printed? They move to the Printed tab.`))return;
-    try{const x=await post('/api/orders/printed',{order_ids:b.order_ids});$('bpinfo').textContent=`${x.changed} order(s) marked printed`;refreshAll()}catch(e){alert(e.message)}};
-  $('bplates').innerHTML=r.plates.map(p=>{const busy=p.job_active;const c=p.colors[0]||'';
-    const opts=`<option value="">— choose a printer —</option>`+p.choices.map(o=>`<option value="${o.id}" ${String(PUSH.sel[p.file])===String(o.id)?'selected':''} ${o.why_not?'disabled':''}>${esc(o.name)}${o.why_not?' · '+esc(o.why_not):(o.note?' · '+esc(o.note):'')+(o.state?' · '+esc(o.state.toLowerCase()):'')}</option>`).join('');
-    const sl=p.sliced?`<span class="pill ok" title="${esc(p.sliced)}">Sliced</span>`:(f.slicer?'<span class="pill info">Slicer service</span>':'<span class="pill warn">Not sliced</span>');
-    const acts=(p.job&&p.job.state==='sent'&&p.job.held?`<button class="small primary" data-jstart="${p.job.id}" title="Let Bambuddy print it (once the printer is free and its bed is cleared)">Start</button> `:'')
-      +(p.job&&['failed','cancelled'].includes(p.job.state)?`<button class="small" data-jretry="${p.job.id}">Try again</button>`:p.job&&['queued','sent','failed'].includes(p.job.state)?`<button class="small" data-jcancel="${p.job.id}">Cancel</button>`:'');
-    return `<tr><td><input type="checkbox" data-pon="${esc(p.file)}" ${PUSH.on.has(p.file)?'checked':''} ${busy?'disabled':''}></td><td><div>${p.kind==='bases'?'<b>Bases</b>':`<b>Names</b> ${sw(c)}`}</div><div class="fn">${esc(p.file.split('/').pop())}</div></td><td class="hint">${esc(p.names.join(', '))}<div>needs ${esc(p.need)}</div></td><td>${sl}</td><td><select data-psel="${esc(p.file)}" ${busy?'disabled':''}>${opts}</select></td><td>${jobPill(p.job)}</td><td>${acts}</td></tr>`}).join('')||'<tr><td colspan="7" class="empty">No plates</td></tr>';
-  document.querySelectorAll('[data-pon]').forEach(x=>x.onchange=()=>{x.checked?PUSH.on.add(x.dataset.pon):PUSH.on.delete(x.dataset.pon);pushInfo()});
-  document.querySelectorAll('[data-psel]').forEach(x=>x.onchange=()=>{PUSH.sel[x.dataset.psel]=x.value;if(x.value)PUSH.on.add(x.dataset.psel);loadPush(id)});
-  document.querySelectorAll('[data-jretry]').forEach(x=>x.onclick=async()=>{try{await post(`/api/print-jobs/${x.dataset.jretry}/retry`)}catch(e){alert(e.message)}loadPush(id)});
-  document.querySelectorAll('#bplates [data-jstart]').forEach(x=>x.onclick=()=>startJob(x.dataset.jstart,()=>loadPush(id)));
-  document.querySelectorAll('[data-jcancel]').forEach(x=>x.onclick=async()=>{if(!confirm('Cancel this print job? If it is waiting in Bambuddy\'s queue it is removed there too.'))return;try{await post(`/api/print-jobs/${x.dataset.jcancel}/cancel`)}catch(e){alert(e.message)}loadPush(id)});
-  pushInfo()}
-function pushInfo(){if(!PUSH||!PUSH.data)return;const ready=[...PUSH.on].filter(f=>PUSH.sel[f]);const free=PUSH.data.plates.filter(p=>!p.job_active);
-  $('bpall').checked=free.length>0&&free.every(p=>PUSH.on.has(p.file));
-  $('bpgo').disabled=!ready.length||!PUSH.data.farm.connected;$('bpgo').textContent=ready.length?`Push ${ready.length} plate${ready.length>1?'s':''} to queue`:'Push to queue';
-  const missing=[...PUSH.on].length-ready.length;$('bpinfo').textContent=missing?`${missing} ticked plate(s) have no printer chosen`:''}
-$('bpall').onchange=()=>{if(!PUSH)return;for(const p of PUSH.data.plates){if(p.job_active)continue;$('bpall').checked?PUSH.on.add(p.file):PUSH.on.delete(p.file)}loadPush(PUSH.id)};
-$('bpauto').onclick=()=>{if(!PUSH||!PUSH.data)return;for(const p of PUSH.data.plates){if(!p.job_active&&p.suggested!=null){PUSH.sel[p.file]=p.suggested;PUSH.on.add(p.file)}}loadPush(PUSH.id)};
-$('bpgo').onclick=async()=>{if(!PUSH)return;const id=PUSH.id;const files=[...PUSH.on].filter(f=>PUSH.sel[f]);
-  const redo=PUSH.data.plates.filter(p=>files.includes(p.file)&&p.job&&p.job.state==='done');
-  let again=false;if(redo.length){if(!confirm(`${redo.length} of these plates were printed already. Print them again?`))return;again=true}
-  $('bpgo').disabled=true;
-  let note='';
-  try{const r=await post(`/api/batches/${id}/push`,{plates:files.map(f=>({file:f,printer_id:+PUSH.sel[f]})),again});
-    note=`<div class="o">${r.queued} plate(s) on their way to Bambuddy${r.skipped?` · ${r.skipped} already pushed (skipped)`:''}. They wait there — press <b>Start</b> on each when you want it printed.</div>`;for(const f of files)PUSH.on.delete(f)}
-  catch(e){note=`<div class="e">${esc(e.message)}</div>`}
-  await loadPush(id);$('bpmsgs').innerHTML+=note};
-
 // ---------- printers page (Bambuddy) ----------
 const STATE_PILL=s=>{if(!s)return '<span class="pill">—</span>';if(!s.connected)return `<span class="pill err" title="${esc(s.error||'')}">Offline</span>`;
   const st=(s.state||'').toUpperCase();const busy=['RUNNING','PREPARE','SLICING','INIT'].includes(st);
@@ -759,7 +715,6 @@ const STATE_PILL=s=>{if(!s)return '<span class="pill">—</span>';if(!s.connecte
   if(busy&&s.remaining_time)h+=` <span class="hint">${Math.round(s.remaining_time)} min left</span>`;
   if(s.errors)h+=` <span class="reason">${s.errors} error${s.errors>1?'s':''} on the printer</span>`;
   if(s.awaiting_plate_clear)h+=`<div class="reason">Waiting for the bed to be cleared</div>`;return h};
-let FARM=null;
 const fmtMin=m=>m>=60?`${Math.floor(m/60)} h ${Math.round(m%60)} min`:`${Math.round(m)} min`;
 function spoolRow(x){const name=x.name||(x.approx?`≈ ${x.approx}`:(x.hex||'unknown colour'));
   return `<div class="spool"><span class="slot">${esc(x.slot)}</span><span class="dot" style="background:${esc(x.hex||'transparent')}"></span><span>${esc(name)}</span><span class="hint">${esc(x.material||'')}${x.remain!=null?` · ${x.remain}%`:''}</span></div>`}
@@ -770,43 +725,64 @@ function printerCard(p){const s=p.status||{};const job=p.role==='bases'?'Bases':
     ${s.file?`<div class="facts">Printing: ${esc(s.file)}</div>`:''}${facts?`<div class="facts">${esc(facts)}</div>`:''}
     <div class="spools">${p.spools.length?p.spools.map(spoolRow).join(''):'<span class="hint">No filament reported</span>'}</div>
     ${META.local&&s.awaiting_plate_clear?`<div style="margin-top:8px"><button class="small primary" data-pclear="${p.id}" title="You checked the bed is empty: the next queued print may start">Clear plate</button></div>`:''}</div>`}
-async function loadFarm(){let r;try{r=await api('/api/farm')}catch(e){$('farmstate').innerHTML=`<div class="e">${esc(e.message)}</div>`;return}FARM=r;
-  const st=r.status;
-  $('bbopen').href=st.url;$('bbopen').hidden=!st.reachable||!META.local;
-  $('farmstate').innerHTML=st.connected?(st.error?`<div class="e">${esc(st.error)}</div>`:'')
-    :st.reachable?`<div class="w">Bambuddy is running at <code>${esc(st.url)}</code> but SnapSTL isn't connected${st.error?': '+esc(st.error):''} — Settings → Print farm.</div>`
-    :`<div class="e">Bambuddy isn't answering at <code>${esc(st.url)}</code>. It's installed with SnapSTL and starts at login — re-run the SnapSTL installer if it's missing.${st.error?`<div class="hint">${esc(st.error)}</div>`:''}</div>`;
+// ---------- Make It: Bases / Names / Completed ----------
+let MK=null,MKTAB='bases';const MKSEL={};const OPTLBL={bed_levelling:'Bed levelling',flow_cali:'Flow calibration',timelapse:'Timelapse'};
+try{MKTAB=localStorage.getItem('mktab')||'bases'}catch{}
+function optSummary(o){const on=Object.entries(o||{}).filter(([k,v])=>v!==''&&v!=null).map(([k,v])=>`${OPTLBL[k]||k}: ${v===true?'on':v===false?'off':v}`);return on.length?on.join(' · '):'Bambuddy defaults'}
+function mkShow(t){MKTAB=t;try{localStorage.setItem('mktab',t)}catch{}for(const k of ['bases','names','completed','printers'])$('mk-'+k).hidden=k!==t;mkChips()}
+function mkChips(){if(!MK)return;const n={bases:MK.bases.length,names:MK.names.length,completed:MK.completed.length,printers:MK.printers.length};
+  $('mktabs').innerHTML=[['bases','Bases'],['names','Names'],['completed','Completed'],['printers','Printers']].map(([k,l])=>`<button data-mk="${k}" class="${MKTAB===k?'on':''}">${l} · ${n[k]}</button>`).join('');
+  document.querySelectorAll('[data-mk]').forEach(b=>b.onclick=()=>mkShow(b.dataset.mk))}
+const mkKey=r=>r.batch_id+'|'+r.file;
+function mkStatus(r){const j=r.job;if(!j||j.state==='reprint')return `<span class="hint">${j?'reprint — choose a printer':'not started'}</span>`;return jobPill(j)}
+function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={printer:String(r.suggested??(r.job&&r.job.printer_id?r.job.printer_id:'')),options:{...((r.job&&r.job.options)||{})}});
+  const j=r.job,busy=r.job_active&&!(j&&j.state==='sent'&&j.held);
+  const opts='<option value="">— choose a printer —</option>'+r.choices.map(c=>`<option value="${c.id}" ${String(c.id)===sel.printer?'selected':''} ${c.why_not?'disabled':''}>${esc(c.name)}${c.why_not?' · '+esc(c.why_not):[c.available?'available':(c.state?c.state.toLowerCase():'busy'),c.left>=0?c.left+'% left':'',c.note].filter(Boolean).map(esc).join(' · ').replace(/^/,' · ')}</option>`).join('');
+  const optSel=(kk,vals)=>`<label style="margin:4px 0 2px">${OPTLBL[kk]}</label><select data-mkopt="${esc(k)}" data-k="${kk}"><option value="">Bambuddy default</option>${vals.map(v=>`<option value="${v}" ${String(sel.options[kk])===String(v)?'selected':''}>${v===true?'on':v===false?'off':v}</option>`).join('')}</select>`;
+  const held=j&&j.state==='sent'&&j.held;
+  const btn=busy?'':`<button class="small primary" data-mkstart="${esc(k)}" title="Send to this printer and start printing (once its bed is cleared)">${held?'Start print':(j&&['failed','cancelled'].includes(j.state)?'Start print again':'Start print')}</button>`;
+  const plate=`<div class="fn">${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>`;
+  return `<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td>${withColour?`<td style="white-space:nowrap">${sw(r.colors[0]||'')}</td>`:''}<td>${plate}</td>
+    <td>${r.sliced?'<span class="pill ok">Sliced</span>':(MK.slicer?'<span class="pill info">Slicer service</span>':'<span class="pill warn">Not sliced</span>')}</td>
+    <td><select data-mkpr="${esc(k)}" ${busy?'disabled':''}>${opts}</select></td>
+    <td>${busy?`<span class="hint">${esc(optSummary(j&&j.options))}</span>`:`<details><summary class="hint" style="cursor:pointer">${esc(optSummary(sel.options))}</summary>${Object.entries(MK.options).map(([kk,v])=>optSel(kk,v)).join('')}</details>`}</td>
+    <td>${mkStatus(r)}</td><td>${btn}</td></tr>`}
+function mkRender(){const editing=['mkbases','mknames'].some(id=>$(id).contains(document.activeElement)||$(id).querySelector('details[open]'));
+  if(!editing){
+    $('mkbases').innerHTML=MK.bases.length?MK.bases.map(r=>mkRow(r,false)).join(''):'<tr><td colspan="7" class="empty">No base plates waiting — build a batch first</td></tr>';
+    const names=[...MK.names].sort((a,b)=>(a.colors[0]||'').localeCompare(b.colors[0]||'')||a.batch_id-b.batch_id);
+    $('mknames').innerHTML=names.length?names.map(r=>mkRow(r,true)).join(''):'<tr><td colspan="8" class="empty">No name plates waiting</td></tr>'}
+  $('mkdone').innerHTML=MK.completed.length?MK.completed.map(r=>`<tr><td class="hint">${esc(r.batch)}</td><td><div>${r.kind==='bases'?'<b>Bases</b>':`<b>Names</b> ${sw(r.colors[0]||'')}`}</div><div class="fn" style="font-size:12px">${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div></td><td>${esc(r.job.printer_name||'')}</td><td class="hint">${r.job.updated_at?new Date(r.job.updated_at*1000).toLocaleString():''}</td><td><button class="small" data-mkre="${esc(mkKey(r))}" title="Only if this print failed: back to ${r.kind==='bases'?'Bases':'Names'} to send again">Reprint</button></td></tr>`).join(''):'<tr><td colspan="5" class="empty">Nothing printed yet</td></tr>';
+  const all=[...MK.bases,...MK.names,...MK.completed],find=k=>all.find(r=>mkKey(r)===k);
+  document.querySelectorAll('[data-mkpr]').forEach(x=>x.onchange=()=>{MKSEL[x.dataset.mkpr].printer=x.value});
+  document.querySelectorAll('[data-mkopt]').forEach(x=>x.onchange=()=>{const v=x.value;MKSEL[x.dataset.mkopt].options[x.dataset.k]=v===''?'':v==='true'?true:v==='false'?false:v});
+  document.querySelectorAll('.mktable details').forEach(d=>d.ontoggle=()=>{if(!d.open){const s=d.querySelector('[data-mkopt]');if(s)d.querySelector('summary').textContent=optSummary(MKSEL[s.dataset.mkopt].options)}});
+  document.querySelectorAll('[data-mkstart]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkstart),sel=MKSEL[x.dataset.mkstart];
+    if(!sel.printer){alert('Choose a printer');return}
+    const pr=r.choices.find(c=>String(c.id)===sel.printer);
+    if(!confirm(`Start printing ${r.kind==='bases'?'this base plate':'this '+(r.colors[0]||'')+' name plate'} on ${pr?pr.name:'that printer'}? It prints as soon as the printer is free and its bed has been cleared.`))return;
+    x.disabled=true;const body={batch_id:r.batch_id,file:r.file,printer_id:+sel.printer,options:sel.options};
+    try{await post('/api/makeit/start',body)}catch(e){if(/anyway|filament|warn/i.test(e.message)&&confirm(e.message+'\n\nStart anyway?')){try{await post('/api/makeit/start',{...body,force:true})}catch(e2){alert(e2.message)}}else alert(e.message)}
+    document.activeElement&&document.activeElement.blur();loadMakeIt()});
+  document.querySelectorAll('[data-mkre]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkre);
+    if(!confirm('Reprint this plate? Only if the print failed. It goes back to '+(r.kind==='bases'?'Bases':'Names')+' — choose a printer and press Start print there. Its orders leave Ready to ship until it is printed again.'))return;
+    try{await post('/api/makeit/reprint',{batch_id:r.batch_id,file:r.file});delete MKSEL[x.dataset.mkre]}catch(e){alert(e.message)}loadMakeIt()})}
+async function loadMakeIt(){let r;try{r=await api('/api/makeit')}catch(e){$('mkmsgs').innerHTML=`<div class="e">${esc(e.message)}</div>`;return}MK=r;
+  const st=r.status;$('bbopen').href=st.url;$('bbopen').hidden=!st.reachable||!META.local;
+  const unsliced=[...r.bases,...r.names].filter(x=>!x.sliced&&!x.job_active).length;
+  $('mkmsgs').innerHTML=(st.connected?(st.error?`<div class="e">${esc(st.error)}</div>`:'')
+      :st.reachable?`<div class="w">Bambuddy is running at <code>${esc(st.url)}</code> but SnapSTL isn't connected — Settings → Print farm.</div>`
+      :`<div class="e">Bambuddy isn't answering at <code>${esc(st.url)}</code>. It's installed with SnapSTL and starts at login — re-run the SnapSTL installer if it's missing.</div>`)
+    +(st.connected&&!r.printers.length?'<div class="w">No printers in Bambuddy yet — add them in Bambuddy (Open Bambuddy).</div>':'')
+    +(unsliced&&!r.slicer?`<div class="w">${unsliced} plate${unsliced>1?'s are':' is'} not sliced yet: open it in Bambu Studio → <b>Slice plate</b> → <b>Export plate sliced file</b> into the batch folder's <code>Sliced</code> folder (same path), or set a slicer service in Settings → Print farm.</div>`:'');
   const busy=r.printers.filter(p=>p.status&&['RUNNING','PREPARE','PAUSE'].includes((p.status.state||'').toUpperCase())).length;
   const clear=r.printers.filter(p=>p.status&&p.status.awaiting_plate_clear).length;
-  $('prinfo').textContent=r.printers.length?`${r.printers.length} printer${r.printers.length>1?'s':''} · ${busy} printing${clear?` · ${clear} waiting for the bed to be cleared`:''}`:'';
-  $('printers').innerHTML=r.printers.length?r.printers.map(printerCard).join(''):`<div class="empty">${st.connected?'No printers in Bambuddy yet — add them in Bambuddy (Open Bambuddy).':'Connect Bambuddy first.'}</div>`;
-  document.querySelectorAll('[data-pclear]').forEach(x=>x.onclick=async()=>{if(!confirm('Is the bed of this printer empty and clean? Its next queued print starts then.'))return;try{await post(`/api/farm/printers/${x.dataset.pclear}/clear-plate`)}catch(e){alert(e.message)}loadFarm()});
-  renderJobs(r);
-  $('farmlog').textContent=(r.worker.log||[]).join('\n')}
-$('prrefresh').onclick=()=>loadFarm();
-// Print jobs: per job a printer, print options and Print (send / move / print again)
-const JOBSEL={};const OPTLBL={bed_levelling:'Bed levelling',flow_cali:'Flow calibration',timelapse:'Timelapse'};
-function optSummary(o){const on=Object.entries(o||{}).filter(([k,v])=>v!==''&&v!=null).map(([k,v])=>`${OPTLBL[k]||k}: ${v===true?'on':v===false?'off':v}`);return on.length?on.join(' · '):'Bambuddy defaults'}
-function renderJobs(r){const box=$('pjobs');if(box.contains(document.activeElement)||box.querySelector('details[open]'))return;
-  box.innerHTML=r.jobs.length?r.jobs.map(j=>{const sel=JOBSEL[j.id]||(JOBSEL[j.id]={printer:String(j.printer_id??''),options:{...(j.options||{})}});
-    let ctl='<td></td><td class="hint">'+esc(j.printer_name||'')+'</td><td class="hint">'+esc(optSummary(j.options))+'</td>';
-    if(j.choices&&META.local){
-      const opts=j.choices.map(c=>`<option value="${c.id}" ${String(c.id)===sel.printer?'selected':''} ${c.why_not?'disabled':''}>${esc(c.name)}${c.why_not?' · '+esc(c.why_not):(c.note?' · '+esc(c.note):'')+(c.state?' · '+esc(c.state.toLowerCase()):'')}</option>`).join('');
-      const optSel=(k,vals)=>`<label style="margin:4px 0 2px">${OPTLBL[k]}</label><select data-jopt="${j.id}" data-k="${k}"><option value="" ${sel.options[k]==null||sel.options[k]===''?'selected':''}>Bambuddy default</option>${vals.map(v=>`<option value="${v}" ${String(sel.options[k])===String(v)?'selected':''}>${v===true||v==='true'?'on':v===false||v==='false'?'off':v}</option>`).join('')}</select>`;
-      const label=['failed','cancelled','done'].includes(j.state)?(j.state==='done'?'Print again':'Print'):(j.state==='sent'?'Move':'Change');
-      ctl=`<td style="white-space:nowrap">${j.state==='sent'&&j.held?`<button class="small primary" data-jstart="${j.id}" title="Let Bambuddy print it (once the printer is free and its bed is cleared)">Start</button> `:''}<button class="small${j.state==='sent'&&j.held?'':' primary'}" data-jprint="${j.id}" title="${j.state==='sent'?'Move it to this printer in Bambuddy\'s queue (with these options)':'Send this plate to the chosen printer'}">${label}</button></td>
-        <td><select data-jpr="${j.id}" style="min-width:160px">${opts}</select></td>
-        <td><details><summary class="hint" style="cursor:pointer">${esc(optSummary(sel.options))}</summary>${Object.entries(r.options).map(([k,v])=>optSel(k,v)).join('')}</details></td>`}
-    return `<tr>${ctl}<td>${j.id}</td><td>#${j.batch_id}</td><td class="fn" style="font-size:12px">${esc(j.plate.split('/').slice(-2).join('/'))}</td><td>${jobPill({...j,printer_name:'',error:''})}</td><td class="hint">${esc(j.error||'')}${!j.latest?'<div>replaced by a newer job</div>':''}</td></tr>`}).join('')
-    :'<tr><td colspan="8" class="empty">Nothing pushed yet — Batches → open a built batch → Push to queue</td></tr>';
-  box.querySelectorAll('[data-jpr]').forEach(x=>x.onchange=()=>{JOBSEL[x.dataset.jpr].printer=x.value});
-  box.querySelectorAll('[data-jopt]').forEach(x=>x.onchange=()=>{const o=JOBSEL[x.dataset.jopt].options;const v=x.value;o[x.dataset.k]=v===''?'':v==='true'?true:v==='false'?false:v});
-  box.querySelectorAll('details').forEach(d=>d.ontoggle=()=>{if(!d.open)d.querySelector('summary').textContent=optSummary(JOBSEL[d.querySelector('[data-jopt]').dataset.jopt].options)});
-  box.querySelectorAll('[data-jstart]').forEach(x=>x.onclick=()=>startJob(x.dataset.jstart,loadFarm));
-  box.querySelectorAll('[data-jprint]').forEach(x=>x.onclick=async()=>{const id=x.dataset.jprint,sel=JOBSEL[id];if(!sel.printer){alert('Choose a printer');return}
-    const job=r.jobs.find(j=>String(j.id)===id);if(job.state==='done'&&!confirm('This plate was printed already. Print it again?'))return;
-    x.disabled=true;try{const res=await post(`/api/print-jobs/${id}/print`,{printer_id:+sel.printer,options:sel.options});$('prinfo').textContent=res.moved?`Job #${id} updated`:`Printing again as job #${res.job_id}`}catch(e){alert(e.message)}finally{x.disabled=false}
-    document.activeElement&&document.activeElement.blur();loadFarm()})}
+  $('mkinfo').textContent=`${r.printers.length} printer${r.printers.length===1?'':'s'} · ${busy} printing${clear?` · ${clear} waiting for the bed to be cleared`:''}`;
+  $('printers').innerHTML=r.printers.length?r.printers.map(printerCard).join(''):'<div class="empty">No printers</div>';
+  document.querySelectorAll('[data-pclear]').forEach(x=>x.onclick=async()=>{if(!confirm('Is the bed of this printer empty and clean? Its next started print begins then.'))return;try{await post(`/api/farm/printers/${x.dataset.pclear}/clear-plate`)}catch(e){alert(e.message)}loadMakeIt()});
+  $('farmlog').textContent=(r.worker.log||[]).join('\n');
+  mkShow(MKTAB);mkRender()}
+$('mkrefresh').onclick=()=>loadMakeIt();
 async function loadFarmSettings(){if(!META.local){$('farmsetcard').hidden=true;return}let r;try{r=await api('/api/farm')}catch(e){$('farmsetinfo').textContent=e.message;return}
   const st=r.status,c=r.config;
   $('farmsetinfo').innerHTML=st.connected?`<b>Connected</b> to Bambuddy at <code>${esc(st.url)}</code>${st.auth_enabled?' (login on, SnapSTL uses its API key)':''} · ${r.printers.length} printer${r.printers.length===1?'':'s'}. Printers and filament are set up in Bambuddy.`:st.reachable?`Bambuddy is running at <code>${esc(st.url)}</code> but not connected${st.error?': '+esc(st.error):''}.`:`<span style="color:var(--err)">Bambuddy isn't answering at <code>${esc(st.url)}</code></span> — it's installed with SnapSTL; re-run the installer if it's missing.`;
@@ -890,7 +866,7 @@ async function loadSetup(){if(!META.local){$('setupcard').hidden=true;$('sharedc
     step(s.model.link&&s.model.license,'MakerWorld model link and license password',s.model.license?'Set — downloads come without the watermark.':'Enter the license password for this model (downloads are refused without it).','lic'),
     step(true,'Output and downloads folders',`Plates: ${esc(s.folders.output)} · Models: ${esc(s.folders.downloads)}`,'o_dir'),
     step(s.shared_records.configured&&s.shared_records.ok,'Shared order records',s.shared_records.configured?(s.shared_records.error?esc(s.shared_records.error):(s.shared_records.ok?'Connected.':'Connecting…')):'Optional — only for several SnapSTL computers.','sharedcard',!s.shared_records.configured),
-    step(s.farm.connected&&s.farm.printers>0,'Print farm (Bambuddy)',s.farm.connected?(s.farm.printers?`${s.farm.printers} printer${s.farm.printers>1?'s':''} in Bambuddy.`:'Connected — add your printers in Bambuddy (Printers → Open Bambuddy).'):(esc(s.farm.error)||'Bambuddy is not running.')+' Optional — only to send plates to your printers from SnapSTL.','farmsetcard',!s.farm.connected),
+    step(s.farm.connected&&s.farm.printers>0,'Print farm (Bambuddy)',s.farm.connected?(s.farm.printers?`${s.farm.printers} printer${s.farm.printers>1?'s':''} in Bambuddy.`:'Connected — add your printers in Bambuddy (Make It → Open Bambuddy).'):(esc(s.farm.error)||'Bambuddy is not running.')+' Optional — only to send plates to your printers from SnapSTL.','farmsetcard',!s.farm.connected),
     step(s.updates.git,'Updates',s.updates.git?'Automatic: SnapSTL shows "Update available" when there is one.':esc(s.updates.error||'Not available'),'updcard'),
   ].join('');
   document.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>jump(b.dataset.jump))}
@@ -967,12 +943,12 @@ async function refresh(){try{const st=await api('/api/state');if(tab==='settings
   if(key!==lastKey){lastKey=key;loadFacets();
     if(tab==='orders')loadOrders(); if(tab==='batches')loadBatches()}
   if(tab==='downloads')loadQueue();
-  if(++TICK%3===0){if(tab==='printers')loadFarm();if(tab==='pstatus'&&$('psauto').checked)loadStatusAll();if(tab==='batches'&&PUSH&&!$('bpush').hidden)loadPush(PUSH.id)}
+  if(++TICK%3===0){if(tab==='makeit')loadMakeIt();if(tab==='pstatus'&&$('psauto').checked)loadStatusAll()}
   const log=$('log');const atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-4;log.textContent=st.log.join('\n');if(atEnd)log.scrollTop=log.scrollHeight;
 }catch(e){}}
 function refreshAll(){lastKey='';refresh()}
 (async()=>{META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;
-  if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders'}catch{}if(!PAGES.includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;
+  if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders';if(t==='printers')t='makeit'}catch{}if(!PAGES.includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;
   document.querySelectorAll('.fm').forEach(x=>x.textContent='Show in '+META.file_manager);
   if(META.os==='windows')document.body.classList.add('win');
   $('pcname').textContent=META.computer.name+(META.shared_records?' · shared records':'');show(t);refresh();setInterval(refresh,2000);

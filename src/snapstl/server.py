@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import auth, cache, computer, config, db, farm, platform_os, sync, updater
+from . import auth, cache, computer, config, db, farm, makeit, platform_os, sync, updater
 from .ingest import ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
 from . import maintenance as M
@@ -296,6 +296,7 @@ def _order_view(r: dict) -> dict:
         "state": r["state"], "batch_id": r["batch_id"], "last_error": r["last_error"], "letters": letters,
         "batch_computer": r.get("batch_computer") or "", "batch_label": r.get("batch_label") or "",
         "batch_here": bool(r.get("batch_id")), "printed_at": r.get("printed_at"), "bundled_at": r.get("bundled_at"),
+        "made_at": r.get("made_at"),
         "clubbed": bool(r.get("club_size", 1) > 1),
         "target": [min(band.length, SETTINGS.scaling.max_length), band.height] if band else None,
         "compartments": compartments_for(letters, SETTINGS) if letters else None,
@@ -312,7 +313,8 @@ TABS = {
     "ready_clubbed": f"state='ready' AND {_CLUB} > 1",
     "needs_review": "state='needs_review'",
     "in_batch": "state='in_batch'",
-    "bundled": "state='bundled'",
+    "bundled": "state='bundled' AND made_at IS NULL",
+    "ready_to_ship": "state='bundled' AND made_at IS NOT NULL",  # base and name both printed (Make It)
     "printed": "state='printed'",
     "skipped": "state='skipped'",
     "delivered": _NN + "UPPER(source_status)='DELIVERED'",
@@ -928,6 +930,51 @@ def farm_info(request: Request):
             "options": {k: list(v) for k, v in farm.OPTIONS.items()}, "worker": {"current": farm.WORKER.current,
                                                                           "log": farm.WORKER.log[-20:]},
             "local": is_local(request)}
+
+
+# ---------------- Make It (Bases / Names / Completed) ----------------
+@app.get("/api/makeit")
+def makeit_board():
+    """Make It tab: plates to print by Bases and Names (with pre-selected printers) and Completed."""
+    cfg = farm.load_config()
+    st = farm.status(cfg)
+    prs: list[dict] = []
+    if st["connected"]:
+        try:
+            prs = farm.printers(cfg)
+        except farm.FarmError as e:
+            st["error"] = str(e)
+    return {"status": st, "printers": prs, **makeit.board(prs),
+            "options": {k: list(v) for k, v in farm.OPTIONS.items()}, "slicer": bool(cfg["slicer_url"]),
+            "worker": {"log": farm.WORKER.log[-20:]}}
+
+
+@app.post("/api/makeit/start")
+async def makeit_start(req: Request):
+    """Start print — a person's click: {batch_id, file, printer_id, options, force}."""
+    b = await req.json()
+    if not b.get("printer_id"):
+        raise HTTPException(400, "Choose a printer")
+    _own_batch(int(b.get("batch_id") or 0))
+    try:
+        prs = await run_in_threadpool(farm.printers)
+        return await run_in_threadpool(makeit.start_print, int(b["batch_id"]), str(b.get("file", "")),
+                                       int(b["printer_id"]), b.get("options") or {}, prs, bool(b.get("force")))
+    except farm.StartBlocked as e:
+        raise HTTPException(409, str(e)) from e
+    except farm.FarmError as e:
+        raise _farm_err(e) from e
+
+
+@app.post("/api/makeit/reprint")
+async def makeit_reprint(req: Request):
+    """Completed → back to the queue (a person confirmed the print failed)."""
+    b = await req.json()
+    _own_batch(int(b.get("batch_id") or 0))
+    try:
+        return makeit.reprint(int(b["batch_id"]), str(b.get("file", "")))
+    except farm.FarmError as e:
+        raise _farm_err(e) from e
 
 
 @app.get("/api/printer-status")
