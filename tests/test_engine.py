@@ -111,9 +111,9 @@ def test_grouping_by_color(meshes_for):
     assert set(bplates[0].colors) == {"pink"}  # full colour group first
     assert sum(sizes) == len(orders)
     names = [plate_filename(p) for p in bplates]
-    assert names[0] == "{Ayra,pink},{Manvi,pink},{Riya,pink}.stl"
-    assert names[1] == "{Kabir,blue},{Zoya,blue},{Tara,green}.stl"
-    assert plate_filename(nplates[0]) == "{Ayra,pink},{Manvi,pink},{Riya,pink}.stl"
+    assert names[0] == "{Ayra,pink},{Manvi,pink},{Riya,pink}.3mf"
+    assert names[1] == "{Kabir,blue},{Zoya,blue},{Tara,green}.3mf"
+    assert plate_filename(nplates[0]) == "{Ayra,pink},{Manvi,pink},{Riya,pink}.3mf"
 
 
 def test_build_writes_valid_files(tmp_path: Path, meshes_for):
@@ -121,16 +121,23 @@ def test_build_writes_valid_files(tmp_path: Path, meshes_for):
     orders = _orders(spec)
     res = build(orders, meshes_for([n for n, _ in spec]), Settings(), tmp_path)
     assert res.ok, res.errors
-    files = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.stl"))
+    files = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.3mf"))
     assert files == [
-        "Bases/{Ayra,pink},{Manvi,pink},{Aishwarya,pink}.stl",
-        "Bases/{Kabir,blue}.stl",
-        "Names/blue/{Kabir,blue}.stl",
-        "Names/pink/{Ayra,pink},{Manvi,pink},{Aishwarya,pink}.stl",
+        "Bases/{Ayra,pink},{Manvi,pink},{Aishwarya,pink}.3mf",
+        "Bases/{Kabir,blue}.3mf",
+        "Names/blue/{Kabir,blue}.3mf",
+        "Names/pink/{Ayra,pink},{Manvi,pink},{Aishwarya,pink}.3mf",
     ]
-    m = trimesh.load(tmp_path / files[2], force="mesh")
-    lo, hi = m.bounds
+    from snapstl.threemf import read_3mf
+
+    objs = read_3mf(tmp_path / files[3])  # Names/pink: 3 separate, named objects
+    assert sorted(o.name.split(" · ")[0] for o in objs) == ["Aishwarya - Name", "Ayra - Name", "Manvi - Name"]
+    import numpy as np
+
+    allv = np.vstack([o.vertices for o in objs])
+    lo, hi = allv.min(axis=0), allv.max(axis=0)
     assert lo[0] >= 5 - 0.01 and hi[0] <= 251.01 and lo[2] == pytest.approx(0, abs=1e-3)
+    assert hi[2] == pytest.approx(2.0, abs=1e-3)  # names lie flat, 2 mm
     assert (tmp_path / "report.csv").exists()
 
 
@@ -140,8 +147,8 @@ def test_duplicate_names_and_copies(tmp_path: Path, meshes_for):
     res = build(orders, meshes_for([n for n, _ in spec]), Settings(), tmp_path)
     assert res.ok, res.errors
     assert all(res.complete(o.idx) for o in orders)
-    names = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.stl"))
-    assert "Names/pink/{Anaya,pink},{Anaya,pink},{Anaya,pink}.stl" in names
+    names = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.3mf"))
+    assert "Names/pink/{Anaya,pink},{Anaya,pink},{Anaya,pink}.3mf" in names
 
 
 def test_batch_folders_number_per_day(tmp_path, monkeypatch):
@@ -163,3 +170,23 @@ def test_batch_folders_number_per_day(tmp_path, monkeypatch):
     c = pipeline.new_batch_dir(tmp_path)
     rel = [p.relative_to(tmp_path).as_posix() for p in (a, b, c)]
     assert rel == ["2026-11-15/Batch 1 - 2026-11-15", "2026-11-15/Batch 2 - 2026-11-15", "2026-11-16/Batch 1 - 2026-11-16"]
+
+
+def test_3mf_round_trip(tmp_path):
+    import numpy as np
+
+    from snapstl.threemf import Object3MF, read_3mf, write_3mf
+
+    a = trimesh.creation.box([10, 20, 30])
+    b = trimesh.creation.box([5, 5, 5])
+    b.apply_translation([40, 0, 0])
+    p = tmp_path / "{Ayra,pink}.3mf"
+    write_3mf(p, [Object3MF('Ayra - Base · "x" & <y>', a.vertices, a.faces), Object3MF("Ayra - Name", b.vertices, b.faces)])
+    objs = read_3mf(p)
+    assert [o.name for o in objs] == ['Ayra - Base · "x" & <y>', "Ayra - Name"]
+    assert np.allclose(objs[0].vertices, a.vertices, atol=1e-4) and (objs[1].faces == b.faces).all()
+    import zipfile
+
+    names = zipfile.ZipFile(p).namelist()
+    assert {"[Content_Types].xml", "_rels/.rels", "3D/3dmodel.model"} <= set(names)
+    assert 'unit="millimeter"' in zipfile.ZipFile(p).read("3D/3dmodel.model").decode()

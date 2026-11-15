@@ -20,7 +20,7 @@ Order Reconciliation Report (.xlsx)
    → each name is generated on MakerWorld by the SnapSTL Helper in your Chrome  (helper/, batches.py)
    → scale with Scaling Rules v1.1                                             (scaling.py)
    → group into plates of 3 and pack collision-free on a 256×256 bed           (grouping.py, packing.py)
-   → merged STL per plate + report.csv per batch folder                         (export.py, batches.py)
+   → one .3mf per plate (each part a named object) + report.csv per batch      (export.py, threemf.py)
 ```
 
 ---
@@ -56,7 +56,7 @@ Decision history (so nobody repeats it):
 | Web | FastAPI + uvicorn; UI is one static page `src/snapstl/static/index.html` (vanilla JS, no build step) |
 | Window | pywebview (Cocoa/WKWebView) |
 | MakerWorld | Chrome extension (Manifest V3, vanilla JS) in `helper/` |
-| Geometry | trimesh (meshes, STL), shapely (2-D footprints / collisions), numpy |
+| Geometry | trimesh (meshes), shapely (2-D footprints / collisions), numpy; own core-spec 3MF writer/reader (`threemf.py`, stdlib only) |
 | Spreadsheet | python-calamine (the webstore XLSX has a stylesheet openpyxl rejects) |
 | Storage | SQLite (WAL) via stdlib `sqlite3`; secrets via `keyring` (macOS Keychain) |
 | Tests | pytest (+ httpx TestClient, mapbox-earcut for test meshes) |
@@ -172,17 +172,20 @@ matching the handoff's 116.56 % / 93.51 %.
   full groups of 3 (so base plates line up with name plates), then leftovers pooled into mixed plates.
 * Packing uses each part's real 2-D footprint (shapely): parts stack along one axis and slide
   back until exactly `gap` mm apart, so flipped names nest. Every layout is verified (inside
-  margin, gap respected) and every written STL is reloaded and re-checked.
+  margin, gap respected) and every written 3MF is read back and re-checked (object count, triangles, bounds).
 
 File names:
 
 ```
-Bases/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl
-Bases/{Kabir,blue},{Zoya,blue},{Tara,green}.stl        mixed colours (bases only)
-Names/pink/{Ayra,pink},{Manvi,pink},{Riya,pink}.stl    one folder per name colour
+Bases/{Ayra,pink},{Manvi,pink},{Riya,pink}.3mf
+Bases/{Kabir,blue},{Zoya,blue},{Tara,green}.3mf        mixed colours (bases only)
+Names/pink/{Ayra,pink},{Manvi,pink},{Riya,pink}.3mf    one folder per name colour
 ```
 
-Each STL is one merged mesh in bed coordinates (sits on Z = 0) — open in Bambu Studio as is.
+Each **.3mf** (core 3MF spec, millimetres) holds one plate: every base / name is its own named object
+(e.g. `Ayra - Name · NS0AB…`), already placed in bed coordinates on Z = 0 — open in Bambu Studio as is.
+No slicer-specific project data, so files don't break when Bambu Studio updates. (STL output was
+replaced by 3MF at the owner's request: named parts, ~5× smaller files.)
 
 ---
 
@@ -209,7 +212,7 @@ Batches never start by themselves:
    to `ready`).
 4. Output: `<output>/<YYYY-MM-DD>/Batch N - <YYYY-MM-DD>/{Bases/, Names/<colour>/, report.csv}` —
    N restarts at 1 each day (date = the day the plates are built; the app's internal batch # is
-   separate and shown in the UI next to the folder name). Plain STL files, **no ZIP is
+   separate and shown in the UI next to the folder name). Plain .3mf files, **no ZIP is
    written** (owner's request). *Download ZIP* in the UI builds one on demand in a temp file only.
    Orders become `bundled`. Leftover downloads nobody needs are cancelled automatically.
 
