@@ -1,7 +1,7 @@
 # AGENTS.md — instructions for AI coding agents (Claude, Codex, Cursor, …)
 
 You are working on **SnapSTL**, a local Mac app that turns webstore orders into print-ready
-name-organizer STLs. The owner will describe changes in plain language (UI tweaks, new
+name-organizer plate files (.3mf). The owner will describe changes in plain language (UI tweaks, new
 settings, rule changes). Your job: make the change safely, keep the docs true, and commit.
 
 ## Read first (in this order)

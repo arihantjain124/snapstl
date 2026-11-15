@@ -224,11 +224,16 @@ def verify(parts: list[Part], res: PackResult, cfg: PlateSettings) -> list[str]:
     return problems
 
 
-def build_plate_mesh(parts: list[Part], res: PackResult) -> trimesh.Trimesh:
+def placed_part_meshes(parts: list[Part], res: PackResult) -> list[tuple[str, trimesh.Trimesh]]:
+    """Each part moved to its plate position, as (part key, mesh) — front to back."""
     by_key = {p.key: p for p in parts}
-    meshes = []
+    out = []
     for pl in res.placements:
         m = by_key[pl.key].mesh.copy()
         m.apply_transform(transform_matrix(pl))
-        meshes.append(m)
-    return trimesh.util.concatenate(meshes)
+        out.append((pl.key, m))
+    return out
+
+
+def build_plate_mesh(parts: list[Part], res: PackResult) -> trimesh.Trimesh:
+    return trimesh.util.concatenate([m for _, m in placed_part_meshes(parts, res)])

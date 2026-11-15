@@ -10,7 +10,8 @@ import numpy as np
 import trimesh
 
 from .grouping import Plate
-from .packing import build_plate_mesh, placed_footprint
+from .packing import placed_footprint, placed_part_meshes
+from .threemf import Object3MF, read_3mf, write_3mf
 from .scaling import ScaleResult
 from .settings import PlateSettings
 
@@ -28,12 +29,12 @@ def _clean(s: str) -> str:
 
 
 def plate_filename(plate: Plate) -> str:
-    """{Ayra,pink},{Manvi,pink},{Riya,blue}.stl — same scheme for bases/ and names/ (folders tell them apart)."""
+    """{Ayra,pink},{Manvi,pink},{Riya,blue}.3mf — same scheme in Bases/ and Names/<colour>/."""
     stem = ",".join("{" + _clean(o.name) + "," + _clean(o.color) + "}" for o in plate.orders)
     if len(stem) > MAX_NAME:
         h = hashlib.sha1(stem.encode()).hexdigest()[:8]
         stem = stem[: MAX_NAME - 10] + "~" + h
-    return stem + ".stl"
+    return stem + ".3mf"
 
 
 def _unique(path: Path, used: set[Path]) -> Path:
@@ -45,21 +46,37 @@ def _unique(path: Path, used: set[Path]) -> Path:
     return p
 
 
+def object_name(part_key: str) -> str:
+    """'Ayra - Name (NS0AB…·3)' → 'Ayra - Name · NS0AB…' (what Bambu Studio shows per object)."""
+    m = re.match(r"^(.*) \((.*)·\d+\)$", part_key)
+    return f"{m.group(1)} · {m.group(2)}" if m else part_key
+
+
 def write_plate(plate: Plate, folder: Path, cfg: PlateSettings, used: set[Path]) -> tuple[Path, list[str]]:
+    """One .3mf per plate: every base / name is its own named object, already in position."""
     folder.mkdir(parents=True, exist_ok=True)
     path = _unique(folder / plate_filename(plate), used)
-    mesh = build_plate_mesh(plate.parts, plate.result)
-    mesh.export(path, file_type="stl")
-    return path, check_written(path, mesh, cfg)
+    placed = placed_part_meshes(plate.parts, plate.result)
+    objects = [Object3MF(object_name(k), m.vertices, m.faces) for k, m in placed]
+    write_3mf(path, objects, title=path.stem)
+    return path, check_written(path, objects, cfg)
 
 
-def check_written(path: Path, expected: trimesh.Trimesh, cfg: PlateSettings) -> list[str]:
-    """Reload the STL from disk and confirm it matches what we meant to write."""
+def check_written(path: Path, expected: list[Object3MF], cfg: PlateSettings) -> list[str]:
+    """Read the 3MF back from disk and confirm it matches what we meant to write."""
     problems = []
-    m = trimesh.load(path, file_type="stl", force="mesh", process=False)
-    if len(m.faces) != len(expected.faces):
+    try:
+        objs = read_3mf(path)
+    except Exception as e:  # noqa: BLE001
+        return [f"{path.name}: can't be read back ({e})"]
+    if len(objs) != len(expected):
+        problems.append(f"{path.name}: {len(objs)} objects on disk, expected {len(expected)}")
+    if sum(len(o.faces) for o in objs) != sum(len(o.faces) for o in expected):
         problems.append(f"{path.name}: triangle count changed on disk")
-    lo, hi = m.bounds
+    if not objs or any(len(o.vertices) == 0 for o in objs):
+        return problems + [f"{path.name}: empty object"]
+    allv = np.vstack([o.vertices for o in objs])
+    lo, hi = allv.min(axis=0), allv.max(axis=0)
     tol = 0.01
     if lo[0] < cfg.margin - tol or lo[1] < cfg.margin - tol:
         problems.append(f"{path.name}: geometry inside the edge margin ({lo[0]:.2f}, {lo[1]:.2f})")
