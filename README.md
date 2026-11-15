@@ -155,7 +155,11 @@ Bambuddy**). SnapSTL only reads them.
 4. **Slicing** is done by **Bambuddy's slicer** only. In Bambuddy open **Settings → Slicer**, start its
    slicer service (Docker; on an Apple-silicon Mac it runs under emulation, slower) and turn on **Use
    Slicer API**. Then in SnapSTL: **Make It → Slice** → choose the printer, process and filament
-   presets from Bambuddy's list → **Save presets**. If Bambuddy lists none, its slicer isn't running
+   presets from Bambuddy's list → **Save presets**. **Presets for** lets each printer model (A1,
+   P1S, …) have its own presets, and the default covers the rest. Print speeds, layer height and
+   infill are part of the **process** preset. Make presets in Bambu Studio and add them to Bambuddy,
+   either in Bambuddy (Profiles → Local → Import) or with **Add printer / process / filament
+   preset…** on the Slice page. If Bambuddy lists none, its slicer isn't running
    yet; Bambu's standard A1 presets are used until then.
 
 **Make It** (sidebar) is where plates are printed. It has four parts:
@@ -166,7 +170,9 @@ Bambuddy**). SnapSTL only reads them.
   other printer that fits.
 - **Names**: every name plate with its colour. You can only pick printers that have that colour
   loaded, as Bambuddy reports it. One is pre-selected when such a printer is available.
-- **Slice**: the presets, **Slice all waiting plates**, and every plate's slicing state. Each plate
+- **Slice**: **Slice new plates automatically** (on by default: every new plate is sliced for each
+  printer model in the farm; a failed slice isn't retried by itself), the presets per printer model,
+  adding preset files to Bambuddy, **Slice all waiting plates**, and every plate's slicing state. Each plate
   is sliced by Bambuddy, one at a time in the background, and shows *Waiting to slice* →
   *Slicing %* → *Sliced*. If it fails it shows why. A slice that makes no progress for 20 minutes
   is stopped with a message, so nothing stays stuck.
@@ -181,8 +187,10 @@ Each plate has a **Slice** button, which slices it now, and **Remove**.
 
 **Nothing prints until you click Start print.** That click sends the sliced plate to the chosen
 printer and starts it. A plate that isn't sliced yet is sliced first and sent when that's done. Bambuddy then prints it as soon as the
-printer is free and its bed has been cleared. Each row also has **Options** (bed levelling, flow
-calibration, timelapse; default = Bambuddy's settings). If Bambuddy warns, for example about too
+printer is free and its bed has been cleared. A plate is always sent sliced for the model of the
+printer you chose; if it isn't sliced for that model yet, it's sliced first. Each row also has
+**Options**: **Print speed** (Silent / Standard / Sport / Ludicrous, applied as the print starts),
+bed levelling, flow calibration and timelapse (default = Bambuddy's settings). If Bambuddy warns, for example about too
 little filament, SnapSTL asks before starting anyway. When a plate is printed it moves to
 **Completed**. Once an order's base **and** its name are both printed, the order appears in
 **Orders → Ready to ship**.

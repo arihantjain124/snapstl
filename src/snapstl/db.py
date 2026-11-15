@@ -148,6 +148,9 @@ MIGRATIONS = [
     ("print_jobs", "held", "INTEGER"),      # 1 = waiting in Bambuddy for a person to press Start
     ("print_jobs", "autostart", "INTEGER"),  # 1 = a person pressed Start print (Make It): start once queued
     ("orders", "made_at", "REAL"),          # base and name both printed (Make It) → Ready to ship
+    ("slices", "model", "TEXT"),             # printer model it was sliced for ("" = before 0.16)
+    ("print_jobs", "speed", "INTEGER"),     # print speed chosen in Make It (1 silent … 4 ludicrous)
+    ("print_jobs", "speed_set", "INTEGER"),  # 1 = speed applied once the print started
 ]
 
 # Bookkeeping for the shared records, kept by triggers so no code path can forget it:

@@ -63,8 +63,11 @@ DEFAULTS = {
     "bambuddy_url": DEFAULT_URL,
     "api_key": "",
     # Bambuddy slicer presets chosen in Make It → Slice: {"printer"|"process"|"filament": {source, id, name}}
-    "presets": {},
+    "presets": {},                # for every printer model without its own
+    "presets_by_model": {},       # printer model (as in Bambuddy, e.g. "A1") → its own presets
+    "auto_slice": True,           # slice new plates by themselves (printing still needs Start print)
 }
+SPEEDS_SET = {"silent": 1, "standard": 2, "sport": 3, "ludicrous": 4}  # print speed per job (Make It)
 # A Bambu "standard" preset is picked by name when nothing was chosen yet (if Bambuddy lists it).
 DEFAULT_PRESETS = {"printer": "Bambu Lab A1 0.4 nozzle", "process": "0.20mm Standard @BBL A1",
                    "filament": "Bambu PLA Basic @BBL A1"}
@@ -488,10 +491,12 @@ def bambuddy_presets(cfg: dict | None = None) -> dict:
     return out
 
 
-def chosen_presets(cfg: dict | None = None, available: dict | None = None) -> dict:
-    """The presets slicing uses: those chosen in Make It → Slice, else Bambu's standard A1 ones by name."""
+def chosen_presets(cfg: dict | None = None, available: dict | None = None, model: str = "") -> dict:
+    """The presets slicing uses for a printer model: that model's own (Make It → Slice), else the default
+    set, else Bambu's standard A1 ones by name."""
     cfg = cfg or load_config()
-    chosen = dict(cfg.get("presets") or {})
+    own = (cfg.get("presets_by_model") or {}).get(model or "") if model else None
+    chosen = dict(own or cfg.get("presets") or {})
     if available is not None:
         for slot, name in DEFAULT_PRESETS.items():
             if slot not in chosen:
@@ -501,8 +506,15 @@ def chosen_presets(cfg: dict | None = None, available: dict | None = None) -> di
     return chosen
 
 
-def set_presets(keys: dict) -> dict:
-    """Make It → Slice: save the printer / process / filament preset ("source:id" from Bambuddy's list)."""
+def set_presets(keys: dict, model: str = "", clear: bool = False) -> dict:
+    """Make It → Slice: save the printer / process / filament preset ("source:id" from Bambuddy's list) —
+    for one printer model, or (model "") the default for every model without its own. `clear` drops a
+    model's own presets (it uses the default again)."""
+    if model and clear:
+        cfg = load_config()
+        (cfg.setdefault("presets_by_model", {})).pop(model, None)
+        save_config(cfg)
+        return chosen_presets(cfg, None, model)
     avail = bambuddy_presets()
     chosen = {}
     for slot in ("printer", "process", "filament"):
@@ -514,8 +526,36 @@ def set_presets(keys: dict) -> dict:
             raise FarmError(f"Choose a {slot} preset from Bambuddy's list")
         src, pid = key.split(":", 1)
         chosen[slot] = {"source": src, "id": pid, "name": hit["name"]}
-    update_config(presets=chosen)
+    cfg = load_config()
+    if model:
+        cfg.setdefault("presets_by_model", {})[model] = chosen
+    else:
+        cfg["presets"] = chosen
+    save_config(cfg)
     return chosen
+
+
+def import_presets(filename: str, data: bytes) -> dict:
+    """Add preset files to Bambuddy (Bambu Studio / OrcaSlicer exports: .json, .bbscfg, .bbsflmt,
+    .orca_filament, .zip). Bambuddy sorts them into printer / process / filament presets."""
+    if not data:
+        raise FarmError("The file is empty")
+    if not filename.lower().endswith((".json", ".bbscfg", ".bbsflmt", ".orca_filament", ".zip")):
+        raise FarmError("Choose a preset file exported from Bambu Studio or OrcaSlicer "
+                        "(.json, .bbscfg, .bbsflmt, .orca_filament or .zip)")
+    r = api("POST", "/local-presets/import", files=[("file", filename, data, "application/octet-stream")], timeout=60) or {}
+    return {"imported": int(r.get("imported") or 0), "skipped": int(r.get("skipped") or 0),
+            "errors": [str(e) for e in r.get("errors") or []]}
+
+
+def printer_models(prs: list[dict]) -> list[str]:
+    """Printer models in the farm, most printers first (the first one is what plates are sliced for
+    when no printer is chosen yet)."""
+    count: dict[str, int] = {}
+    for p in prs:
+        if p.get("model"):
+            count[p["model"]] = count.get(p["model"], 0) + 1
+    return sorted(count, key=lambda m: (-count[m], m))
 
 
 def slice_request(presets: dict, color: str | None) -> dict:
@@ -536,28 +576,38 @@ def _slice_set(slice_id: int, **cols) -> None:
         con.execute(f"UPDATE slices SET {', '.join(k + '=?' for k in cols)} WHERE id=?", (*cols.values(), slice_id))
 
 
-def latest_slices(batch_id: int | None = None) -> dict[tuple[int, str], dict]:
-    """(batch, plate) → its newest slice."""
+def latest_slices(batch_id: int | None = None) -> dict[tuple[int, str, str], dict]:
+    """(batch, plate, printer model) → its newest slice (model "" = sliced before models were tracked)."""
     with db.tx() as con:
         rs = db.rows(con, "SELECT * FROM slices WHERE computer_id=?" + (" AND batch_id=?" if batch_id else "") +
                      " ORDER BY id", computer.ID, *([batch_id] if batch_id else []))
-    return {(r["batch_id"], r["plate"]): r for r in rs}
+    return {(r["batch_id"], r["plate"], r.get("model") or ""): r for r in rs}
 
 
-def request_slices(plates: list[tuple[int, str, str, str]], again: bool = False) -> int:
-    """Slice these plates [(batch_id, plate, kind, color)] with Bambuddy (one at a time, in the background).
-    A plate that is being sliced or already sliced is skipped unless `again`."""
+def slice_for(slices: dict, batch_id: int, plate: str, model: str) -> dict | None:
+    """The slice to use for a printer model: that model's, else one made before models were tracked."""
+    return slices.get((batch_id, plate, model or "")) or (slices.get((batch_id, plate, "")) if model else None)
+
+
+def request_slices(plates: list[tuple[int, str, str, str]], again: bool = False, models: list[str] | None = None,
+                   skip_failed: bool = False) -> int:
+    """Slice these plates [(batch_id, plate, kind, color)] with Bambuddy for each printer model (one at a
+    time, in the background). Skipped: being sliced, already sliced (unless `again`), failed (with
+    `skip_failed` — automatic slicing never retries a failure by itself)."""
     cur = latest_slices()
     n = 0
     now = db.now()
     with db.tx() as con:
         for bid, plate, kind, color in plates:
-            s = cur.get((bid, plate))
-            if s and s["state"] in ("queued", "uploading", "slicing") or (s and s["state"] == "done" and not again):
-                continue
-            con.execute("INSERT INTO slices(batch_id,plate,kind,color,state,created_at,updated_at,computer_id) "
-                        "VALUES (?,?,?,?,'queued',?,?,?)", (bid, plate, kind, color or "", now, now, computer.ID))
-            n += 1
+            for model in (models or [""]):
+                s = cur.get((bid, plate, model or ""))
+                if s and s["state"] in ("queued", "uploading", "slicing") or (s and s["state"] == "done" and not again) \
+                        or (s and s["state"] == "failed" and skip_failed):
+                    continue
+                con.execute("INSERT INTO slices(batch_id,plate,kind,color,model,state,created_at,updated_at,computer_id) "
+                            "VALUES (?,?,?,?,?,'queued',?,?,?)", (bid, plate, kind, color or "", model or "", now, now,
+                                                                computer.ID))
+                n += 1
     WORKER.kick()
     return n
 
@@ -828,12 +878,15 @@ class Worker:
     """Slices / uploads / queues one job at a time, oldest first; follows sent jobs in Bambuddy's queue."""
 
     REFRESH_S = 15
+    AUTO_SLICE_S = 30
 
     def __init__(self) -> None:
         self._wake = threading.Event()
         self._thread: threading.Thread | None = None
         self.current: int | None = None
         self.last_refresh = 0.0
+        self.last_auto = 0.0
+        self._models: tuple[float, dict[int, str]] = (0.0, {})
         self.log: list[str] = []
 
     def start(self) -> None:
@@ -858,6 +911,8 @@ class Worker:
             self._wake.wait(2.0)
             self._wake.clear()
             try:
+                if time.time() - self.last_auto > self.AUTO_SLICE_S:
+                    self.auto_slice()
                 self.poll_slices()
                 self.slice_next()
                 self.check_waiting()
@@ -911,8 +966,9 @@ class Worker:
             up = api("POST", "/library/files", cfg=cfg, timeout=300,
                      files=[("file", _upload_name(label, kind, sliced.name), data, "application/octet-stream")])
             file_id = int(up["id"])
-        else:  # sliced by Bambuddy (Make It → Slice), or slice it now and send it when that's done
-            s = latest_slices(j["batch_id"]).get((j["batch_id"], j["plate"]))
+        else:  # sliced by Bambuddy for this printer's model (Make It → Slice), or slice it now and send it after
+            model = self.model_of(j["printer_id"])
+            s = slice_for(latest_slices(j["batch_id"]), j["batch_id"], j["plate"], model)
             if s and s["state"] == "done" and s["sliced_file_id"]:
                 file_id = int(s["sliced_file_id"])
                 _set(j["id"], sliced=f"Bambuddy library #{file_id}")
@@ -920,7 +976,7 @@ class Worker:
                 raise FarmError(f"Slicing failed: {s['error']}")
             else:
                 if not (s and s["state"] in ("queued", "uploading", "slicing")):
-                    request_slices([(j["batch_id"], j["plate"], j["kind"], j["color"])], again=True)
+                    request_slices([(j["batch_id"], j["plate"], j["kind"], j["color"])], again=True, models=[model])
                 _set(j["id"], state="slicing", error=None)  # sent once Bambuddy has sliced it
                 return
         # Held (manual_start): Bambuddy never starts it by itself — a person presses Start.
@@ -955,7 +1011,7 @@ class Worker:
             if not b or not b["out_dir"] or not (Path(b["out_dir"]) / s["plate"]).is_file():
                 raise FarmError("The plate file is gone")
             cfg = load_config()
-            presets = chosen_presets(cfg, bambuddy_presets(cfg))
+            presets = chosen_presets(cfg, bambuddy_presets(cfg), s.get("model") or "")
             body = slice_request(presets, s["color"] or None)
             _slice_set(s["id"], state="uploading", error=None, presets=json.dumps(presets))
             src = Path(b["out_dir"]) / s["plate"]
@@ -966,7 +1022,7 @@ class Worker:
             r = api("POST", f"/library/files/{int(up['id'])}/slice", cfg=cfg, json_body=body, timeout=60)
             _slice_set(s["id"], state="slicing", source_file_id=int(up["id"]), slice_job_id=int(r["job_id"]),
                        progress=0, started_at=db.now())
-            self._log(f"Slicing {src.name} in Bambuddy")
+            self._log(f"Slicing {src.name} in Bambuddy" + (f" for {s['model']}" if s.get("model") else ""))
         except FarmError as e:
             _slice_set(s["id"], state="failed", error=slicer_hint(str(e)))
             self._log(f"Slicing {Path(s['plate']).name}: {e}")
@@ -1013,11 +1069,36 @@ class Worker:
             return
         sl = latest_slices()
         for j in js:
-            s = sl.get((j["batch_id"], j["plate"]))
+            s = slice_for(sl, j["batch_id"], j["plate"], self.model_of(j["printer_id"]))
             if s is None or s["state"] == "done":
                 _set(j["id"], state="queued")
             elif s["state"] == "failed":
                 _set(j["id"], state="failed", error=f"Slicing failed: {s['error']}")
+
+    def model_of(self, printer_id: int) -> str:
+        """A printer's model (cached a minute)."""
+        if time.time() - self._models[0] > 60 or printer_id not in self._models[1]:
+            try:
+                self._models = (time.time(), {p["id"]: p.get("model") or "" for p in printers(with_status=False)})
+            except FarmError:
+                pass
+        return self._models[1].get(printer_id, "")
+
+    def auto_slice(self) -> None:
+        """Slice new Make It plates for every printer model in the farm (when on). Never retries a failure."""
+        self.last_auto = time.time()
+        cfg = load_config()
+        if not cfg.get("auto_slice", True) or not cfg["api_key"] and not status(cfg)["connected"]:
+            return
+        from . import makeit
+
+        try:
+            models = printer_models(printers(cfg, with_status=False)) or [""]
+        except FarmError:
+            return
+        todo = [(r["batch_id"], r["file"], r["kind"], (r["colors"] or [""])[0]) for r in makeit.waiting_plates()]
+        if todo and request_slices(todo, models=models, skip_failed=True):
+            self._log("Slicing new plates automatically")
 
     def refresh(self) -> None:
         """Follow jobs sent to Bambuddy: waiting → printing → printed (or failed / cancelled there)."""
@@ -1045,6 +1126,12 @@ class Worker:
                     changes["error"] = (item or {}).get("error_message") or "The print failed (see Bambuddy)"
                 if new == "done":
                     changes["progress"] = 100.0
+            if new == "printing" and j.get("speed") and not j.get("speed_set"):
+                try:  # the speed chosen in Make It, once the print has started
+                    api("POST", f"/printers/{j['printer_id']}/print-speed?mode={int(j['speed'])}", cfg=cfg)
+                    changes["speed_set"] = 1
+                except FarmError as e:
+                    changes["error"] = f"Print speed not set: {e}"
             if new == "printing":
                 s = printer_status(j["printer_id"], cfg, max_age=10)
                 if s.get("progress") is not None:

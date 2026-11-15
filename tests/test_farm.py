@@ -67,7 +67,7 @@ class FakeBambuddy:
         self.files, self.queue, self.keys, self._unused, self.cleared, self.patches = {}, {}, [], [], [], []
         self.short_filament = False
         self.slicer = "unreachable"  # Bambuddy's slicer sidecar: "ok" | "unreachable" | "hang"
-        self.slice_jobs, self.slice_bodies = {}, []
+        self.slice_jobs, self.slice_bodies, self.imports, self.speeds = {}, [], [], []
         self.presets = {"standard": {
             "printer": [{"id": "Bambu Lab A1 0.4 nozzle", "name": "Bambu Lab A1 0.4 nozzle", "source": "standard"}],
             "process": [{"id": "0.20mm Standard @BBL A1", "name": "0.20mm Standard @BBL A1", "source": "standard"}],
@@ -109,6 +109,13 @@ class FakeBambuddy:
             self.queue[qid] = {"id": qid, "status": "pending", "printer_id": b["printer_id"], "library_file_id": b["file_ids"][0]}
             return 200, json.dumps({"added": [{"file_id": b["file_ids"][0], "filename": "x", "queue_item_id": qid}],
                                     "errors": []}).encode()
+        if method == "POST" and path == "/api/v1/local-presets/import":
+            self.imports.append(_filename(body))
+            return 200, json.dumps({"success": True, "imported": 2, "skipped": 0, "errors": []}).encode()
+        m = re.fullmatch(r"/api/v1/printers/(\d+)/print-speed\?mode=(\d)", path)
+        if m and method == "POST":
+            self.speeds.append((int(m.group(1)), int(m.group(2))))
+            return 200, b'{"success": true}'
         if method == "GET" and path == "/api/v1/slicer/presets":
             return 200, json.dumps(self.presets).encode()
         m = re.fullmatch(r"/api/v1/library/files/(\d+)/slice", path)
@@ -173,8 +180,10 @@ def bb(monkeypatch, tmp_path):
     fake = FakeBambuddy()
     monkeypatch.setattr(farm, "_request", fake)
     farm.CONFIG_PATH.unlink(missing_ok=True)
+    farm.update_config(auto_slice=False)  # tests that want it turn it on
     farm._status_cache.clear()
     monkeypatch.setattr(farm, "_color_map", (0.0, {}))
+    monkeypatch.setattr(farm.WORKER, "_models", (0.0, {}))
     old_out, old_cache = MANAGER.output_dir, cache.ROOT
     MANAGER.output_dir = str(tmp_path / "output")
     cache.set_root(str(tmp_path / "Downloads"))
@@ -188,7 +197,7 @@ def bb(monkeypatch, tmp_path):
         con.execute("DELETE FROM slices")
         con.execute("DELETE FROM downloads WHERE batch_id > ?", (first,))
         con.execute("DELETE FROM batches WHERE id > ?", (first,))
-        con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%' OR order_id LIKE 'PB%' OR order_id LIKE 'PS%' OR order_id LIKE 'PM%' OR order_id LIKE 'PK%'")
+        con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%' OR order_id LIKE 'PB%' OR order_id LIKE 'PS%' OR order_id LIKE 'PM%' OR order_id LIKE 'PK%' OR order_id LIKE 'PV%'")
     farm.CONFIG_PATH.unlink(missing_ok=True)
 
 
@@ -552,3 +561,64 @@ def test_no_presets_listed_falls_back_to_standard(client, bb):
     p = client.get("/api/makeit/presets").json()
     assert not p["bambuddy_listed"] and p["chosen"]["printer"] == "standard:Bambu Lab A1 0.4 nozzle"
     assert client.put("/api/makeit/presets", json=p["chosen"]).status_code == 200
+
+
+def test_presets_per_printer_model_auto_slice_import_and_speed(client, bb):
+    bb.printers[4] = {"id": 4, "name": "P1S names", "model": "P1S", "serial_number": "S4", "ip_address": "10.0.0.31",
+                      "location": "", "is_active": True}
+    bb.status[4] = {"connected": True, "state": "IDLE", "ams": [{"id": 0, "tray": [tray(0, "F55A74")]}]}  # Pink
+    bb.presets["local"]["printer"] = [{"id": "11", "name": "P1S organizers", "source": "local"}]
+    bb.slicer = "ok"
+    client.get("/api/farm")
+    bid, folder = built_batch(client, "PV")
+    base, pink = "Bases/{Ayra,pink},{Riya,blue}.3mf", "Names/pink/{Ayra,pink}.3mf"
+
+    # P1S gets its own printer preset; A1 keeps the default
+    p = client.get("/api/makeit/presets?model=P1S").json()
+    assert p["models"] == ["A1", "P1S"] and p["own"] == [] and p["auto_slice"] is False
+    assert client.put("/api/makeit/presets", json={**p["chosen"], "model": "P1S", "printer": "local:11"}).status_code == 200
+    assert client.get("/api/makeit/presets?model=P1S").json()["names"]["printer"] == "P1S organizers"
+    assert client.get("/api/makeit/presets?model=A1").json()["names"]["printer"] == "Bambu Lab A1 0.4 nozzle"
+
+    # automatic slicing: every waiting plate, for every model in the farm
+    assert client.put("/api/makeit/settings", json={"auto_slice": True}).json()["auto_slice"] is True
+    farm.WORKER.auto_slice()
+    wait_for(lambda: all(r["slices"].get("A1", {}) and r["slices"]["A1"]["state"] == "done" and
+                         r["slices"]["P1S"] and r["slices"]["P1S"]["state"] == "done"
+                         for r in client.get("/api/makeit").json()["names"]))
+    printers_used = {b["printer_preset"]["id"] for _, b in bb.slice_bodies}
+    assert printers_used == {"Bambu Lab A1 0.4 nozzle", "11"} and len(bb.slice_bodies) == 6  # 3 plates × 2 models
+    farm.WORKER.auto_slice()
+    assert len(bb.slice_bodies) == 6  # nothing sliced twice
+
+    # Start print on the P1S with Sport speed: sends the P1S slice; speed applied once printing
+    client.post("/api/makeit/start", json={"batch_id": bid, "file": pink, "printer_id": 4, "speed": "sport"})
+    wait_for(lambda: bb.queue and bb.queue[1].get("manual_start") is False)
+    sent = bb.files[bb.queue[1]["library_file_id"]]
+    src = next(fid for fid, b in bb.slice_bodies if b["printer_preset"]["id"] == "11" and "Names pink" in bb.files[fid]["filename"])
+    assert sent["filename"] == bb.files[src]["filename"].replace(".3mf", ".gcode.3mf")
+    assert bb.speeds == []
+    bb.queue[1]["status"] = "printing"
+    farm.WORKER.refresh()
+    assert bb.speeds == [(4, 3)]
+    farm.WORKER.refresh()
+    assert bb.speeds == [(4, 3)]  # once
+    assert client.post("/api/makeit/start", json={"batch_id": bid, "file": base, "printer_id": 1,
+                                                  "speed": "warp"}).status_code == 400
+
+    # a failed automatic slice is not retried by itself
+    bb.slicer = "unreachable"
+    farm.request_slices([(bid, base, "bases", "")], again=True, models=["A1"])
+    wait_for(lambda: makeit_row(client, "bases", base)["slices"]["A1"]["state"] == "failed")
+    n = len(bb.slice_bodies)
+    farm.WORKER.auto_slice()
+    farm.WORKER.slice_next()
+    assert len(bb.slice_bodies) == n
+
+    # preset files go to Bambuddy, one kind at a time
+    r = client.post("/api/makeit/presets/import", data={"kind": "filament"},
+                    files={"file": ("Silk PLA.bbsflmt", b"PK\x03\x04 bundle", "application/octet-stream")})
+    assert r.status_code == 200 and r.json() == {"imported": 2, "skipped": 0, "errors": [], "kind": "filament"}
+    assert bb.imports == ["Silk PLA.bbsflmt"]
+    bad = client.post("/api/makeit/presets/import", files={"file": ("notes.txt", b"x", "text/plain")})
+    assert bad.status_code == 400
