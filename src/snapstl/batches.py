@@ -348,16 +348,19 @@ class Rejected(ValueError):
 def check_license(model: dict, check: dict | None) -> str:
     """Was the license password really in place when Generate was pressed? Raises Rejected if not.
 
-    `check` comes from the helper (2.2.0+):
-      password_set — the License password box held exactly the password right before AND right
-                     after Generate was pressed;
+    `check` comes from the helper (2.2.1+):
+      password_set — the License password box held exactly the password right before Generate
+                     was pressed (2.2.1+; kept_after says whether it was still there just after,
+                     informational only — MakerWorld may clear the box once Generate starts);
       request      — "sent" / "missing" / "unknown": whether the page's Generate request carried it
                      (the helper only watches the page's own requests; "missing" is reported only
                      when the request plainly carried the name but not the password).
     """
     if not model.get("_license"):
         raise Rejected("No license password for this model — not saved (downloads need the password)")
-    check = check or {}
+    if not check:
+        raise Rejected("This SnapSTL Helper is older than 2.2 and can't confirm the license password — not saved. "
+                       "Reload the helper in chrome://extensions")
     if check.get("password_set") is not True:
         raise Rejected("The helper didn't confirm the license password was filled in when Generate was pressed — "
                        "not saved, trying again (update the SnapSTL Helper if this keeps happening)")

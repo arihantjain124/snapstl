@@ -142,7 +142,11 @@
     while (Date.now() < end) {
       if (captured.plate_1 && captured.plate_2) {
         window.postMessage({ __snapstlDisarm: true }, location.origin);
-        const check = { password_set: keptAfter, request: requestCheck(p.name, pw), helper: chrome.runtime.getManifest().version };
+        // password_set: the box held the password right before the click (checked above — we never
+        // click otherwise). kept_after is informational only: MakerWorld may clear or redraw the
+        // box once Generate starts, so it is not a reason to reject.
+        const check = { password_set: true, kept_after: keptAfter, request: requestCheck(p.name, pw),
+                        helper: chrome.runtime.getManifest().version };
         requests = [];
         return { plate_1: captured.plate_1, plate_2: captured.plate_2, check: JSON.stringify(check) };
       }

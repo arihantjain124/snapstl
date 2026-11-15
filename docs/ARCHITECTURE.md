@@ -225,13 +225,15 @@ content.js ──message──► background.js ──HTTP──► app (127.0.0
   status           → POST /api/helper/ping {status, on_page}       (every ~5 s while generating; popup sends {probe:true})
 ```
 
-**License password confirmation (helper 2.2.0).** The helper refuses a job without a password. It sets
-the password first and again last, waits 800 ms, re-sets it until the box holds it, and checks the box
-right before **and** right after pressing Generate. `inject.js` passively watches the page's own
+**License password confirmation (helper 2.2.1).** The helper refuses a job without a password. It sets
+the password first and again last, waits 800 ms, re-sets it until the box holds it, and never presses
+Generate unless the box holds it right then. Whether the box still holds it just after the click is
+recorded as `kept_after` but not used to reject: MakerWorld clears or redraws the box once Generate
+starts (2.2.0 rejected on it and refused good, watermark-free downloads). `inject.js` passively watches the page's own
 non-GET request bodies during the job (never changes them) so content.js can tell whether the password
 was sent (`request`: sent / missing / unknown — "missing" only when a body carried the name but no body
-carried the password). The result carries `check = {"password_set": bool, "request": …, "helper": ver}`
-(no password inside). `batches.check_license` rejects (not saved, retried) unless `password_set` is true
+carried the password). The result carries `check = {"password_set": bool, "kept_after": bool, "request": …, "helper": ver}`
+(no password inside). No `check` at all = a helper older than 2.2 → rejected with "reload the helper". `batches.check_license` rejects (not saved, retried) unless `password_set` is true
 and `request` isn't "missing". Then `watermark.detect(base)` scans the base: a watermark → rejected,
 `downloads.watermark=1`, retried. Saved models get `"watermark": false, "license_check": …` in
 `info.json`. Rejections are `batches.Rejected` (a `ValueError`) → `store_failure`.
