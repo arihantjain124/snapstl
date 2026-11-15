@@ -1,4 +1,8 @@
-"""SnapSTL web server (behind Caddy on the Lightsail instance, or local)."""
+"""SnapSTL web server: portal UI, orders/batches API, helper API, settings, maintenance.
+
+Runs locally on 127.0.0.1:8317 (launchd service `snapstl-serve`). In local mode there is no
+login; a cross-site guard blocks other websites, and the Chrome helper may call /api/helper/* only.
+"""
 from __future__ import annotations
 
 import csv
@@ -131,11 +135,8 @@ def meta():
 def state():
     with db.tx() as con:
         counts = {r["state"]: r["n"] for r in db.rows(con, "SELECT state, COUNT(*) n FROM orders GROUP BY state")}
-        ready_colors = db.rows(
-            con, "SELECT color, COUNT(*) n, SUM(quantity) q FROM orders WHERE state='ready' GROUP BY color ORDER BY n DESC"
-        )
     return {
-        "counts": counts, "ready_colors": ready_colors, "license_set": bool(get_password()),
+        "counts": counts, "license_set": bool(get_password()),
         "downloader": DOWNLOADER.snapshot(),
         "queue": B.queue_counts(), "building": MANAGER.building, "log": MANAGER.log[-120:],
     }

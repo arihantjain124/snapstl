@@ -234,6 +234,3 @@ def placed_part_meshes(parts: list[Part], res: PackResult) -> list[tuple[str, tr
         out.append((pl.key, m))
     return out
 
-
-def build_plate_mesh(parts: list[Part], res: PackResult) -> trimesh.Trimesh:
-    return trimesh.util.concatenate([m for _, m in placed_part_meshes(parts, res)])

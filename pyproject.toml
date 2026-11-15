@@ -1,7 +1,7 @@
 [project]
 name = "snapstl"
 version = "0.1.0"
-description = "Add your description here"
+description = "Webstore orders → MakerWorld name-organizer models → scaled, packed .3mf print plates (local Mac app)"
 authors = [
     { name = "Arihant Jain", email = "14129747+arihantjain124@users.noreply.github.com" }
 ]
