@@ -20,7 +20,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
-from . import auth, cache, db, updater
+from . import auth, cache, computer, db, platform_os, updater
 from .ingest import ingest, reset_to_ready, set_name
 from . import batches as B
 from . import maintenance as M
@@ -143,22 +143,8 @@ def auth_check(request: Request):
 
 # ---------------- web portal for other computers (this Mac only) ----------------
 def _portal_urls() -> list[str]:
-    import subprocess
-
-    urls = []
-    try:
-        name = subprocess.run(["scutil", "--get", "LocalHostName"], capture_output=True, text=True, timeout=3).stdout.strip()
-        if name:
-            urls.append(f"http://{name}.local:{_port()}")
-    except (OSError, subprocess.SubprocessError):
-        pass
-    for iface in ("en0", "en1"):
-        try:
-            ip = subprocess.run(["ipconfig", "getifaddr", iface], capture_output=True, text=True, timeout=3).stdout.strip()
-            if ip:
-                urls.append(f"http://{ip}:{_port()}")
-        except (OSError, subprocess.SubprocessError):
-            pass
+    urls = [f"http://{platform_os.lan_name()}:{_port()}"]
+    urls += [f"http://{ip}:{_port()}" for ip in platform_os.lan_ips()]
     return urls
 
 
@@ -167,17 +153,16 @@ def _port() -> int:
 
 
 def _restart_service_soon() -> bool:
-    """Restart the launchd service so it listens on the new address (only when run by launchd)."""
-    import subprocess
+    """Restart the background service (launchd on a Mac, Task Scheduler on Windows) a second from now."""
     import threading
 
-    label = "local.snapmagicians.snapstl"
-    if os.environ.get("XPC_SERVICE_NAME") != label:
+    if not platform_os.running_as_service():
         return False
 
     def go():
         time.sleep(1.0)
-        subprocess.Popen(["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{label}"])
+        db.close_pool()
+        platform_os.restart_service()
 
     threading.Thread(target=go, daemon=True).start()
     return True
@@ -194,7 +179,8 @@ def update_apply():
     if DOWNLOADER.current is not None:
         raise HTTPException(409, f"A name is being downloaded ({DOWNLOADER.current}) — pause downloads or wait, then update")
     with db.tx() as con:
-        busy = con.execute("SELECT COUNT(*) n FROM batches WHERE status IN ('build_requested','building')").fetchone()["n"]
+        busy = con.execute("SELECT COUNT(*) AS n FROM batches WHERE status IN ('build_requested','building') "
+                           "AND computer_id=?", (computer.ID,)).fetchone()["n"]
     if busy:
         raise HTTPException(409, "A batch is being built — wait for it to finish, then update")
     try:
@@ -255,8 +241,12 @@ def meta(request: Request):
     return {
         "fonts": FONTS, "rotate_text": ROTATE_TEXT, "ranges": NUMBER_RANGES,
         "compartment_range": COMPARTMENT_RANGE,
-        "local": is_local(request),  # on the SnapSTL Mac: no login, Finder buttons, folder settings
+        "local": is_local(request),  # on the SnapSTL computer itself: no login, folder buttons, folder settings
         "version": _version(),
+        "computer": {"id": computer.ID, "name": computer.NAME},
+        "database": db.kind(),  # "postgres" = shared by every SnapSTL computer, "sqlite" = this one only
+        "os": "windows" if platform_os.WINDOWS else "mac",
+        "file_manager": platform_os.file_manager(),
     }
 
 
@@ -297,6 +287,7 @@ def _order_view(r: dict) -> dict:
         "raw_color": r["raw_color"], "special_request": r["special_request"], "name": r["name"],
         "color": r["color"], "name_edited": bool(r["name_edited"]), "review_reason": r["review_reason"],
         "state": r["state"], "batch_id": r["batch_id"], "last_error": r["last_error"], "letters": letters,
+        "batch_computer": r.get("batch_computer") or "",
         "clubbed": bool(r.get("club_size", 1) > 1),
         "target": [min(band.length, SETTINGS.scaling.max_length), band.height] if band else None,
         "compartments": compartments_for(letters, SETTINGS) if letters else None,
@@ -364,7 +355,8 @@ def list_orders(request: Request, tab: str = "ready", limit: int = 200, offset: 
     limit = max(1, min(limit, 1000))
     with db.tx() as con:
         total = con.execute(f"SELECT COUNT(*) FROM orders WHERE {w}", args).fetchone()[0]
-        rs = db.rows(con, f"SELECT *, {_CLUB} AS club_size FROM orders WHERE {w} "
+        rs = db.rows(con, f"SELECT *, {_CLUB} AS club_size, (SELECT computer_name FROM batches b "
+                          f"WHERE b.id=orders.batch_id) AS batch_computer FROM orders WHERE {w} "
                           "ORDER BY order_date DESC, COALESCE(clubbed_id,''), order_id LIMIT ? OFFSET ?",
                      *args, limit, offset)
     return {"total": total, "orders": [_order_view(r) for r in rs]}
@@ -606,10 +598,11 @@ def downloads():
     """Download queue for the UI: active + failed first, then the 30 most recent finished."""
     with db.tx() as con:
         active = db.rows(con, "SELECT id,name,compartments,state,attempts,error,updated_at,batch_id,watermark,license_check FROM downloads "
-                              "WHERE state IN ('claimed','queued','failed') "
-                              "ORDER BY CASE state WHEN 'claimed' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, id LIMIT 500")
+                              "WHERE state IN ('claimed','queued','failed') AND computer_id=? "
+                              "ORDER BY CASE state WHEN 'claimed' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, id LIMIT 500",
+                     computer.ID)
         recent = db.rows(con, "SELECT id,name,compartments,state,attempts,error,updated_at,batch_id,watermark,license_check FROM downloads "
-                              "WHERE state='done' ORDER BY updated_at DESC LIMIT 30")
+                              "WHERE state='done' AND computer_id=? ORDER BY updated_at DESC LIMIT 30", computer.ID)
     return {"items": active + recent, "downloader": DOWNLOADER.snapshot(), "folder": cache.stats()}
 
 
@@ -618,10 +611,8 @@ def downloads_reveal(request: Request):
     """SnapSTL Mac only: open the Downloads folder (saved models) in Finder."""
     if not is_local(request):
         raise HTTPException(404)
-    import subprocess
-
     cache.ROOT.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["open", str(cache.ROOT)], check=False)
+    platform_os.open_folder(cache.ROOT)
     return {"opened": str(cache.ROOT)}
 
 
@@ -649,6 +640,7 @@ def batches():
             "orders": len(json.loads(r["order_ids"] or "[]")),
             "plates": len(summ.get("plates", [])), "errors": len(summ.get("errors", [])),
             "label": summ.get("label", ""),
+            "computer": r.get("computer_name") or "", "mine": (r.get("computer_id") or computer.ID) == computer.ID,
         }
         if r["status"] in B.OPEN:
             item["progress"] = B.batch_progress(r)
@@ -664,10 +656,19 @@ def _batch(batch_id: int) -> dict:
     return dict(r)
 
 
+def _own_batch(batch_id: int) -> dict:
+    """A batch whose files are on this computer (its plates and pictures live where it was built)."""
+    b = _batch(batch_id)
+    if (b.get("computer_id") or computer.ID) != computer.ID:
+        raise HTTPException(409, f"This batch's files are on {b.get('computer_name') or 'another computer'}")
+    return b
+
+
 @app.get("/api/batches/{batch_id}")
 def batch(batch_id: int):
     r = _batch(batch_id)
     return {"id": r["id"], "created_at": r["created_at"], "status": r["status"],
+            "computer": r.get("computer_name") or "", "mine": (r.get("computer_id") or computer.ID) == computer.ID,
             "order_ids": json.loads(r["order_ids"] or "[]"), "summary": json.loads(r["summary"] or "{}"),
             "progress": B.batch_progress(r) if r["status"] in B.OPEN else None}
 
@@ -722,7 +723,7 @@ def model_view(key: str, side: str = "back"):
 @app.get("/api/batches/{batch_id}/plate-image")
 def batch_plate_image(batch_id: int, f: str):
     """Top-view picture of a base plate, drawn when the plates were built."""
-    b = _batch(batch_id)
+    b = _own_batch(batch_id)
     label = Path(b["out_dir"] or "").name
     root = (B.PREVIEW_DIR / f"batch-{batch_id}" / label).resolve()
     target = (root / f).resolve()
@@ -733,7 +734,7 @@ def batch_plate_image(batch_id: int, f: str):
 
 @app.get("/api/batches/{batch_id}/file")
 def batch_file(batch_id: int, path: str):
-    root = Path(_batch(batch_id)["out_dir"]).resolve()
+    root = Path(_own_batch(batch_id)["out_dir"] or "/nonexistent").resolve()
     target = (root / path).resolve()
     if root not in target.parents or not target.is_file():
         raise HTTPException(404, "No such file")
@@ -746,7 +747,7 @@ async def batch_reveal(batch_id: int, req: Request):
     if not is_local(req):
         raise HTTPException(404)
     body = await req.json()
-    root = Path(_batch(batch_id)["out_dir"] or "/nonexistent").resolve()
+    root = Path(_own_batch(batch_id)["out_dir"] or "/nonexistent").resolve()
     if not root.is_dir():
         raise HTTPException(404, "Batch folder is gone")
     target = root
@@ -754,16 +755,14 @@ async def batch_reveal(batch_id: int, req: Request):
         target = (root / str(body["file"])).resolve()
         if root not in target.parents or not target.is_file():
             raise HTTPException(404, "No such file")
-    import subprocess
-
-    subprocess.run(["open", "-R", str(target)] if target.is_file() else ["open", str(target)], check=False)
+    platform_os.reveal(target)
     return {"ok": True}
 
 
 @app.get("/api/batches/{batch_id}/zip")
 def batch_zip(batch_id: int):
     """On-demand download only: the ZIP is built in a temp file and deleted after sending (never saved)."""
-    b = _batch(batch_id)
+    b = _own_batch(batch_id)
     root = Path(b["out_dir"] or "/nonexistent")
     if not root.is_dir():
         raise HTTPException(404, "Batch folder is gone")

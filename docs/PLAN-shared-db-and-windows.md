@@ -1,6 +1,8 @@
 # Plan: shared cloud database, and SnapSTL on Windows
 
-Status: **plan, not built yet.** Git-based updates (Settings → Updates) are built; see INSTALL.md.
+Status: **built in 0.7.0** with one change: batches belong to the computer that creates it, so
+downloaded models stay on that computer (no cloud file storage needed). How to set up: README.
+The Windows version is built but not yet run on a real Windows PC.
 
 ## 1. Goal
 
@@ -144,7 +146,7 @@ keep running on both systems.
 ## 5. Suggested order
 
 1. **Git updates on every computer** (built). Create the private repository and set up each Mac once
-   (INSTALL.md).
+   (README).
 2. **Cloud database**: you create the Supabase project. SnapSTL gets the Postgres support, shared
    locks and the one-time data move. Test with two Macs on the same database.
 3. **Downloaded models in cloud storage**, so any computer can build any batch.

@@ -177,11 +177,13 @@ def test_pause_release_and_cancel(client):
 
 
 def test_interrupted_download_resumes_after_restart(client):
+    from snapstl import computer
     from snapstl.batches import Downloader
 
     with db.tx() as con:
-        con.execute("INSERT INTO downloads(cache_key,name,compartments,model_json,state,attempts,claimed_at,created_at,updated_at)"
-                    " VALUES ('k-resume','Resumo',4,'{}','claimed',1,?,?,?)", (db.now(), db.now(), db.now()))
+        con.execute("INSERT INTO downloads(cache_key,name,compartments,model_json,state,attempts,claimed_at,created_at,"
+                    "updated_at,computer_id) VALUES ('k-resume','Resumo',4,'{}','claimed',1,?,?,?,?)",
+                    (db.now(), db.now(), db.now(), computer.ID))
     Downloader().start()
     with db.tx() as con:
         row = con.execute("SELECT state, attempts FROM downloads WHERE cache_key='k-resume'").fetchone()
@@ -465,3 +467,88 @@ def test_build_holds_back_watermarked_model_and_object_redownload(client):
                           else None)(client.get(f"/api/batches/{bid}").json()))
     assert b["summary"]["watermark"] == {"checked": 2, "found": 0}
     assert any("Dev" in n for p in b["summary"]["plates"] for n in p["names"])
+
+
+# ---------------- shared database: batches belong to their computer ----------------
+def test_batches_belong_to_their_computer(client):
+    from snapstl import batches as B
+    from snapstl import computer
+
+    client.post("/api/maintenance/reset", json={"confirm": "RESET"})
+    client.post("/api/ingest", files={"file": ("r.csv", report([
+        ("M1", "PRINT", "Magicians_35", "Asha", "Pink", 1), ("M2", "PRINT", "Magicians_35", "Ravi", "Blue", 1),
+        ("M3", "PRINT", "Magicians_35", "Neha", "Red", 1)]), "text/csv")})
+
+    # another computer (sharing the database) batches M1: it leaves Ready here too, with its computer's name
+    with db.tx() as con:
+        other = con.execute("INSERT INTO batches(created_at,out_dir,status,order_ids,summary,settings,computer_id,"
+                            "computer_name,progress) VALUES (?,?,?,?,?,?,?,?,?) RETURNING id",
+                            (db.now(), "/elsewhere/Batch 1", "waiting", '["M1"]', "{}", "{}", "other-pc", "Packing PC",
+                             '{"models": 1, "ready": 0, "failed": 0}')).fetchone()["id"]
+        con.execute("UPDATE orders SET state='in_batch', batch_id=? WHERE order_id='M1'", (other,))
+        con.execute("INSERT INTO downloads(cache_key,name,compartments,model_json,state,created_at,updated_at,"
+                    "batch_id,computer_id) VALUES ('k-other','Asha',4,?,'queued',?,?,?,'other-pc')",
+                    ('{"_license": "x"}', db.now(), db.now(), other))
+    ready = [o["order_id"] for o in client.get("/api/orders", params={"tab": "ready"}).json()["orders"]]
+    assert sorted(ready) == ["M2", "M3"]
+    o = client.get("/api/orders", params={"tab": "in_batch"}).json()["orders"][0]
+    assert o["order_id"] == "M1" and o["batch_computer"] == "Packing PC"
+
+    # it's listed with its computer; this computer can't act on it or open its files
+    item = next(b for b in client.get("/api/batches").json() if b["id"] == other)
+    assert item["computer"] == "Packing PC" and item["mine"] is False and item["progress"]["models"] == 1
+    for action in ("download", "build", "cancel"):
+        r = client.post(f"/api/batches/{other}/{action}")
+        assert r.status_code == 400 and "Packing PC" in r.json()["detail"], action
+    assert client.get(f"/api/batches/{other}/zip").status_code == 409
+    assert client.post(f"/api/batches/{other}/reveal", json={}).status_code == 409
+    # its queued download is never handed to this computer's helper, nor shown in this queue
+    assert B.helper_next() is None
+    assert all(d["name"] != "Asha" for d in client.get("/api/downloads").json()["items"])
+
+    # this computer's own batch is marked as its own
+    mine = client.post("/api/batches", json={"order_ids": ["M2"]}).json()["batch_id"]
+    b = client.get(f"/api/batches/{mine}").json()
+    assert b["mine"] is True and b["computer"] == computer.NAME == "Test computer"
+
+    # two computers taking the same order: the one that comes second gets nothing and changes nothing
+    from snapstl import server
+
+    with db.tx() as con:
+        n_before = con.execute("SELECT COUNT(*) FROM batches").fetchone()[0]
+    real_rows = db.rows
+
+    def other_takes_m3(con, sql, *args):  # M3 is ready when read, then the other computer takes it
+        out = real_rows(con, sql, *args)
+        if "state='ready' AND order_id IN" in sql:
+            con.execute("UPDATE orders SET state='in_batch', batch_id=? WHERE order_id='M3'", (other,))
+        return out
+
+    db.rows = other_takes_m3
+    try:
+        with pytest.raises(ValueError, match="another computer"):
+            B.create_batch(["M3"], server.SETTINGS)
+    finally:
+        db.rows = real_rows
+    with db.tx() as con:
+        assert con.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == n_before  # rolled back
+
+
+@pytest.mark.skipif(not db.shared(), reason="needs SNAPSTL_TEST_DATABASE_URL (a throwaway Postgres)")
+def test_move_local_database_to_shared(client, tmp_path):
+    from snapstl import maintenance
+    from snapstl.ingest import ingest
+
+    client.post("/api/maintenance/reset", json={"confirm": "RESET"})
+    local = tmp_path / "local.db"
+    ingest(report([("L1", "PRINT", "Magicians_35", "Lina", "Pink", 1)]), "r.csv", db_path=local)
+    with db.tx(local) as con:
+        bid = db.create_batch(con, ["L1"], "/x")
+    counts = maintenance.copy_local_to_shared(local)
+    assert counts["orders"] == 1 and counts["batches"] == 1
+    with db.tx() as con:
+        assert con.execute("SELECT name FROM orders WHERE order_id='L1'").fetchone()[0] == "Lina"
+        new = db.create_batch(con, [], "/y")
+    assert new > bid  # numbering continues after the copied batches
+    with pytest.raises(RuntimeError, match="already has orders"):
+        maintenance.copy_local_to_shared(local)

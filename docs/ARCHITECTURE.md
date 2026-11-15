@@ -493,7 +493,7 @@ snapstl.server:app --port 8320`.
 ## Updates (git)
 
 Each SnapSTL folder is a git clone of the private repository, read-only through a per-computer
-**deploy key** (INSTALL.md). `updater.py`: `check()` = `git fetch` + how many commits `main` is
+**deploy key** (README). `updater.py`: `check()` = `git fetch` + how many commits `main` is
 behind; `apply()` = refuse if tracked files were edited by hand → `git pull --ff-only` → `uv sync`.
 `GET/POST /api/update` (this computer only) wrap them. POST refuses while a name is claimed or a
 batch is building, then restarts the launchd service. The UI checks at start and every 6 h and shows
@@ -502,3 +502,35 @@ When it differs from the running one, background.js calls `chrome.runtime.reload
 (never mid-name). `onInstalled` reloads open model-maker tabs so they run the new content script.
 `scripts/update.sh` does the same from Terminal. Customer data is outside the folder, so a pull
 can't touch it. Plan for a shared cloud database and Windows: docs/PLAN-shared-db-and-windows.md.
+
+## Shared database and computers (0.7.0)
+
+- `config.py` loads `.env` from the SnapSTL folder (never in git; `.env.example` lists the keys).
+  `SNAPSTL_DATABASE_URL` set → `db.py` uses Postgres (Supabase, Session pooler) through a small
+  pool (psycopg 3); empty → SQLite as before. The code's SQL stays SQLite-style; `db._pg()` swaps
+  `?`→`%s` and LIKE→ILIKE. Tables live in schema `snapstl`. `_setup_pg` creates and migrates them under
+  an advisory lock and records `meta.schema_version`; a SnapSTL older than the database refuses to run.
+- `computer.py`: this computer's id (generated once, `computer.json` in the app folder) and name
+  (`SNAPSTL_COMPUTER_NAME` or the system name). New batch columns: `computer_id`, `computer_name`,
+  `progress`; downloads get `computer_id`. On SQLite, rows without a computer are this computer's.
+- Ownership: `batches.create_batch` takes the orders under `db.lock(con,"orders")` with
+  `UPDATE … WHERE state='ready'`, and rolls back if any were taken meanwhile. Download claims, builds,
+  restarts and clean-up of queued downloads filter on `computer.ID`. `_require_mine` refuses batch
+  actions on another computer's batch (400). `server._own_batch` refuses its files (409).
+  `batch_progress` runs only on the owner and saves `batches.progress` for the others. The Objects
+  list elsewhere uses the owner's download rows (no pictures).
+- `maintenance`: backups of the shared database are local SQLite copies (`_copy_to_sqlite`).
+  `copy_local_to_shared` (`uv run snapstl-db move-local`) moves one computer's SQLite data into an
+  empty shared database once and resets the id sequences. `snapstl-db check` tests the connection.
+
+## Windows (0.7.0)
+
+`platform_os.py` holds every OS difference: the app folder (`%LOCALAPPDATA%\SnapSTL`), open/reveal
+(Explorer `/select,`), keep awake (`SetThreadExecutionState`), computer and LAN names, and service
+restart. `scripts/windows/install.ps1` installs uv and runs `uv sync`. It registers the scheduled task
+**SnapSTL** (at log-on, hidden, restart on failure) running `run-service.ps1`, a loop around
+`uv run snapstl-serve`, and creates Start-menu and Desktop shortcuts (`pythonw -m snapstl`).
+`update.ps1`, `restart.ps1` and `uninstall.ps1` handle the rest. A restart from the app exits with
+code 3 and the loop starts it again. In-app updates on Windows only `git pull`: the loop's `uv run`
+installs the new packages before starting, since Windows can't replace files Python has open.
+`.gitattributes` keeps `.sh` files LF and `.ps1` files CRLF.

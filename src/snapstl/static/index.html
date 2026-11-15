@@ -10,6 +10,9 @@
 *{box-sizing:border-box}
 a{color:var(--accent)}
 body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
+body.win{font-family:"Segoe UI Variable","Segoe UI",system-ui,sans-serif}
+tr.other td{color:var(--muted)}
+.side h1 small.pc{margin-top:6px;font-size:11px;opacity:.8}
 .app{display:grid;grid-template-columns:210px minmax(0,1fr);min-height:100vh}
 .side{position:sticky;top:0;height:100vh;background:var(--panel);border-right:1px solid var(--line);padding:16px 10px;display:flex;flex-direction:column;gap:12px}
 .side h1{font-size:17px;margin:0 6px 4px;font-weight:600}
@@ -82,7 +85,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
 <body>
 <div class="app">
 <aside class="side">
-  <h1>SnapSTL<small>Name organizer plates</small></h1>
+  <h1>SnapSTL<small>Name organizer plates</small><small id="pcname" class="pc"></small></h1>
   <nav id="tabs">
     <button data-t="orders" class="on"><span class="ic">▤</span>Orders</button>
     <button data-t="batches"><span class="ic">▦</span>Batches</button>
@@ -134,10 +137,11 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
 <section id="t-batches" hidden>
   <div class="card">
     <div class="toolbar"><h2 style="margin:0">Batches</h2><span class="grow hint" id="queueinfo"></span><button id="retry" class="small" hidden>Retry failed downloads</button></div>
-    <div class="tw"><table><thead><tr><th>#</th><th>Folder</th><th>Created</th><th>Orders</th><th>Models</th><th>Plates</th><th>Status</th><th></th></tr></thead><tbody id="batches"></tbody></table></div>
+    <div class="tw"><table><thead><tr><th>#</th><th>Folder</th><th>Computer</th><th>Created</th><th>Orders</th><th>Models</th><th>Plates</th><th>Status</th><th></th></tr></thead><tbody id="batches"></tbody></table></div>
   </div>
   <div class="card" id="bdetail" hidden>
-    <div class="toolbar"><h2 style="margin:0" id="btitle"></h2><span class="grow"></span><button id="bfinder" hidden>Show in Finder</button> <a class="btn primary" id="bzip">Download ZIP</a></div>
+    <div class="toolbar"><h2 style="margin:0" id="btitle"></h2><span class="grow"></span><button id="bfinder" hidden class="fm">Show in Finder</button> <a class="btn primary" id="bzip">Download ZIP</a></div>
+    <div class="msgs" id="bother" hidden></div>
     <div class="msgs" id="bmsgs"></div>
     <details class="objsbox" id="bobjsbox"><summary id="bobjsum">Objects</summary>
       <p class="hint">Every name in this batch as downloaded. The picture shows the back of the base, where MakerWorld puts its "SALE NOT PERMITTED" watermark (painted <b style="color:#dc2828">red</b> if found) — click it for the top view. <b>Re-download</b> fetches one object again; then press <b>Rebuild plates</b> so the plates use the fresh download.</p>
@@ -159,7 +163,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <div class="tw" style="max-height:60vh;overflow:auto"><table><thead><tr><th>#</th><th>Name</th><th>Comp.</th><th>Batch</th><th>State</th><th>Watermark</th><th>Tries</th><th>Detail</th></tr></thead><tbody id="dlq"></tbody></table></div>
   </div>
   <div class="card">
-    <div class="toolbar"><h2 style="margin:0">Downloaded models</h2><span class="grow"></span><button id="dlfinder" class="small">Show in Finder</button></div>
+    <div class="toolbar"><h2 style="margin:0">Downloaded models</h2><span class="grow"></span><button id="dlfinder" class="small fm">Show in Finder</button></div>
     <p class="hint" id="dlfolder"></p>
     <p class="hint">Every model downloaded from MakerWorld is kept here — one folder per name (e.g. <code>SONAL - 5 comp - …</code> with <code>base.stl</code>, <code>name.stl</code>, <code>info.json</code>). SnapSTL never deletes them; clean up in Finder whenever you like. A deleted model is simply downloaded again the next time a batch needs it. Change the folder in Settings.</p>
   </div>
@@ -244,6 +248,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
   </div>
   <div class="card">
     <h2>Database</h2>
+    <p class="hint" id="dbkind"></p>
     <p class="hint" id="dbinfo">…</p>
     <label>Clean up records older than (days)</label>
     <div class="row2" style="grid-template-columns:1fr auto"><input id="cleandays" type="number" min="0" value="30"><button id="cleanup">Clean up</button></div>
@@ -396,7 +401,9 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
 
   <div class="card" id="h-data">
     <h2>Your data</h2>
-    <p>Everything stays on this Mac. Orders database, settings and backups: <code>~/Library/Application Support/SnapSTL</code>. Downloaded models: your Downloads folder. Plates: your output folder. SnapSTL never deletes downloaded models or batch folders — you clean them up in Finder. Customer names, phones and addresses are only stored in the local database. SnapSTL runs in the background (it starts at login); the window is just a view — you can also open <code>http://127.0.0.1:8317</code> in a browser.</p>
+    <p>Settings and backups are on this computer (Mac: <code>~/Library/Application Support/SnapSTL</code>, Windows: <code>%LOCALAPPDATA%\SnapSTL</code>). Downloaded models: your Downloads folder. Plates: your output folder. SnapSTL never deletes downloaded models or batch folders — you clean them up yourself. Orders (with customer names, phones and addresses) are in this computer's own database, or in your shared Supabase database when the <code>.env</code> file sets one (Settings → Database says which). SnapSTL runs in the background (it starts at login); the window is just a view — you can also open <code>http://127.0.0.1:8317</code> in a browser.</p>
+    <h3>Several computers (shared database)</h3>
+    <p>Every computer sees the same orders and batches. A batch belongs to the computer that created it: its orders leave Ready everywhere and show <i>in batch #N · computer</i>; only that computer downloads its models, builds its plates and opens its files. Other computers show it greyed out with its progress. The Downloads page shows this computer's own queue.</p>
     <p class="hint" id="helpversion"></p>
   </div>
 </section>
@@ -437,7 +444,7 @@ async function loadOrders(){
     const nameCell=o.state==='needs_review'
       ?`<div class="edit"><input value="${esc(o.name)}" data-n="${esc(o.order_id)}" placeholder="Name to print"><input value="${esc(o.color)}" data-c="${esc(o.order_id)}" style="max-width:90px" placeholder="colour"><button class="small primary" data-ok="${esc(o.order_id)}">Approve</button></div><div class="hint">Customer typed: ${esc(o.raw_name)||'—'}</div><div class="reason">${esc(o.review_reason)}</div>`
       :`${esc(o.name)}${o.name_edited?' <span class="hint">(edited)</span>':''}${o.raw_name&&o.raw_name.trim()!==o.name?`<div class="hint">typed: ${esc(o.raw_name)}</div>`:''}${o.last_error?`<div class="reason">${esc(o.last_error)}</div>`:''}`;
-    const act=o.state==='in_batch'?`<a class="hint" href="#" data-batch="${o.batch_id}">in batch #${o.batch_id}</a>`:o.state==='bundled'?`<button class="small" data-reset="${esc(o.order_id)}" title="Make it again">Remake</button> <a class="hint" href="#" data-batch="${o.batch_id}">batch #${o.batch_id}</a>`
+    const act=o.state==='in_batch'?`<a class="hint" href="#" data-batch="${o.batch_id}">in batch #${o.batch_id}${o.batch_computer&&o.batch_computer!==META.computer.name?` · ${esc(o.batch_computer)}`:''}</a>`:o.state==='bundled'?`<button class="small" data-reset="${esc(o.order_id)}" title="Make it again">Remake</button> <a class="hint" href="#" data-batch="${o.batch_id}">batch #${o.batch_id}</a>`
       :(o.state==='ready'||o.state==='needs_review')?`<button class="small" data-skip="${esc(o.order_id)}">Skip</button>`
       :`<button class="small" data-reset="${esc(o.order_id)}">Make anyway</button>`;
     const cb=o.state==='ready'?`<input type="checkbox" data-sel="${esc(o.order_id)}" ${SEL.has(o.order_id)?'checked':''}>`:'';
@@ -493,6 +500,8 @@ async function loadBatches(){const bs=await api('/api/batches');
   $('batches').innerHTML=bs.length?bs.map(b=>{const st=BST[b.status]||[b.status,''];const p=b.progress;const active=!!p;const finished=b.status.startsWith('done');
     const models=p?`${p.ready}/${p.models}${p.failed?` <span class="reason">${p.failed} failed</span>`:''}<div class="bar" style="margin-top:4px"><i style="width:${p.models?100*p.ready/p.models:0}%"></i></div>`:'—';
     const acts=[`<button class="small" data-b="${b.id}">Open</button>`];
+    const pc=`${esc(b.computer||'—')}${b.mine?' <span class="pill ok">this one</span>':''}`;
+    if(!b.mine){return `<tr class="other"><td>${b.id}</td><td>${esc(b.label||'—')}</td><td>${pc}</td><td>${new Date(b.created_at*1000).toLocaleString()}</td><td>${b.orders}</td><td>${models}</td><td>${b.plates||'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${acts.join(' ')}</td></tr>`}
     if(finished)acts.push(`<a class="btn small" href="/api/batches/${b.id}/zip">ZIP</a>`);
     const built=['done','done_with_problems','failed'].includes(b.status);
     if(b.status==='created')acts.push(`<button class="small primary" data-dl="${b.id}">Queue download</button>`);
@@ -500,7 +509,7 @@ async function loadBatches(){const bs=await api('/api/batches');
     if(b.status==='waiting')acts.push(`<button class="small" data-build="${b.id}" data-partial="1" title="Build with the models that are ready; orders still missing a model are left out">Build now with what's ready</button>`);
     if(built)acts.push(`<button class="small" data-redl="${b.id}" title="Fetch every model of this batch again from MakerWorld (replaces the saved ones)">Re-download</button>`,`<button class="small" data-rebuild="${b.id}" title="Make the plates again from the downloaded models — writes a new Batch folder; the old one stays">Rebuild plates</button>`);
     if(['created','waiting','models_ready'].includes(b.status))acts.push(`<button class="small" data-cancel="${b.id}">${b.label?'Stop':'Cancel'}</button>`);
-    return `<tr><td>${b.id}</td><td>${esc(b.label||'—')}</td><td>${new Date(b.created_at*1000).toLocaleString()}</td><td>${b.orders}</td><td>${models}</td><td>${b.plates||'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${acts.join(' ')}</td></tr>`}).join(''):'<tr><td colspan="8" class="empty">No batches yet — select orders on the Orders tab</td></tr>';
+    return `<tr><td>${b.id}</td><td>${esc(b.label||'—')}</td><td>${pc}</td><td>${new Date(b.created_at*1000).toLocaleString()}</td><td>${b.orders}</td><td>${models}</td><td>${b.plates||'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${acts.join(' ')}</td></tr>`}).join(''):'<tr><td colspan="9" class="empty">No batches yet — select orders on the Orders tab</td></tr>';
   document.querySelectorAll('[data-b]').forEach(x=>x.onclick=()=>openBatchDetail(+x.dataset.b));
   document.querySelectorAll('[data-dl]').forEach(x=>x.onclick=async()=>{try{const r=await post(`/api/batches/${x.dataset.dl}/download`);$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for the helper — see Downloads`}catch(e){alert(e.message)}loadBatches()});
   document.querySelectorAll('[data-redl]').forEach(x=>x.onclick=async()=>{if(!confirm('Re-download every model of this batch from MakerWorld? The new downloads replace the saved ones. Then use Queue build / Rebuild plates.'))return;try{const r=await post(`/api/batches/${x.dataset.redl}/download`,{force:true});$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for re-download — see Downloads`}catch(e){alert(e.message)}loadBatches()});
@@ -513,30 +522,32 @@ function plateSVG(p){const [bx,by]=p.preview.bed,m=p.preview.margin;const fill=p
   return `<svg viewBox="-2 -2 ${bx+4} ${by+4}"><rect width="${bx}" height="${by}" rx="4" fill="var(--bed)" stroke="var(--line)"/><rect x="${m}" y="${m}" width="${bx-2*m}" height="${by-2*m}" fill="none" stroke="var(--line)" stroke-dasharray="3 3"/>${parts}</svg>`}
 const WMS={true:['Watermark found','err'],false:['No watermark','ok']};
 const OST={ready:['Downloaded','ok'],queued:['Waiting','info'],downloading:['Generating','info'],failed:['Failed','err'],'not downloaded':['Not downloaded','']};
-async function loadObjects(id,status){let r;try{r=await api(`/api/batches/${id}/models`)}catch{return}
-  const can=!['cancelled','building','build_requested'].includes(status);
+async function loadObjects(id,status,mine){let r;try{r=await api(`/api/batches/${id}/models`)}catch{return}
+  const can=mine&&!['cancelled','building','build_requested'].includes(status);
   const bad=r.items.filter(m=>m.watermark===true).length,pend=r.items.filter(m=>['queued','downloading'].includes(m.status)).length;
   $('bobjsum').textContent=`Objects · ${r.items.length}`+(bad?` · ${bad} with watermark`:'')+(pend?` · ${pend} downloading`:'');
   if(bad)$('bobjsbox').open=true;
   $('bobjs').innerHTML=r.items.map(m=>{const st=OST[m.status]||[m.status,''];const wm=m.status==='ready'?(WMS[m.watermark]||['Not checked yet','warn']):['—',''];
-    const img=m.status==='ready'?`<img loading="lazy" data-key="${m.key}" src="/api/models/${m.key}/view.png?side=back&t=${encodeURIComponent(m.downloaded||'')}" alt="back of ${esc(m.name)} base">`:'';
+    const img=m.status==='ready'&&m.pictures?`<img loading="lazy" data-key="${m.key}" src="/api/models/${m.key}/view.png?side=back&t=${encodeURIComponent(m.downloaded||'')}" alt="back of ${esc(m.name)} base">`:'';
     return `<tr><td>${esc(m.name)}</td><td>${m.compartments}</td><td>${m.copies}</td><td>${img}</td><td><span class="pill ${wm[1]}">${wm[0]}</span>${m.license_check?`<div class="hint">password ${esc(m.license_check)}</div>`:''}</td><td><span class="pill ${st[1]}">${st[0]}</span>${m.downloaded?`<div class="hint">${esc(m.downloaded)}</div>`:''}${m.error?`<div class="reason">${esc(m.error)}</div>`:''}</td><td>${can&&!['queued','downloading'].includes(m.status)?`<button class="small" data-objdl="${m.key}">Re-download</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="7" class="empty">No objects</td></tr>';
   document.querySelectorAll('[data-objdl]').forEach(x=>x.onclick=async()=>{try{const r=await post(`/api/batches/${id}/models/redownload`,{key:x.dataset.objdl});$('queueinfo').textContent=r.queued?`${r.name} queued for re-download — press Rebuild plates once it's in`:`${r.name} is already queued`}catch(e){alert(e.message)}openBatchDetail(id,true);loadBatches()});
   document.querySelectorAll('.objs img[data-key]').forEach(i=>i.onclick=()=>{$('bzoom').innerHTML=`<div class="toolbar" style="margin-top:10px"><b>Top view</b><span class="grow"></span><button class="small" id="bzclose">Close</button></div><img class="zoomimg" src="/api/models/${i.dataset.key}/view.png?side=top"><div class="toolbar" style="margin-top:6px"><b>Back</b></div><img class="zoomimg" src="${i.src}">`;$('bzclose').onclick=()=>$('bzoom').innerHTML=''})}
 async function openBatchDetail(id,quiet){const changed=openBatch!==id;openBatch=id;const b=await api('/api/batches/'+id);const s=b.summary||{};
   if(changed){$('bobjsbox').open=false;$('bzoom').innerHTML=''}
-  loadObjects(id,b.status);
-  $('bdetail').hidden=false;$('btitle').textContent=`${s.label||'Batch #'+id} · ${b.order_ids.length} orders`;$('bzip').href=`/api/batches/${id}/zip`;$('bzip').hidden=!b.status.startsWith('done');
+  loadObjects(id,b.status,b.mine);
+  $('bdetail').hidden=false;$('btitle').textContent=`${s.label||'Batch #'+id} · ${b.order_ids.length} orders · ${b.computer||'this computer'}`;$('bzip').href=`/api/batches/${id}/zip`;$('bzip').hidden=!b.status.startsWith('done')||!b.mine;
+  $('bother').hidden=b.mine;$('bother').innerHTML=b.mine?'':`<div class="w">This batch belongs to <b>${esc(b.computer||'another computer')}</b>: its models are downloaded and its plates built and saved there. You can follow its progress here; open SnapSTL on ${esc(b.computer||'that computer')} to change it or get its files.</div>`;
   if(b.progress){const P=b.progress;const msg=b.status==='created'?`Not queued yet: press <b>Queue download</b> (${P.ready} of ${P.models} models already downloaded).`:b.status==='models_ready'?`All models downloaded (${P.ready}/${P.models}${P.failed?`, ${P.failed} failed`:''}) — press <b>Queue build</b>.`:`Downloading from MakerWorld: ${P.ready} of ${P.models} models done${P.failed?`, ${P.failed} failed`:''}.`;
     $('bmsgs').innerHTML=`<div class="w">${msg}</div>`;$('bbases').innerHTML=$('bnames').innerHTML='<div class="empty">Plates appear when the batch is built</div>';return}
   const W=s.watermark;const wmMsg=W&&W.checked?(W.found?`<div class="e">Watermark check: found on ${W.found} of ${W.checked} downloaded bases — those orders were held back.</div>`:`<div class="o">Watermark check: none of the ${W.checked} downloaded bases has MakerWorld's watermark.</div>`):'';
   const F=s.fit;const fitMsg=F&&F.checked?(F.ok===F.checked?`<div class="o">Fit check: ${F.ok}/${F.checked} name/base pairs keep their MakerWorld proportions — they'll fit after printing.</div>`:`<div class="e">Fit check: only ${F.ok}/${F.checked} pairs passed — the others were not printed (see below).</div>`):'';
   $('bmsgs').innerHTML=(s.folder?`<div class="o">Saved to ${esc(s.folder)}</div>`:'')+fitMsg+wmMsg+(s.errors||[]).map(e=>`<div class="e">${esc(e)}</div>`).join('')+(s.warnings||[]).map(w=>`<div class="w">${esc(w)}</div>`).join('')+(s.ok&&!(s.warnings||[]).length?'<div class="o">All plates passed the checks.</div>':'');
   for(const k of ['bases','names']){const ps=(s.plates||[]).filter(p=>p.kind===k);
-    $('b'+k).innerHTML=ps.length?ps.map(p=>`<a class="plate" data-file="${esc(p.file)}" href="/api/batches/${id}/file?path=${encodeURIComponent(p.file)}">${p.image?`<img loading="lazy" src="/api/batches/${id}/plate-image?f=${encodeURIComponent(p.image)}" alt="top view of the plate">`:plateSVG(p)}<div class="fn">${esc(p.file.split('/').pop())}</div>${p.warnings.map(w=>`<div class="hint" style="color:var(--warn)">${esc(w)}</div>`).join('')}</a>`).join(''):'<div class="empty">None</div>'}
-  $('bfinder').hidden=!(META.local&&b.status.startsWith('done'));
+    $('b'+k).innerHTML=ps.length?ps.map(p=>`<a class="plate" data-file="${esc(p.file)}" href="/api/batches/${id}/file?path=${encodeURIComponent(p.file)}">${p.image&&b.mine?`<img loading="lazy" src="/api/batches/${id}/plate-image?f=${encodeURIComponent(p.image)}" alt="top view of the plate">`:plateSVG(p)}<div class="fn">${esc(p.file.split('/').pop())}</div>${p.warnings.map(w=>`<div class="hint" style="color:var(--warn)">${esc(w)}</div>`).join('')}</a>`).join(''):'<div class="empty">None</div>'}
+  $('bfinder').hidden=!(META.local&&b.mine&&b.status.startsWith('done'));
   $('bfinder').onclick=()=>post(`/api/batches/${id}/reveal`,{});
-  if(META.local)document.querySelectorAll('.plate[data-file]').forEach(a=>a.onclick=e=>{e.preventDefault();post(`/api/batches/${id}/reveal`,{file:a.dataset.file})});
+  if(META.local&&b.mine)document.querySelectorAll('.plate[data-file]').forEach(a=>a.onclick=e=>{e.preventDefault();post(`/api/batches/${id}/reveal`,{file:a.dataset.file})});
+  if(!b.mine)document.querySelectorAll('.plate[data-file]').forEach(a=>{a.removeAttribute('href');a.onclick=e=>e.preventDefault()});
   if(!quiet)$('bdetail').scrollIntoView({behavior:'smooth'})}
 const DST={claimed:['Generating','info'],queued:['Waiting',''],failed:['Failed','err'],done:['Done','ok']};
 async function loadQueue(){const r=await api('/api/downloads');const d=r.downloader;
@@ -607,6 +618,7 @@ $('updgo').onclick=async()=>{$('updgo').disabled=true;$('updinfo').textContent='
 // ---------- database ----------
 const fmtMB=b=>(b/1048576).toFixed(1)+' MB';
 async function loadDb(){const m=await api('/api/maintenance');const o=m.orders,sum=x=>Object.values(x).reduce((a,b)=>a+b,0);
+  $('dbkind').innerHTML=m.database==='postgres'?`<b>Shared database</b> (set in the <code>.env</code> file): every SnapSTL computer sees the same orders and batches. This computer is <b>${esc(META.computer.name)}</b>${m.computers.length?`; computers with batches: ${m.computers.map(c=>`${esc(c.name)} (${c.batches})`).join(', ')}`:''}. Backups below are local copies of the shared data.`:`<b>This computer only</b> — to share orders and batches with other computers, set up the shared database (README → Shared database).`;
   $('dbinfo').textContent=`${sum(o)} orders (${o.ready||0} ready, ${o.needs_review||0} to review, ${o.in_batch||0} in a batch, ${o.bundled||0} made, ${o.not_needed||0} not needed) · ${sum(m.batches)} batches · ${m.reports_uploaded} report uploads · database ${fmtMB(m.db_bytes)} · downloaded models ${m.cache_models} (${fmtMB(m.cache_bytes)}) · ${m.backups} backups${m.last_backup?` (latest ${m.last_backup})`:''}`}
 $('cleanup').onclick=async()=>{const d=parseInt($('cleandays').value,10);if(isNaN(d)||d<0){$('dbmsg').textContent='Enter a number of days';return}
   if(!confirm(`Remove records older than ${d} days? Orders already made are kept. A backup is saved first.`))return;
@@ -642,7 +654,10 @@ async function refresh(){try{const st=await api('/api/state');
 }catch(e){}}
 function refreshAll(){lastKey='';refresh()}
 (async()=>{META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;
-  if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders'}catch{}if(!['orders','batches','downloads','settings','help'].includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;show(t);refresh();setInterval(refresh,2000);
+  if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders'}catch{}if(!['orders','batches','downloads','settings','help'].includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;
+  document.querySelectorAll('.fm').forEach(x=>x.textContent='Show in '+META.file_manager);
+  if(META.os==='windows')document.body.classList.add('win');
+  $('pcname').textContent=META.computer.name+(META.database==='postgres'?' · shared database':'');show(t);refresh();setInterval(refresh,2000);
   if(META.local){loadUpdates(1);setInterval(()=>loadUpdates(1),6*3600*1000)}})();
 </script>
 </body>

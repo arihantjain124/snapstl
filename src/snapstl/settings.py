@@ -11,8 +11,12 @@ import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from . import config  # noqa: F401  (loads .env before anything reads the environment)
+from .platform_os import app_dir
+
 # SNAPSTL_HOME lets tests/dev runs use a separate settings + cache folder.
-APP_DIR = Path(os.environ.get("SNAPSTL_HOME") or Path.home() / "Library" / "Application Support" / "SnapSTL")
+# Mac: ~/Library/Application Support/SnapSTL · Windows: %LOCALAPPDATA%\SnapSTL
+APP_DIR = app_dir()
 SETTINGS_PATH = APP_DIR / "settings.json"
 _DEV = bool(os.environ.get("SNAPSTL_HOME"))
 DEFAULT_OUTPUT_DIR = (APP_DIR / "output") if _DEV else Path.home() / "SnapSTL" / "output"

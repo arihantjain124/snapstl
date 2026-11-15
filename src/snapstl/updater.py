@@ -14,15 +14,17 @@ import shutil
 import subprocess
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]  # the project folder (src/snapstl/updater.py → ../../)
+from .config import ROOT  # the SnapSTL folder
 
 
 def _git(*args: str, timeout: float = 60) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, timeout=timeout)
+    return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, timeout=timeout,
+                          creationflags=0x08000000 if os.name == "nt" else 0)  # no console window on Windows
 
 
 def uv_path() -> str | None:
-    for p in (shutil.which("uv"), os.path.expanduser("~/.local/bin/uv"), "/opt/homebrew/bin/uv", "/usr/local/bin/uv"):
+    for p in (shutil.which("uv"), os.path.expanduser("~/.local/bin/uv"), os.path.expanduser("~/.local/bin/uv.exe"),
+              "/opt/homebrew/bin/uv", "/usr/local/bin/uv"):
         if p and os.path.exists(p):
             return p
     return None
@@ -40,10 +42,10 @@ def _edited() -> list[str]:
 def check(fetch: bool = True) -> dict:
     """What's waiting on the server: {git, branch, behind, changes[], edited[], error}."""
     if not is_git():
-        return {"git": False, "error": "This SnapSTL folder isn't set up with git yet — see INSTALL.md → Updates"}
+        return {"git": False, "error": "This SnapSTL folder isn't set up with git yet — see README → Install"}
     res: dict = {"git": True, "error": ""}
     if _git("remote", "get-url", "origin").returncode != 0:
-        res["error"] = "No repository is connected to this folder yet — see INSTALL.md → step 2"
+        res["error"] = "No repository is connected to this folder yet — see README → Install"
     elif fetch:
         f = _git("fetch", "--quiet", "origin")
         if f.returncode != 0:
@@ -62,7 +64,7 @@ def check(fetch: bool = True) -> dict:
 def apply() -> dict:
     """Pull and install. Raises RuntimeError with a plain-English reason if it can't."""
     if not is_git():
-        raise RuntimeError("This SnapSTL folder isn't set up with git yet — see INSTALL.md → Updates")
+        raise RuntimeError("This SnapSTL folder isn't set up with git yet — see README → Install")
     edited = _edited()
     if edited:
         raise RuntimeError("Files in the SnapSTL folder were changed by hand, so it can't update safely: "
@@ -72,7 +74,11 @@ def apply() -> dict:
     if p.returncode != 0:
         raise RuntimeError("Update failed: " + (p.stderr.strip().splitlines() or ["git pull failed"])[-1])
     after = _git("rev-parse", "HEAD").stdout.strip()
-    if after != before:
+    if after != before and os.name == "nt":
+        # Windows can't replace files of the running Python: the service launcher (scripts/windows/
+        # run-service.ps1) runs `uv run`, which installs the update before SnapSTL starts again.
+        pass
+    elif after != before:
         uv = uv_path()
         if uv is None:
             raise RuntimeError("Updated the files but couldn't find uv to install them — run scripts/update.sh")

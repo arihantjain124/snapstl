@@ -1,6 +1,6 @@
 # AGENTS.md — instructions for AI coding agents (Claude, Codex, Cursor, …)
 
-You are working on **SnapSTL**: a local Mac app that turns webstore orders into print-ready
+You are working on **SnapSTL**: a local app (macOS and Windows) that turns webstore orders into print-ready
 name-organizer plate files (.3mf). The owner asks for changes in plain language (UI tweaks, new
 columns, rule changes). Your job: **build forward on the existing design** — make the change safely,
 keep the docs true, and commit. Don't rewrite or replace working parts.
@@ -42,13 +42,23 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - Other computers: off by default; only with `lan_access` + portal password; they must sign in and can
   never use Mac-only actions (`MAC_ONLY_PREFIXES`, `…/reveal`, folder / model link / password changes).
 - Database: add columns **only** via `MIGRATIONS` in `db.py`; never drop/rename columns or tables.
+  Every change must work on **both** SQLite and the shared Postgres (run the tests on both, README →
+  Development); bump `db.SCHEMA_VERSION` when the layout changes. Write SQLite-style SQL (`?`, LIKE);
+  no SQLite-only functions (use CASE, not 2-argument MAX).
+- Shared database: a batch belongs to `batches.computer_id`. Downloads, builds, files and batch actions
+  happen only on that computer (`batches._require_mine`, `server._own_batch`); anything that picks
+  work (downloads, builds, restarts) must filter by `computer.ID`. Taking orders into a batch stays
+  under `db.lock(con, "orders")` with the `state='ready'` re-check.
+- OS differences go only in `platform_os.py` (Mac and Windows); never call `open`, `launchctl`,
+  `scutil` or Windows commands elsewhere.
 - Clean-up must keep bundled orders. Every destructive maintenance action takes a backup first.
 - No new runtime dependencies, frameworks or build steps without the owner asking. The UI stays one
   file (`static/index.html`, vanilla JS).
 
 **Privacy**
-- Customer name/phone/address live only in the local database. Never send them anywhere, log them, or
-  put them in git. License passwords live only in `settings.json` (per model) — never in model folders
+- Customer name/phone/address live only in the database: the local one, or the owner's shared
+  Supabase database (Mumbai) set in `.env`. Never send them anywhere else, log them, or put them in
+  git. `.env` (database password) is never committed; `.env.example` lists the keys with no values. License passwords live only in `settings.json` (per model) — never in model folders
   (`info.json`), logs, reports or git. The helper's `check` carries only booleans/"sent" — never the password.
 - Never weaken the license guard: no download without the model's password, no saving a download the
   helper didn't confirm or that still has the watermark (decision log #18).
@@ -79,7 +89,9 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Downloads page (queue + folder) | `<section id="t-downloads">` in `index.html`; `cache.py` for the folder |
 | MakerWorld page interaction | `helper/content.js`, `helper/inject.js` (bump `helper/manifest.json` version; reload extension) |
 | Backups / clean-up / reset | `maintenance.py` |
-| Install / service / window | `scripts/make_app.sh`, `src/snapstl/__init__.py` |
+| Install / service / window | Mac `scripts/make_app.sh`; Windows `scripts/windows/*.ps1`; `src/snapstl/__init__.py` |
+| Mac vs Windows (folders, Finder/Explorer, keep awake, restart, LAN name) | `platform_os.py` |
+| Shared database (Supabase/Postgres), .env, computer ownership | `config.py`, `db.py`, `computer.py`, `dbtool.py` (`snapstl-db`), `maintenance.copy_local_to_shared` |
 
 ## 4. How to work
 
