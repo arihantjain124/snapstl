@@ -109,6 +109,7 @@ def choose(plates: list[dict], prs: list[dict], active: dict[int, int]) -> dict[
 def board(prs: list[dict] | None = None) -> dict:
     """Bases queue, Names queue and Completed, with printer choices and pre-selections."""
     slices = farm.latest_slices()
+    models = farm.printer_models(prs or []) or [""]
     with db.tx() as con:
         batches = _batches(con)
         latest: dict[tuple[int, str], dict] = {}
@@ -136,14 +137,18 @@ def board(prs: list[dict] | None = None) -> dict:
                 if not (open_orders or active or done):
                     continue  # its orders were marked printed / made again elsewhere
                 sliced = farm.find_sliced(out_dir, p["file"]) if out_dir else None
-                sj = slices.get((b["id"], p["file"]))
-                slice_info = ({"state": "done", "by": "file"} if sliced else
-                              {"state": sj["state"], "progress": sj["progress"], "error": sj["error"]} if sj else None)
+                per_model = {}
+                for m in models:
+                    x = farm.slice_for(slices, b["id"], p["file"], m)
+                    per_model[m] = ({"state": "done", "by": "file"} if sliced else
+                                    {"state": x["state"], "progress": x["progress"], "error": x["error"]} if x else None)
+                sj = per_model.get(models[0])  # the farm's main model; the others are listed per model
+                slice_info = sj
                 rows.append({
                     "batch_id": b["id"], "batch": summ.get("label") or f"Batch #{b['id']}", "file": p["file"],
                     "kind": p["kind"], "names": p.get("names", []), "colors": p.get("colors", []),
-                    "order_ids": ids, "sliced": bool(sliced) or bool(sj and sj["state"] == "done"),
-                    "slice": slice_info, "job": _job(j), "job_active": active, "done": done,
+                    "order_ids": ids, "sliced": bool(sj and sj["state"] == "done"),
+                    "slice": slice_info, "slices": {m or "any": v for m, v in per_model.items()}, "job": _job(j), "job_active": active, "done": done,
                     "need": farm.needed_color(p),
                 })
     prs = prs or []
@@ -157,7 +162,7 @@ def board(prs: list[dict] | None = None) -> dict:
     for r in pending:
         r["suggested"] = pick.get(r["file"])
     done = sorted([r for r in rows if r["done"]], key=lambda r: -(r["job"] or {}).get("updated_at", 0))[:300]
-    return {"bases": [r for r in pending if r["kind"] == "bases"],
+    return {"models": [m for m in models if m], "bases": [r for r in pending if r["kind"] == "bases"],
             "names": [r for r in pending if r["kind"] == "names"],
             "completed": done, "removed": removed}
 
@@ -167,7 +172,8 @@ def _job(j: dict | None) -> dict | None:
         return None
     return {"id": j["id"], "state": j["state"], "printer_id": j["printer_id"], "printer_name": j["printer_name"],
             "held": bool(j.get("held")), "progress": j.get("progress"), "error": j.get("error"),
-            "updated_at": j.get("updated_at"), "options": json.loads(j.get("options") or "{}")}
+            "updated_at": j.get("updated_at"), "options": json.loads(j.get("options") or "{}"),
+            "speed": {v: k for k, v in farm.SPEEDS_SET.items()}.get(j.get("speed") or 0, "")}
 
 
 # ---------------- actions (each one a person's click) ----------------
@@ -191,13 +197,22 @@ def _latest(batch_id: int, file: str) -> dict | None:
     return dict(j) if j else None
 
 
+def waiting_plates() -> list[dict]:
+    """Plates in Bases / Names with no print on its way (automatic slicing works through these)."""
+    b = board(None)
+    return [r for r in b["bases"] + b["names"] if not r["job_active"]]
+
+
 def start_print(batch_id: int, file: str, printer_id: int, options: dict | None, prs: list[dict],
-                force: bool = False) -> dict:
+                force: bool = False, speed: str = "") -> dict:
     """Start print (a person's click): the only way a Make It plate gets printed.
     Not sent yet / failed / cancelled / reprint → sent to that printer and started once queued.
     Waiting held in Bambuddy → moved to that printer if changed, then started."""
     b, plate = _plate(batch_id, file)
     opts = farm.clean_options(options)
+    if speed and speed not in farm.SPEEDS_SET:
+        raise farm.FarmError("Speed is silent, standard, sport or ludicrous")
+    spd = farm.SPEEDS_SET.get(speed)
     printer = next((p for p in prs if p["id"] == int(printer_id)), None)
     if printer is None:
         raise farm.FarmError("Choose a printer")
@@ -208,6 +223,8 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
     if j and j["state"] == "sent" and j.get("held"):
         if j["printer_id"] != printer["id"] or opts:
             farm.print_job(j["id"], printer["id"], opts, prs)  # move / options while still held
+        if spd:
+            farm._set(j["id"], speed=spd, speed_set=0)
         farm.start_job(j["id"], force=force)
         return {"job_id": j["id"], "started": True}
     if j and j["state"] in farm.ACTIVE:
@@ -217,10 +234,10 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
     now = db.now()
     with db.tx() as con:
         cur = con.execute(
-            "INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,options,autostart,created_at,"
-            "updated_at,computer_id) VALUES (?,?,?,?,?,?,'queued',?,1,?,?,?)",
+            "INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,options,autostart,speed,"
+            "created_at,updated_at,computer_id) VALUES (?,?,?,?,?,?,'queued',?,1,?,?,?,?)",
             (batch_id, file, plate["kind"], (plate.get("colors") or [""])[0], printer["id"], printer["name"],
-             json.dumps(opts), now, now, computer.ID))
+             json.dumps(opts), spd, now, now, computer.ID))
     farm.WORKER.kick()
     return {"job_id": int(cur.lastrowid), "started": False}
 

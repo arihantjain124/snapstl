@@ -83,7 +83,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - **Slicing only through Bambuddy's slicer** (`POST /library/files/{id}/slice`, presets from Bambuddy's
   list chosen in Make It → Slice). SnapSTL has no slicer settings and never runs a slicer itself.
   Slicing never blocks the worker: one slice at a time, followed by polling, stopped after
-  `SLICE_TIMEOUT_S` without progress.
+  `SLICE_TIMEOUT_S` without progress. Automatic slicing may run on its own (it never prints) and
+  never retries a failed slice; a print always uses the slice for its printer's model.
 - Never weaken the license guard: no download without the model's password, no saving a download the
   helper didn't confirm or that still has the watermark (decision log #18).
 - Never commit customer files (`*.xlsx`, `*.csv` reports), outputs, or anything in

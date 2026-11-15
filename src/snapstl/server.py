@@ -946,6 +946,7 @@ def makeit_board():
             st["error"] = str(e)
     return {"status": st, "printers": prs, **makeit.board(prs),
             "options": {k: list(v) for k, v in farm.OPTIONS.items()}, "presets": farm.chosen_presets(cfg),
+            "speeds": list(farm.SPEEDS_SET), "auto_slice": bool(cfg.get("auto_slice", True)),
             "worker": {"log": farm.WORKER.log[-20:]}}
 
 
@@ -959,7 +960,8 @@ async def makeit_start(req: Request):
     try:
         prs = await run_in_threadpool(farm.printers)
         return await run_in_threadpool(makeit.start_print, int(b["batch_id"]), str(b.get("file", "")),
-                                       int(b["printer_id"]), b.get("options") or {}, prs, bool(b.get("force")))
+                                       int(b["printer_id"]), b.get("options") or {}, prs, bool(b.get("force")),
+                                       str(b.get("speed") or ""))
     except farm.StartBlocked as e:
         raise HTTPException(409, str(e)) from e
     except farm.FarmError as e:
@@ -967,29 +969,57 @@ async def makeit_start(req: Request):
 
 
 @app.get("/api/makeit/presets")
-def makeit_presets():
-    """Make It → Slice: Bambuddy's slicer presets and the ones chosen."""
+def makeit_presets(model: str = ""):
+    """Make It → Slice: Bambuddy's slicer presets, the ones chosen (for a printer model, or the default),
+    the farm's printer models and automatic slicing."""
     try:
         avail = farm.bambuddy_presets()
+        models = farm.printer_models(farm.printers(with_status=False))
     except farm.FarmError as e:
         raise _farm_err(e) from e
-    chosen = farm.chosen_presets(None, avail)
+    cfg = farm.load_config()
+    chosen = farm.chosen_presets(cfg, avail, model)
     for slot, v in chosen.items():  # a default Bambuddy doesn't list (its slicer isn't running) is still offered
         key = f"{v['source']}:{v['id']}"
         if not any(p["key"] == key for p in avail[slot]):
             avail[slot].insert(0, {"key": key, "name": v["name"], "source": v["source"]})
     return {"available": avail, "chosen": {k: f"{v['source']}:{v['id']}" for k, v in chosen.items()},
-            "names": {k: v["name"] for k, v in chosen.items()}, "bambuddy_listed": sum(map(len, avail.values())) > 3}
+            "names": {k: v["name"] for k, v in chosen.items()}, "bambuddy_listed": sum(map(len, avail.values())) > 3,
+            "model": model, "models": models, "own": sorted((cfg.get("presets_by_model") or {}).keys()),
+            "auto_slice": bool(cfg.get("auto_slice", True))}
 
 
 @app.put("/api/makeit/presets")
 async def makeit_presets_save(req: Request):
+    """{model: "" (default) | "A1" …, printer, process, filament} or {model, clear: true}."""
     b = await req.json()
     try:
-        chosen = await run_in_threadpool(farm.set_presets, b)
+        chosen = await run_in_threadpool(farm.set_presets, b, str(b.get("model") or ""), bool(b.get("clear")))
     except farm.FarmError as e:
         raise _farm_err(e) from e
     return {"names": {k: v["name"] for k, v in chosen.items()}}
+
+
+@app.post("/api/makeit/presets/import")
+async def makeit_presets_import(file: UploadFile = File(...), kind: str = Form("")):
+    """Add a preset file (printer / process / filament, exported from Bambu Studio or OrcaSlicer) to Bambuddy."""
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, "File too large")
+    try:
+        r = await run_in_threadpool(farm.import_presets, Path(file.filename or "preset.json").name, data)
+    except farm.FarmError as e:
+        raise _farm_err(e) from e
+    return r | {"kind": kind}
+
+
+@app.put("/api/makeit/settings")
+async def makeit_settings(req: Request):
+    """Automatic slicing on / off (printing always needs Start print)."""
+    b = await req.json()
+    cfg = farm.update_config(auto_slice=bool(b.get("auto_slice")))
+    farm.WORKER.kick()
+    return {"auto_slice": cfg["auto_slice"]}
 
 
 @app.post("/api/makeit/slice")
@@ -1007,9 +1037,11 @@ async def makeit_slice(req: Request):
         todo.append((bid, file, plate["kind"], (plate.get("colors") or [""])[0]))
     if not todo:
         raise HTTPException(400, "Choose the plates to slice")
-    if not farm.chosen_presets(None, await run_in_threadpool(farm.bambuddy_presets)).keys() >= {"printer", "process", "filament"}:
-        raise HTTPException(400, "Choose the printer, process and filament presets in Make It → Slice first")
-    return {"queued": farm.request_slices(todo, again=bool(b.get("again")))}
+    try:
+        models = farm.printer_models(await run_in_threadpool(farm.printers, None, False)) or [""]
+    except farm.FarmError as e:
+        raise _farm_err(e) from e
+    return {"queued": farm.request_slices(todo, again=bool(b.get("again")), models=models)}
 
 
 @app.post("/api/makeit/remove")

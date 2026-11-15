@@ -213,8 +213,17 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     </div>
     <div id="mk-slice" class="mkpane" hidden>
       <p class="hint">Plates are sliced by <b>Bambuddy's slicer</b> with these presets (from Bambuddy's own list), one at a time in the background. <b>Slice</b> on a plate (or <b>Slice all</b> here) slices it now; <b>Start print</b> on a plate that isn't sliced yet slices it first and sends it when that's done. Bambuddy's slicer must be running: in Bambuddy, <b>Settings → Slicer</b> → start its slicer service and turn on <b>Use Slicer API</b>.</p>
-      <div class="row3" style="max-width:900px"><div><label>Printer preset</label><select id="slp_printer"></select></div><div><label>Process preset</label><select id="slp_process"></select></div><div><label>Filament preset</label><select id="slp_filament"></select></div></div>
-      <div class="toolbar" style="margin-top:10px"><button id="slp_save">Save presets</button><button id="slp_all" class="primary">Slice all waiting plates</button><span class="hint grow" id="slp_msg"></span></div>
+      <label style="display:flex;gap:8px;align-items:center;color:var(--text);margin:8px 0"><input type="checkbox" id="slp_auto"> <b>Slice new plates automatically</b> <span class="hint">— every plate is sliced for each printer model in the farm as soon as its batch is built. Printing still needs <b>Start print</b>.</span></label>
+      <div class="row3" style="max-width:900px;grid-template-columns:1fr 2fr"><div><label>Presets for</label><select id="slp_model"></select></div><div class="hint" id="slp_modelhint" style="align-self:end;padding-bottom:6px"></div></div>
+      <div class="row3" style="max-width:900px"><div><label>Printer preset</label><select id="slp_printer"></select></div><div><label>Process preset <span class="hint">(speeds, layer height, infill…)</span></label><select id="slp_process"></select></div><div><label>Filament preset</label><select id="slp_filament"></select></div></div>
+      <div class="toolbar" style="margin-top:10px"><button id="slp_save">Save presets</button><button id="slp_clear" hidden title="This model uses the default presets again">Use default for this model</button><button id="slp_all" class="primary">Slice all waiting plates</button><span class="hint grow" id="slp_msg"></span></div>
+      <h3>Add presets to Bambuddy</h3>
+      <p class="hint">Make the preset in Bambu Studio (or OrcaSlicer), save it, then export it: <b>File → Export → Export Preset Bundle</b> (.bbscfg), or a single filament (.bbsflmt) / preset (.json). Add it here — it goes into Bambuddy's presets and appears in the lists above.</p>
+      <div class="toolbar">
+        <label class="btn" style="margin:0;color:var(--text)">Add printer preset…<input type="file" data-imp="printer" accept=".json,.zip,.bbscfg,.bbsflmt,.orca_filament" hidden></label>
+        <label class="btn" style="margin:0;color:var(--text)">Add process preset…<input type="file" data-imp="process" accept=".json,.zip,.bbscfg,.bbsflmt,.orca_filament" hidden></label>
+        <label class="btn" style="margin:0;color:var(--text)">Add filament preset…<input type="file" data-imp="filament" accept=".json,.zip,.bbscfg,.bbsflmt,.orca_filament" hidden></label>
+        <span class="hint grow" id="slp_impmsg"></span></div>
       <h3>Slicing</h3>
       <div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Slice</th><th></th></tr></thead><tbody id="mkslices"></tbody></table></div>
     </div>
@@ -458,7 +467,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     </ol>
     <p><b>Make It</b> (sidebar) has four parts. <b>Bases</b>: every base plate still to print, with the next <b>available</b> printer that has white loaded and the most filament left already chosen. <b>Names</b>: every name plate with its colour — only printers with that colour loaded (from Bambuddy) can be chosen; one is pre-selected when available. <b>Completed</b>: printed plates, with <b>Reprint</b> only for a failed print. <b>Printers</b>: state, filament per slot, and <b>Clear plate</b>.</p>
     <p><b>Nothing prints until you click Start print</b> on a plate: that click sends it to the chosen printer (with its <b>Options</b>: bed levelling, flow calibration, timelapse) and starts it. Bambuddy then prints it as soon as the printer is free and its bed has been cleared (<b>Clear plate</b>, in Bambuddy or Make It → Printers). If Bambuddy warns (e.g. too little filament), SnapSTL asks before starting anyway. A printed plate moves to <b>Completed</b>; once an order's base and name are both printed it shows in <b>Orders → Ready to ship</b>.</p>
-    <p><b>Slicing</b> is done by <b>Bambuddy's slicer</b> only. In Bambuddy: <b>Settings → Slicer</b> → start its slicer service (Docker) and turn on <b>Use Slicer API</b>. In SnapSTL: <b>Make It → Slice</b> → choose the printer / process / filament presets from Bambuddy's list → <b>Save presets</b>; then <b>Slice</b> on a plate or <b>Slice all waiting plates</b>. Plates are sliced one at a time in the background: <i>Waiting to slice → Slicing % → Sliced</i>, or <i>Slicing failed</i> with the reason. A slice with no progress for 20 minutes is stopped with a message. <b>Start print</b> on a plate that isn't sliced yet slices it first. <b>Remove</b> takes a plate off its list (e.g. printed by hand); <b>Make It → Removed → Put back</b> returns it.</p>
+    <p><b>Slicing</b> is done by <b>Bambuddy's slicer</b> only. In Bambuddy: <b>Settings → Slicer</b> → start its slicer service (Docker) and turn on <b>Use Slicer API</b>. In SnapSTL: <b>Make It → Slice</b> → choose the printer / process / filament presets from Bambuddy's list → <b>Save presets</b> (<b>Presets for</b>: each printer model can have its own; speeds, layer height and infill are in the process preset; <b>Add … preset</b> puts preset files exported from Bambu Studio into Bambuddy). <b>Slice new plates automatically</b> (on by default) slices every new plate for each printer model; otherwise <b>Slice</b> on a plate or <b>Slice all waiting plates</b>. Plates are sliced one at a time in the background: <i>Waiting to slice → Slicing % → Sliced</i>, or <i>Slicing failed</i> with the reason. A slice with no progress for 20 minutes is stopped with a message. <b>Start print</b> on a plate that isn't sliced yet slices it first. <b>Remove</b> takes a plate off its list (e.g. printed by hand); <b>Make It → Removed → Put back</b> returns it.</p>
   </div>
 
   <div class="card" id="h-pstatus">
@@ -736,24 +745,27 @@ function printerCard(p){const s=p.status||{};
 // ---------- Make It: Bases / Names / Completed ----------
 let MK=null,MKTAB='bases';const MKSEL={};const OPTLBL={bed_levelling:'Bed levelling',flow_cali:'Flow calibration',timelapse:'Timelapse'};
 try{MKTAB=localStorage.getItem('mktab')||'bases'}catch{}
-function optSummary(o){const on=Object.entries(o||{}).filter(([k,v])=>v!==''&&v!=null).map(([k,v])=>`${OPTLBL[k]||k}: ${v===true?'on':v===false?'off':v}`);return on.length?on.join(' · '):'Bambuddy defaults'}
-function mkShow(t,quiet){MKTAB=t;try{localStorage.setItem('mktab',t)}catch{}for(const k of MKPANES)$('mk-'+k).hidden=k!==t;mkChips();if(t==='slice'&&!quiet)loadPresets()}
+function optSummary(o,speed){const on=(speed?[`Speed: ${speed}`]:[]).concat(Object.entries(o||{}).filter(([k,v])=>v!==''&&v!=null).map(([k,v])=>`${OPTLBL[k]||k}: ${v===true?'on':v===false?'off':v}`));return on.length?on.join(' · '):'Bambuddy defaults'}
+function mkShow(t,quiet){MKTAB=t;try{localStorage.setItem('mktab',t)}catch{}for(const k of MKPANES)$('mk-'+k).hidden=k!==t;mkChips();if(t==='slice'&&(!quiet||!PRESETS_OK))loadPresets()}
 const MKPANES=['bases','names','slice','completed','removed','printers'];
 function mkChips(){if(!MK)return;const waiting=[...MK.bases,...MK.names].filter(r=>!r.sliced).length;
   const n={bases:MK.bases.length,names:MK.names.length,slice:waiting,completed:MK.completed.length,removed:MK.removed.length,printers:MK.printers.length};
   $('mktabs').innerHTML=[['bases','Bases'],['names','Names'],['slice','Slice'],['completed','Completed'],['removed','Removed'],['printers','Printers']].map(([k,l])=>`<button data-mk="${k}" class="${MKTAB===k?'on':''}">${l} · ${n[k]}</button>`).join('');
   document.querySelectorAll('[data-mk]').forEach(b=>b.onclick=()=>mkShow(b.dataset.mk))}
 const mkKey=r=>r.batch_id+'|'+r.file;
-function sliceCell(r){const sl=r.slice;
+function sliceCell(r){if(MK&&MK.models&&MK.models.length>1){const st=r.slices||{};
+    return MK.models.map(m=>{const x=st[m];const t=!x?['not sliced','warn']:x.state==='done'?['sliced','ok']:x.state==='failed'?['failed','err']:['slicing'+(x.progress?' '+Math.round(x.progress)+'%':''),'info'];return `<div><span class="pill ${t[1]}" title="${esc(x&&x.error||'')}">${esc(m)}: ${t[0]}</span></div>`}).join('')+(MK.models.some(m=>!st[m]||st[m].state==='failed')?`<button class="small" data-mkslice="${esc(mkKey(r))}" title="Slice it now for every printer model">Slice</button>`:'')}
+  const sl=r.slice;
   if(r.sliced)return '<span class="pill ok">Sliced</span>';
   if(sl&&['queued','uploading','slicing'].includes(sl.state))return `<span class="pill info">${sl.state==='queued'?'Waiting to slice':sl.state==='uploading'?'Sending to slicer':'Slicing'+(sl.progress?' '+Math.round(sl.progress)+'%':'')}</span>`;
   const btn=`<button class="small" data-mkslice="${esc(mkKey(r))}" title="Slice it now with Bambuddy's slicer">Slice</button>`;
   if(sl&&sl.state==='failed')return `<span class="pill err">Slicing failed</span> ${btn}<div class="reason">${esc(sl.error||'')}</div>`;
   return `<span class="pill warn">Not sliced</span> ${btn}`}
 function mkStatus(r){const j=r.job;if(!j||j.state==='reprint')return `<span class="hint">${j?'reprint — choose a printer':'not started'}</span>`;return jobPill(j)}
-function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={printer:String(r.suggested??(r.job&&r.job.printer_id?r.job.printer_id:'')),options:{...((r.job&&r.job.options)||{})}});
+function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={printer:String(r.suggested??(r.job&&r.job.printer_id?r.job.printer_id:'')),options:{...((r.job&&r.job.options)||{})},speed:(r.job&&r.job.speed)||''});
   const j=r.job,busy=r.job_active&&!(j&&j.state==='sent'&&j.held);
   const opts='<option value="">— choose a printer —</option>'+r.choices.map(c=>`<option value="${c.id}" ${String(c.id)===sel.printer?'selected':''} ${c.why_not?'disabled':''}>${esc(c.name)}${c.why_not?' · '+esc(c.why_not):[c.available?'available':(c.state?c.state.toLowerCase():'busy'),c.left>=0?c.left+'% left':'',c.note].filter(Boolean).map(esc).join(' · ').replace(/^/,' · ')}</option>`).join('');
+  const speedSel=`<label style="margin:4px 0 2px">Print speed</label><select data-mkspeed="${esc(k)}"><option value="">Printer default</option>${(MK.speeds||[]).map(v=>`<option value="${v}" ${sel.speed===v?'selected':''}>${v[0].toUpperCase()+v.slice(1)}</option>`).join('')}</select>`;
   const optSel=(kk,vals)=>`<label style="margin:4px 0 2px">${OPTLBL[kk]}</label><select data-mkopt="${esc(k)}" data-k="${kk}"><option value="">Bambuddy default</option>${vals.map(v=>`<option value="${v}" ${String(sel.options[kk])===String(v)?'selected':''}>${v===true?'on':v===false?'off':v}</option>`).join('')}</select>`;
   const held=j&&j.state==='sent'&&j.held;
   const btn=busy?'':`<button class="small primary" data-mkstart="${esc(k)}" title="Send to this printer and start printing (once its bed is cleared)">${held?'Start print':(j&&['failed','cancelled'].includes(j.state)?'Start print again':'Start print')}</button>`;
@@ -761,7 +773,7 @@ function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={pri
   return `<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td>${withColour?`<td style="white-space:nowrap">${sw(r.colors[0]||'')}</td>`:''}<td>${plate}</td>
     <td>${sliceCell(r)}</td>
     <td><select data-mkpr="${esc(k)}" ${busy?'disabled':''}>${opts}</select></td>
-    <td>${busy?`<span class="hint">${esc(optSummary(j&&j.options))}</span>`:`<details><summary class="hint" style="cursor:pointer">${esc(optSummary(sel.options))}</summary>${Object.entries(MK.options).map(([kk,v])=>optSel(kk,v)).join('')}</details>`}</td>
+    <td>${busy?`<span class="hint">${esc(optSummary(j&&j.options,j&&j.speed))}</span>`:`<details><summary class="hint" style="cursor:pointer">${esc(optSummary(sel.options,sel.speed))}</summary>${speedSel}${Object.entries(MK.options).map(([kk,v])=>optSel(kk,v)).join('')}</details>`}</td>
     <td>${mkStatus(r)}</td><td style="white-space:nowrap">${btn}${busy?'':` <button class="small" data-mkrm="${esc(k)}" title="Take it off this list (e.g. printed by hand) — Put back in Removed">Remove</button>`}</td></tr>`}
 function mkRender(){const editing=['mkbases','mknames'].some(id=>$(id).contains(document.activeElement)||$(id).querySelector('details[open]'));
   if(!editing){
@@ -781,13 +793,14 @@ function mkRender(){const editing=['mkbases','mknames'].some(id=>$(id).contains(
   document.querySelectorAll('[data-mkback]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkback);
     try{await post('/api/makeit/remove',{batch_id:r.batch_id,file:r.file,put_back:true})}catch(e){alert(e.message)}loadMakeIt()});
   document.querySelectorAll('[data-mkpr]').forEach(x=>x.onchange=()=>{MKSEL[x.dataset.mkpr].printer=x.value});
+  document.querySelectorAll('[data-mkspeed]').forEach(x=>x.onchange=()=>{MKSEL[x.dataset.mkspeed].speed=x.value});
   document.querySelectorAll('[data-mkopt]').forEach(x=>x.onchange=()=>{const v=x.value;MKSEL[x.dataset.mkopt].options[x.dataset.k]=v===''?'':v==='true'?true:v==='false'?false:v});
-  document.querySelectorAll('.mktable details').forEach(d=>d.ontoggle=()=>{if(!d.open){const s=d.querySelector('[data-mkopt]');if(s)d.querySelector('summary').textContent=optSummary(MKSEL[s.dataset.mkopt].options)}});
+  document.querySelectorAll('.mktable details').forEach(d=>d.ontoggle=()=>{if(!d.open){const s=d.querySelector('[data-mkopt]');if(s){const m=MKSEL[s.dataset.mkopt];d.querySelector('summary').textContent=optSummary(m.options,m.speed)}}});
   document.querySelectorAll('[data-mkstart]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkstart),sel=MKSEL[x.dataset.mkstart];
     if(!sel.printer){alert('Choose a printer');return}
     const pr=r.choices.find(c=>String(c.id)===sel.printer);
     if(!confirm(`Start printing ${r.kind==='bases'?'this base plate':'this '+(r.colors[0]||'')+' name plate'} on ${pr?pr.name:'that printer'}? It prints as soon as the printer is free and its bed has been cleared.`))return;
-    x.disabled=true;const body={batch_id:r.batch_id,file:r.file,printer_id:+sel.printer,options:sel.options};
+    x.disabled=true;const body={batch_id:r.batch_id,file:r.file,printer_id:+sel.printer,options:sel.options,speed:sel.speed||''};
     try{await post('/api/makeit/start',body)}catch(e){if(/anyway|filament|warn/i.test(e.message)&&confirm(e.message+'\n\nStart anyway?')){try{await post('/api/makeit/start',{...body,force:true})}catch(e2){alert(e2.message)}}else alert(e.message)}
     document.activeElement&&document.activeElement.blur();loadMakeIt()});
   document.querySelectorAll('[data-mkre]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkre);
@@ -809,11 +822,23 @@ async function loadMakeIt(){let r;try{r=await api('/api/makeit')}catch(e){$('mkm
   $('farmlog').textContent=(r.worker.log||[]).join('\n');
   mkShow(MKTAB,true);mkRender()}
 $('mkrefresh').onclick=()=>loadMakeIt();
-async function loadPresets(){$('slp_msg').textContent='Loading Bambuddy\'s presets…';let p;try{p=await api('/api/makeit/presets')}catch(e){$('slp_msg').textContent=e.message;return}
-  for(const slot of ['printer','process','filament']){const el=$('slp_'+slot);if(document.activeElement===el)continue;
+let SLMODEL='',PRESETS_OK=false;
+async function loadPresets(){$('slp_msg').textContent='Loading Bambuddy\'s presets…';let p;try{p=await api('/api/makeit/presets?model='+encodeURIComponent(SLMODEL))}catch(e){$('slp_msg').textContent=e.message;return}
+  PRESETS_OK=true;$('slp_auto').checked=p.auto_slice;
+  $('slp_model').innerHTML=`<option value="">All printers (default)</option>`+p.models.map(m=>`<option value="${esc(m)}" ${m===SLMODEL?'selected':''}>${esc(m)}${p.own.includes(m)?' — own presets':' — uses the default'}</option>`).join('');
+  $('slp_modelhint').textContent=SLMODEL?(p.own.includes(SLMODEL)?`${SLMODEL} printers use these presets.`:`${SLMODEL} printers use the default presets until you save some for ${SLMODEL}.`):'Used for every printer model without its own presets. Pick a model to give it its own.';
+  $('slp_clear').hidden=!(SLMODEL&&p.own.includes(SLMODEL));
+  for(const slot of ['printer','process','filament']){const el=$('slp_'+slot);
     el.innerHTML='<option value="">— choose —</option>'+p.available[slot].map(x=>`<option value="${esc(x.key)}" ${x.key===p.chosen[slot]?'selected':''}>${esc(x.name)} (${esc(x.source)})</option>`).join('')}
-  $('slp_msg').textContent=!p.bambuddy_listed?'Bambuddy lists no presets — its slicer isn\'t running (Bambuddy → Settings → Slicer). Bambu\'s standard A1 presets are used until then.':(p.chosen.printer&&p.chosen.process&&p.chosen.filament?'':'Choose all three presets, then Save presets.')}
-$('slp_save').onclick=async()=>{try{const r=await api('/api/makeit/presets',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({printer:$('slp_printer').value,process:$('slp_process').value,filament:$('slp_filament').value})});$('slp_msg').textContent='Saved: '+Object.values(r.names).join(' · ')}catch(e){$('slp_msg').textContent=e.message}};
+  $('slp_msg').textContent=!p.bambuddy_listed?'Bambuddy lists no presets — its slicer isn\'t running (Bambuddy → Settings → Slicer). Bambu\'s standard A1 presets are used until then.':''}
+$('slp_model').onchange=()=>{SLMODEL=$('slp_model').value;loadPresets()};
+$('slp_auto').onchange=async()=>{try{const r=await api('/api/makeit/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({auto_slice:$('slp_auto').checked})});$('slp_msg').textContent=r.auto_slice?'New plates are sliced automatically.':'Automatic slicing off — use Slice / Slice all.'}catch(e){$('slp_msg').textContent=e.message}};
+$('slp_save').onclick=async()=>{try{const r=await api('/api/makeit/presets',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:SLMODEL,printer:$('slp_printer').value,process:$('slp_process').value,filament:$('slp_filament').value})});$('slp_msg').textContent=`Saved for ${SLMODEL||'all printers'}: `+Object.values(r.names).join(' · ')+'. Plates already sliced keep their slice — use Slice again to redo them.';loadPresets()}catch(e){$('slp_msg').textContent=e.message}};
+$('slp_clear').onclick=async()=>{try{await api('/api/makeit/presets',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:SLMODEL,clear:true})});loadPresets()}catch(e){$('slp_msg').textContent=e.message}};
+document.querySelectorAll('[data-imp]').forEach(inp=>inp.onchange=async()=>{const f=inp.files[0];if(!f)return;$('slp_impmsg').textContent=`Adding ${f.name} to Bambuddy…`;
+  const fd=new FormData();fd.append('file',f);fd.append('kind',inp.dataset.imp);
+  try{const r=await api('/api/makeit/presets/import',{method:'POST',body:fd});$('slp_impmsg').textContent=`${f.name}: ${r.imported} preset${r.imported===1?'':'s'} added${r.skipped?`, ${r.skipped} skipped (already there)`:''}${r.errors.length?' — '+r.errors.join('; '):''}.`;loadPresets()}
+  catch(e){$('slp_impmsg').textContent=e.message}inp.value=''});
 $('slp_all').onclick=async()=>{if(!MK)return;const todo=[...MK.bases,...MK.names].filter(r=>!r.sliced&&!(r.slice&&['queued','uploading','slicing'].includes(r.slice.state)));
   if(!todo.length){$('slp_msg').textContent='Nothing waiting to slice';return}
   try{const r=await post('/api/makeit/slice',{plates:todo.map(x=>({batch_id:x.batch_id,file:x.file}))});$('slp_msg').textContent=`${r.queued} plate(s) sent to Bambuddy's slicer`}catch(e){$('slp_msg').textContent=e.message}loadMakeIt()};
