@@ -8,6 +8,9 @@ os.environ["SNAPSTL_SECURE_COOKIE"] = "0"  # test client talks plain HTTP
 # SNAPSTL_TEST_DATABASE_URL (its `snapstl` schema is dropped first); every other test runs without sync.
 os.environ["SNAPSTL_DATABASE_URL"] = ""
 os.environ["SNAPSTL_COMPUTER_NAME"] = "Test computer"
+# Never a real Bambuddy on this computer (it could get an API key or print jobs); tests/test_farm.py fakes it.
+os.environ["SNAPSTL_BAMBUDDY_URL"] = "http://127.0.0.1:9"
+os.environ["SNAPSTL_NO_BAMBUDDY"] = "1"  # never update a real Bambuddy install from tests
 
 import numpy as np
 import pytest

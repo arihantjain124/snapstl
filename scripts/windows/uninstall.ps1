@@ -7,4 +7,6 @@ Stop-SnapSTL
 foreach ($Dir in @([Environment]::GetFolderPath("Programs"), [Environment]::GetFolderPath("Desktop"))) {
   Remove-Item (Join-Path $Dir "SnapSTL.lnk") -ErrorAction SilentlyContinue
 }
-Write-Host "SnapSTL's task and shortcuts are removed. Remove the helper in chrome://extensions."
+Unregister-ScheduledTask -TaskName $BambuddyTask -Confirm:$false -ErrorAction SilentlyContinue
+Stop-Bambuddy
+Write-Host "SnapSTL's and Bambuddy's tasks and shortcuts are removed (their folders and data stay). Remove the helper in chrome://extensions."

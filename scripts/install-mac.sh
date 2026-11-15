@@ -33,4 +33,4 @@ fi
 zsh "$DIR/scripts/make_app.sh"
 open "$HOME/Applications/SnapSTL.app" || true
 echo
-echo "SnapSTL is installed. Next, in the app: Settings → Setup (add the helper to Chrome, enter the license password)."
+echo "SnapSTL is installed. Next, in the app: Settings → Setup (add the helper to Chrome, enter the license password), then Printers (add your printers to Bambuddy)."

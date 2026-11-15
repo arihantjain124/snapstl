@@ -85,4 +85,8 @@ def apply() -> dict:
         s = subprocess.run([uv, "sync", "--no-dev", "--quiet"], cwd=ROOT, capture_output=True, text=True, timeout=600)
         if s.returncode != 0:
             raise RuntimeError("Updated the files but installing them failed: " + s.stderr.strip()[-300:])
+    if after != before:
+        from . import platform_os
+
+        platform_os.update_bambuddy(ROOT)  # the Bambuddy version in scripts/bambuddy-version.txt (background)
     return {"updated": after != before, "current": _git("log", "-1", "--format=%h %s").stdout.strip()}

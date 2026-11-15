@@ -14,11 +14,15 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
 fi
 before="$(git rev-parse HEAD)"
 git pull --ff-only --quiet
-if [ "$before" = "$(git rev-parse HEAD)" ]; then echo "SnapSTL is already up to date ($(git log -1 --format='%h %s'))."; exit 0; fi
+bambuddy() {  # the Bambuddy version this SnapSTL was tested with (scripts/bambuddy-version.txt)
+  if [ "${SNAPSTL_NO_BAMBUDDY:-0}" != 1 ]; then zsh "$PROJECT/scripts/bambuddy-mac.sh" || echo "Bambuddy update failed (SnapSTL still works)."; fi
+}
+if [ "$before" = "$(git rev-parse HEAD)" ]; then echo "SnapSTL is already up to date ($(git log -1 --format='%h %s'))."; bambuddy; exit 0; fi
 echo "Updated:"; git log --format='  • %s' "$before"..HEAD
 "$UV" sync --no-dev --quiet
 if [ -f "$HOME/Library/LaunchAgents/$LABEL.plist" ]; then
   launchctl kickstart -k "gui/$(id -u)/$LABEL" && echo "SnapSTL restarted."
+  bambuddy
 else
   zsh "$PROJECT/scripts/make_app.sh"
 fi
