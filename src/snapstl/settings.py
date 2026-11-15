@@ -1,7 +1,8 @@
 """App settings: model-maker parameters, scaling table, plate/fit options.
 
 Persisted as JSON in the user's Application Support folder. The license
-password is NOT stored here; it lives in the macOS Keychain (see keychain.py).
+passwords are stored here per MakerWorld model (license_passwords, keyed by designId); the file is
+written readable by this user only.
 """
 from __future__ import annotations
 
@@ -109,6 +110,18 @@ class Settings:
     plate: PlateSettings = field(default_factory=PlateSettings)
     output_dir: str = str(DEFAULT_OUTPUT_DIR)
     downloads_dir: str = str(DEFAULT_DOWNLOADS_DIR)  # downloaded models, kept until deleted in Finder
+    makerworld_url: str = MAKERWORLD_URL  # the model-maker page the helper must be on (its designId is checked)
+    lan_access: bool = False  # let other computers on this network use the portal (needs a portal password)
+    license_passwords: dict = field(default_factory=dict)  # MakerWorld license password per designId
+
+    @property
+    def design_id(self) -> str:
+        return design_id(self.makerworld_url) or ""
+
+    @property
+    def license_password(self) -> str:
+        """License password of the model currently set in makerworld_url."""
+        return str(self.license_passwords.get(self.design_id, ""))
     delay_between_downloads_s: float = 3.0
 
     def to_dict(self) -> dict:
@@ -126,13 +139,16 @@ class Settings:
             s.scaling = ScalingSettings(bands=bands, **_known(ScalingSettings, {**_scalar_fields(s.scaling), **rest}))
         if "plate" in d:
             s.plate = PlateSettings(**_known(PlateSettings, {**asdict(s.plate), **d["plate"]}))
-        for k in ("output_dir", "downloads_dir", "delay_between_downloads_s"):
+        for k in ("output_dir", "downloads_dir", "makerworld_url", "lan_access", "delay_between_downloads_s",
+                  "license_passwords"):
             if k in d:
                 setattr(s, k, d[k])
         return s
 
     def validate(self) -> list[str]:
         errs = self.model.validate()
+        if design_id(self.makerworld_url) is None:
+            errs.append("MakerWorld model page link must be a makerworld.com …/makerlab/parametricModelMaker?designId=… link")
         p = self.plate
         if p.margin < 0 or p.gap < 0:
             errs.append("Margin and gap must be ≥ 0")
@@ -150,6 +166,22 @@ class Settings:
             if not (lo <= int(b.compartments) <= hi):
                 errs.append(f"Compartments for {b.min_letters}+ letters must be {lo}–{hi}")
         return errs
+
+
+def design_id(url: str) -> str | None:
+    """designId of a MakerWorld Parametric Model Maker link, or None if it isn't one."""
+    from urllib.parse import parse_qs, urlparse
+
+    try:
+        u = urlparse((url or "").strip())
+    except ValueError:
+        return None
+    if u.scheme != "https" or u.hostname not in ("makerworld.com", "www.makerworld.com"):
+        return None
+    if "/makerlab/parametricModelMaker" not in u.path:
+        return None
+    d = (parse_qs(u.query).get("designId") or [""])[0]
+    return d if d.isdigit() else None
 
 
 def _known(cls, d: dict) -> dict:
@@ -174,4 +206,7 @@ def load_settings() -> Settings:
 
 def save_settings(s: Settings) -> None:
     APP_DIR.mkdir(parents=True, exist_ok=True)
-    SETTINGS_PATH.write_text(json.dumps(s.to_dict(), indent=2))
+    fd = os.open(SETTINGS_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # holds license passwords
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(s.to_dict(), indent=2))
+    os.chmod(SETTINGS_PATH, 0o600)

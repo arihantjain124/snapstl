@@ -168,9 +168,13 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
       <div><label>Outline (mm)</label><input id="m_Outline" type="number" step="1"></div>
       <div><label>Rotate text</label><select id="m_Rotate_text"></select></div>
     </div>
-    <label>MakerWorld license password</label>
-    <div class="row2" style="grid-template-columns:1fr auto"><input id="lic" type="password" placeholder="Not set" autocomplete="off"><button id="licsave">Save</button></div>
+    <label>MakerWorld model page link (the helper only works on this exact page)</label>
+    <input id="mw_url" placeholder="https://makerworld.com/en/makerlab/parametricModelMaker?designId=…">
+    <p class="hint" id="mw_hint"></p>
+    <label>License password for this model</label>
+    <div class="row2" style="grid-template-columns:1fr auto"><input id="lic" type="password" placeholder="Not set" autocomplete="off"><button id="licshow" type="button">Show</button></div>
     <p class="hint" id="lichint"></p>
+    <p class="hint">Each model has its own password — change the link and its saved password appears. Press <b>Save settings</b> to keep changes.</p>
   </div>
   <div class="card">
     <h2>Scaling and compartments (rules v1.1)</h2>
@@ -214,6 +218,14 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     </ol>
     <p class="hint" id="helperinfo"></p>
   </div>
+  <div class="card" id="portalcard">
+    <h2>Other computers (web portal)</h2>
+    <p class="hint">Let other computers on this network open SnapSTL in their browser (upload reports, review orders, queue batches, download plates). This Mac keeps running the service and the Chrome helper. Other computers must sign in with the portal password; this Mac never has to.</p>
+    <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" id="lan"> Allow other computers on this network</label>
+    <label>Portal password (at least 10 characters; leave empty to keep the current one)</label>
+    <div class="row2" style="grid-template-columns:1fr auto"><input id="portalpw" type="password" autocomplete="new-password" placeholder="Not set"><button id="portalsave">Save</button></div>
+    <p class="hint" id="portalinfo"></p>
+  </div>
   <div class="card">
     <h2>Database</h2>
     <p class="hint" id="dbinfo">…</p>
@@ -230,7 +242,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
   <div class="card">
     <h2>Help</h2>
     <p>SnapSTL turns webstore orders for the <b>Custom Name Desk Organizer</b> (SKU <code>Magicians_35</code>) into print-ready plates: each name is generated on MakerWorld, scaled to the agreed rules, grouped 3 per plate and saved as <b>.3mf</b> files.</p>
-    <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-data">Your data</a></div>
+    <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-portal">Other computers</a><a href="#h-data">Your data</a></div>
   </div>
 
   <div class="card" id="h-start">
@@ -283,7 +295,8 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <p>The helper is a small Chrome extension that does the MakerWorld part in <b>your normal Chrome</b>, where you're signed in. For each name it fills the model-maker page (NO AMS, the name, compartments from the scaling table, your font settings), presses Generate and sends the two files to SnapSTL.</p>
     <ul>
       <li>Install once: <code>chrome://extensions</code> → Developer mode → <b>Load unpacked</b> → the <code>helper</code> folder (or download it from Settings).</li>
-      <li>Keep the MakerWorld model-maker tab open, ideally in its own window — Chrome slows down hidden tabs.</li>
+      <li>The helper works in <b>one tab</b> (the working tab) and only while it shows the exact model page from <b>Settings → MakerWorld model page link</b>. Click the helper icon → <b>Open model page</b>, or open the page yourself and click <b>Use this tab</b>. If that tab goes to another MakerWorld page, the sidebar says so and nothing is downloaded until it's back.</li>
+      <li>Keep that tab open, ideally in its own window — Chrome slows down hidden tabs.</li>
       <li>If MakerWorld shows a security check in that tab, complete it; the helper waits and carries on.</li>
       <li>The sidebar shows the helper's status. <b>Pause downloads</b> stops it after the current name.</li>
     </ul>
@@ -317,7 +330,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <h2>Settings</h2>
     <ul>
       <li><b>Model maker options</b> — font, font size, thickness, outline, rotate text; same for every name. Changing them makes new models (old ones stay cached).</li>
-      <li><b>MakerWorld license password</b> — removes the anti-sale markings; stored in the Mac Keychain.</li>
+      <li><b>MakerWorld model page link</b> — the model-maker page the helper must be on (its designId is checked). <b>License password for this model</b> — removes the anti-sale markings; each model keeps its own password (saved in SnapSTL's settings on this Mac).</li>
       <li><b>Scaling and compartments</b> — target length/height and compartments per letter count (Scaling Rules v1.1).</li>
       <li><b>Plate and fit</b> — bed size, edge margin, gap between parts, names/bases per plate, allowed rotations (flat on the bed only).</li>
       <li><b>Output folder</b> — where dated batch folders go. <b>Downloads folder</b> — where downloaded models are kept. <b>Pause between downloads</b> — seconds between names.</li>
@@ -338,6 +351,17 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
       <tr><td>Can't copy text in the window</td><td>Quit and reopen SnapSTL.app.</td></tr>
       <tr><td>Portal doesn't open</td><td>Terminal: <code>launchctl kickstart -k gui/$(id -u)/local.snapmagicians.snapstl</code>; log: <code>~/Library/Logs/SnapSTL.log</code>.</td></tr>
     </table>
+  </div>
+
+  <div class="card" id="h-portal">
+    <h2>Using SnapSTL from other computers</h2>
+    <p>SnapSTL is a small web server running on this Mac (the <b>main Mac</b>). The main Mac keeps the service running and has the <b>SnapSTL Helper</b> in its Chrome with the MakerWorld model page open — downloads always happen there.</p>
+    <ol>
+      <li>On the main Mac: <b>Settings → Other computers</b> → tick <b>Allow other computers on this network</b>, set a portal password (10+ characters) → <b>Save</b>. SnapSTL restarts; if macOS asks to allow incoming connections, click <b>Allow</b>.</li>
+      <li>The card then shows the address, e.g. <code>http://snapstl-mac.local:8317</code> or <code>http://192.168.1.20:8317</code>.</li>
+      <li>On another computer on the same network: open that address in any browser and sign in with the portal password.</li>
+    </ol>
+    <p>From other computers you can upload reports, review orders, create and queue batches, and download plates (click a plate, or <b>Download ZIP</b>). Only the main Mac can: run the helper, use Finder buttons, change folders, the model link and its license password, turn the portal on/off, and reset the database. Turn the portal off again to keep SnapSTL to this Mac only.</p>
   </div>
 
   <div class="card" id="h-data">
@@ -366,7 +390,7 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   for(const s of ['orders','batches','downloads','settings','help'])$('t-'+s).hidden=s!==t;
-  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='downloads')loadQueue(); if(t==='settings')loadDb(); try{localStorage.setItem('tab',t)}catch{}}
+  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='downloads')loadQueue(); if(t==='settings'){loadDb();loadPortal()} try{localStorage.setItem('tab',t)}catch{}}
 
 // ---------- orders ----------
 async function loadOrders(){
@@ -484,7 +508,8 @@ function fillSettings(){const m=S.model;
   for(const k of ['bed_x','bed_y','bed_z','margin','gap','max_names_per_plate','bases_per_plate'])$('p_'+k).value=S.plate[k];
   $('rots').innerHTML=[0,90,180,270].map(r=>`<label style="margin:0;color:var(--text)"><input type="checkbox" value="${r}" ${S.plate.rotations.includes(r)?'checked':''}> ${r}°</label>`).join('');
   $('bands').innerHTML=S.scaling.bands.map((b,i)=>`<tr><td>${b.min_letters}${b.max_letters>=999?'+':b.max_letters!==b.min_letters?'–'+b.max_letters:''}</td><td><input data-b="${i}" data-k="length" type="number" step="0.5" value="${b.length}"></td><td><input data-b="${i}" data-k="height" type="number" step="0.5" value="${b.height}"></td><td><input data-b="${i}" data-k="compartments" type="number" step="1" min="1" max="10" value="${b.compartments}"></td></tr>`).join('');
-  $('s_name_z').value=Math.round(S.scaling.name_z_scale*100);$('s_max_length').value=S.scaling.max_length;$('o_delay').value=S.delay_between_downloads_s;$('o_dir').value=S.output_dir;$('o_dir').disabled=!META.local;$('o_dl').value=S.downloads_dir;$('o_dl').disabled=!META.local}
+  $('s_name_z').value=Math.round(S.scaling.name_z_scale*100);$('s_max_length').value=S.scaling.max_length;$('o_delay').value=S.delay_between_downloads_s;$('o_dir').value=S.output_dir;$('o_dir').disabled=!META.local;$('o_dl').value=S.downloads_dir;$('o_dl').disabled=!META.local;
+  $('mw_url').value=S.makerworld_url;mwHint();$('lic').value=(S.license_passwords||{})[designOf(S.makerworld_url)]||''}
 function readSettings(){const s=structuredClone(S);
   s.model.Font=$('m_Font').value;s.model.Rotate_text=$('m_Rotate_text').value;
   for(const k of ['Font_size','Thickness','Outline'])s.model[k]=parseInt($('m_'+k).value,10);
@@ -493,11 +518,24 @@ function readSettings(){const s=structuredClone(S);
   s.plate.rotations=[...document.querySelectorAll('#rots input:checked')].map(i=>+i.value);
   document.querySelectorAll('#bands input').forEach(i=>{const v=parseFloat(i.value);s.scaling.bands[+i.dataset.b][i.dataset.k]=i.dataset.k==='compartments'?Math.round(v):v});
   s.scaling.name_z_scale=parseFloat($('s_name_z').value)/100;s.scaling.max_length=parseFloat($('s_max_length').value);
-  s.delay_between_downloads_s=parseFloat($('o_delay').value)||0;s.output_dir=$('o_dir').value.trim();s.downloads_dir=$('o_dl').value.trim();return s}
+  s.delay_between_downloads_s=parseFloat($('o_delay').value)||0;s.output_dir=$('o_dir').value.trim();s.downloads_dir=$('o_dl').value.trim();
+  s.makerworld_url=$('mw_url').value.trim();const d=designOf(s.makerworld_url);s.license_passwords={...(S.license_passwords||{})};if(d){s.license_passwords[d]=$('lic').value}return s}
 $('save').onclick=async()=>{try{S=await api('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(readSettings())});fillSettings();$('savehint').textContent='Saved';$('savehint').style.color='';loadOrders()}catch(e){$('savehint').textContent=e.message;$('savehint').style.color='var(--err)'}};
 $('reset').onclick=async()=>{if(!confirm('Restore default settings?'))return;S=await post('/api/settings/reset');fillSettings();$('savehint').textContent='Defaults restored'};
-$('licsave').onclick=async()=>{const r=await post('/api/license',{password:$('lic').value});$('lic').value='';licHint(r.license_set)};
-function licHint(set){$('lichint').textContent=set?'Saved on the server':'Not set — downloads will have anti-sale markings';$('lichint').style.color=set?'':'var(--warn)'}
+function designOf(u){try{const x=new URL(u);return x.hostname.endsWith('makerworld.com')&&x.pathname.includes('/makerlab/parametricModelMaker')?(x.searchParams.get('designId')||''):''}catch{return ''}}
+function mwHint(){const d=designOf($('mw_url').value);$('mw_hint').textContent=d?`Model designId ${d}`:'Not a MakerWorld model-maker link';$('mw_hint').style.color=d?'':'var(--err)'}
+$('mw_url').oninput=()=>{mwHint();const d=designOf($('mw_url').value);$('lic').value=(S.license_passwords||{})[d]||''};
+$('licshow').onclick=()=>{const t=$('lic').type==='password';$('lic').type=t?'text':'password';$('licshow').textContent=t?'Hide':'Show'};
+function licHint(set){$('lichint').textContent=set?'Saved for the current model':'Not set for this model — downloads will have anti-sale markings';$('lichint').style.color=set?'':'var(--warn)'}
+
+// ---------- web portal ----------
+async function loadPortal(){if(!META.local){$('portalcard').hidden=true;return}
+  const p=await api('/api/portal');$('lan').checked=p.lan_access;
+  $('portalpw').placeholder=p.password_set?'Set (type to change)':'Not set';
+  const urls=p.urls.length?p.urls.map(u=>`<code>${esc(u)}</code>`).join(' or '):'';
+  $('portalinfo').innerHTML=!p.lan_access?'Off — only this Mac can open SnapSTL.':(p.listening_on_network?`On. Other computers open ${urls} and sign in with the portal password.`:'On — restarting SnapSTL to listen on the network…');}
+$('portalsave').onclick=async()=>{try{const r=await post('/api/portal',{enabled:$('lan').checked,password:$('portalpw').value});$('portalpw').value='';
+  $('portalinfo').textContent=r.restarting?'Saved — SnapSTL is restarting (a few seconds). macOS may ask to allow incoming connections: click Allow.':(r.note||'Saved.');setTimeout(loadPortal,4000)}catch(e){$('portalinfo').textContent=e.message;$('portalinfo').style.color='var(--err)'}};
 
 // ---------- database ----------
 const fmtMB=b=>(b/1048576).toFixed(1)+' MB';
@@ -522,9 +560,10 @@ async function refresh(){try{const st=await api('/api/state');
   const q=st.queue||{};const pending=(q.queued||0)+(q.claimed||0);
   $('status').textContent=st.building?`Building batch #${st.building}…`:pending?`${pending} model(s) to download`:'';
   const d=st.downloader;
-  const dlText=d.paused?'Downloads paused':!d.online?(pending?'Helper not connected — open the MakerWorld tab':'Helper not connected'):d.status||'Helper connected';
-  $('dl').textContent=dlText;$('dl').title=d.status||'';$('dl').className='pill '+(!d.online&&pending?'err':/security check/i.test(d.status||'')?'err':d.current?'info':d.paused?'warn':d.online?'ok':'');
-  $('helperinfo').textContent=d.online?`Helper connected · ${d.status}`:'Helper not connected — open the MakerWorld model maker tab in Chrome (with the helper installed).';
+  const offPage=d.online&&!d.on_page;
+  const dlText=d.paused?'Downloads paused':!d.online?(pending?'Helper not connected — open the MakerWorld tab':'Helper not connected'):offPage?'Helper tab is not on the model page':d.status||'Helper ready';
+  $('dl').textContent=dlText;$('dl').title=d.status||'';$('dl').className='pill '+((!d.online||offPage)&&pending?'err':offPage?'warn':/security check/i.test(d.status||'')?'err':d.current?'info':d.paused?'warn':d.online?'ok':'');
+  $('helperinfo').textContent=!d.online?'Helper not connected — open the MakerWorld model page in Chrome (with the helper installed).':offPage?'Helper connected, but its tab is not on the model page — click the helper icon → Open model page.':`Helper ready on the model page · ${d.status}`;
   $('dlpause').textContent=d.paused?'Resume downloads':'Pause downloads';$('dlpause').dataset.paused=d.paused?'1':'0';
   $('queueinfo').textContent=`Download queue: ${q.queued||0} waiting, ${q.claimed||0} in progress, ${q.done||0} done${q.failed?`, ${q.failed} failed`:''}`;$('retry').hidden=!q.failed;
   licHint(st.license_set);
@@ -535,7 +574,8 @@ async function refresh(){try{const st=await api('/api/state');
   const log=$('log');const atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-4;log.textContent=st.log.join('\n');if(atEnd)log.scrollTop=log.scrollHeight;
 }catch(e){}}
 function refreshAll(){lastKey='';refresh()}
-(async()=>{META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;let t='orders';try{t=localStorage.getItem('tab')||'orders'}catch{}if(!['orders','batches','downloads','settings','help'].includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;show(t);refresh();setInterval(refresh,2000)})();
+(async()=>{META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;
+  if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders'}catch{}if(!['orders','batches','downloads','settings','help'].includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;show(t);refresh();setInterval(refresh,2000)})();
 </script>
 </body>
 </html>

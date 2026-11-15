@@ -1,10 +1,12 @@
-// SnapSTL Helper — works on the MakerWorld model-maker tab for the Custom Name Desk Organizer.
+// SnapSTL Helper — runs on makerworld.com pages, but only WORKS in the working tab and only while
+// that tab is on the exact model page set in SnapSTL (Settings → MakerWorld model page link,
+// matched by designId). MakerWorld changes pages without reloading, so the page is re-checked
+// before every name.
 // Loop: ask the SnapSTL app for the next name → fill the form → press Generate → send the two
-// model files back. One tab, one name at a time, a short pause between names. Security checks
-// are left to the person using the tab: the helper simply waits.
+// model files back. One name at a time, a short pause between names. Security checks are left to
+// the person using the tab: the helper simply waits.
 (() => {
-  const DESIGN_ID = "2600234";
-  if (new URLSearchParams(location.search).get("designId") !== DESIGN_ID) return;
+  if (window.top !== window) return; // not inside iframes
 
   const GENERATE_TIMEOUT_MS = 180000;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -118,20 +120,35 @@
   }
 
   // ---------- main loop ----------
+  function onModelPage(cfg) {
+    return location.pathname.includes("/makerlab/parametricModelMaker") && !!cfg.design_id &&
+      new URLSearchParams(location.search).get("designId") === String(cfg.design_id);
+  }
+
   async function main() {
-    const claim = await bg("claimTab");
-    if (!claim.ok) return; // another MakerWorld tab is already doing the work
-    let lastSaid = "";
-    const say = async (text) => { lastSaid = text; await bg("status", { text }); };
-    await bg("recover"); // a name left half-done by a reload goes back to the queue
+    let lastSaid = "", recovered = false, cfg = null;
+    let onPage = false;
+    const say = async (text) => { lastSaid = text; await bg("status", { text, onPage }); };
     while (true) {
       try {
+        try { cfg = await bg("config"); } catch { cfg = null; }
+        if (!cfg || cfg.error) { await sleep(5000); continue; } // SnapSTL app not running
+        onPage = onModelPage(cfg);
+        const claim = await bg("claimTab", { onPage });
+        if (!claim.ok) { await sleep(4000); continue; } // another tab is the working tab: stay quiet
+        if (!recovered) { await bg("recover"); recovered = true; } // a name left half-done goes back to the queue
+        if (!onPage) {
+          await say("This tab isn't on the SnapSTL model page — use 'Open model page' in the helper");
+          await bg("next", { status: lastSaid, onPage: false }); // tells the app; never gets work
+          await sleep(3000);
+          continue;
+        }
         if (blocked()) { await waitWhileBlocked(say); continue; }
         if (!formShown()) { await say("Waiting for the MakerWorld page to load"); await sleep(2000); continue; }
-        const r = await bg("next", { status: lastSaid });
+        const r = await bg("next", { status: lastSaid, onPage: true });
         if (r.error) { await say(`SnapSTL app not reachable — is it running? (${r.error})`); await sleep(5000); continue; }
         if (r.paused) { await say("Paused in SnapSTL"); await sleep(4000); continue; }
-        if (!r.job) { await say("Idle — nothing to download"); await sleep(4000); continue; }
+        if (!r.job) { await say("Ready on the model page — nothing to download"); await sleep(4000); continue; }
         const job = r.job;
         await bg("working", { job_id: job.job_id });
         await say(`Generating ${job.name} (${job.compartments} compartments)`);
@@ -142,8 +159,12 @@
           if (up && up.error) throw new Error(up.error);
           await say(`Done ${job.name}`);
         } catch (e) {
-          await bg("fail", { job_id: job.job_id, error: String(e.message || e) });
-          await say(`Failed ${job.name}: ${e.message || e}`);
+          if (!onModelPage(cfg)) {
+            await bg("release", { job_id: job.job_id }); // user navigated away mid-name: back to the queue
+          } else {
+            await bg("fail", { job_id: job.job_id, error: String(e.message || e) });
+            await say(`Failed ${job.name}: ${e.message || e}`);
+          }
         }
         await bg("working", { job_id: null });
         await sleep(Math.max(1, job.pause_after_s || 3) * 1000);
