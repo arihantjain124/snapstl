@@ -41,7 +41,7 @@ Webstore "Order Reconciliation Report" (.xlsx)
 | **Output** | Settings → output folder (default `~/SnapSTL/output`). |
 | **Log** | Mac `~/Library/Logs/SnapSTL.log` · Windows `%LOCALAPPDATA%\SnapSTL\SnapSTL.log` |
 | **Windows** | Same, with `APP_DIR = %LOCALAPPDATA%\SnapSTL`, a Task Scheduler task "SnapSTL" instead of launchd and Start-menu shortcuts instead of the `.app` (see *Windows* below). |
-| **Shared order records** | Optional Supabase project in `.env` (`SNAPSTL_DATABASE_URL`): batched / bundled / printed orders of every computer, add-and-update only (see *Shared order records* below). |
+| **Shared order records** | Optional Supabase project connected in Settings (connection string in `APP_DIR/shared-records.json`, mode 600): batched / bundled / printed orders of every computer, add-and-update only (see *Shared order records* below). |
 
 Installed by `scripts/make_app.sh` on a Mac (installs `uv` if missing, `uv sync --no-dev`, writes the
 plist and the `.app`) or `scripts/windows/install.ps1` on Windows. The app runs **from the project
@@ -84,8 +84,7 @@ Snapstl/
 │   ├── ARCHITECTURE.md       this file
 │   └── scaling-rules-v1.1-handoff.md   business spec for scaling (historical source)
 ├── pyproject.toml            deps, console scripts            uv.lock      exact versions
-├── .python-version           3.12                             .gitignore   excludes data/reports/output/.env
-├── .env.example              keys of the per-computer .env (shared records URL, computer name); .env never in git
+├── .python-version           3.12                             .gitignore   excludes data/reports/output
 ├── .gitattributes            .sh stays LF, .ps1 CRLF
 ├── scripts/
 │   ├── make_app.sh           Mac installer: uv, deps, launchd service, ~/Applications/SnapSTL.app
@@ -100,7 +99,7 @@ Snapstl/
 ├── src/snapstl/
 │   ├── __init__.py           entry points: main() (window), serve() (service); port, keep awake, folder picker
 │   ├── __main__.py           `python -m snapstl` (Windows shortcuts)
-│   ├── config.py             loads .env (SNAPSTL_DATABASE_URL, SNAPSTL_COMPUTER_NAME, SNAPSTL_PORT)
+│   ├── config.py             shared-records connection string (entered in Settings; env override for tests)
 │   ├── platform_os.py        every Mac/Windows difference (folders, Finder/Explorer, keep awake, restart, LAN name)
 │   ├── computer.py           this computer's id + name (on batches and in the shared records)
 │   ├── sync.py               shared order records in Supabase: claim, push, pull, merge, background loop
@@ -135,7 +134,7 @@ Snapstl/
     └── test_sync.py          two simulated computers on a throwaway Postgres (skipped without one)
 ```
 
-Not in git (by design): `.venv/`, `.env`, customer reports (`*.xlsx`, `*.csv`), `output/`, ZIPs,
+Not in git (by design; the repository is public): `.venv/`, any secret, customer reports (`*.xlsx`, `*.csv`), `output/`, ZIPs,
 anything in `APP_DIR`.
 
 ---
@@ -488,7 +487,7 @@ snapstl.server:app --port 8320`.
 | 17 | Optional web portal for other computers (off by default, password, Mac-only actions) | staff can use SnapSTL from other computers; the main Mac runs service + helper |
 | 18 | No license password → no download; helper must confirm the password at Generate; every download and build scans for the watermark | watermarked models slipped through when Generate was pressed before the page took the password; a watermark may differ per model, so prevention (password confirmed) comes first and the scan (`watermark.py`) is the backstop |
 | 19 | Per-object Re-download in a batch's Objects list; Rebuild refused while a re-download is pending | fix one bad object without re-fetching the batch, and rebuild only from fresh files |
-| 21 | Updates by git (per-computer read-only deploy key, Settings → Updates, helper reloads itself) | sharing zips and reinstalling took too long |
+| 21 | Updates by git from the public repository (Settings → Updates, helper reloads itself); one-command installers `scripts/install-mac.sh`, `scripts/windows/install-windows.ps1` | sharing zips and reinstalling took too long |
 | 22 | Each computer keeps its own local SQLite; Supabase holds only **order records** (batched/bundled/printed/released), add-and-update only, deletes refused by triggers; settings never shared | owner wants to own the order data, keep records for good, and reset a computer without losing them (0.7.0 used Supabase as the live database — replaced) |
 | 23 | Creating a batch claims its orders in the shared records first; unreachable records = no batch | no order may be made twice across computers |
 | 24 | A batch is made entirely on the computer that created it | its models, plates and files live there |
@@ -532,11 +531,12 @@ snapstl.server:app --port 8320`.
 
 ## Updates (git)
 
-Each SnapSTL folder is a git clone of the private repository, read-only through a per-computer
-**deploy key** (README). `updater.py`: `check()` = `git fetch` + how many commits `main` is
+Each SnapSTL folder (`~/SnapSTL-app`) is a git clone of the **public** repository over HTTPS (no keys),
+made by the one-command installers (`scripts/install-mac.sh`, `scripts/windows/install-windows.ps1`,
+which also turn an older zip copy into a clone and run the platform installer). `updater.py`: `check()` = `git fetch` + how many commits `main` is
 behind; `apply()` = refuse if tracked files were edited by hand → `git pull --ff-only` → `uv sync`.
 `GET/POST /api/update` (this computer only) wrap them. POST refuses while a name is claimed or a
-batch is building, then restarts the launchd service. The UI checks at start and every 6 h and shows
+batch is building, then restarts the service (launchd / the Windows task). The UI checks at start and every 6 h and shows
 **Update available** in the sidebar. The helper's config response carries the helper version on disk.
 When it differs from the running one, background.js calls `chrome.runtime.reload()` once per version
 (never mid-name). `onInstalled` reloads open model-maker tabs so they run the new content script.
@@ -546,8 +546,10 @@ can't touch it. Shared order records and Windows: the sections below.
 ## Shared order records (Supabase) and computers (0.8.0)
 
 Each computer works in its **own local SQLite** database (`db.py`). `sync.py` keeps the **shared
-order records** in Supabase in step. `config.py` reads `SNAPSTL_DATABASE_URL` from `.env`, which is
-never in git; without it there is no sync.
+order records** in Supabase in step. The connection string is entered in **Settings → Shared order
+records** (`/api/shared-records`: format check, connection test and table creation before saving) and kept
+in `APP_DIR/shared-records.json` (mode 600, never returned in full). Without it there is no sync.
+`SNAPSTL_DATABASE_URL` overrides it for tests and development.
 
 - **What's shared:** `snapstl.order_records` holds one row per order that ever entered making, with
   state `in_batch`, `bundled`, `printed` or `released`. It also stores the batch (uid, label), the

@@ -21,7 +21,8 @@ Conflicts are settled in the database, by rules, not by whoever writes last (see
   * a webstore status only applies if its report is newer (status_at, see ingest.status_stamp).
 
 Runs every SYNC_EVERY seconds in the background, right after important changes, and on Settings →
-Database → Sync now. Settings are never stored here.
+Database → Sync now. Settings are never stored here. The connection string is entered in
+Settings → Shared order records and kept only on this computer (config.py).
 """
 from __future__ import annotations
 
@@ -152,25 +153,26 @@ def enabled() -> bool:
 
 
 # ---------------- connection ----------------
-_setup_done = False
+_setup_done = ""  # connection string the tables were last checked on
 _lock = threading.RLock()
 
 
 @contextmanager
-def _remote():
+def _remote(url: str | None = None):
     """One transaction on the shared records (committed at the end, rolled back on error)."""
     global _setup_done
     import psycopg
     from psycopg.rows import dict_row
 
+    url = url or config.database_url()
     try:
-        con = psycopg.connect(config.database_url(), row_factory=dict_row, prepare_threshold=None,
+        con = psycopg.connect(url, row_factory=dict_row, prepare_threshold=None,
                               connect_timeout=12, application_name="snapstl")
     except psycopg.Error as e:
         raise SyncError(f"Can't reach the shared records: {_short(e)}") from e
     try:
         with con:
-            if not _setup_done:
+            if _setup_done != url:
                 con.execute("SELECT pg_advisory_xact_lock(83170002)")
                 con.execute(_SETUP_SQL)
                 r = con.execute(f"SELECT value FROM {SCHEMA}.meta WHERE key='schema_version'").fetchone()
@@ -181,7 +183,7 @@ def _remote():
                 if have < SCHEMA_VERSION:
                     con.execute(f"INSERT INTO {SCHEMA}.meta(key, value) VALUES ('schema_version', %s) "
                                 "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", (str(SCHEMA_VERSION),))
-                _setup_done = True
+                _setup_done = url
             yield con
     except psycopg.Error as e:
         raise SyncError(f"The shared records refused the change: {_short(e)}") from e
@@ -486,9 +488,9 @@ class _Loop:
 LOOP = _Loop()
 
 
-def check() -> dict:
-    """Connection test and a short summary of the shared records (snapstl-db check)."""
-    with _remote() as rc:
+def check(url: str | None = None) -> dict:
+    """Connection test (creates the tables if needed) and a short summary of the shared records."""
+    with _remote(url) as rc:
         n = rc.execute(f"SELECT state, COUNT(*) AS n FROM {SCHEMA}.order_records GROUP BY state").fetchall()
         b = rc.execute(f"SELECT computer_name, COUNT(*) AS n FROM {SCHEMA}.batch_records GROUP BY computer_name").fetchall()
     return {"orders": {r["state"]: r["n"] for r in n}, "batches": {r["computer_name"]: r["n"] for r in b}}

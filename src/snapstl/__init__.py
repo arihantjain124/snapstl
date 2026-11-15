@@ -11,7 +11,6 @@ import time
 import urllib.request
 import webbrowser
 
-from . import config  # noqa: F401  (.env first: it may set SNAPSTL_PORT)
 from . import platform_os
 
 # Fixed local address for the web portal (and the app window).

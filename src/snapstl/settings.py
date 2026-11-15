@@ -11,7 +11,6 @@ import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from . import config  # noqa: F401  (loads .env before anything reads the environment)
 from .platform_os import app_dir
 
 # SNAPSTL_HOME lets tests/dev runs use a separate settings + cache folder.

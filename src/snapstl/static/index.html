@@ -13,6 +13,14 @@ body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-se
 body.win{font-family:"Segoe UI Variable","Segoe UI",system-ui,sans-serif}
 tr.other td{color:var(--muted)}
 .side h1 small.pc{margin-top:6px;font-size:11px;opacity:.8}
+.checklist{list-style:none;padding:0;margin:6px 0 0}
+.checklist li{display:flex;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line)}
+.checklist li>div{flex:1}
+.checklist .mark{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700;flex:none}
+.checklist li.ok .mark{background:var(--ok,#1f9d55);color:#fff}
+.checklist li.todo .mark{background:var(--warn,#c77d00);color:#fff}
+.checklist li.opt .mark{background:var(--line);color:var(--muted)}
+.flash{outline:2px solid var(--accent,#3b82f6);outline-offset:3px;transition:outline-color .3s}
 .app{display:grid;grid-template-columns:210px minmax(0,1fr);min-height:100vh}
 .side{position:sticky;top:0;height:100vh;background:var(--panel);border-right:1px solid var(--line);padding:16px 10px;display:flex;flex-direction:column;gap:12px}
 .side h1{font-size:17px;margin:0 6px 4px;font-weight:600}
@@ -173,6 +181,23 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
 
 <section id="t-settings" hidden>
   <div class="grid">
+  <div class="card" id="setupcard">
+    <h2>Setup</h2>
+    <p class="hint">Everything SnapSTL needs on this computer. Each step links to where you do it.</p>
+    <ul class="checklist" id="setuplist"></ul>
+  </div>
+  <div class="card" id="sharedcard">
+    <h2>Shared order records (optional)</h2>
+    <p class="hint">Only for <b>several SnapSTL computers</b>: they share the records of every order taken into a batch, bundled or printed (in your Supabase project), so no order is made twice. Each computer still keeps its own database. Skip this with one computer.</p>
+    <p class="hint" id="sharedinfo"></p>
+    <label>Connection string (Supabase → Connect → Connection string → URI → <b>Session pooler</b>, with your database password in place of <code>[YOUR-PASSWORD]</code>)</label>
+    <input id="sharedurl" type="password" autocomplete="off" spellcheck="false" placeholder="postgresql://postgres.xxxx:password@aws-0-ap-south-1.pooler.supabase.com:5432/postgres">
+    <label>This computer's name (shown on its batches)</label>
+    <input id="pcnamein" maxlength="60" placeholder="e.g. Packing Mac">
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button id="sharedsave" class="primary">Connect / save</button><button id="shareddisc" hidden>Disconnect</button></div>
+    <p class="hint">The connection string holds your database password: it's kept only on this computer (readable by you only), never shown again in full and never sent anywhere else.</p>
+    <p class="hint" id="sharedmsg"></p>
+  </div>
   <div class="card">
     <h2>Model maker options</h2>
     <p class="hint">Applied to every name. Print version is always NO AMS; names are single line. Compartments come from the scaling table.</p>
@@ -223,12 +248,13 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <div style="display:flex;gap:8px;margin-top:12px"><button id="save" class="primary">Save settings</button><button id="reset">Defaults</button></div>
     <p class="hint" id="savehint"></p>
   </div>
-  <div class="card">
+  <div class="card" id="helpercard">
     <h2>SnapSTL Helper (Chrome)</h2>
     <p class="hint">Models are generated in your normal Chrome, where you're signed in to MakerWorld. The helper fills the model-maker page for each queued name, presses Generate and hands the files to SnapSTL. Security checks: just click them in that tab.</p>
     <ol class="hint" style="padding-left:18px;margin:6px 0">
-      <li><a href="/api/helper.zip">Download the helper</a> and unzip it (or use the <code>helper</code> folder in the SnapSTL project).</li>
-      <li>Chrome → <code>chrome://extensions</code> → turn on <b>Developer mode</b> → <b>Load unpacked</b> → pick the folder.</li>
+      <li>In Chrome, open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top right).</li>
+      <li>Click <b>Load unpacked</b> and choose the helper folder: <button class="small" id="helperfolder">Show helper folder</button> <span class="hint" id="helperpath"></span></li>
+      <li>Click the puzzle-piece icon in Chrome's toolbar and pin <b>SnapSTL Helper</b>.</li>
       <li>Open the <a href="https://makerworld.com/en/makerlab/parametricModelMaker?designId=2600234&amp;from=model_page&amp;modelName=Custom_Name_Desk_Organizer_v2.34.scad&amp;protected=true&amp;unikey=70189420-efcd-4593-a07c-771fe72d52b3" target="_blank" rel="noopener">MakerWorld model maker</a> in Chrome and leave that tab open. That's it — no codes or settings.</li>
     </ol>
     <p class="hint" id="helperinfo"></p>
@@ -318,7 +344,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <h2>The SnapSTL Helper (Chrome)</h2>
     <p>The helper is a small Chrome extension that does the MakerWorld part in <b>your normal Chrome</b>, where you're signed in. For each name it fills the model-maker page (NO AMS, the name, compartments from the scaling table, your font settings), presses Generate and sends the two files to SnapSTL.</p>
     <ul>
-      <li>Install once: <code>chrome://extensions</code> → Developer mode → <b>Load unpacked</b> → the <code>helper</code> folder (or download it from Settings).</li>
+      <li>Install once: <code>chrome://extensions</code> → Developer mode → <b>Load unpacked</b> → the <code>helper</code> folder (<b>Settings → SnapSTL Helper → Show helper folder</b>).</li>
       <li>The helper works in <b>one tab</b> (the working tab) and only while it shows the exact model page from <b>Settings → MakerWorld model page link</b>. Click the helper icon → <b>Open model page</b>, or open the page yourself and click <b>Use this tab</b>. If that tab goes to another MakerWorld page, the sidebar says so and nothing is downloaded until it's back.</li>
       <li>Keep that tab open, ideally in its own window — Chrome slows down hidden tabs.</li>
       <li>If MakerWorld shows a security check in that tab, complete it; the helper waits and carries on.</li>
@@ -404,9 +430,9 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
 
   <div class="card" id="h-data">
     <h2>Your data</h2>
-    <p>Settings and backups are on this computer (Mac: <code>~/Library/Application Support/SnapSTL</code>, Windows: <code>%LOCALAPPDATA%\SnapSTL</code>). Downloaded models: your Downloads folder. Plates: your output folder. SnapSTL never deletes downloaded models or batch folders — you clean them up yourself. Orders (with customer names, phones and addresses) are in this computer's own database, and — when the <code>.env</code> file sets them up — batched, bundled and printed orders also in your shared order records in Supabase (Settings → Database says which). SnapSTL runs in the background (it starts at login); the window is just a view — you can also open <code>http://127.0.0.1:8317</code> in a browser.</p>
+    <p>Settings and backups are on this computer (Mac: <code>~/Library/Application Support/SnapSTL</code>, Windows: <code>%LOCALAPPDATA%\SnapSTL</code>). Downloaded models: your Downloads folder. Plates: your output folder. SnapSTL never deletes downloaded models or batch folders — you clean them up yourself. Orders (with customer names, phones and addresses) are in this computer's own database, and — when connected in Settings → Shared order records — batched, bundled and printed orders also in your shared order records in Supabase (Settings → Database says which). SnapSTL runs in the background (it starts at login); the window is just a view — you can also open <code>http://127.0.0.1:8317</code> in a browser.</p>
     <h3>Several computers (shared order records)</h3>
-    <p>With the shared order records set up (<code>.env</code>), every computer works in its own database, and every order taken into a batch, bundled or printed is recorded in Supabase. Creating a batch claims its orders there first: an order another computer already has is left out and shows <i>in Batch N · computer</i>. Bundled, printed and released orders and newer webstore statuses are sent right away and every minute; <b>Settings → Database → Sync now</b> sends and loads everything at once. The records are never deleted, and <b>Reset this computer's database</b> doesn't touch them — Sync loads them back. Mark orders printed in the <b>Bundled</b> tab (tick them → <b>Mark printed</b>); they move to <b>Printed</b> and keep their batch.</p>
+    <p>With the shared order records set up (<b>Settings → Shared order records</b>), every computer works in its own database, and every order taken into a batch, bundled or printed is recorded in Supabase. Creating a batch claims its orders there first: an order another computer already has is left out and shows <i>in Batch N · computer</i>. Bundled, printed and released orders and newer webstore statuses are sent right away and every minute; <b>Settings → Database → Sync now</b> sends and loads everything at once. The records are never deleted, and <b>Reset this computer's database</b> doesn't touch them — Sync loads them back. Mark orders printed in the <b>Bundled</b> tab (tick them → <b>Mark printed</b>); they move to <b>Printed</b> and keep their batch.</p>
     <p class="hint" id="helpversion"></p>
   </div>
 </section>
@@ -430,7 +456,7 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   for(const s of ['orders','batches','downloads','settings','help'])$('t-'+s).hidden=s!==t;
-  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='downloads')loadQueue(); if(t==='settings'){loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
+  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='downloads')loadQueue(); if(t==='settings'){loadSetup();loadShared();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
 
 // ---------- orders ----------
 // What can be ticked depends on the tab: Ready orders (→ Create batch), Bundled (→ Mark printed),
@@ -620,6 +646,34 @@ async function loadPortal(){if(!META.local){$('portalcard').hidden=true;return}
 $('portalsave').onclick=async()=>{try{const r=await post('/api/portal',{enabled:$('lan').checked,password:$('portalpw').value});$('portalpw').value='';
   $('portalinfo').textContent=r.restarting?'Saved — SnapSTL is restarting (a few seconds). macOS may ask to allow incoming connections: click Allow.':(r.note||'Saved.');setTimeout(loadPortal,4000)}catch(e){$('portalinfo').textContent=e.message;$('portalinfo').style.color='var(--err)'}};
 
+// ---------- setup checklist ----------
+function jump(id){const el=$(id);if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.classList.add('flash');setTimeout(()=>el.classList.remove('flash'),1600)}}
+async function loadSetup(){if(!META.local){$('setupcard').hidden=true;$('sharedcard').hidden=true;return}
+  let s;try{s=await api('/api/setup')}catch{return}
+  $('helperpath').textContent=s.helper_folder;
+  const step=(ok,title,detail,go,opt)=>`<li class="${ok?'ok':(opt?'opt':'todo')}"><span class="mark">${ok?'✓':(opt?'–':'!')}</span><div><b>${title}</b><div class="hint">${detail}</div></div>${go?`<button class="small" data-jump="${go}">${ok?'View':'Set up'}</button>`:''}</li>`;
+  const h=s.helper;
+  $('setuplist').innerHTML=[
+    step(h.connected&&h.on_page,'SnapSTL Helper in Chrome',h.connected?(h.on_page?'Connected, on the model page.':'Connected — click the helper icon → Open model page.'):'Not connected yet: add it to Chrome (Show helper folder → Load unpacked), then open the model page.','helpercard'),
+    step(s.model.link&&s.model.license,'MakerWorld model link and license password',s.model.license?'Set — downloads come without the watermark.':'Enter the license password for this model (downloads are refused without it).','lic'),
+    step(true,'Output and downloads folders',`Plates: ${esc(s.folders.output)} · Models: ${esc(s.folders.downloads)}`,'o_dir'),
+    step(s.shared_records.configured&&s.shared_records.ok,'Shared order records',s.shared_records.configured?(s.shared_records.error?esc(s.shared_records.error):(s.shared_records.ok?'Connected.':'Connecting…')):'Optional — only for several SnapSTL computers.','sharedcard',!s.shared_records.configured),
+    step(s.updates.git,'Updates',s.updates.git?'Automatic: SnapSTL shows "Update available" when there is one.':esc(s.updates.error||'Not available'),'updcard'),
+  ].join('');
+  document.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>jump(b.dataset.jump))}
+$('helperfolder').onclick=async()=>{try{const r=await post('/api/setup/helper-folder');$('helperpath').textContent=r.opened}catch(e){alert(e.message)}};
+async function loadShared(){if(!META.local)return;let r;try{r=await api('/api/shared-records')}catch{return}
+  $('pcnamein').value=r.computer_name;$('shareddisc').hidden=!r.configured;$('sharedurl').value='';
+  $('sharedurl').placeholder=r.configured?'Saved (paste a new one to change)':'postgresql://postgres.xxxx:password@aws-0-ap-south-1.pooler.supabase.com:5432/postgres';
+  const st=r.status||{};
+  $('sharedinfo').innerHTML=r.configured?`<b>Connected</b> to <code>${esc(r.where)}</code> as <b>${esc(r.computer_name)}</b>`+(st.error?`<div class="reason">${esc(st.error)}</div>`:''):'<b>Not connected</b> — this computer works on its own.'}
+$('sharedsave').onclick=async()=>{const url=$('sharedurl').value.trim();$('sharedsave').disabled=true;$('sharedmsg').textContent=url?'Connecting and checking…':'Saving…';$('sharedmsg').style.color='';
+  try{await post('/api/shared-records',{url,computer_name:$('pcnamein').value});$('sharedmsg').textContent=url?'Connected. This computer\'s batched, bundled and printed orders were sent, and everyone\'s were loaded.':'Saved.';
+    META=await api('/api/meta');$('pcname').textContent=META.computer.name+(META.shared_records?' · shared records':'');loadShared();loadSetup();loadDb();refreshAll()}
+  catch(e){$('sharedmsg').textContent=e.message;$('sharedmsg').style.color='var(--err)'}finally{$('sharedsave').disabled=false}};
+$('shareddisc').onclick=async()=>{if(!confirm('Disconnect this computer from the shared order records? Nothing is deleted there; this computer just stops syncing (and can create batches without checking other computers).'))return;
+  try{await post('/api/shared-records',{disconnect:true});META=await api('/api/meta');$('pcname').textContent=META.computer.name;loadShared();loadSetup();loadDb()}catch(e){alert(e.message)}};
+
 // ---------- updates ----------
 async function loadUpdates(fetch=1){if(!META.local){$('updcard').hidden=true;return}
   $('updinfo').textContent='Checking…';
@@ -642,7 +696,7 @@ $('updgo').onclick=async()=>{$('updgo').disabled=true;$('updinfo').textContent='
 const fmtMB=b=>(b/1048576).toFixed(1)+' MB';
 async function loadDb(){const m=await api('/api/maintenance');const o=m.orders,sum=x=>Object.values(x).reduce((a,b)=>a+b,0);
   loadSync();
-  $('dbkind').innerHTML=META.shared_records?`<b>Shared order records</b> (Supabase, set in <code>.env</code>): every order taken into a batch, bundled or printed — on any computer — is recorded there, with the latest webstore status. They are only ever added to and updated; resetting this computer's database doesn't touch them, and <b>Sync now</b> loads them back. This computer is <b>${esc(META.computer.name)}</b>.`:`<b>This computer only.</b> To share orders with other computers, set up the shared order records (README → Shared order records).`;
+  $('dbkind').innerHTML=META.shared_records?`<b>Shared order records</b> (Supabase, connected in <i>Shared order records</i> above): every order taken into a batch, bundled or printed — on any computer — is recorded there, with the latest webstore status. They are only ever added to and updated; resetting this computer's database doesn't touch them, and <b>Sync now</b> loads them back. This computer is <b>${esc(META.computer.name)}</b>.`:`<b>This computer only.</b> To share orders with other computers, set up the shared order records (Settings → Shared order records).`;
   $('dbinfo').textContent=`${sum(o)} orders (${o.ready||0} ready, ${o.needs_review||0} to review, ${o.in_batch||0} in a batch, ${o.bundled||0} bundled, ${o.printed||0} printed, ${o.not_needed||0} not needed) · ${sum(m.batches)} batches · ${m.reports_uploaded} report uploads · database ${fmtMB(m.db_bytes)} · downloaded models ${m.cache_models} (${fmtMB(m.cache_bytes)}) · ${m.backups} backups${m.last_backup?` (latest ${m.last_backup})`:''}`}
 $('cleanup').onclick=async()=>{const d=parseInt($('cleandays').value,10);if(isNaN(d)||d<0){$('dbmsg').textContent='Enter a number of days';return}
   if(!confirm(`Remove records older than ${d} days? Orders already made are kept. A backup is saved first.`))return;

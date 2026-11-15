@@ -38,7 +38,7 @@ def two(tmp_path, monkeypatch):
 
     with psycopg.connect(os.environ["SNAPSTL_TEST_DATABASE_URL"], autocommit=True) as c:
         c.execute("DROP SCHEMA IF EXISTS snapstl CASCADE")
-    monkeypatch.setattr(sync, "_setup_done", False)
+    monkeypatch.setattr(sync, "_setup_done", "")
     monkeypatch.setenv("SNAPSTL_DATABASE_URL", os.environ["SNAPSTL_TEST_DATABASE_URL"])
 
     @contextmanager
