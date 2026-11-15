@@ -197,7 +197,7 @@ def bb(monkeypatch, tmp_path):
         con.execute("DELETE FROM slices")
         con.execute("DELETE FROM downloads WHERE batch_id > ?", (first,))
         con.execute("DELETE FROM batches WHERE id > ?", (first,))
-        con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%' OR order_id LIKE 'PB%' OR order_id LIKE 'PS%' OR order_id LIKE 'PM%' OR order_id LIKE 'PK%' OR order_id LIKE 'PV%'")
+        con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%' OR order_id LIKE 'PB%' OR order_id LIKE 'PS%' OR order_id LIKE 'PM%' OR order_id LIKE 'PK%' OR order_id LIKE 'PV%' OR order_id LIKE 'PO%'")
     farm.CONFIG_PATH.unlink(missing_ok=True)
 
 

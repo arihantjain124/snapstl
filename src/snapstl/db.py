@@ -151,6 +151,8 @@ MIGRATIONS = [
     ("slices", "model", "TEXT"),             # printer model it was sliced for ("" = before 0.16)
     ("print_jobs", "speed", "INTEGER"),     # print speed chosen in Make It (1 silent … 4 ludicrous)
     ("print_jobs", "speed_set", "INTEGER"),  # 1 = speed applied once the print started
+    ("slices", "engine", "TEXT"),           # "orca" (OrcaSlicer on this computer) | "bambuddy"
+    ("slices", "sliced_path", "TEXT"),      # OrcaSlicer's sliced file (batch folder / Sliced/<model>/…)
 ]
 
 # Bookkeeping for the shared records, kept by triggers so no code path can forget it:

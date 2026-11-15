@@ -80,8 +80,10 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - SnapSTL's Bambuddy API key lives only in `farm.json` (mode 600) and is never sent to the UI; SnapSTL
   never handles printer access codes. Plate files go only to this
   computer's Bambuddy, never to a cloud print service.
-- **Slicing only through Bambuddy's slicer** (`POST /library/files/{id}/slice`, presets from Bambuddy's
-  list chosen in Make It → Slice). SnapSTL has no slicer settings and never runs a slicer itself.
+- **Slicing**: OrcaSlicer's command line on this computer (`slicer.py`, default when installed) or
+  Bambuddy's slicer (`farm.engine`). Always `--arrange 0 --orient 0` (parts stay where SnapSTL put and
+  checked them); bases sliced white, names in their colour. Never Bambu Studio's command line on a
+  Mac (it crashes, decision log #28). Presets are read from the slicer apps' folders, never edited there.
   Slicing never blocks the worker: one slice at a time, followed by polling, stopped after
   `SLICE_TIMEOUT_S` without progress. Automatic slicing may run on its own (it never prints) and
   never retries a failed slice; a print always uses the slice for its printer's model.

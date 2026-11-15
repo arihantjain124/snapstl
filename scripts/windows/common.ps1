@@ -14,6 +14,19 @@ function Stop-Bambuddy {
     ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 }
 
+# OrcaSlicer: Make It slices plates with its command line. Never fails the SnapSTL install.
+function Install-Orca {
+  if ($env:SNAPSTL_NO_ORCA -eq "1") { return }
+  $Exe = Join-Path $env:ProgramFiles "OrcaSlicer\orca-slicer.exe"
+  if (Test-Path $Exe) { return }
+  if (Get-Command winget -ErrorAction SilentlyContinue) {
+    Write-Host "Installing OrcaSlicer (the slicer SnapSTL uses)..."
+    winget install --id SoftFever.OrcaSlicer -e --source winget --silent --accept-package-agreements --accept-source-agreements | Out-Host
+  } else {
+    Write-Host "Install OrcaSlicer from https://github.com/OrcaSlicer/OrcaSlicer/releases (SnapSTL slices with it)."
+  }
+}
+
 # Install / update Bambuddy unless SNAPSTL_NO_BAMBUDDY=1; never fails the SnapSTL install.
 function Install-Bambuddy {
   if ($env:SNAPSTL_NO_BAMBUDDY -eq "1") { return }
