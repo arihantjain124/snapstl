@@ -90,7 +90,8 @@ has a button that takes you to the right place.
    `SnapSTL/Downloads` (models) in your home folder. Change them if you like → **Save settings**.
 3. **SnapSTL Helper.** The list shows ✓ once the helper is connected and on the model page.
 4. **Shared order records** (only if you use more than one computer). See below.
-5. **Print farm (Bambuddy)** (optional). See [4. Your printers](#4-your-printers-print-farm).
+5. **Print farm (Bambuddy)** (optional). Connected by itself; **Settings → Print farm** has the
+   address and the slicer service. See [4. Your printers](#4-your-printers-print-farm).
 
 Everything you enter stays on this computer. Nothing goes into the public code repository.
 
@@ -129,30 +130,35 @@ shown again in full. Give it only to computers that run SnapSTL.
 ## 4. Your printers (print farm)
 
 SnapSTL sends plates to your printers through **Bambuddy**, which the installer put on this computer.
-Bambuddy keeps the connection to each printer and a print queue per printer. It starts a print only
-after someone confirms the bed is clear.
+Printers, filament and printer settings are all managed **in Bambuddy** (Printers page → **Open
+Bambuddy**). SnapSTL only reads them.
 
-1. **On each printer:** Settings → Network → turn on **LAN Only Mode**, then **Developer Mode**. Note
-   the **IP address** and **access code** on that screen, and the **serial number** under Settings →
-   Device. Give each printer a fixed address in your router.
-   - Developer Mode cuts the printer off from Bambu Cloud and the Bambu Handy app.
-2. **In SnapSTL → Printers → Add a printer:** enter the name, model, IP address, serial number and
-   access code, and what it makes: **Bases** or **Names**. For names printers, also list the colours
-   loaded (e.g. `pink, blue`). Bambuddy checks it can reach the printer before adding it. The access
-   code stays in Bambuddy only.
-3. **Keep the colours up to date.** When you change a spool, change that printer's colours on the
-   Printers page and click **Save**. Push to queue only offers printers that fit a plate: **Bases**
-   printers for base plates, and **Names** printers with that colour for name plates.
+1. **On each printer:** Settings → Network → turn on **LAN Only Mode**, then **Developer Mode**.
+   Developer Mode cuts the printer off from Bambu Cloud and the Bambu Handy app.
+2. **In Bambuddy:** add each printer (IP address, serial number, access code). Set its **Location** to
+   start with `Bases` for printers that make bases, or `Names` for printers that make names. A printer
+   with any other Location gets both kinds of plates.
+3. **Filament:** nothing to enter. SnapSTL reads what's loaded in each AMS slot and external spool from
+   Bambuddy, with Bambu's colour names (e.g. *Hot Pink*, *Jade White*). Base plates need white loaded;
+   a name plate needs its colour. A close colour (e.g. *Hot Pink* for a *pink* order) is offered, but
+   marked *loaded: hot pink*. The exact colour is suggested first.
 4. **Slicing.** Printers only print sliced plates. There are two ways:
    - **By hand:** open the plate in Bambu Studio → **Slice plate** → **Export plate sliced file**. Save
      it in the batch folder's `Sliced` folder under the same path and name, e.g.
      `Sliced/Bases/{Ayra,pink},{Manvi,pink}.gcode.3mf` (next to the plate also works).
-   - **Slicer service** (automatic): run Bambuddy's slicer service (Docker), then enter its address on
-     the Printers page, e.g. `http://127.0.0.1:3001`, with the Bambu printer, process and filament
-     preset names. SnapSTL then slices each plate when you push it. Bambu Studio's own command line
-     can't slice on a Mac, so this needs the service.
+   - **Slicer service** (automatic): run Bambuddy's slicer service (Docker), then enter its address in
+     **Settings → Print farm**, e.g. `http://127.0.0.1:3001`, with the Bambu printer, process and
+     filament preset names. SnapSTL then slices each plate when you push it. Bambu Studio's own
+     command line can't slice on a Mac, so this needs the service.
 
-**Open Bambuddy** (Printers page) shows the printers, cameras, queues and history.
+The **Printers** page shows every printer: what it makes, its state (printing %, time left, layer,
+temperatures), the filament in each slot, and **Clear plate** when its bed must be cleared. Below it,
+**Print jobs** lists every plate sent. Each one has a **printer** dropdown, **Print options** (bed
+levelling, flow calibration, timelapse; default = Bambuddy's settings) and a **Print** button:
+
+- **Print** sends a failed or cancelled plate again.
+- **Print again** reprints a printed plate.
+- **Move** moves a plate still waiting in Bambuddy's queue to another printer and applies the options.
 
 ## Daily use
 
@@ -179,7 +185,8 @@ after someone confirms the bed is clear.
      right job and colour, the least busy). Change any of them, then click **Push to queue**. The
      **Status** column follows each plate: *Sending* → *In Bambuddy queue* → *Printing* → *Printed*.
      After each print, clear that printer's bed and click **Clear plate** (in Bambuddy, or on SnapSTL's
-     Printers page) so its next plate starts.
+     Printers page) so its next plate starts. To change the printer or print options later, or to
+     print a plate again, use **Printers → Print jobs → Print**.
    - **By hand:** click **Show in Finder** (Windows: **Show in File Explorer**) and open the plates in
      Bambu Studio. Print bases in white, and names in the colour of their folder.
 8. **Mark them printed.** When every plate of a pushed batch is printed, its Push to queue panel
@@ -251,9 +258,9 @@ was tested with (`scripts/bambuddy-version.txt`) at the same time.
 | Connect / save says the password or address is wrong | Copy the **Session pooler** string again; put the password in place of `[YOUR-PASSWORD]` with no brackets |
 | Settings → Database shows changes waiting | They're sent on the next sync; **Sync now** shows any problem |
 | Printers page: **Bambuddy isn't answering** | Run the install command again (it repairs Bambuddy); log: `~/Library/Logs/Bambuddy` (Windows: `%LOCALAPPDATA%\Bambuddy\logs`) |
-| Add a printer: **Could not connect to the printer** | Check the IP, serial and access code, and that LAN Only Mode **and** Developer Mode are on |
-| A plate **Not sliced** / push fails with "Not sliced yet" | Slice it in Bambu Studio and save it in the batch's `Sliced` folder, or set a slicer service; then **Try again** |
-| A printer is greyed out in Push to queue | It makes the other part, or that colour isn't loaded: fix it on the Printers page |
+| Adding a printer in Bambuddy fails | Check the IP, serial and access code, and that LAN Only Mode **and** Developer Mode are on |
+| A plate **Not sliced** / push fails with "Not sliced yet" | Slice it in Bambu Studio and save it in the batch's `Sliced` folder, or set a slicer service; then **Print** (Printers → Print jobs) |
+| A printer is greyed out in Push to queue | It makes the other part (its **Location** in Bambuddy), it's offline, or that colour isn't loaded — load the spool; the Printers page shows what Bambuddy sees |
 | A pushed plate waits in Bambuddy | Its printer is busy or waiting for the bed to be cleared: **Clear plate** |
 | SnapSTL doesn't open | Run the install command again; it repairs and restarts SnapSTL |
 | Database getting big | Settings → Database → **Clean up** (orders already made are kept) |

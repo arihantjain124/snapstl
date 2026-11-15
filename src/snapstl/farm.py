@@ -6,10 +6,12 @@ connections (LAN Only + Developer Mode on each printer), the print queue and "Cl
 SnapSTL:
 
   * connects to Bambuddy — on a fresh install (Bambuddy's login off) it creates its own API key;
-  * adds printers there (Printers page) and remembers each printer's job here: **Bases** or **Names**
-    and the colours loaded;
+  * only *reads* the printers from Bambuddy (Printers page): live state and the filament loaded in
+    each AMS slot / external spool, named with Bambuddy's colour catalogue ("Hot Pink", "Jade White").
+    Printers, filament and everything else are set up in Bambuddy itself. A printer's **Location** in
+    Bambuddy says what it makes: "Bases…" or "Names…" (anything else: both);
   * after a build, **Push to queue**: for each plate the person picks a printer (a suggestion is
-    pre-filled: right job, right colour, least busy). The plate's sliced file (.gcode.3mf) is uploaded
+    pre-filled: the plate's colour loaded — white for bases — right job, least busy). The plate's sliced file (.gcode.3mf) is uploaded
     to Bambuddy's library and added to that printer's queue; the job is followed until it's printed.
     Bambuddy waits for a person to clear the bed before each next print.
 
@@ -20,8 +22,8 @@ Printers only print *sliced* plates. A plate is sliced either
     Bambu Studio / OrcaSlicer command line, Docker). The result is saved as `Sliced/….gcode.3mf`.
 The Bambu Studio app's own command line can't slice on macOS (it crashes; ARCHITECTURE decision log #28).
 
-Secrets: the Bambuddy API key is kept only in `farm.json` in the app folder (this user only). Printer
-access codes go straight to Bambuddy and are never stored by SnapSTL.
+Secrets: the Bambuddy API key is kept only in `farm.json` in the app folder (this user only). SnapSTL
+never sees printer access codes.
 """
 from __future__ import annotations
 
@@ -42,7 +44,7 @@ from .platform_os import app_dir
 CONFIG_PATH = app_dir() / "farm.json"
 DEFAULT_URL = os.environ.get("SNAPSTL_BAMBUDDY_URL", "http://127.0.0.1:8000")
 ROLES = ("bases", "names")
-MODELS = ["A1", "A1 mini", "P1P", "P1S", "P2S", "X1", "X1C", "X1E", "H2D", "H2S", "H2C"]
+BASE_COLOR = "white"  # bases are printed in white
 ACTIVE = ("queued", "slicing", "uploading", "sent", "printing")
 BUSY_STATES = {"RUNNING", "PAUSE", "PREPARE", "SLICING", "INIT"}
 # Bambuddy's queue item status → SnapSTL job state
@@ -61,7 +63,6 @@ DEFAULTS = {
     "printer_preset": "Bambu Lab A1 0.4 nozzle",
     "process_preset": "0.20mm Standard @BBL A1",
     "filament_preset": "Bambu PLA Basic @BBL A1",
-    "roles": {},  # Bambuddy printer id (str) → {"role": "bases"|"names", "colors": ["pink", …]}
 }
 
 
@@ -78,9 +79,7 @@ def load_config() -> dict:
         raw = json.loads(CONFIG_PATH.read_text())
     except (OSError, ValueError):
         raw = {}
-    cfg = {**DEFAULTS, **{k: v for k, v in raw.items() if k in DEFAULTS}}
-    cfg["roles"] = {str(k): _clean_role(v) for k, v in (cfg.get("roles") or {}).items() if isinstance(v, dict)}
-    return cfg
+    return {**DEFAULTS, **{k: v for k, v in raw.items() if k in DEFAULTS}}
 
 
 def save_config(cfg: dict) -> None:
@@ -99,12 +98,6 @@ def update_config(**changes) -> dict:
     cfg.update(changes)
     save_config(cfg)
     return cfg
-
-
-def _clean_role(v: dict) -> dict:
-    role = v.get("role") if v.get("role") in ROLES else ""
-    colors = sorted({str(c).strip().lower().replace("gray", "grey") for c in (v.get("colors") or []) if str(c).strip()})
-    return {"role": role, "colors": colors}
 
 
 def public_config(cfg: dict | None = None) -> dict:
@@ -259,55 +252,108 @@ def printer_status(pid: int, cfg: dict | None = None, max_age: float = 3.0) -> d
     return s
 
 
+_color_map: tuple[float, dict] = (0.0, {})
+
+
+def color_names(cfg: dict | None = None) -> dict:
+    """Bambuddy's colour catalogue: {"colors": {hex: name}, "by_material": {"PLA Basic|hex": name}}."""
+    global _color_map
+    if time.time() - _color_map[0] < 600 and _color_map[1]:
+        return _color_map[1]
+    try:
+        m = api("GET", "/inventory/colors/map", cfg=cfg, timeout=8) or {}
+    except FarmError:
+        m = {}
+    m = {"colors": {str(k).lower(): v for k, v in (m.get("colors") or {}).items()},
+         "by_material": {str(k).lower(): v for k, v in (m.get("by_material") or {}).items()}}
+    if m["colors"]:
+        _color_map = (time.time(), m)
+    return m
+
+
+def _norm(c: str) -> str:
+    """'Light Gray' → 'light grey'; order colours and filament names compare in this form."""
+    return " ".join(str(c or "").strip().lower().replace("gray", "grey").replace("lightgrey", "light grey").split())
+
+
+def _hex(c: str | None) -> str:
+    h = str(c or "").strip().lstrip("#")[:6].lower()
+    return h if len(h) == 6 and all(ch in "0123456789abcdef" for ch in h) else ""
+
+
+def _nearest_palette(h: str) -> str:
+    """Closest SnapSTL colour name for a spool with no catalogue name (only for display / 'close')."""
+    if not h:
+        return ""
+    rgb = [int(h[i:i + 2], 16) for i in (0, 2, 4)]
+    best, dist = "", 10 ** 9
+    for name, hx in COLOR_HEX.items():
+        o = [int(hx[1:][i:i + 2], 16) for i in (0, 2, 4)]
+        d = sum((a - b) ** 2 for a, b in zip(rgb, o))
+        if d < dist:
+            best, dist = name, d
+    return _norm(best) if dist < 60 ** 2 else ""
+
+
+def spools(s: dict, cmap: dict) -> list[dict]:
+    """Filament loaded in a printer, from Bambuddy's live status: AMS slots + external spool(s)."""
+    out = []
+    trays = [(u, t) for u in (s.get("ams") or []) for t in (u.get("tray") or [])]
+    trays += [(None, t) for t in (s.get("vt_tray") or [])]
+    for unit, t in trays:
+        h = _hex(t.get("tray_color"))
+        if t.get("exists") is False or t.get("state") == 9 or not (h or t.get("tray_type")):
+            continue
+        material = t.get("tray_sub_brands") or t.get("tray_type") or ""
+        name = (cmap.get("by_material", {}).get(f"{material.lower()}|{h}") or cmap.get("colors", {}).get(h) or "")
+        slot = (f"AMS {int(unit.get('id', 0)) + 1} · {int(t.get('id', 0)) % 4 + 1}" if unit is not None
+                else "External")
+        out.append({"slot": slot, "hex": f"#{h.upper()}" if h else "", "name": name, "material": material,
+                    "remain": t.get("remain") if isinstance(t.get("remain"), int) and t.get("remain") >= 0 else None,
+                    "approx": "" if name else _nearest_palette(h)})
+    return out
+
+
+def role_of(location: str) -> str:
+    """What a printer makes, from its Location in Bambuddy: 'Bases…' / 'Names…'; anything else = both."""
+    loc = (location or "").strip().lower()
+    if loc.startswith("base"):
+        return "bases"
+    if loc.startswith("name"):
+        return "names"
+    return ""
+
+
 def printers(cfg: dict | None = None, with_status: bool = True) -> list[dict]:
-    """Bambuddy's printers with their SnapSTL job (role, colours) and live state."""
+    """Bambuddy's printers (read only): what they make (Location), live state, filament loaded."""
     cfg = cfg or load_config()
+    cmap = color_names(cfg) if with_status else {}
     out = []
     for p in api("GET", "/printers/", cfg=cfg) or []:
         pid = int(p["id"])
-        role = cfg["roles"].get(str(pid), {"role": "", "colors": []})
         item = {"id": pid, "name": p.get("name") or f"Printer {pid}", "model": p.get("model") or "",
                 "serial": p.get("serial_number") or "", "ip": p.get("ip_address") or "",
-                "location": p.get("location") or "", "active": p.get("is_active", True), **role}
+                "location": p.get("location") or "", "role": role_of(p.get("location") or ""),
+                "active": p.get("is_active", True), "spools": [], "colors": []}
         if with_status:
             s = printer_status(pid, cfg)
+            temps = s.get("temperatures") or {}
+            item["spools"] = spools(s, cmap)
+            item["colors"] = sorted({_norm(x["name"] or x["approx"]) for x in item["spools"] if x["name"] or x["approx"]})
             item["status"] = {
                 "connected": bool(s.get("connected")), "state": s.get("state") or "",
                 "progress": s.get("progress"), "remaining_time": s.get("remaining_time"),
                 "awaiting_plate_clear": bool(s.get("awaiting_plate_clear")),
                 "errors": len(s.get("hms_errors") or []), "error": s.get("error", ""),
                 "file": s.get("subtask_name") or s.get("current_print") or "",
+                "layer": s.get("layer_num"), "layers": s.get("total_layers"),
+                "nozzle": temps.get("nozzle"), "nozzle_target": temps.get("nozzle_target"),
+                "bed": temps.get("bed"), "bed_target": temps.get("bed_target"),
+                "wifi": s.get("wifi_signal"), "wired": bool(s.get("wired_network")),
+                "sdcard": s.get("sdcard"), "door_open": bool(s.get("door_open")),
             }
         out.append(item)
     return out
-
-
-def add_printer(name: str, ip: str, serial: str, access_code: str, model: str, role: str, colors: list[str]) -> dict:
-    """Add a printer to Bambuddy (it checks the connection first) and remember its job here."""
-    name, ip, serial, access_code = name.strip(), ip.strip(), serial.strip().upper(), access_code.strip()
-    if not (name and ip and serial and access_code):
-        raise FarmError("Fill in the name, IP address, serial number and access code")
-    if role not in ROLES:
-        raise FarmError("Choose what the printer makes: Bases or Names")
-    body = {"name": name, "ip_address": ip, "serial_number": serial, "access_code": access_code,
-            "model": model or None, "location": "Bases" if role == "bases" else "Names"}
-    p = api("POST", "/printers/", json_body=body, timeout=45)
-    set_role(int(p["id"]), role, colors, push_location=False)
-    return {"id": int(p["id"]), "name": p.get("name", name)}
-
-
-def set_role(pid: int, role: str, colors: list[str], push_location: bool = True) -> dict:
-    if role and role not in ROLES:
-        raise FarmError("Role is Bases or Names")
-    cfg = load_config()
-    cfg["roles"][str(pid)] = _clean_role({"role": role, "colors": colors})
-    save_config(cfg)
-    if push_location and role:
-        try:  # shown in Bambuddy too; not needed for SnapSTL
-            api("PATCH", f"/printers/{pid}", cfg=cfg, json_body={"location": "Bases" if role == "bases" else "Names"})
-        except FarmError:
-            pass
-    return cfg["roles"][str(pid)]
 
 
 def clear_plate(pid: int) -> None:
@@ -384,17 +430,44 @@ def check_slicer(url: str) -> str:
 
 
 # ---------------- plates of a batch → printers ----------------
+def needed_color(plate: dict) -> str:
+    return BASE_COLOR if plate["kind"] == "bases" else _norm((plate.get("colors") or [""])[0])
+
+
+def color_match(need: str, colors: list[str]) -> tuple[int, str]:
+    """2 = exactly that colour loaded; 1 = same family ('Jade White' for white, 'Hot Pink' for pink);
+    0 = not loaded. Also returns the loaded colour that matched."""
+    need = _norm(need)
+    for c in colors:
+        if c == need:
+            return 2, c
+    fam = need.split()[-1] if need else ""
+    for c in colors:
+        if fam and c.split() and c.split()[-1] == fam:
+            return 1, c
+    return 0, ""
+
+
 def eligible(plate: dict, printer: dict) -> str:
-    """'' if the printer can print this plate, else why not."""
-    if printer.get("role") != plate["kind"]:
-        want = "Bases" if plate["kind"] == "bases" else "Names"
-        return f"set to {'Names' if printer.get('role') == 'names' else 'Bases' if printer.get('role') else 'no job'} (needs {want})"
-    if plate["kind"] == "names":
-        color = (plate.get("colors") or [""])[0]
-        if color not in printer.get("colors", []):
-            loaded = ", ".join(printer.get("colors") or []) or "no colour set"
-            return f"has {loaded} (needs {color})"
+    """'' if the printer can print this plate (right job, the plate's colour loaded), else why not."""
+    role = printer.get("role")
+    if role and role != plate["kind"]:
+        return f"makes {'names' if role == 'names' else 'bases'} (Location in Bambuddy)"
+    st = printer.get("status") or {}
+    if st and not st.get("connected"):
+        return "offline"
+    need = needed_color(plate)
+    q, _ = color_match(need, printer.get("colors") or [])
+    if not q:
+        loaded = ", ".join(printer.get("colors") or []) or "no filament reported"
+        return f"has {loaded} (needs {need})"
     return ""
+
+
+def match_note(plate: dict, printer: dict) -> str:
+    """For a close (not exact) colour: which filament would be used."""
+    q, c = color_match(needed_color(plate), printer.get("colors") or [])
+    return f"loaded: {c}" if q == 1 else ""
 
 
 def _busy(printer: dict) -> int:
@@ -403,7 +476,8 @@ def _busy(printer: dict) -> int:
 
 
 def suggest(plates: list[dict], prs: list[dict], active_jobs: dict[int, int]) -> dict[str, int | None]:
-    """Plate file → suggested printer id: right job and colour, connected, least busy (spread out)."""
+    """Plate file → suggested printer id: the plate's colour loaded (exact before close), right job,
+    least busy (spread across plates)."""
     load = {p["id"]: active_jobs.get(p["id"], 0) + _busy(p) for p in prs}
     out: dict[str, int | None] = {}
     for pl in plates:
@@ -413,7 +487,9 @@ def suggest(plates: list[dict], prs: list[dict], active_jobs: dict[int, int]) ->
         if not ok:
             out[pl["file"]] = None
             continue
-        best = min(ok, key=lambda p: (not (p.get("status") or {}).get("connected", True), load[p["id"]], p["name"]))
+        need = needed_color(pl)
+        best = min(ok, key=lambda p: (-color_match(need, p.get("colors") or [])[0], load[p["id"]],
+                                      bool(p.get("role")) is False, p["name"]))
         out[pl["file"]] = best["id"]
         load[best["id"]] += 1
     return out
@@ -480,6 +556,68 @@ def queue_jobs(batch: dict, picks: list[dict], prs: list[dict], again: bool = Fa
                  computer.ID))
     WORKER.kick()
     return {"queued": len(made), "skipped": len(skipped)}
+
+
+# Print options a person can choose per job ("" / missing = Bambuddy's default)
+OPTIONS = {"bed_levelling": ("auto", "on", "off"), "flow_cali": ("auto", "on", "off"), "timelapse": (False, True)}
+
+
+def clean_options(o: dict | None) -> dict:
+    out = {}
+    for k, allowed in OPTIONS.items():
+        v = (o or {}).get(k)
+        if v in ("", None):
+            continue
+        if allowed == (False, True):
+            v = v in (True, "true", "on", 1, "1")
+        elif v not in allowed:
+            raise FarmError(f"{k}: choose {', '.join(allowed)}")
+        out[k] = v
+    return out
+
+
+def print_job(job_id: int, printer_id: int, options: dict | None, prs: list[dict]) -> dict:
+    """Printers page → Print: send this job's plate to the chosen printer with these options.
+    Waiting to send → just changed; waiting in Bambuddy's queue → moved there; failed / cancelled /
+    printed → printed again as a new job. A plate that is printing can't be changed."""
+    opts = clean_options(options)
+    with db.tx() as con:
+        j = con.execute("SELECT * FROM print_jobs WHERE id=? AND computer_id=?", (job_id, computer.ID)).fetchone()
+    if j is None:
+        raise FarmError("No such print job")
+    j = dict(j)
+    printer = next((p for p in prs if p["id"] == int(printer_id)), None)
+    if printer is None:
+        raise FarmError(f"Printer {printer_id} isn't in Bambuddy")
+    plate = {"kind": j["kind"], "colors": [j["color"]] if j["color"] else [], "file": j["plate"]}
+    why = eligible(plate, printer)
+    if why:
+        raise FarmError(f"{printer['name']} {why}")
+    if j["state"] in ("slicing", "uploading", "printing"):
+        raise FarmError(f"It's {j['state']} — wait until it's finished")
+    if j["state"] == "queued":
+        _set(job_id, printer_id=printer["id"], printer_name=printer["name"], options=json.dumps(opts))
+        WORKER.kick()
+        return {"job_id": job_id, "moved": True}
+    if j["state"] == "sent":
+        api("PATCH", f"/queue/{j['queue_item_id']}", json_body={"printer_id": printer["id"], **opts})
+        _set(job_id, printer_id=printer["id"], printer_name=printer["name"], options=json.dumps(opts), error=None)
+        return {"job_id": job_id, "moved": True}
+    now = db.now()
+    with db.tx() as con:
+        cur = con.execute(
+            "INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,options,created_at,updated_at,computer_id) "
+            "VALUES (?,?,?,?,?,?,'queued',?,?,?,?)",
+            (j["batch_id"], j["plate"], j["kind"], j["color"], printer["id"], printer["name"], json.dumps(opts), now, now,
+             computer.ID))
+    WORKER.kick()
+    return {"job_id": int(cur.lastrowid), "moved": False}
+
+
+def job_choices(job: dict, prs: list[dict]) -> list[dict]:
+    plate = {"kind": job["kind"], "colors": [job["color"]] if job.get("color") else [], "file": job["plate"]}
+    return [{"id": p["id"], "name": p["name"], "why_not": eligible(plate, p), "note": match_note(plate, p),
+             "state": (p.get("status") or {}).get("state", "")} for p in prs]
 
 
 def retry_job(job_id: int) -> None:
@@ -600,7 +738,14 @@ class Worker:
         if not added:
             errs = "; ".join(e.get("error", "") for e in (r or {}).get("errors") or []) or "not added"
             raise FarmError(f"Bambuddy didn't queue it: {errs}")
-        _set(j["id"], state="sent", file_id=file_id, queue_item_id=int(added[0]["queue_item_id"]), error=None)
+        qid = int(added[0]["queue_item_id"])
+        _set(j["id"], state="sent", file_id=file_id, queue_item_id=qid, error=None)
+        opts = clean_options(json.loads(j.get("options") or "{}"))
+        if opts:  # set on the queue item (add-to-queue doesn't take them)
+            try:
+                api("PATCH", f"/queue/{qid}", cfg=cfg, json_body=opts)
+            except FarmError as e:
+                _set(j["id"], error=f"Queued, but the print options weren't set: {e}")
         self._log(f"{Path(j['plate']).name} → queued on {j['printer_name']}")
 
     def refresh(self) -> None:

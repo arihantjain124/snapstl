@@ -123,6 +123,7 @@ MIGRATIONS = [
     ("orders", "batch_computer_id", "TEXT"),  # … and its id
     ("orders", "bundled_at", "REAL"),
     ("orders", "printed_at", "REAL"),       # marked printed by a person
+    ("print_jobs", "options", "TEXT"),      # JSON print options for Bambuddy (bed levelling, flow cali, timelapse)
 ]
 
 # Bookkeeping for the shared records, kept by triggers so no code path can forget it:
