@@ -12,9 +12,10 @@ if (git status --porcelain --untracked-files=no) {
 $Before = git rev-parse HEAD
 git pull --ff-only --quiet
 if ($LASTEXITCODE -ne 0) { throw "git pull failed" }
-if ($Before -eq (git rev-parse HEAD)) { Write-Host "SnapSTL is already up to date ($(git log -1 --format='%h %s'))."; exit 0 }
+if ($Before -eq (git rev-parse HEAD)) { Write-Host "SnapSTL is already up to date ($(git log -1 --format='%h %s'))."; Install-Bambuddy; exit 0 }
 Write-Host "Updated:"; git log --format="  - %s" "$Before..HEAD"
 Stop-SnapSTL                                   # the background task starts it again, with the update
 Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if (Wait-SnapSTL 180) { Write-Host "SnapSTL restarted." } else { Write-Host "Still starting - log: $LogFile" }
+Install-Bambuddy   # the Bambuddy version this SnapSTL was tested with (scripts\bambuddy-version.txt)
 Write-Host "The SnapSTL Helper reloads itself in Chrome within a minute."

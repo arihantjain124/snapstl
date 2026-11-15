@@ -65,8 +65,20 @@ exec "$UV" run --no-dev --quiet snapstl >> "$LOG" 2>&1
 LAUNCH
 chmod +x "$APP/Contents/MacOS/SnapSTL"
 
+# ---- Bambuddy (print farm: SnapSTL's Push to queue sends plates there) ----
+BAMBUDDY="not installed (SNAPSTL_NO_BAMBUDDY=1)"
+if [ "${SNAPSTL_NO_BAMBUDDY:-0}" != 1 ]; then
+  if zsh "$PROJECT/scripts/bambuddy-mac.sh"; then
+    BAMBUDDY="http://127.0.0.1:${BAMBUDDY_PORT:-8000} — printers and their queues (SnapSTL → Printers)"
+  else
+    BAMBUDDY="couldn't be installed — SnapSTL works without it; run: zsh $PROJECT/scripts/bambuddy-mac.sh"
+  fi
+fi
+
 echo
 echo "Installed:"
 echo "  • Background service — starts at login; web portal: http://127.0.0.1:8317"
 echo "  • $APP — opens the SnapSTL window (drag it to the Dock)"
+echo "  • Bambuddy (print farm) — $BAMBUDDY"
 echo "To uninstall the service: launchctl bootout gui/\$(id -u)/$LABEL && rm $PLIST"
+echo "To uninstall Bambuddy:    launchctl bootout gui/\$(id -u)/local.snapmagicians.bambuddy && rm ~/Library/LaunchAgents/local.snapmagicians.bambuddy.plist"

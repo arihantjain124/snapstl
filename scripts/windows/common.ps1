@@ -3,6 +3,23 @@ $TaskName = "SnapSTL"
 $Port = 8317
 $DataDir = Join-Path $env:LOCALAPPDATA "SnapSTL"
 $LogFile = Join-Path $DataDir "SnapSTL.log"
+# Bambuddy (print farm), installed next to SnapSTL by bambuddy.ps1
+$BambuddyTask = "Bambuddy"
+$BambuddyPort = if ($env:BAMBUDDY_PORT) { [int]$env:BAMBUDDY_PORT } else { 8000 }
+$BambuddyDir = Join-Path $HOME "SnapSTL-Bambuddy"
+$BambuddyData = Join-Path $env:LOCALAPPDATA "Bambuddy"
+
+function Stop-Bambuddy {
+  Get-NetTCPConnection -LocalPort $BambuddyPort -State Listen -ErrorAction SilentlyContinue |
+    ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+}
+
+# Install / update Bambuddy unless SNAPSTL_NO_BAMBUDDY=1; never fails the SnapSTL install.
+function Install-Bambuddy {
+  if ($env:SNAPSTL_NO_BAMBUDDY -eq "1") { return }
+  powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "bambuddy.ps1")
+  if ($LASTEXITCODE -ne 0) { Write-Host "Bambuddy couldn't be installed - SnapSTL works without it. Try again: scripts\windows\bambuddy.ps1" }
+}
 
 function Find-Uv {
   $c = Get-Command uv -ErrorAction SilentlyContinue

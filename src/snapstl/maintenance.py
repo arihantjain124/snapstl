@@ -89,6 +89,9 @@ def cleanup(older_than_days: int = 30) -> dict:
                 "DELETE FROM downloads WHERE state IN ('done','cancelled','failed') AND updated_at < ?",
                 (cutoff,)).rowcount,
             "reports_removed": con.execute("DELETE FROM files WHERE ingested_at < ?", (cutoff,)).rowcount,
+            "print_jobs_removed": con.execute(
+                "DELETE FROM print_jobs WHERE state IN ('done','cancelled','failed') AND updated_at < ?",
+                (cutoff,)).rowcount,
         }
     _vacuum()
     res["backup"] = str(path)
@@ -114,9 +117,9 @@ def reset() -> dict:
     with db.tx() as con:
         if _busy(con):
             raise RuntimeError("A batch is being built right now — try again in a minute")
-        for t in ("downloads", "batches", "orders", "files", "sync_outbox", "sync_state"):
+        for t in ("downloads", "batches", "orders", "files", "sync_outbox", "sync_state", "print_jobs"):
             con.execute(f"DELETE FROM {t}")
-        con.execute("DELETE FROM sqlite_sequence WHERE name IN ('downloads','batches','files')")
+        con.execute("DELETE FROM sqlite_sequence WHERE name IN ('downloads','batches','files','print_jobs')")
     _vacuum()
     return {"backup": str(path)}
 

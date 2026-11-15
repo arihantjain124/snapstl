@@ -33,7 +33,7 @@ Webstore "Order Reconciliation Report" (.xlsx)
 | Piece | What / where |
 |---|---|
 | **Service** | `snapstl-serve` → FastAPI/uvicorn on **http://127.0.0.1:8317** (`SNAPSTL_PORT` to change); on `0.0.0.0:8317` only when Settings → *Other computers* is on (see §13). Started at login by launchd: `~/Library/LaunchAgents/local.snapmagicians.snapstl.plist` (`RunAtLoad`, `KeepAlive`). Hosts the portal, the helper API, the download queue and the batch builder thread. Runs `caffeinate -i` while alive. |
-| **App window** | `~/Applications/SnapSTL.app` → `snapstl` → pywebview window on the same URL (adds native folder picker; text selection on). UI = side navigation: Orders · Batches · Downloads · Settings · Help. If the service isn't up it kickstarts it. Closing the window doesn't stop the service. |
+| **App window** | `~/Applications/SnapSTL.app` → `snapstl` → pywebview window on the same URL (adds native folder picker; text selection on). UI = side navigation: Orders · Batches · Downloads · Printers · Settings · Help. If the service isn't up it kickstarts it. Closing the window doesn't stop the service. |
 | **SnapSTL Helper** | Chrome extension (`helper/`, *Load unpacked*) in the user's **normal** Chrome, on the MakerWorld model-maker tab. Generates each queued name on the real page and uploads the files. |
 | **Data** | `~/Library/Application Support/SnapSTL/` (`APP_DIR`, override with `SNAPSTL_HOME`): `snapstl.db`, `settings.json`, `backups/`, `auth.json` (only if a portal password is set). |
 | **Downloaded models** | Settings → Downloads folder (default **`~/SnapSTL/Downloads`**): one readable folder per model, `<Name> - <N> comp - <cache key>/{base.stl, name.stl, info.json}`. **Never deleted by SnapSTL** — the user cleans up in Finder; a deleted model is re-downloaded when a batch needs it. Models from the old hidden `APP_DIR/cache/` are moved here once at startup (`cache.migrate_old_cache`). |
@@ -41,6 +41,7 @@ Webstore "Order Reconciliation Report" (.xlsx)
 | **Output** | Settings → output folder (default `~/SnapSTL/output`). |
 | **Log** | Mac `~/Library/Logs/SnapSTL.log` · Windows `%LOCALAPPDATA%\SnapSTL\SnapSTL.log` |
 | **Windows** | Same, with `APP_DIR = %LOCALAPPDATA%\SnapSTL`, a Task Scheduler task "SnapSTL" instead of launchd and Start-menu shortcuts instead of the `.app` (see *Windows* below). |
+| **Bambuddy (print farm)** | Open-source print-farm manager ([maziggy/bambuddy](https://github.com/maziggy/bambuddy), AGPL-3.0), installed next to SnapSTL by the installers at the version in `scripts/bambuddy-version.txt`: `~/SnapSTL-Bambuddy` (own Python 3.12 venv), launchd `local.snapmagicians.bambuddy` / Task Scheduler "Bambuddy", **http://127.0.0.1:8000** (this computer only), data in `~/Library/Application Support/Bambuddy` (Windows `%LOCALAPPDATA%\Bambuddy`). Talks to the printers (LAN Only + Developer Mode). SnapSTL's **Push to queue** sends plates there (see *Print farm* below). Optional: `SNAPSTL_NO_BAMBUDDY=1` skips it. |
 | **Shared order records** | Optional Supabase project connected in Settings (connection string in `APP_DIR/shared-records.json`, mode 600): batched / bundled / printed orders of every computer, add-and-update only (see *Shared order records* below). |
 
 Installed by `scripts/make_app.sh` on a Mac (installs `uv` if missing, `uv sync --no-dev`, writes the
@@ -88,8 +89,11 @@ Snapstl/
 ├── .gitattributes            .sh stays LF, .ps1 CRLF
 ├── scripts/
 │   ├── make_app.sh           Mac installer: uv, deps, launchd service, ~/Applications/SnapSTL.app
-│   ├── update.sh             Mac: git pull + uv sync + restart (same as Settings → Updates)
-│   └── windows/              install / run-service / update / restart / uninstall (.ps1) + common.ps1
+│   ├── update.sh             Mac: git pull + uv sync + restart (same as Settings → Updates) + Bambuddy
+│   ├── bambuddy-mac.sh       Mac: install/update Bambuddy (pinned version) + its launchd service
+│   ├── bambuddy-version.txt  the Bambuddy release this SnapSTL is tested with (both installers read it)
+│   └── windows/              install / run-service / update / restart / uninstall (.ps1) + common.ps1;
+│                             bambuddy.ps1 + run-bambuddy.ps1 (Bambuddy task)
 ├── helper/                   SnapSTL Helper — Chrome extension (Manifest V3)
 │   ├── manifest.json         permissions: makerworld.com + http://127.0.0.1:8317 only; version
 │   ├── background.js         service worker: relays tab ↔ app (/api/helper/*); working tab; page check
@@ -103,6 +107,8 @@ Snapstl/
 │   ├── platform_os.py        every Mac/Windows difference (folders, Finder/Explorer, keep awake, restart, LAN name)
 │   ├── computer.py           this computer's id + name (on batches and in the shared records)
 │   ├── sync.py               shared order records in Supabase: claim, push, pull, merge, background loop
+│   ├── farm.py               print farm: Bambuddy client (stdlib HTTP), printers + their job (farm.json),
+│   │                         sliced files / slicer service, Push to queue jobs + background worker
 │   ├── dbtool.py             `snapstl-db check | sync`
 │   ├── updater.py            Settings → Updates (git fetch / pull --ff-only / uv sync)
 │   ├── watermark.py, render.py   watermark detection; plate / object pictures
@@ -131,6 +137,7 @@ Snapstl/
     ├── test_engine.py        scaling, packing, grouping, file names, 3MF, per-day folders
     ├── test_ingest.py        report filtering, de-dup, review edits, name cleaning
     ├── test_flow.py          HTTP end to end: batch → helper → build; tabs/filters; printed; maintenance; guard
+    ├── test_farm.py          print farm against a fake Bambuddy + slicer service (HTTP layer)
     └── test_sync.py          two simulated computers on a throwaway Postgres (skipped without one)
 ```
 
@@ -176,6 +183,12 @@ records*).
 that queued it), timestamps.
 
 **files** — each report upload: `filename`, `sha256`, `ingested_at`, `summary` (JSON).
+
+**print_jobs** — one row per plate pushed to a printer (`farm.py`): `batch_id`, `plate` (path in the
+batch folder), `kind`, `color`, `printer_id` / `printer_name` (Bambuddy's), `state` (`queued | slicing
+| uploading | sent | printing | done | failed | cancelled`), `sliced` (file used), `file_id` /
+`queue_item_id` (Bambuddy's), `progress`, `error`, timestamps, `computer_id`. Local only (never in the
+shared records); Clean up removes finished ones, Reset empties it.
 
 ---
 
@@ -392,6 +405,8 @@ the files. Clashing file names get ` (2)`; names over 200 characters are shorten
 | Helper | `GET /api/helper/config`, `GET /api/helper/next`, `POST /api/helper/ping`, `POST /api/helper/jobs/{id}/result`, `…/fail`, `…/release`, `GET /api/helper.zip` |
 | Settings | `GET` / `PUT /api/settings` (includes `makerworld_url`, `license_passwords`), `POST /api/settings/reset` |
 | Portal | `GET /api/portal` (on/off, password set, addresses), `POST /api/portal` `{enabled, password}` — this Mac only |
+| Print farm | `GET /api/farm` (Bambuddy status, printers + job + live state, slicing settings, recent jobs; connects by itself on a fresh install), `POST /api/farm/connect` `{url, api_key}`, `PUT /api/farm/settings` `{slicer_url, printer_preset, process_preset, filament_preset}`, `POST /api/farm/printers` `{name, ip, serial, access_code, model, role, colors}`, `POST /api/farm/printers/{id}` `{role, colors}`, `POST /api/farm/printers/{id}/clear-plate` — `/api/farm/*` this computer only |
+| Push to queue | `GET /api/batches/{id}/plates` (plates, sliced file, latest job, suggested printer, choices with why-not), `POST /api/batches/{id}/push` `{plates:[{file, printer_id}], again}`, `GET /api/print-jobs?batch_id=`, `POST /api/print-jobs/{id}/retry`, `POST /api/print-jobs/{id}/cancel` |
 | Maintenance | `GET /api/maintenance`, `POST /api/maintenance/backup`, `POST /api/maintenance/cleanup` `{older_than_days}`, `POST /api/maintenance/reset` `{confirm:"RESET", clear_cache}` |
 
 Order list parameters: `tab` (`ready ready_single ready_clubbed needs_review in_batch bundled skipped
@@ -413,6 +428,12 @@ f_status f_name f_color f_qty`, `q`, `limit`, `offset`.
 
 Unknown keys are ignored on load, so older settings files keep working.
 
+Print farm settings are separate: `APP_DIR/farm.json` (mode 600, `farm.py`): `bambuddy_url`
+(default `http://127.0.0.1:8000`, env `SNAPSTL_BAMBUDDY_URL`), `api_key` (SnapSTL's Bambuddy key — never
+sent to the UI), `slicer_url` ("" = sliced by hand), `printer_preset` / `process_preset` /
+`filament_preset` (Bambu system preset names; default A1 0.4 / 0.20mm Standard / Bambu PLA Basic) and
+`roles` (Bambuddy printer id → `{role: bases|names, colors: [...]}`). Settings → Defaults doesn't touch it.
+
 ---
 
 ## 13. Security, privacy & other computers (`server._blocked`, `server.access_control`)
@@ -425,8 +446,12 @@ Unknown keys are ignored on load, so older settings files keep working.
   portal password is set. The service then listens on `0.0.0.0:8317` (`serve()` picks the address at
   start; toggling restarts it via `launchctl kickstart -k`). They must sign in (scrypt hash + signed
   30-day cookie, `auth.json`; cookie `Secure` only over https). Never allowed from other computers:
-  `/api/helper/*`, Finder (`…/reveal`), `/api/portal`, `/api/maintenance/reset`, and changing folders,
-  the model link or license passwords.
+  `/api/helper/*`, Finder (`…/reveal`), `/api/portal`, `/api/maintenance/reset`, `/api/farm/*`
+  (Bambuddy connection, adding printers, printer jobs, clear plate), and changing folders, the model
+  link or license passwords. They may see the Printers page and use Push to queue.
+* Bambuddy listens on 127.0.0.1 only (its login is off by default). SnapSTL's Bambuddy API key lives
+  only in `farm.json` (mode 600). Printer **access codes** go straight to Bambuddy and are never stored
+  by SnapSTL. Plates (file names carry the printed first names) go only to this computer's Bambuddy.
 * Customer name / phone / address are stored only in the local database (owner's request) — never sent
   anywhere, never in git. License passwords live only in `settings.json` (mode 600); `info.json` in
   model folders never contains them.
@@ -434,7 +459,7 @@ Unknown keys are ignored on load, so older settings files keep working.
 ## 14. Maintenance (`maintenance.py`, Settings → Database)
 
 **Back up now** (SQLite online backup → `backups/`, newest 20 kept). **Clean up** records older than
-N days (not-needed orders, finished batches, download history, upload records) — **bundled orders
+N days (not-needed orders, finished batches, download history, upload records, finished print jobs) — **bundled orders
 are always kept** so printed orders can never come back as ready. **Reset** (type RESET). A backup is
 taken first every time. **None of these delete files**: batch folders and downloaded models are only
 ever removed by the user in Finder.
@@ -443,7 +468,7 @@ ever removed by the user in Finder.
 
 ## 15. Testing
 
-`uv run pytest -q` — ~35 tests, ~6 s, no network, temporary `SNAPSTL_HOME`. With
+`uv run pytest -q` — ~40 tests, ~9 s, no network, temporary `SNAPSTL_HOME`. With
 `SNAPSTL_TEST_DATABASE_URL=postgresql://…` (a throwaway Postgres; its `snapstl` schema is dropped) the
 shared-record tests run too (`test_sync.py`: claims between two computers, bundled/printed/released,
 newer vs older report, refused deletes, local reset + reload, offline = no batch, reset waits for
@@ -458,7 +483,15 @@ unsent changes):
   move from the old cache; reset keeps models; other computers refused until the portal is on, must sign
   in, and can never reach the helper / Finder / portal / reset
 
-The helper is exercised by calling `/api/helper/*` directly — tests never contact MakerWorld.
+* `test_farm.py` — Printers page connects (own API key, never shown), adds printers (refusal in
+  Bambuddy's words), roles/colours, clear plate; Push to queue suggestions and why-not, wrong printer
+  refused, not sliced → clear error, hand-sliced file → Bambuddy library + queue, no double push,
+  slicer service (inherits presets, name colour), pending → printing → printed, cancel, Bambuddy login
+  on (pasted key), `/api/farm/*` this computer only, SD-card-safe file names
+
+The helper is exercised by calling `/api/helper/*` directly — tests never contact MakerWorld. Bambuddy
+is faked at `farm._request`; tests point `SNAPSTL_BAMBUDDY_URL` at a closed port so a real Bambuddy is
+never touched.
 Dev instance with its own data: `SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn
 snapstl.server:app --port 8320`.
 
@@ -493,6 +526,9 @@ snapstl.server:app --port 8320`.
 | 24 | A batch is made entirely on the computer that created it | its models, plates and files live there |
 | 25 | Printed is a separate state set by a person (Bundled → Printed, undoable), keeping the batch | owner tracks what was actually printed |
 | 26 | Report status updates are ordered by row event dates, then the report's date range end, then upload time | the report has no "generated at" time; an older report must never undo a newer status |
+| 27 | Print farm through **Bambuddy** (open source, self-hosted), installed with SnapSTL at a pinned version, on 127.0.0.1 only; SnapSTL never talks to printers itself. Each plate is pushed to a printer the person picks (pre-filled suggestion); Bambuddy waits for "Clear plate" before every next print | owner wants plates to go to a chosen printer automatically without a cloud service (SimplyPrint/Printago would send plate files with customer first names off the computer; Bambu Farm Manager has no API) |
+| 28 | Slicing: by hand in Bambu Studio (Export plate sliced file → `Sliced/…`) or Bambuddy's slicer service (Docker HTTP wrapper around the CLI). **Bambu Studio's macOS command line can't slice** — tested 02.05.00.66: it segfaults in `PartPlateList::generate_print_polygon` (calls the GUI `plater()` in CLI mode); the same code is in 2.6–2.9 | don't retry the local Bambu Studio CLI on a Mac |
+| 29 | A printer's job (Bases / Names + colours loaded) is kept by SnapSTL (`farm.json`); Push to queue refuses a plate on the wrong printer or colour | names never print in the wrong colour; bases only on base printers |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -502,7 +538,12 @@ snapstl.server:app --port 8320`.
 * MakerWorld's page is undocumented: a redesign can break `helper/content.js` (form labels,
   `plate_N.obj` names, the "Generate" text). Fix there, then reload the extension in `chrome://extensions`.
 * The MakerWorld tab must stay open, ideally in its own window (Chrome slows hidden tabs).
-* Opening and slicing in Bambu Studio is a manual review step; it isn't automated or tested here.
+* Slicing is by hand in Bambu Studio unless Bambuddy's slicer service (Docker; amd64 images, emulated
+  on Apple-silicon Macs) is set up. SnapSTL's slicer-service client follows Bambuddy's own client
+  (`slicer_api.py`) but was tested only against a fake service.
+* The print farm was tested against a real Bambuddy v1.3.1 with a simulated printer (upload, queue,
+  status, cancel) — not yet with a real printer; Bambuddy's API paths change between versions, so bump
+  `scripts/bambuddy-version.txt` only after checking `farm.py` against the new release.
 * The app runs from the project folder; moving it requires re-running the installer.
 * The report has no "generated at" time: two reports with the same row dates and date range are
   ordered by upload time.
@@ -527,6 +568,7 @@ snapstl.server:app --port 8320`.
 | Change output layout / names | `pipeline.new_batch_dir`, `pipeline.plate_folder`, `export.plate_filename`; update §10 and README |
 | Change where / how models are saved | `cache.py` (keep: readable folder names ending in the key; never auto-delete) |
 | Change MakerWorld interaction | `helper/content.js` / `inject.js`; bump `helper/manifest.json` version |
+| Change the print farm | `farm.py` (Bambuddy calls, suggestions, worker) + Printers page / Push to queue panel in `index.html`; new Bambuddy version → check its routes, then `scripts/bambuddy-version.txt`; extend the fake in `test_farm.py` |
 | Add an endpoint | `server.py`; anything the helper calls must live under `/api/helper/`; anything that touches this Mac's files or setup must be Mac-only (`MAC_ONLY_PREFIXES` / `is_local`) |
 
 ## Updates (git)
@@ -542,6 +584,36 @@ When it differs from the running one, background.js calls `chrome.runtime.reload
 (never mid-name). `onInstalled` reloads open model-maker tabs so they run the new content script.
 `scripts/update.sh` does the same from Terminal. Customer data is outside the folder, so a pull
 can't touch it. Shared order records and Windows: the sections below.
+
+## Print farm — Bambuddy (0.10.0)
+
+```
+Batch built → Push to queue (per plate: printer picked, suggestion pre-filled)
+  → print_jobs row 'queued' → farm.Worker (one at a time, oldest first):
+      sliced file? Sliced/<plate>.gcode.3mf or <plate>.gcode.3mf next to it  (else slicer service → Sliced/…)
+      → POST /api/v1/library/files (name "<Batch label> - <Bases|Names colour> - <plate>.gcode.3mf")
+      → POST /api/v1/library/files/add-to-queue {file_ids, printer_id}            → 'sent'
+  → every 15 s GET /api/v1/queue/{id}: pending → sent, printing → printing (+ %), completed → done,
+    failed → failed, cancelled/skipped → cancelled
+Bambuddy: one queue per printer; starts the next print only after "Clear plate" (a person).
+```
+
+* **Connecting:** `GET /api/v1/auth/status`. Login off (fresh install) → SnapSTL creates its own API key
+  (`POST /api/v1/api-keys/`: queue, read status, library, control printer) and keeps it in `farm.json`;
+  the worker does this at startup, so the Printers page is connected the first time it opens. Login on →
+  the owner pastes a key made in Bambuddy → Settings → API Keys.
+* **Printers:** `GET /api/v1/printers/` + `/{id}/status` (state, %, time left, HMS errors,
+  `awaiting_plate_clear`); add = `POST /api/v1/printers/` (Bambuddy tests the MQTT connection and
+  refuses otherwise); role → Bambuddy `location` "Bases"/"Names" too (display only).
+* **Suggestion** (`farm.suggest`): printers that fit (role; names: colour loaded), connected first,
+  then fewest SnapSTL jobs on their way + busy/awaiting clear, spread across plates.
+* **Slicer service** (`farm.slice_plate`): `POST {slicer_url}/slice` multipart `file`, `printerProfile`,
+  `presetProfile`, `filamentProfile` — each `{"from": "User", "inherits": "<system preset name>"}` (the
+  sidecar resolves the chain), filament colour = the name colour; `exportType=3mf`; no arrange/orient,
+  so parts stay where SnapSTL put them. The result must contain `Metadata/plate_N.gcode`.
+* A restart re-queues jobs cut off while slicing/uploading. Bambuddy is installed/updated by
+  `scripts/bambuddy-mac.sh` / `scripts/windows/bambuddy.ps1` (from the installers, `update.sh` /
+  `update.ps1`, and in the background after an in-app update via `platform_os.update_bambuddy`).
 
 ## Shared order records (Supabase) and computers (0.8.0)
 

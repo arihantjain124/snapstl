@@ -75,6 +75,27 @@ CREATE TABLE IF NOT EXISTS downloads (
 );
 CREATE INDEX IF NOT EXISTS downloads_state ON downloads(state, id);
 CREATE INDEX IF NOT EXISTS downloads_key ON downloads(cache_key);
+-- Print farm (farm.py): one row per plate pushed to a printer's queue in Bambuddy.
+CREATE TABLE IF NOT EXISTS print_jobs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id      INTEGER NOT NULL,
+    plate         TEXT NOT NULL,   -- plate file, relative to the batch folder (Bases/…, Names/<colour>/…)
+    kind          TEXT NOT NULL,   -- bases | names
+    color         TEXT,            -- names: the plate's colour
+    printer_id    INTEGER NOT NULL, -- Bambuddy's printer id
+    printer_name  TEXT,
+    state         TEXT NOT NULL,   -- queued | slicing | uploading | sent | printing | done | failed | cancelled
+    sliced        TEXT,            -- sliced file used (relative to the batch folder)
+    file_id       INTEGER,         -- Bambuddy library file
+    queue_item_id INTEGER,         -- Bambuddy queue item
+    progress      REAL,
+    error         TEXT,
+    created_at    REAL,
+    updated_at    REAL,
+    computer_id   TEXT
+);
+CREATE INDEX IF NOT EXISTS print_jobs_state ON print_jobs(state, id);
+CREATE INDEX IF NOT EXISTS print_jobs_batch ON print_jobs(batch_id);
 """
 
 MIGRATIONS = [

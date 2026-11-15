@@ -44,4 +44,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Dir "scripts\win
 $Shortcut = Join-Path ([Environment]::GetFolderPath("Programs")) "SnapSTL.lnk"
 if (Test-Path $Shortcut) { Start-Process $Shortcut }
 Write-Host ""
-Write-Host "SnapSTL is installed. Next, in the app: Settings -> Setup (add the helper to Chrome, enter the license password)."
+Write-Host "SnapSTL is installed. Next, in the app: Settings -> Setup (add the helper to Chrome, enter the license password), then Printers (add your printers to Bambuddy)."

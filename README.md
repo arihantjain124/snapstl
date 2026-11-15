@@ -2,13 +2,15 @@
 
 SnapSTL turns Snap Magicians webstore orders for the **Custom Name Desk Organizer** (SKU
 `Magicians_35`) into print-ready Bambu Lab plate files (**.3mf**). It generates each name on
-MakerWorld, scales it to the agreed rules, puts 3 per plate and saves dated batch folders.
+MakerWorld, scales it to the agreed rules, puts 3 per plate and saves dated batch folders. With
+**Push to queue** it sends the finished plates to your Bambu printers through **Bambuddy**, the
+open-source print-farm manager installed with it.
 
 It runs on **macOS** and **Windows**. You install it with one command, and everything else is set up
 in the app.
 
 **Contents:** [1. Install](#1-install) · [2. Add the helper to Chrome](#2-add-the-snapstl-helper-to-chrome) ·
-[3. Finish setup in the app](#3-finish-setup-in-the-app) · [Daily use](#daily-use) ·
+[3. Finish setup in the app](#3-finish-setup-in-the-app) · [4. Your printers](#4-your-printers-print-farm) · [Daily use](#daily-use) ·
 [Several computers](#several-computers) · [Updates](#updates) · [Troubleshooting](#troubleshooting) ·
 [Uninstall](#uninstall) · [For developers](#for-developers)
 
@@ -19,6 +21,8 @@ in the app.
 - A Mac (macOS 12 or newer) or a Windows 10/11 PC, with internet.
 - **Google Chrome**, signed in to the MakerWorld account you use for the organizer.
 - **Bambu Studio**, to print the plates.
+- *Optional, to send plates to your printers from SnapSTL:* Bambu Lab printers on the same network,
+  each with **LAN Only Mode** and **Developer Mode** turned on.
 - The model's **license password** from MakerWorld. SnapSTL won't download without it, so models
   never carry MakerWorld's watermark.
 
@@ -56,6 +60,9 @@ On both systems:
 - SnapSTL starts by itself when you log in, and keeps running in the background.
 - Its web page is at **http://127.0.0.1:8317**.
 - It lives in the **SnapSTL-app** folder in your home folder. Keep it there.
+- The installer also sets up **Bambuddy** (the print-farm manager) in the **SnapSTL-Bambuddy** folder.
+  It starts at login too, at **http://127.0.0.1:8000** (this computer only), and SnapSTL connects
+  to it by itself. To leave it out, put `SNAPSTL_NO_BAMBUDDY=1` before the install command.
 
 ## 2. Add the SnapSTL Helper to Chrome
 
@@ -83,6 +90,7 @@ has a button that takes you to the right place.
    `SnapSTL/Downloads` (models) in your home folder. Change them if you like → **Save settings**.
 3. **SnapSTL Helper.** The list shows ✓ once the helper is connected and on the model page.
 4. **Shared order records** (only if you use more than one computer). See below.
+5. **Print farm (Bambuddy)** (optional). See [4. Your printers](#4-your-printers-print-farm).
 
 Everything you enter stays on this computer. Nothing goes into the public code repository.
 
@@ -118,6 +126,34 @@ batched, bundled and printed orders and loads everyone else's. The sidebar then 
 The connection string contains the database password. It's kept only on that computer and never
 shown again in full. Give it only to computers that run SnapSTL.
 
+## 4. Your printers (print farm)
+
+SnapSTL sends plates to your printers through **Bambuddy**, which the installer put on this computer.
+Bambuddy keeps the connection to each printer and a print queue per printer. It starts a print only
+after someone confirms the bed is clear.
+
+1. **On each printer:** Settings → Network → turn on **LAN Only Mode**, then **Developer Mode**. Note
+   the **IP address** and **access code** on that screen, and the **serial number** under Settings →
+   Device. Give each printer a fixed address in your router.
+   - Developer Mode cuts the printer off from Bambu Cloud and the Bambu Handy app.
+2. **In SnapSTL → Printers → Add a printer:** enter the name, model, IP address, serial number and
+   access code, and what it makes: **Bases** or **Names**. For names printers, also list the colours
+   loaded (e.g. `pink, blue`). Bambuddy checks it can reach the printer before adding it. The access
+   code stays in Bambuddy only.
+3. **Keep the colours up to date.** When you change a spool, change that printer's colours on the
+   Printers page and click **Save**. Push to queue only offers printers that fit a plate: **Bases**
+   printers for base plates, and **Names** printers with that colour for name plates.
+4. **Slicing.** Printers only print sliced plates. There are two ways:
+   - **By hand:** open the plate in Bambu Studio → **Slice plate** → **Export plate sliced file**. Save
+     it in the batch folder's `Sliced` folder under the same path and name, e.g.
+     `Sliced/Bases/{Ayra,pink},{Manvi,pink}.gcode.3mf` (next to the plate also works).
+   - **Slicer service** (automatic): run Bambuddy's slicer service (Docker), then enter its address on
+     the Printers page, e.g. `http://127.0.0.1:3001`, with the Bambu printer, process and filament
+     preset names. SnapSTL then slices each plate when you push it. Bambu Studio's own command line
+     can't slice on a Mac, so this needs the service.
+
+**Open Bambuddy** (Printers page) shows the printers, cameras, queues and history.
+
 ## Daily use
 
 1. **Orders → Upload report (.xlsx).** Upload the webstore *Order Reconciliation Report*.
@@ -138,9 +174,16 @@ shown again in full. Give it only to computers that run SnapSTL.
 5. **Build the plates.** When the batch says **Ready to build**, click **Queue build**.
 6. **Check the fit.** The batch should say **Fit check: N/N**. A name that wouldn't fit its base is
    never printed and goes back to Ready.
-7. **Print.** Click **Show in Finder** (Windows: **Show in File Explorer**) and open the plates in
-   Bambu Studio. Print bases in white, and names in the colour of their folder.
-8. **Mark them printed.** Open the **Bundled** tab, tick the orders you printed (or click **Printed** on
+7. **Print.**
+   - **With Bambuddy:** open the batch → **Push to queue**. Each plate gets a suggested printer (the
+     right job and colour, the least busy). Change any of them, then click **Push to queue**. The
+     **Status** column follows each plate: *Sending* → *In Bambuddy queue* → *Printing* → *Printed*.
+     After each print, clear that printer's bed and click **Clear plate** (in Bambuddy, or on SnapSTL's
+     Printers page) so its next plate starts.
+   - **By hand:** click **Show in Finder** (Windows: **Show in File Explorer**) and open the plates in
+     Bambu Studio. Print bases in white, and names in the colour of their folder.
+8. **Mark them printed.** When every plate of a pushed batch is printed, its Push to queue panel
+   offers **Mark these orders printed**. Otherwise open the **Bundled** tab, tick the orders you printed (or click **Printed** on
    a row), then click **Mark printed**. They move to **Printed** and keep their batch for the record.
    **Back to Bundled** undoes this.
 
@@ -192,7 +235,8 @@ SnapSTL checks for updates by itself. When there is one, the sidebar shows **Upd
 Click it, then **Update now**. SnapSTL installs the update and restarts in a few seconds, and the
 helper in Chrome reloads itself. Orders, batches, settings and downloads are kept.
 
-Running the install command again also updates SnapSTL.
+Running the install command again also updates SnapSTL. Bambuddy moves to the version this SnapSTL
+was tested with (`scripts/bambuddy-version.txt`) at the same time.
 
 ## Troubleshooting
 
@@ -206,6 +250,11 @@ Running the install command again also updates SnapSTL.
 | "Can't reach the shared records … no batch was created" | Check the internet, then try again |
 | Connect / save says the password or address is wrong | Copy the **Session pooler** string again; put the password in place of `[YOUR-PASSWORD]` with no brackets |
 | Settings → Database shows changes waiting | They're sent on the next sync; **Sync now** shows any problem |
+| Printers page: **Bambuddy isn't answering** | Run the install command again (it repairs Bambuddy); log: `~/Library/Logs/Bambuddy` (Windows: `%LOCALAPPDATA%\Bambuddy\logs`) |
+| Add a printer: **Could not connect to the printer** | Check the IP, serial and access code, and that LAN Only Mode **and** Developer Mode are on |
+| A plate **Not sliced** / push fails with "Not sliced yet" | Slice it in Bambu Studio and save it in the batch's `Sliced` folder, or set a slicer service; then **Try again** |
+| A printer is greyed out in Push to queue | It makes the other part, or that colour isn't loaded: fix it on the Printers page |
+| A pushed plate waits in Bambuddy | Its printer is busy or waiting for the bed to be cleared: **Clear plate** |
 | SnapSTL doesn't open | Run the install command again; it repairs and restarts SnapSTL |
 | Database getting big | Settings → Database → **Clean up** (orders already made are kept) |
 
@@ -216,6 +265,8 @@ Running the install command again also updates SnapSTL.
   - Windows: `%LOCALAPPDATA%\SnapSTL`
 - **Models and plates:** the `SnapSTL` folder in your home folder.
 - **Shared order records:** your Supabase project.
+- **Bambuddy:** program in `SnapSTL-Bambuddy` in your home folder; its data in
+  `~/Library/Application Support/Bambuddy` (Windows: `%LOCALAPPDATA%\Bambuddy`).
 
 **Logs:**
 
@@ -228,8 +279,10 @@ Your data folders and the shared records stay in place.
 
 - **Mac** (Terminal):
   `launchctl bootout gui/$(id -u)/local.snapmagicians.snapstl && rm ~/Library/LaunchAgents/local.snapmagicians.snapstl.plist && rm -r ~/Applications/SnapSTL.app`
+  - Bambuddy: `launchctl bootout gui/$(id -u)/local.snapmagicians.bambuddy && rm ~/Library/LaunchAgents/local.snapmagicians.bambuddy.plist`
 - **Windows** (PowerShell):
   `powershell -ExecutionPolicy Bypass -File $HOME\SnapSTL-app\scripts\windows\uninstall.ps1`
+  (removes Bambuddy's task too)
 
 Then remove the helper in `chrome://extensions`.
 

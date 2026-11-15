@@ -29,7 +29,12 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - **Never delete downloaded models or batch folders** in code (cleanup, reset, migrations included) —
   the user cleans `~/SnapSTL/Downloads` and the output folder in Finder.
 - Output: `<output>/<YYYY-MM-DD>/Batch N - <YYYY-MM-DD>/{Bases/, Names/<colour>/, report.csv}`, one
-  **.3mf** per plate, file names `{name,color},{name2,color2}.3mf`, **never write ZIP files**.
+  **.3mf** per plate, file names `{name,color},{name2,color2}.3mf`, **never write ZIP files**. Sliced
+  plates (print farm) go only in that batch's `Sliced/` folder, same path + `.gcode.3mf`.
+- **Print farm (Bambuddy):** plates reach printers only through Bambuddy on this computer, only after a
+  person presses **Push to queue** (never automatically after a build), and only on a printer that fits
+  (Bases → Bases printers; Names → Names printers with that colour loaded). Never skip Bambuddy's
+  "Clear plate" step. SnapSTL never talks to printers directly.
 
 **Technical rules**
 - MakerWorld models come **only** from the SnapSTL Helper (`helper/`) in the user's own Chrome.
@@ -40,7 +45,11 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - The helper must keep checking, before every name, that its working tab is on the configured model
   page (designId); the app must never hand out work when `on_page` is false.
 - Other computers: off by default; only with `lan_access` + portal password; they must sign in and can
-  never use Mac-only actions (`MAC_ONLY_PREFIXES`, `…/reveal`, folder / model link / password changes).
+  never use Mac-only actions (`MAC_ONLY_PREFIXES`, `…/reveal`, folder / model link / password changes,
+  `/api/farm/*`).
+- Bambuddy stays on 127.0.0.1 and at the version in `scripts/bambuddy-version.txt`; bump it only after
+  checking `farm.py`'s calls against that release. Don't retry slicing with the Bambu Studio app's
+  command line on a Mac — it crashes (ARCHITECTURE decision log #28).
 - Database: add columns **only** via `MIGRATIONS` in `db.py`; never drop/rename columns or tables.
 - Shared order records (`sync.py`, Supabase): **never delete** there — no DELETE/TRUNCATE in code, keep
   the `refuse_delete` triggers. Settings never go there. Conflict rules live in the SQL (`_WIN`,
@@ -60,6 +69,9 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - Customer name/phone/address live only in the local database and the owner's shared order records
   (Supabase, Mumbai). Never send them anywhere else, log them, or put them in git. **The repository is public:** every secret — license passwords, the Supabase connection string (`config.py`, `shared-records.json`, mode 600), the portal password — is entered in the app's Settings and stays in the app folder; never add a secrets file to the repo or ask users to edit one. License passwords live only in `settings.json` (per model) — never in model folders
   (`info.json`), logs, reports or git. The helper's `check` carries only booleans/"sent" — never the password.
+- SnapSTL's Bambuddy API key lives only in `farm.json` (mode 600) and is never sent to the UI; printer
+  access codes go straight to Bambuddy and are never stored by SnapSTL. Plate files go only to this
+  computer's Bambuddy (and a slicer service the owner set), never to a cloud print service.
 - Never weaken the license guard: no download without the model's password, no saving a download the
   helper didn't confirm or that still has the watermark (decision log #18).
 - Never commit customer files (`*.xlsx`, `*.csv` reports), outputs, or anything in
@@ -92,6 +104,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Install / service / window | Mac `scripts/make_app.sh`; Windows `scripts/windows/*.ps1`; `src/snapstl/__init__.py` |
 | Mac vs Windows (folders, Finder/Explorer, keep awake, restart, LAN name) | `platform_os.py` |
 | Shared order records (Supabase): connection in Settings, sync, claims | `sync.py`, `config.py`, `computer.py`, `server.shared_records_*`, `server.setup_status`, `dbtool.py` (`snapstl-db`), triggers in `db.POST_SCHEMA` |
+| Print farm: Bambuddy connection, printers, Push to queue, slicing | `farm.py` (+ `/api/farm*`, `/api/batches/{id}/plates` and `/push`, `/api/print-jobs` in `server.py`); Printers page + Push to queue panel in `index.html`; `tests/test_farm.py` |
+| Bambuddy install / update | `scripts/bambuddy-mac.sh`, `scripts/windows/bambuddy.ps1`, `scripts/bambuddy-version.txt`, `platform_os.update_bambuddy` |
 | Printed tab / report status timestamps | `ingest.set_printed`, `ingest.status_stamp`, `server.TABS`, `index.html` (`SELKIND`) |
 
 ## 4. How to work
