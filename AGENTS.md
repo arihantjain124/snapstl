@@ -49,7 +49,9 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 **Privacy**
 - Customer name/phone/address live only in the local database. Never send them anywhere, log them, or
   put them in git. License passwords live only in `settings.json` (per model) — never in model folders
-  (`info.json`), logs, reports or git.
+  (`info.json`), logs, reports or git. The helper's `check` carries only booleans/"sent" — never the password.
+- Never weaken the license guard: no download without the model's password, no saving a download the
+  helper didn't confirm or that still has the watermark (decision log #18).
 - Never commit customer files (`*.xlsx`, `*.csv` reports), outputs, or anything in
   `~/Library/Application Support/SnapSTL`.
 
@@ -70,6 +72,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Report import / review rules | `ingest.py` |
 | Batch lifecycle / download queue / Re-download / Rebuild | `batches.py` (+ endpoints in `server.py`) |
 | Model link / per-model license passwords | `settings.py` (`makerworld_url`, `license_passwords`, `design_id`) + Settings card in `index.html` |
+| Watermark check / license confirmation | `watermark.py`, `batches.check_license` / `store_result`, `helper/content.js` (`runJob`), `helper/inject.js` |
+| Plate / object pictures | `render.py`, `pipeline._plate_picture`, `server.model_view` |
 | Access control / other computers | `server._blocked`, `server.access_control`, `/api/portal`, `__init__.serve` (bind address) |
 | Downloads page (queue + folder) | `<section id="t-downloads">` in `index.html`; `cache.py` for the folder |
 | MakerWorld page interaction | `helper/content.js`, `helper/inject.js` (bump `helper/manifest.json` version; reload extension) |

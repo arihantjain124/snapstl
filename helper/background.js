@@ -76,6 +76,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         const fd = new FormData();
         fd.append("plate_1", new Blob([msg.plate_1], { type: "text/plain" }), "plate_1.obj");
         fd.append("plate_2", new Blob([msg.plate_2], { type: "text/plain" }), "plate_2.obj");
+        if (msg.check) fd.append("check", msg.check);  // license password confirmation (no password inside)
         return await app(`/api/helper/jobs/${msg.job_id}/result`, { method: "POST", body: fd });
       }
       case "fail":

@@ -17,15 +17,17 @@ import time
 import traceback
 from dataclasses import asdict
 
-from . import cache, db
+from . import cache, db, watermark
 from .meshes import dims, obj_to_mesh
 from .orders import Order
 from .pipeline import build, new_batch_dir
 from .scaling import pick_band
-from .settings import Settings
+from .settings import Settings, load_settings
 
 CLAIM_TIMEOUT_S = 6 * 60
-MAX_ATTEMPTS = 2
+MAX_ATTEMPTS = 3
+NO_PASSWORD = ("Add the license password for this model first (Settings → MakerWorld model → License password). "
+               "SnapSTL only downloads with the password so models come without MakerWorld's watermark.")
 # Batch lifecycle:
 #   created  --Start download-->  waiting (downloading)  --all models in-->  models_ready
 #   models_ready / waiting  --Build plates-->  build_requested  -->  building  -->  done | done_with_problems | failed
@@ -98,7 +100,9 @@ def start_download(batch_id: int, force: bool = False) -> dict:
         if b is None or b["status"] not in allowed:
             raise ValueError("This batch can't be queued for download right now"
                              + ("" if force else " — use Re-download for a finished batch"))
-        settings = Settings.from_dict(json.loads(b["settings"] or "{}"))
+        settings = _with_current_passwords(con, b)
+        if not settings.license_password:
+            raise ValueError(NO_PASSWORD)
         ids = json.loads(b["order_ids"] or "[]")
         rows = db.rows(con, f"SELECT * FROM orders WHERE order_id IN ({','.join('?' * len(ids))})", *ids)
         orders = _expand(rows, settings)
@@ -107,20 +111,117 @@ def start_download(batch_id: int, force: bool = False) -> dict:
         for key, (name, comps) in _needed(orders, settings).items():
             if not force and cache.load_exists(key):
                 continue
-            live = con.execute(
-                "SELECT id FROM downloads WHERE cache_key=? AND state IN ('queued','claimed')", (key,)
-            ).fetchone()
-            if live:
-                continue
-            con.execute(
-                "INSERT INTO downloads(cache_key,name,compartments,model_json,state,created_at,updated_at,batch_id) "
-                "VALUES (?,?,?,?,?,?,?,?)",
-                (key, name, comps, json.dumps({**asdict(settings.model), "_license": settings.license_password,
-                                                "_design": settings.design_id}), "queued", db.now(), db.now(), batch_id),
-            )
-            queued += 1
+            queued += _queue(con, key, name, comps, settings, batch_id)
     MANAGER.wake()
     return {"batch_id": batch_id, "downloads_queued": queued}
+
+
+def _with_current_passwords(con, b) -> Settings:
+    """The batch's settings, with the license passwords from Settings as they are now.
+
+    A batch keeps the settings it was created with, but the password may have been added later —
+    downloads always use the current one (the cache key includes it, so old watermarked
+    downloads are never reused).
+    """
+    settings = Settings.from_dict(json.loads(b["settings"] or "{}"))
+    current = load_settings().license_passwords
+    if current != settings.license_passwords:
+        settings.license_passwords = dict(current)
+        con.execute("UPDATE batches SET settings=? WHERE id=?", (json.dumps(settings.to_dict()), b["id"]))
+    return settings
+
+
+def _queue(con, key: str, name: str, comps: int, settings: Settings, batch_id: int, manual: bool = False) -> int:
+    """Queue one model unless it's already queued / being downloaded. Returns 1 if queued."""
+    if con.execute("SELECT 1 FROM downloads WHERE cache_key=? AND state IN ('queued','claimed')", (key,)).fetchone():
+        return 0
+    model = {**asdict(settings.model), "_license": settings.license_password, "_design": settings.design_id}
+    if manual:
+        model["_manual"] = True  # re-download of one object: kept even if its batch is finished
+    con.execute(
+        "INSERT INTO downloads(cache_key,name,compartments,model_json,state,created_at,updated_at,batch_id) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (key, name, comps, json.dumps(model), "queued", db.now(), db.now(), batch_id),
+    )
+    return 1
+
+
+def _batch_orders(con, b) -> tuple[Settings, list[Order]]:
+    settings = Settings.from_dict(json.loads(b["settings"] or "{}"))
+    ids = json.loads(b["order_ids"] or "[]")
+    rows = db.rows(con, f"SELECT * FROM orders WHERE order_id IN ({','.join('?' * len(ids))}) "
+                        "ORDER BY order_date, order_id", *ids) if ids else []
+    return settings, _expand(rows, settings)
+
+
+def redownload_model(batch_id: int, key: str) -> dict:
+    """Re-download ONE object of a batch (Batches → batch → Objects → Re-download).
+
+    The batch's status doesn't change for a built batch; press Rebuild plates once it's in.
+    """
+    with db.tx() as con:
+        b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
+        if b is None or b["status"] in ("cancelled", "building", "build_requested"):
+            raise ValueError("This batch's objects can't be re-downloaded right now")
+        settings = _with_current_passwords(con, b)
+        if not settings.license_password:
+            raise ValueError(NO_PASSWORD)
+        _, orders = _batch_orders(con, b)
+        needed = _needed(orders, settings)
+        if key not in needed:
+            raise ValueError("That object isn't part of this batch (was the license password changed? "
+                             "use Re-download for the whole batch)")
+        name, comps = needed[key]
+        queued = _queue(con, key, name, comps, settings, batch_id, manual=True)
+        if b["status"] in ("created", "models_ready"):
+            con.execute("UPDATE batches SET status='waiting' WHERE id=?", (batch_id,))
+    MANAGER.wake()
+    return {"queued": queued, "name": name}
+
+
+def _info(key: str) -> dict:
+    d = cache.find(key)
+    if not d:
+        return {}
+    try:
+        return json.loads((d / "info.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def batch_models(batch_id: int) -> list[dict]:
+    """Every distinct object of a batch with its download + watermark state (for the Objects list)."""
+    with db.tx() as con:
+        b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
+        if b is None:
+            raise KeyError(batch_id)
+        settings, orders = _batch_orders(con, b)
+        out = []
+        by_key: dict[str, list[Order]] = {}
+        for o in orders:
+            by_key.setdefault(model_key(o, settings), []).append(o)
+        for key, os_ in by_key.items():
+            last = con.execute("SELECT * FROM downloads WHERE cache_key=? ORDER BY id DESC LIMIT 1", (key,)).fetchone()
+            have = cache.load_exists(key)
+            state = last["state"] if last else None
+            if state in ("queued", "claimed"):
+                status = "downloading" if state == "claimed" else "queued"
+            elif have:
+                status = "ready"
+            elif state == "failed":
+                status = "failed"
+            else:
+                status = "not downloaded"
+            info = _info(key) if have else {}
+            out.append({
+                "key": key, "name": os_[0].name, "compartments": os_[0].compartments,
+                "copies": len(os_), "colors": sorted({o.color for o in os_}),
+                "status": status, "downloaded": info.get("downloaded"),
+                "watermark": info.get("watermark"),  # True / False / None (= downloaded before this check)
+                "license_check": info.get("license_check"),
+                "error": last["error"] if last and state in ("failed", "queued") else None,
+            })
+    return sorted(out, key=lambda m: m["name"].lower())
 
 
 def batch_progress(batch: dict) -> dict:
@@ -153,7 +254,11 @@ def request_build(batch_id: int) -> None:
         b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
     if b is None or b["status"] not in ("waiting", "models_ready") + FINISHED:
         raise ValueError("Queue the download first — plates are built from downloaded models")
-    if batch_progress(dict(b))["ready"] == 0:
+    prog = batch_progress(dict(b))
+    if b["status"] in FINISHED and prog["models"] - prog["ready"] - prog["failed"] > 0:
+        raise ValueError("Some of this batch's objects are still being re-downloaded — "
+                         "rebuild once they're in, so the plates use the fresh downloads")
+    if prog["ready"] == 0:
         raise ValueError("None of this batch's models are in the Downloads folder — queue a download first")
     with db.tx() as con:
         con.execute("UPDATE batches SET status='build_requested' WHERE id=? AND status IN (?,?,?,?,?)",
@@ -185,7 +290,11 @@ def _cancel_unneeded_downloads(con) -> None:
         if ids:
             rows = db.rows(con, f"SELECT * FROM orders WHERE order_id IN ({','.join('?' * len(ids))})", *ids)
             needed |= set(_needed(_expand(rows, settings), settings))
-    for d in db.rows(con, "SELECT id, cache_key FROM downloads WHERE state='queued'"):
+    for d in db.rows(con, "SELECT d.id, d.cache_key, d.model_json, b.status AS bstatus FROM downloads d "
+                          "LEFT JOIN batches b ON b.id=d.batch_id WHERE d.state='queued'"):
+        manual = json.loads(d["model_json"] or "{}").get("_manual")
+        if manual and d["bstatus"] in FINISHED:
+            continue  # a single object re-downloaded from a built batch
         if d["cache_key"] not in needed:
             con.execute("UPDATE downloads SET state='cancelled', updated_at=? WHERE id=?", (db.now(), d["id"]))
 
@@ -212,23 +321,58 @@ def _unclaim(job_id: int) -> None:
                     (db.now(), job_id))
 
 
-def store_result(job_id: int, plate_1: bytes, plate_2: bytes) -> dict:
+class Rejected(ValueError):
+    """A download that came back but must not be used (no confirmed password / watermark found)."""
+
+
+def check_license(model: dict, check: dict | None) -> str:
+    """Was the license password really in place when Generate was pressed? Raises Rejected if not.
+
+    `check` comes from the helper (2.2.0+):
+      password_set — the License password box held exactly the password right before AND right
+                     after Generate was pressed;
+      request      — "sent" / "missing" / "unknown": whether the page's Generate request carried it
+                     (the helper only watches the page's own requests; "missing" is reported only
+                     when the request plainly carried the name but not the password).
+    """
+    if not model.get("_license"):
+        raise Rejected("No license password for this model — not saved (downloads need the password)")
+    check = check or {}
+    if check.get("password_set") is not True:
+        raise Rejected("The helper didn't confirm the license password was filled in when Generate was pressed — "
+                       "not saved, trying again (update the SnapSTL Helper if this keeps happening)")
+    if check.get("request") == "missing":
+        raise Rejected("MakerWorld's Generate request didn't include the license password — not saved, trying again")
+    return "confirmed" + (" (sent with Generate)" if check.get("request") == "sent" else "")
+
+
+def store_result(job_id: int, plate_1: bytes, plate_2: bytes, check: dict | None = None) -> dict:
     with db.tx() as con:
         d = con.execute("SELECT * FROM downloads WHERE id=?", (job_id,)).fetchone()
     if d is None:
         raise KeyError(job_id)
+    model = json.loads(d["model_json"])
+    lic = check_license(model, check)
     meshes = sorted([obj_to_mesh(plate_1), obj_to_mesh(plate_2)], key=lambda m: dims(m)[2], reverse=True)
     base, name = meshes
     if dims(name)[2] > 15 or dims(base)[2] < 20:
         raise ValueError(f"Unexpected parts {dims(base)} / {dims(name)} — was Print version NO AMS?")
+    wm = watermark.detect(base)
+    if wm.present:
+        with db.tx() as con:
+            con.execute("UPDATE downloads SET watermark=1 WHERE id=?", (job_id,))
+        raise Rejected(f"MakerWorld watermark still on the base ({wm.summary()}) — the license password didn't "
+                       "apply. Not saved, trying again")
     cache.store(d["cache_key"], base, name, {"name": d["name"], "compartments": d["compartments"],
-                                             "model": {k: v for k, v in json.loads(d["model_json"]).items()
+                                             "model": {k: v for k, v in model.items()
                                                        if not k.startswith("_")},  # never write the password
                                              "source": "makerworld",
                                              "downloaded": time.strftime("%Y-%m-%d %H:%M:%S"),
-                                             "batch": d["batch_id"] if "batch_id" in d.keys() else None})
+                                             "batch": d["batch_id"] if "batch_id" in d.keys() else None,
+                                             "watermark": False, "license_check": lic})
     with db.tx() as con:
-        con.execute("UPDATE downloads SET state='done', error=NULL, updated_at=? WHERE id=?", (db.now(), job_id))
+        con.execute("UPDATE downloads SET state='done', error=NULL, watermark=0, license_check=?, updated_at=? "
+                    "WHERE id=?", (lic, db.now(), job_id))
     DOWNLOADER.done_count += 1
     DOWNLOADER.current = None
     MANAGER.wake()
@@ -314,13 +458,19 @@ def helper_next() -> dict | None:
     """Claim the next queued model for the helper (None when paused or nothing to do)."""
     if DOWNLOADER.paused:
         return None
-    job = _claim_next()
-    if job is None:
-        DOWNLOADER.current = None
-        return None
+    while True:
+        job = _claim_next()
+        if job is None:
+            DOWNLOADER.current = None
+            return None
+        model = json.loads(job["model_json"])
+        if model.get("_license"):
+            break
+        with db.tx() as con:  # queued before the password rule: never generate without it
+            con.execute("UPDATE downloads SET state='failed', error=?, updated_at=? WHERE id=?",
+                        (NO_PASSWORD, db.now(), job["id"]))
     DOWNLOADER.current = job["name"]
     DOWNLOADER.claimed_at = time.time()
-    model = json.loads(job["model_json"])
     return {
         "job_id": job["id"], "name": job["name"], "compartments": job["compartments"],
         "params": {"name": job["name"], "font": model["Font"], "font_size": model["Font_size"],
@@ -401,24 +551,36 @@ class Manager:
                                     "ORDER BY order_date, order_id", *ids)
             orders = _expand(rows, settings)
             meshes = {}
+            marked: dict[str, bool] = {}  # cache key → watermark found
             for o in orders:
-                got = cache.load(model_key(o, settings))
+                key = model_key(o, settings)
+                got = cache.load(key)
                 if got:
-                    meshes[o.idx] = got
+                    if key not in marked:
+                        marked[key] = watermark.detect(got[0]).present
+                    if not marked[key]:
+                        meshes[o.idx] = got
+            watermarked = sorted({o.name for o in orders if marked.get(model_key(o, settings))})
             usable = [o for o in orders if o.idx in meshes]
-            missing = sorted({o.name for o in orders if o.idx not in meshes})
+            missing = sorted({o.name for o in orders if o.idx not in meshes} - set(watermarked))
             if not usable:
-                raise RuntimeError("None of this batch's models were downloaded")
+                raise RuntimeError("None of this batch's models are usable"
+                                   + (f" — watermark found on: {', '.join(watermarked)}" if watermarked else
+                                      " (none were downloaded)"))
             out = new_batch_dir(settings.output_dir, batch_id)
             with db.tx() as con:
                 con.execute("UPDATE batches SET out_dir=? WHERE id=?", (str(out), batch_id))
             self._log(f"Building batch #{batch_id} ({len(usable)} organizers)")
-            res = build(usable, meshes, settings, out, self._log)
+            res = build(usable, meshes, settings, out, self._log,
+                        preview_dir=PREVIEW_DIR / f"batch-{batch_id}" / out.name)
             incomplete = {o.order_id for o in orders if not res.complete(o.idx)}
             done_ids = sorted({o.order_id for o in usable} - incomplete)
             errors = res.errors + [f"{n}: model not in the Downloads folder — left out of these plates" for n in missing]
+            errors += [f"{n}: MakerWorld watermark found on the downloaded base — held back, order returned to Ready. "
+                       "Re-download it (Objects list), then Rebuild plates" for n in watermarked]
             fit_ok = sum(1 for v in res.fit.values() if v == "ok")
-            summary = {"ok": res.ok and not missing, "errors": errors, "warnings": res.warnings,
+            summary = {"ok": res.ok and not missing and not watermarked,
+                       "watermark": {"checked": len(marked), "found": sum(marked.values())}, "errors": errors, "warnings": res.warnings,
                        "fit": {"checked": len(res.fit), "ok": fit_ok},
                        "plates": [asdict(p) for p in res.plates], "orders": len(done_ids), "organizers": len(usable)}
             summary["folder"] = str(out)  # plain .3mf files — no ZIP is written
@@ -440,3 +602,4 @@ class Manager:
 
 
 MANAGER = Manager()
+PREVIEW_DIR = Path(cache.APP_DIR) / "previews"  # rendered plate / object pictures (safe to delete)

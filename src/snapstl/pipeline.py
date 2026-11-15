@@ -15,10 +15,10 @@ from typing import Callable
 
 import trimesh
 
-from . import export
+from . import export, render, watermark
 from .grouping import Plate, group_bases, group_names
 from .orders import Order
-from .packing import make_part
+from .packing import make_part, placed_part_meshes
 from .scaling import ScaleResult, fit_metrics, fit_problems, scale_pair
 from .settings import Settings
 
@@ -33,6 +33,7 @@ class PlateOut:
     colors: list[str]
     preview: dict
     warnings: list[str] = field(default_factory=list)
+    image: str = ""  # top-view picture (bases), relative to the batch's preview folder
 
 
 @dataclass
@@ -86,6 +87,7 @@ def build(
     settings: Settings,
     out_dir: Path,
     progress: Progress = lambda s: None,
+    preview_dir: Path | None = None,
 ) -> BuildResult:
     errors: list[str] = []
     warnings: list[str] = []
@@ -143,6 +145,8 @@ def build(
                 warnings=plate.warnings + problems,
             )
         )
+        if plate.kind == "bases" and preview_dir is not None:
+            plates_out[-1].image = _plate_picture(plate, settings, preview_dir, len(plates_out), progress, warnings)
         warnings.extend(plate.warnings)
 
     # Fit check on the files themselves: measure each pair as written to disk.
@@ -189,6 +193,25 @@ def build(
         files=file_of,
         fit=fit,
     )
+
+
+def _plate_picture(plate: Plate, settings: Settings, folder: Path, n: int, progress: Progress,
+                   warnings: list[str]) -> str:
+    """Top view of a base plate as a PNG; any watermark faces painted red. Returns the file name."""
+    progress(f"Drawing base plate {n}")
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        own = {p.key: p.mesh for p in plate.parts}  # detect in the part's own axes (back = +Y); faces keep order
+        parts = [(m, watermark.detect(own[k]).faces) for k, m in placed_part_meshes(plate.parts, plate.result)]
+        cfg = settings.plate
+        png = render.render(parts, view="top", bounds=(0, cfg.bed_x, 0, cfg.bed_y), px=0.5,
+                            max_samples=2_500_000)
+        fn = f"bases-{n}.png"
+        (folder / fn).write_bytes(png)
+        return fn
+    except Exception as e:  # noqa: BLE001 — a picture must never stop a build
+        warnings.append(f"Couldn't draw the preview of base plate {n}: {e}")
+        return ""
 
 
 def _check_name_colors(plates: list[Plate], errors: list[str]) -> None:

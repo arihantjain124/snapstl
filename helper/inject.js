@@ -1,17 +1,44 @@
-// Runs inside the MakerWorld page. It only *watches* the model files the page itself
-// downloads after Generate (plate_1.obj = base, plate_2.obj = name) and passes a copy
-// to the helper. It never changes any request.
+// Runs inside the MakerWorld page. It only *watches* — it never changes or blocks a request.
+//  1. Model files the page downloads after Generate (plate_1.obj = base, plate_2.obj = name) are
+//     copied to the helper.
+//  2. While the helper is pressing Generate ("armed"), the bodies of the page's own outgoing
+//     requests are handed to the helper (content.js), which checks they carried the license
+//     password. Nothing is sent anywhere else; bodies are dropped once checked.
 (() => {
   if (window.__snapstlHooked) return;
   window.__snapstlHooked = true;
   const PLATE = /\/(plate_\d+|plate_single)\.obj(\?|$)/;
+  const post = (msg) => window.postMessage({ __snapstl: true, ...msg }, location.origin);
   const send = (url, text) => {
     const m = PLATE.exec(url);
-    if (m) window.postMessage({ __snapstl: "obj", plate: m[1], text }, location.origin);
+    if (m) post({ kind: "obj", plate: m[1], text });
+  };
+  let armedUntil = 0;
+  window.addEventListener("message", (e) => {
+    if (e.source === window && e.data && e.data.__snapstlArm) armedUntil = Date.now() + 60000;
+    if (e.source === window && e.data && e.data.__snapstlDisarm) armedUntil = 0;
+  });
+  const bodyText = (b) => {
+    try {
+      if (b == null) return null;
+      if (typeof b === "string") return b;
+      if (b instanceof URLSearchParams) return b.toString();
+      if (b instanceof FormData) return [...b.entries()].map(([k, v]) => `${k}=${typeof v === "string" ? v : ""}`).join("&");
+    } catch (e) { /* ignore */ }
+    return null;
+  };
+  const watchBody = (url, method, body) => {
+    if (Date.now() > armedUntil || !method || method.toUpperCase() === "GET") return;
+    const t = bodyText(body);
+    if (t != null) post({ kind: "req", url: String(url).slice(0, 200), body: t.slice(0, 200000) });
   };
 
   const origFetch = window.fetch;
-  window.fetch = async function (input) {
+  window.fetch = async function (input, init) {
+    try {
+      const url = typeof input === "string" ? input : input && input.url;
+      watchBody(url, (init && init.method) || (input && input.method) || "GET", init && init.body);
+    } catch (e) { /* ignore */ }
     const res = await origFetch.apply(this, arguments);
     try {
       const url = typeof input === "string" ? input : input && input.url;
@@ -24,9 +51,11 @@
   const origSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function (method, url) {
     this.__snapstlUrl = String(url);
+    this.__snapstlMethod = String(method || "GET");
     return origOpen.apply(this, arguments);
   };
-  XMLHttpRequest.prototype.send = function () {
+  XMLHttpRequest.prototype.send = function (body) {
+    try { watchBody(this.__snapstlUrl, this.__snapstlMethod, body); } catch (e) { /* ignore */ }
     if (this.__snapstlUrl && PLATE.test(this.__snapstlUrl)) {
       this.addEventListener("load", () => {
         try {

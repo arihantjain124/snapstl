@@ -14,9 +14,21 @@
 
   // ---------- model files seen by inject.js ----------
   let captured = {};
+  let requests = [];  // bodies of the page's own requests while Generate is pressed (see inject.js)
   window.addEventListener("message", (e) => {
-    if (e.source === window && e.data && e.data.__snapstl === "obj") captured[e.data.plate] = e.data.text;
+    if (e.source !== window || !e.data || e.data.__snapstl !== true) return;
+    if (e.data.kind === "obj") captured[e.data.plate] = e.data.text;
+    if (e.data.kind === "req" && requests.length < 50) requests.push(e.data.body || "");
   });
+  // Did the Generate request carry the password? "sent" / "missing" / "unknown".
+  // "missing" only when a request plainly carried the name but none carried the password.
+  function requestCheck(name, password) {
+    const forms = (v) => [v, JSON.stringify(v).slice(1, -1), encodeURIComponent(v), encodeURIComponent(v).replace(/%20/g, "+")];
+    const has = (body, v) => forms(v).some((f) => f && body.includes(f));
+    if (requests.some((b) => has(b, password))) return "sent";
+    if (requests.some((b) => has(b, name))) return "missing";
+    return "unknown";
+  }
 
   // ---------- page state ----------
   const generateButton = () =>
@@ -85,8 +97,17 @@
     }
   }
 
+  const valueOf = (label) => field(label).querySelector(TEXT).value;
+  const PASSWORD = "License password";
+
   async function runJob(job, say) {
     const p = job.params;
+    const pw = job.license_password || "";
+    // SnapSTL only downloads with the model's license password (no password = watermarked model).
+    if (!pw) throw new Error("No license password for this model in SnapSTL — not generating");
+    requests = [];  // watch the page's requests from now on (a password check may happen before Generate)
+    window.postMessage({ __snapstlArm: true }, location.origin);
+    await setText(PASSWORD, pw);  // first, so the page has the most time to take it in
     await setSelect("Print version", "NO AMS");
     await setText("Name line 1", p.name);
     await setText("Name line 2", "");
@@ -96,7 +117,7 @@
     await setNumber("Outline", p.outline);
     await setNumber("Compartments", p.compartments);
     await setSelect("Rotate text", p.rotate_text);
-    if (job.license_password) await setText("License password", job.license_password);
+    await setText(PASSWORD, pw);  // and again last
 
     let gen = null;  // the page may still be busy with an earlier build: wait up to 90 s
     for (let i = 0; i < 900 && !gen; i++) {
@@ -104,18 +125,35 @@
       if (!gen) await sleep(100);
     }
     if (!gen) throw new Error("The Generate button isn't available");
+    // Let the page take in every value, then confirm them all right before pressing Generate.
+    await sleep(800);
+    for (let i = 0; i < 3 && valueOf(PASSWORD) !== pw; i++) { await setText(PASSWORD, pw).catch(() => {}); await sleep(600); }
+    if (valueOf(PASSWORD) !== pw) throw new Error("The License password box didn't keep the password — not generating");
+    if (valueOf("Name line 1") !== p.name) throw new Error("The name box changed before Generate — not generating");
+    gen = generateButton();
+    if (!gen) throw new Error("The Generate button isn't available");
     captured = {};
+    window.postMessage({ __snapstlArm: true }, location.origin);  // re-arm (60 s window)
     gen.click();
+    await sleep(300);
+    const keptAfter = valueOf(PASSWORD) === pw;
     const end = Date.now() + GENERATE_TIMEOUT_MS;
     let lastPing = Date.now();
     while (Date.now() < end) {
-      if (captured.plate_1 && captured.plate_2) return { plate_1: captured.plate_1, plate_2: captured.plate_2 };
+      if (captured.plate_1 && captured.plate_2) {
+        window.postMessage({ __snapstlDisarm: true }, location.origin);
+        const check = { password_set: keptAfter, request: requestCheck(p.name, pw), helper: chrome.runtime.getManifest().version };
+        requests = [];
+        return { plate_1: captured.plate_1, plate_2: captured.plate_2, check: JSON.stringify(check) };
+      }
       if (Date.now() - lastPing > 5000) { await say(`Generating ${p.name} (${p.compartments} compartments)`); lastPing = Date.now(); }
       if (blocked()) await waitWhileBlocked(say);
       const err = errorToast();
       if (err) throw new Error(`MakerWorld: ${err}`);
       await sleep(500);
     }
+    window.postMessage({ __snapstlDisarm: true }, location.origin);
+    requests = [];
     throw new Error("Timed out waiting for MakerWorld to generate the model");
   }
 

@@ -217,3 +217,19 @@ def test_pipeline_holds_back_a_pair_that_would_not_fit(tmp_path, meshes_for, mon
     assert "Manvi" not in written and "Ayra" in written
     report = (tmp_path / "report.csv").read_text()
     assert "fit_check" in report and "name_vs_base_length_%" in report
+
+
+def test_watermark_detector_and_render():
+    from snapstl import render, watermark
+
+    from .conftest import base_mesh
+    from .test_flow import watermarked
+
+    clean = base_mesh()
+    assert not watermark.detect(clean).present
+    r = watermark.detect(watermarked(clean))
+    assert r.present and 85 < r.width_mm < 95 and 5 < r.height_mm < 7
+    assert r.summary().startswith("watermark found")
+    for view in ("top", "back"):
+        png = render.render([(watermarked(clean), r.faces)], view=view, px=1.0)
+        assert png[:4] == b"\x89PNG"

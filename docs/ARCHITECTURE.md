@@ -199,7 +199,7 @@ models never share downloads (existing 2600234 keys unchanged).
 | Name line 1 / 2 | the order's name / always empty (single line only) |
 | Font, Font size 30–120, Thickness 30–120, Outline 4–15, Rotate text | Settings, same for every name |
 | Compartments 1–10 | scaling table, by letter count |
-| License password | Settings, **per model** (`license_passwords[designId]`); each batch snapshots it; sent to the helper with each job; removes anti-sale markings |
+| License password | Settings, **per model** (`license_passwords[designId]`); **required to download** (`NO_PASSWORD`); a batch takes the current passwords whenever a download is queued (`_with_current_passwords`); sent to the helper with each job; removes the watermark |
 
 NO AMS output: `plate_1.obj` = base (upright: X length, Y depth, Z height); `plate_2.obj` = name
 (flat: X length, Y letter height, Z 4 mm). The app tells them apart **by height**, not by order.
@@ -219,11 +219,28 @@ content.js ──message──► background.js ──HTTP──► app (127.0.0
   GET  /api/helper/config          → {model_url, design_id}
   GET  /api/helper/next?status=…&on_page=1  → {job: {job_id, name, compartments, params, license_password, pause_after_s} | null, paused}
   fill form (XPath on labels; native value setter for React inputs; MUI menus via mousedown) → click Generate
-  inject.js copies plate_1/plate_2 .obj → POST /api/helper/jobs/{id}/result   (multipart plate_1, plate_2)
-  error            → POST /api/helper/jobs/{id}/fail {error}       (1 retry, then failed)
+  inject.js copies plate_1/plate_2 .obj → POST /api/helper/jobs/{id}/result   (multipart plate_1, plate_2, check)
+  error            → POST /api/helper/jobs/{id}/fail {error}       (3 tries, then failed)
   reload mid-name  → POST /api/helper/jobs/{id}/release            (back to queue, attempt not counted)
   status           → POST /api/helper/ping {status, on_page}       (every ~5 s while generating; popup sends {probe:true})
 ```
+
+**License password confirmation (helper 2.2.0).** The helper refuses a job without a password. It sets
+the password first and again last, waits 800 ms, re-sets it until the box holds it, and checks the box
+right before **and** right after pressing Generate. `inject.js` passively watches the page's own
+non-GET request bodies during the job (never changes them) so content.js can tell whether the password
+was sent (`request`: sent / missing / unknown — "missing" only when a body carried the name but no body
+carried the password). The result carries `check = {"password_set": bool, "request": …, "helper": ver}`
+(no password inside). `batches.check_license` rejects (not saved, retried) unless `password_set` is true
+and `request` isn't "missing". Then `watermark.detect(base)` scans the base: a watermark → rejected,
+`downloads.watermark=1`, retried. Saved models get `"watermark": false, "license_check": …` in
+`info.json`. Rejections are `batches.Rejected` (a `ValueError`) → `store_failure`.
+
+**Watermark (`watermark.py`).** Measured on real 2600234 downloads: raised "SALE NOT PERMITTED" text on
+the base's back face (+Y), 1 mm proud of the main back wall, ~91 × 6 mm, z 2.7–8.7, centred; none on
+names. Detection: the +Y plane with the most area is the wall; ≥ 20 mm² of surface > 0.3 mm beyond it =
+watermark. Works on unscaled and scaled bases (Base Y is always 100 %). Other models may watermark
+differently — prevention above is the main guard; the scan is the backstop.
 
 Security checks: the helper never touches them — it reports *Complete the MakerWorld security
 check in this tab* and waits for the person. Claims expire after 6 min (`CLAIM_TIMEOUT_S`);
@@ -255,7 +272,18 @@ Batches **never start, download or build by themselves** — every step is a but
   batch that was built before (re-download in progress) → back to `done`, plates untouched.
 * `Manager` thread: `waiting` with nothing pending → `models_ready`; it builds only `build_requested`.
 * First build: orders with a missing model or a failed fit check go back to `ready`; complete → `bundled`.
-* Downloads no active batch needs are cancelled automatically (startup and after each build/cancel).
+* Downloads no active batch needs are cancelled automatically (startup and after each build/cancel) —
+  except single-object re-downloads (`model_json._manual`) of a finished batch.
+* **Objects list** (`batch_models`, `GET /api/batches/{id}/models`): every distinct object with download
+  state, watermark and license check. **Re-download one** = `redownload_model` (`POST …/models/redownload
+  {key}`): a built batch keeps its status; `request_build` refuses a Rebuild while any of the batch's
+  models is queued/downloading, so the rebuild uses the fresh files.
+* **Build-time watermark check:** `Manager._build` runs `watermark.detect` on every model's base; a hit
+  is held back (error, order → Ready); `summary.watermark = {checked, found}`.
+* **Pictures** (`render.py`, dependency-free height-map PNG; watermark faces red): base plates are drawn
+  from the top at build (`APP_DIR/previews/batch-<id>/<Batch folder>/bases-N.png`, `PlateOut.image`,
+  `GET /api/batches/{id}/plate-image?f=`); per object `GET /api/models/{key}/view.png?side=back|top`
+  (cached in `APP_DIR/previews/models`). Names keep the SVG outline. Previews are never in the output.
 * Each batch snapshots the settings at creation (model options, scaling, plate rules).
 
 ## 9. Scaling Rules v1.1 (`scaling.py`; defaults in `settings.default_bands`) — binding
@@ -428,6 +456,9 @@ snapstl.server:app --port 8320`.
 | 15 | Model link + license password per model in Settings (Keychain storage removed) | different models have different passwords; owner wants them editable |
 | 16 | Helper works only in its working tab on the exact configured model page (designId) | it used to keep "working" after the tab moved to another MakerWorld page |
 | 17 | Optional web portal for other computers (off by default, password, Mac-only actions) | staff can use SnapSTL from other computers; the main Mac runs service + helper |
+| 18 | No license password → no download; helper must confirm the password at Generate; every download and build scans for the watermark | watermarked models slipped through when Generate was pressed before the page took the password; a watermark may differ per model, so prevention (password confirmed) comes first and the scan (`watermark.py`) is the backstop |
+| 19 | Per-object Re-download in a batch's Objects list; Rebuild refused while a re-download is pending | fix one bad object without re-fetching the batch, and rebuild only from fresh files |
+| 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
 
