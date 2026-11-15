@@ -17,14 +17,13 @@ from .test_ingest import report
 
 @pytest.fixture
 def client():
+    """Acts as the SnapSTL Mac itself (127.0.0.1): no login needed, helper allowed."""
     from snapstl import server
 
-    auth.set_password("test-password-123")
-    c = TestClient(server.app)
+    c = TestClient(server.app, base_url="http://127.0.0.1:8317", client=("127.0.0.1", 50000))
     c.__enter__()
     DOWNLOADER.paused = False
     DOWNLOADER.pause_s = 0
-    assert c.post("/api/login", json={"password": "test-password-123"}).status_code == 200
     yield c
     c.__exit__(None, None, None)
 
@@ -186,68 +185,51 @@ def test_cleanup_keeps_made_orders_and_reset_empties(client):
     assert client.get("/api/maintenance").json()["backups"] >= 2
 
 
-def _req(path, origin=None, host="127.0.0.1:8317"):
-    headers = [(b"host", host.encode())] + ([(b"origin", origin.encode())] if origin else [])
-    return Request({"type": "http", "method": "POST", "path": path, "headers": headers, "query_string": b""})
-
-
-def test_helper_endpoints_only_from_this_mac(monkeypatch):
+def test_other_computers_need_portal_and_login(client):
     from snapstl import server
 
-    monkeypatch.setattr(auth, "enabled", lambda: False)  # local desktop mode
+    remote = TestClient(server.app, base_url="http://192.168.1.20:8317", client=("192.168.1.50", 50001))
+    # portal off → other computers refused
+    assert remote.get("/api/state").status_code == 403
+    # turning it on needs a password; only this Mac can change it
+    assert client.post("/api/portal", json={"enabled": True}).status_code in (200, 400)
+    assert remote.post("/api/portal", json={"enabled": True, "password": "x" * 12}).status_code == 403
+    r = client.post("/api/portal", json={"enabled": True, "password": "portal-pass-123"})
+    assert r.status_code == 200 and r.json()["lan_access"] and r.json()["password_set"]
+    try:
+        assert remote.get("/api/state").status_code == 401  # must sign in
+        assert remote.get("/", follow_redirects=False).status_code == 307
+        assert remote.post("/api/login", json={"password": "wrong"}).status_code == 401
+        assert remote.post("/api/login", json={"password": "portal-pass-123"}).status_code == 200
+        assert remote.get("/api/state").status_code == 200
+        assert remote.get("/api/meta").json()["local"] is False
+        # never from another computer: the helper, Finder, portal setup, reset
+        assert remote.get("/api/helper/next").status_code == 403
+        assert remote.post("/api/downloads/reveal").status_code == 403
+        assert remote.post("/api/maintenance/reset", json={"confirm": "RESET"}).status_code == 403
+        # this Mac never needs to sign in
+        assert client.get("/api/state").status_code == 200 and client.get("/api/meta").json()["local"] is True
+    finally:
+        client.post("/api/portal", json={"enabled": False})
+    assert remote.get("/api/state").status_code == 403
+
+
+def _req(path, origin=None, host="127.0.0.1:8317", client_ip="127.0.0.1"):
+    headers = [(b"host", host.encode())] + ([(b"origin", origin.encode())] if origin else [])
+    return Request({"type": "http", "method": "POST", "path": path, "headers": headers, "query_string": b"",
+                    "client": (client_ip, 1234)})
+
+
+def test_helper_endpoints_only_from_this_mac():
+    from snapstl import server
+
     ext = "chrome-extension://abcdef"
-    assert not server._cross_site(_req("/api/helper/next", ext))         # helper allowed
-    assert server._cross_site(_req("/api/settings", ext))                 # but nothing else
-    assert server._cross_site(_req("/api/helper/next", "https://evil.example"))  # other websites blocked
-    assert server._cross_site(_req("/api/helper/next", None, host="evil.example:8317"))  # DNS rebinding
-    assert not server._cross_site(_req("/api/state", "http://127.0.0.1:8317"))  # the app's own page
-
-
-def _report2(rows) -> bytes:
-    import csv as _csv
-    import io as _io
-
-    f = _io.StringIO()
-    w = _csv.writer(f)
-    w.writerow(["Order ID", "Clubbed Order ID", "Order Creation Date", "Order Status", "SKU Code", "Quantity",
-                "Customer Name", "Mobile", "Address", "City", "State", "Pincode", "Product Customisation"])
-    for oid, club, status, name, color, cust, phone in rows:
-        w.writerow([oid, club, "14-11-2026", status, "Magicians_35", 1, cust, phone, "12 Main Rd", "Pune", "MH", "411001",
-                    f"Enter Your First Name: {name}\nColor: {color}\n"])
-    return f.getvalue().encode()
-
-
-def test_tabs_filters_clubbed_and_customer_fields(client):
-    client.post("/api/maintenance/reset", json={"confirm": "RESET"})
-    data = _report2([
-        ("T1", "", "PRINT", "Ayra", "Pink", "Asha K", "9000000001"),
-        ("T2", "C9", "PRINT", "Manvi", "Pink", "Ravi P", "9000000002"),
-        ("T3", "C9", "PRINT", "Riya", "Blue", "Ravi P", "9000000002"),
-        ("T4", "", "DELIVERED", "Zoya", "Red", "Meena", "9000000004"),
-        ("T5", "", "RTO_DELIVERED", "Kabir", "Red", "Dev", "9000000005"),
-        ("T6", "", "IN-TRANSIT", "Tara", "Red", "Sam", "9000000006"),
-        ("T7", "", "CANCELLED INITIATED", "Isha", "Red", "Neha", "9000000007"),
-        ("T8", "", "PACK", "Om", "Red", "Raj", "9000000008"),
-        ("T9", "", "PRINT", "Kiara", "Green", "Lata", "9000000009"),
-    ])
-    assert client.post("/api/ingest", files={"file": ("r.csv", data, "text/csv")}).status_code == 200
-    client.post("/api/orders/T9/skip")
-    ids = lambda tab, **f: sorted(o["order_id"] for o in client.get("/api/orders", params={"tab": tab, **f}).json()["orders"])  # noqa: E731
-    assert ids("ready") == ["T1", "T2", "T3"]
-    assert ids("ready_single") == ["T1"] and ids("ready_clubbed") == ["T2", "T3"]
-    assert ids("skipped") == ["T9"]
-    assert ids("delivered") == ["T4"] and ids("rto") == ["T5"] and ids("in_transit") == ["T6"]
-    assert ids("cancelled") == ["T7"] and ids("others") == ["T8"]
-    # per-column filters combine (AND)
-    assert ids("ready", f_color="pink") == ["T1", "T2"]
-    assert ids("ready", f_color="pink", f_customer="ravi") == ["T2"]
-    assert ids("all", f_phone="0004") == ["T4"]
-    assert ids("all", f_address="pune", f_status="PACK") == ["T8"]
-    assert client.get("/api/orders/ids", params={"tab": "ready", "f_color": "pink"}).json() == ["T1", "T2"]
-    o = client.get("/api/orders", params={"tab": "ready_single"}).json()["orders"][0]
-    assert o["customer_name"] == "Asha K" and o["phone"] == "9000000001" and o["address"] == "12 Main Rd, Pune, MH, 411001"
-    facets = client.get("/api/orders/facets", params={"tab": "all"}).json()
-    assert facets["tabs"]["ready_clubbed"] == 2 and "PACK" in facets["statuses"] and "pink" in facets["colors"]
+    assert server._blocked(_req("/api/helper/next", ext)) is None                    # helper allowed on this Mac
+    assert server._blocked(_req("/api/settings", ext))                              # but nothing else
+    assert server._blocked(_req("/api/helper/next", "https://evil.example"))        # other websites blocked
+    assert server._blocked(_req("/api/helper/next", None, host="evil.example:8317"))  # DNS rebinding
+    assert server._blocked(_req("/api/state", "http://127.0.0.1:8317")) is None      # the app's own page
+    assert server._blocked(_req("/api/helper/next", ext, host="192.168.1.20:8317", client_ip="192.168.1.50"))
 
 
 def test_rebuild_and_redownload_finished_batch(client):
@@ -312,3 +294,50 @@ def test_old_cache_is_moved_to_downloads_folder(tmp_path, monkeypatch):
     d = root / f"Ayra - 4 comp - {key}"
     assert (d / "base.stl").is_file() and (d / "info.json").is_file()
     assert cache.load_exists(key, root) and not old.exists()
+
+
+def _report2(rows) -> bytes:
+    import csv as _csv
+    import io as _io
+
+    f = _io.StringIO()
+    w = _csv.writer(f)
+    w.writerow(["Order ID", "Clubbed Order ID", "Order Creation Date", "Order Status", "SKU Code", "Quantity",
+                "Customer Name", "Mobile", "Address", "City", "State", "Pincode", "Product Customisation"])
+    for oid, club, status, name, color, cust, phone in rows:
+        w.writerow([oid, club, "14-11-2026", status, "Magicians_35", 1, cust, phone, "12 Main Rd", "Pune", "MH", "411001",
+                    f"Enter Your First Name: {name}\nColor: {color}\n"])
+    return f.getvalue().encode()
+
+
+def test_tabs_filters_clubbed_and_customer_fields(client):
+    client.post("/api/maintenance/reset", json={"confirm": "RESET"})
+    data = _report2([
+        ("T1", "", "PRINT", "Ayra", "Pink", "Asha K", "9000000001"),
+        ("T2", "C9", "PRINT", "Manvi", "Pink", "Ravi P", "9000000002"),
+        ("T3", "C9", "PRINT", "Riya", "Blue", "Ravi P", "9000000002"),
+        ("T4", "", "DELIVERED", "Zoya", "Red", "Meena", "9000000004"),
+        ("T5", "", "RTO_DELIVERED", "Kabir", "Red", "Dev", "9000000005"),
+        ("T6", "", "IN-TRANSIT", "Tara", "Red", "Sam", "9000000006"),
+        ("T7", "", "CANCELLED INITIATED", "Isha", "Red", "Neha", "9000000007"),
+        ("T8", "", "PACK", "Om", "Red", "Raj", "9000000008"),
+        ("T9", "", "PRINT", "Kiara", "Green", "Lata", "9000000009"),
+    ])
+    assert client.post("/api/ingest", files={"file": ("r.csv", data, "text/csv")}).status_code == 200
+    client.post("/api/orders/T9/skip")
+    ids = lambda tab, **f: sorted(o["order_id"] for o in client.get("/api/orders", params={"tab": tab, **f}).json()["orders"])  # noqa: E731
+    assert ids("ready") == ["T1", "T2", "T3"]
+    assert ids("ready_single") == ["T1"] and ids("ready_clubbed") == ["T2", "T3"]
+    assert ids("skipped") == ["T9"]
+    assert ids("delivered") == ["T4"] and ids("rto") == ["T5"] and ids("in_transit") == ["T6"]
+    assert ids("cancelled") == ["T7"] and ids("others") == ["T8"]
+    # per-column filters combine (AND)
+    assert ids("ready", f_color="pink") == ["T1", "T2"]
+    assert ids("ready", f_color="pink", f_customer="ravi") == ["T2"]
+    assert ids("all", f_phone="0004") == ["T4"]
+    assert ids("all", f_address="pune", f_status="PACK") == ["T8"]
+    assert client.get("/api/orders/ids", params={"tab": "ready", "f_color": "pink"}).json() == ["T1", "T2"]
+    o = client.get("/api/orders", params={"tab": "ready_single"}).json()["orders"][0]
+    assert o["customer_name"] == "Asha K" and o["phone"] == "9000000001" and o["address"] == "12 Main Rd, Pune, MH, 411001"
+    facets = client.get("/api/orders/facets", params={"tab": "all"}).json()
+    assert facets["tabs"]["ready_clubbed"] == 2 and "PACK" in facets["statuses"] and "pink" in facets["colors"]

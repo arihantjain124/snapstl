@@ -18,7 +18,6 @@ import traceback
 from dataclasses import asdict
 
 from . import cache, db
-from .keychain import get_password
 from .meshes import dims, obj_to_mesh
 from .orders import Order
 from .pipeline import build, new_batch_dir
@@ -48,19 +47,21 @@ def _expand(rows: list[dict], settings: Settings) -> list[Order]:
     return orders
 
 
-def _needed(orders: list[Order], settings: Settings, pw: str) -> dict[str, tuple[str, int]]:
+def model_key(o: Order, settings: Settings) -> str:
+    """Download key for one organizer: name + model options + compartments + model link + its password."""
+    return cache.cache_key(o.name, settings.model, o.compartments, settings.license_password,
+                           design=settings.design_id)
+
+
+def _needed(orders: list[Order], settings: Settings) -> dict[str, tuple[str, int]]:
     """cache_key → (name, compartments) for every distinct model the orders need."""
-    out = {}
-    for o in orders:
-        out[cache.cache_key(o.name, settings.model, o.compartments, pw)] = (o.name, o.compartments)
-    return out
+    return {model_key(o, settings): (o.name, o.compartments) for o in orders}
 
 
 # ---------------- batch lifecycle ----------------
 def create_batch(order_ids: list[str], settings: Settings) -> dict:
     if not order_ids:
         raise ValueError("Select at least one order")
-    pw = get_password()
     with db.tx() as con:
         q = ",".join("?" * len(order_ids))
         rows = db.rows(con, f"SELECT * FROM orders WHERE state='ready' AND order_id IN ({q}) ORDER BY order_date, order_id", *order_ids)
@@ -74,7 +75,7 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
             (batch_id, db.now(), *ids),
         )
     return {"batch_id": batch_id, "orders": len(ids), "skipped": len(order_ids) - len(ids),
-            "models": len(_needed(orders, settings, pw))}
+            "models": len(_needed(orders, settings))}
 
 
 FINISHED = ("done", "done_with_problems", "failed")
@@ -91,7 +92,6 @@ def start_download(batch_id: int, force: bool = False) -> dict:
     force=True  (Re-download):    every model again — the new download replaces the saved one.
     Allowed before building and, for Re-download, on finished batches too.
     """
-    pw = get_password()
     with db.tx() as con:
         b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
         allowed = ("created", "waiting", "models_ready") + (FINISHED if force else ())
@@ -104,7 +104,7 @@ def start_download(batch_id: int, force: bool = False) -> dict:
         orders = _expand(rows, settings)
         con.execute("UPDATE batches SET status='waiting' WHERE id=?", (batch_id,))
         queued = 0
-        for key, (name, comps) in _needed(orders, settings, pw).items():
+        for key, (name, comps) in _needed(orders, settings).items():
             if not force and cache.load_exists(key):
                 continue
             live = con.execute(
@@ -115,7 +115,8 @@ def start_download(batch_id: int, force: bool = False) -> dict:
             con.execute(
                 "INSERT INTO downloads(cache_key,name,compartments,model_json,state,created_at,updated_at,batch_id) "
                 "VALUES (?,?,?,?,?,?,?,?)",
-                (key, name, comps, json.dumps(asdict(settings.model)), "queued", db.now(), db.now(), batch_id),
+                (key, name, comps, json.dumps({**asdict(settings.model), "_license": settings.license_password,
+                                                "_design": settings.design_id}), "queued", db.now(), db.now(), batch_id),
             )
             queued += 1
     MANAGER.wake()
@@ -125,13 +126,12 @@ def start_download(batch_id: int, force: bool = False) -> dict:
 def batch_progress(batch: dict) -> dict:
     """How many of this batch's models are downloaded / failed / still downloading."""
     settings = Settings.from_dict(json.loads(batch.get("settings") or "{}"))
-    pw = get_password()
     ids = json.loads(batch["order_ids"] or "[]")
     if not ids:
         return {"models": 0, "ready": 0, "failed": 0}
     with db.tx() as con:
         rows = db.rows(con, f"SELECT * FROM orders WHERE order_id IN ({','.join('?' * len(ids))})", *ids)
-        need = _needed(_expand(rows, settings), settings, pw)
+        need = _needed(_expand(rows, settings), settings)
         failed = 0
         ready = 0
         for key in need:
@@ -178,14 +178,13 @@ def cancel_batch(batch_id: int) -> None:
 
 def _cancel_unneeded_downloads(con) -> None:
     """Drop queued downloads that no active batch needs any more."""
-    pw = get_password()
     needed: set[str] = set()
     for b in db.rows(con, f"SELECT * FROM batches WHERE status IN ({','.join('?' * len(ACTIVE))})", *ACTIVE):
         settings = Settings.from_dict(json.loads(b.get("settings") or "{}"))
         ids = json.loads(b["order_ids"] or "[]")
         if ids:
             rows = db.rows(con, f"SELECT * FROM orders WHERE order_id IN ({','.join('?' * len(ids))})", *ids)
-            needed |= set(_needed(_expand(rows, settings), settings, pw))
+            needed |= set(_needed(_expand(rows, settings), settings))
     for d in db.rows(con, "SELECT id, cache_key FROM downloads WHERE state='queued'"):
         if d["cache_key"] not in needed:
             con.execute("UPDATE downloads SET state='cancelled', updated_at=? WHERE id=?", (db.now(), d["id"]))
@@ -223,7 +222,9 @@ def store_result(job_id: int, plate_1: bytes, plate_2: bytes) -> dict:
     if dims(name)[2] > 15 or dims(base)[2] < 20:
         raise ValueError(f"Unexpected parts {dims(base)} / {dims(name)} — was Print version NO AMS?")
     cache.store(d["cache_key"], base, name, {"name": d["name"], "compartments": d["compartments"],
-                                             "model": json.loads(d["model_json"]), "source": "makerworld",
+                                             "model": {k: v for k, v in json.loads(d["model_json"]).items()
+                                                       if not k.startswith("_")},  # never write the password
+                                             "source": "makerworld",
                                              "downloaded": time.strftime("%Y-%m-%d %H:%M:%S"),
                                              "batch": d["batch_id"] if "batch_id" in d.keys() else None})
     with db.tx() as con:
@@ -278,6 +279,7 @@ class Downloader:
         self.pause_s = 3.0
         self.last_seen = 0.0
         self.claimed_at = 0.0
+        self.on_page = False  # helper's tab is on the configured MakerWorld model page
 
     def start(self) -> None:
         # resume: anything that was mid-download when SnapSTL stopped goes back in the queue
@@ -288,10 +290,12 @@ class Downloader:
     def wake(self) -> None:  # kept for callers; the helper polls
         pass
 
-    def seen(self, status: str = "") -> None:
+    def seen(self, status: str = "", on_page: bool | None = None) -> None:
         self.last_seen = time.time()
         if status:
             self.status = status[:200]
+        if on_page is not None:
+            self.on_page = on_page
 
     @property
     def online(self) -> bool:
@@ -302,6 +306,7 @@ class Downloader:
     def snapshot(self) -> dict:
         return {"status": self.status if self.online else "Helper not connected", "paused": self.paused,
                 "current": self.current, "done": self.done_count, "online": self.online,
+                "on_page": self.online and self.on_page,
                 "last_seen": self.last_seen}
 
 
@@ -321,7 +326,7 @@ def helper_next() -> dict | None:
         "params": {"name": job["name"], "font": model["Font"], "font_size": model["Font_size"],
                    "thickness": model["Thickness"], "outline": model["Outline"],
                    "compartments": job["compartments"], "rotate_text": model["Rotate_text"]},
-        "license_password": get_password(),
+        "license_password": model.get("_license", ""),  # this batch's model password (Settings, per model)
         "pause_after_s": DOWNLOADER.pause_s,
     }
 
@@ -390,7 +395,6 @@ class Manager:
         with db.tx() as con:
             con.execute("UPDATE batches SET status='building' WHERE id=?", (batch_id,))
         try:
-            pw = get_password()
             ids = json.loads(b["order_ids"] or "[]")
             with db.tx() as con:
                 rows = db.rows(con, f"SELECT * FROM orders WHERE order_id IN ({','.join('?' * len(ids))}) "
@@ -398,7 +402,7 @@ class Manager:
             orders = _expand(rows, settings)
             meshes = {}
             for o in orders:
-                got = cache.load(cache.cache_key(o.name, settings.model, o.compartments, pw))
+                got = cache.load(model_key(o, settings))
                 if got:
                     meshes[o.idx] = got
             usable = [o for o in orders if o.idx in meshes]

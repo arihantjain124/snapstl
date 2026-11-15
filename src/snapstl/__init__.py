@@ -91,8 +91,13 @@ def serve() -> None:
 
     from .server import app
 
+    from .settings import load_settings
+
+    # Listen on the network only when Settings → Other computers is on (needs a portal password).
+    host = "0.0.0.0" if load_settings().lan_access else "127.0.0.1"
+    os.environ["SNAPSTL_BIND"] = host
     _keep_awake()
-    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
+    uvicorn.run(app, host=host, port=PORT, log_level="warning")
 
 
 def main() -> None:

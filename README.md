@@ -37,10 +37,12 @@ launchctl bootout gui/$(id -u)/local.snapmagicians.snapstl && rm ~/Library/Launc
 1. **Install the SnapSTL Helper** in Chrome (the Chrome you use for MakerWorld):
    `chrome://extensions` → turn on **Developer mode** → **Load unpacked** → choose the `helper`
    folder in this project.
-2. In that Chrome, sign in to MakerWorld and open the **model maker** page (link in SnapSTL →
-   Settings, or the helper's popup → *Open MakerWorld tab*). Keep the tab open, ideally in its own window.
-3. In SnapSTL **Settings**: MakerWorld license password → Save; output folder → *Choose…*; check the
-   model options and the scaling / compartments table.
+2. In SnapSTL **Settings**: check the **MakerWorld model page link**, enter the **license password for
+   this model** (each model keeps its own), choose the output and downloads folders, check the model
+   options and the scaling / compartments table → **Save settings**.
+3. In that Chrome, sign in to MakerWorld, click the helper icon → **Open model page** (or open the page
+   and click **Use this tab**). The helper only works in that tab and only on that exact page. Keep it
+   open, ideally in its own window.
 
 ## Daily use
 
@@ -85,11 +87,20 @@ Output:
 Each .3mf is one plate; every base or name is a separate, named object in Bambu Studio. No ZIP files
 are created (the *Download ZIP* button is optional and saves nothing).
 
+## Using it from other computers
+
+SnapSTL is a small web server on the main Mac. To use it from other computers on the same network:
+main Mac → **Settings → Other computers** → tick *Allow other computers*, set a portal password →
+**Save** (allow incoming connections if macOS asks). Open the address shown there (e.g.
+`http://your-mac.local:8317`) in any browser and sign in. The main Mac keeps running the service and
+the Chrome helper; downloads always happen there. Off by default.
+
 ## Troubleshooting
 
 | You see | Do |
 |---|---|
 | **Helper not connected** | open the MakerWorld model maker tab in Chrome; check the helper is enabled in `chrome://extensions` |
+| **Helper tab is not on the model page** | helper icon → **Open model page** (or open it and **Use this tab**) |
 | Helper says **Complete the MakerWorld security check** | click the check in that tab |
 | A name shows **Failed** in the download queue | read *Detail*; **Retry failed** |
 | Batch stays *Downloading* | check the sidebar and the **Downloads** page; **Pause / Resume**; *Build now with what's ready* |
@@ -99,14 +110,14 @@ are created (the *Download ZIP* button is optional and saves nothing).
 | Database getting big | Settings → Database → **Clean up** (orders already made are kept; a backup is saved first) |
 
 Your data: orders database, settings and backups in `~/Library/Application Support/SnapSTL`;
-downloaded models in `~/SnapSTL/Downloads`; plates in `~/SnapSTL/output`. The license password is in
-the macOS Keychain. SnapSTL never deletes downloaded models or batch folders.
+downloaded models in `~/SnapSTL/Downloads`; plates in `~/SnapSTL/output`. License passwords (per model)
+are in SnapSTL's settings on this Mac. SnapSTL never deletes downloaded models or batch folders.
 
 ## Development
 
 ```bash
 uv sync                 # install dependencies (incl. dev)
-uv run pytest -q        # 25 tests: scaling, packing, grouping, 3MF, ingest, batches, helper API, maintenance
+uv run pytest -q        # 26 tests: scaling, packing, grouping, 3MF, ingest, batches, helper API, maintenance
 SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn snapstl.server:app --port 8320
                         # a throwaway dev instance with its own data
 ```

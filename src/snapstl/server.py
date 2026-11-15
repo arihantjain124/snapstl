@@ -24,7 +24,6 @@ from .ingest import ingest, reset_to_ready, set_name
 from . import batches as B
 from . import maintenance as M
 from .batches import DOWNLOADER, MANAGER, compartments_for
-from .keychain import get_password, set_password
 from .scaling import pick_band
 from .settings import COMPARTMENT_RANGE, FONTS, NUMBER_RANGES, ROTATE_TEXT, Settings, load_settings, save_settings
 
@@ -50,34 +49,57 @@ app = FastAPI(title="SnapSTL", docs_url=None, redoc_url=None, openapi_url=None, 
 OPEN_PATHS = {"/login", "/api/login", "/api/auth-check", "/favicon.ico"}
 
 
-LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]")
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]", "::1")
+# Things only the SnapSTL Mac itself may do (helper, Finder, folders, portal setup, reset).
+MAC_ONLY_PREFIXES = ("/api/helper/", "/api/downloads/reveal", "/api/portal", "/api/maintenance/reset")
 
 
-def _cross_site(request: Request) -> bool:
-    """True for requests sent by some other website open in a browser (CSRF / DNS-rebinding guard)."""
+def is_local(request: Request) -> bool:
+    """Request comes from this Mac (the app window, a browser here, or the helper)."""
+    c = request.client.host if request.client else ""
+    return c in ("127.0.0.1", "::1") and not request.headers.get("x-forwarded-for")
+
+
+def _host_name(host: str) -> str:
+    if host.startswith("["):
+        return host.split("]")[0] + "]"
+    return host.rsplit(":", 1)[0]
+
+
+def _blocked(request: Request) -> str | None:
+    """Why this request must be refused (None = allowed to continue).
+
+    * this Mac: must use 127.0.0.1/localhost (DNS-rebinding guard); no login needed
+    * other computers: only if Settings → Other computers is on AND a portal password is set; they sign in
+    * other websites in any browser: rejected (Origin must match); the Chrome helper only on /api/helper/*
+    """
+    path = request.url.path
     host = request.headers.get("host", "")
-    if not auth.enabled() and host.rsplit(":", 1)[0] not in LOCAL_HOSTS:
-        return True  # local app must only be reached as 127.0.0.1 / localhost
+    local = is_local(request)
+    if local and _host_name(host) not in LOCAL_HOSTS:
+        return "Open SnapSTL as http://127.0.0.1:8317 on this Mac"
     origin = request.headers.get("origin")
-    if not origin:
-        return False
-    if origin.startswith("chrome-extension://"):
-        # only the helper extension's endpoints accept extension calls, and only on this Mac
-        return not (request.url.path.startswith("/api/helper/") and not auth.enabled())
-    return origin.split("://", 1)[-1] != host
+    if origin:
+        if origin.startswith("chrome-extension://"):
+            if not (local and path.startswith("/api/helper/")):
+                return "Cross-site request blocked"
+        elif origin.split("://", 1)[-1] != host:
+            return "Cross-site request blocked"
+    if not local:
+        if not (SETTINGS.lan_access and auth.enabled()):
+            return "This SnapSTL only accepts connections from its own Mac (Settings → Other computers)"
+        if path.startswith(MAC_ONLY_PREFIXES) or path.endswith("/reveal"):
+            return "Only available on the SnapSTL Mac"
+    return None
 
 
 @app.middleware("http")
-async def require_login(request: Request, call_next):
+async def access_control(request: Request, call_next):
+    why = _blocked(request)
+    if why:
+        return JSONResponse({"detail": why}, status_code=403)
     path = request.url.path
-    if _cross_site(request):
-        return JSONResponse({"detail": "Cross-site request blocked"}, status_code=403)
-    if path in OPEN_PATHS or not auth.enabled():
-        if not auth.enabled() and path not in ("/login", "/api/login"):
-            # No password configured: only allow local access (desktop use).
-            host = request.client.host if request.client else ""
-            if host not in ("127.0.0.1", "::1") or request.headers.get("x-forwarded-for"):
-                return JSONResponse({"detail": "Server password not set"}, status_code=503)
+    if is_local(request) or path in OPEN_PATHS:
         return await call_next(request)
     if auth.valid_cookie(request.cookies.get(auth.COOKIE)):
         return await call_next(request)
@@ -99,7 +121,7 @@ async def login(req: Request):
         raise HTTPException(401, "Wrong password")
     resp = JSONResponse({"ok": True})
     resp.set_cookie(auth.COOKIE, auth.make_cookie(), max_age=auth.SESSION_DAYS * 86400,
-                    httponly=True, secure=SECURE_COOKIE, samesite="lax")
+                    httponly=True, secure=SECURE_COOKIE and req.url.scheme == "https", samesite="lax")
     return resp
 
 
@@ -112,10 +134,79 @@ def logout():
 
 @app.get("/api/auth-check")
 def auth_check(request: Request):
-    """Used by Caddy forward_auth to protect the remote-browser view."""
-    if auth.valid_cookie(request.cookies.get(auth.COOKIE)):
+    if is_local(request) or auth.valid_cookie(request.cookies.get(auth.COOKIE)):
         return {"ok": True}
     raise HTTPException(401)
+
+
+# ---------------- web portal for other computers (this Mac only) ----------------
+def _portal_urls() -> list[str]:
+    import subprocess
+
+    urls = []
+    try:
+        name = subprocess.run(["scutil", "--get", "LocalHostName"], capture_output=True, text=True, timeout=3).stdout.strip()
+        if name:
+            urls.append(f"http://{name}.local:{_port()}")
+    except (OSError, subprocess.SubprocessError):
+        pass
+    for iface in ("en0", "en1"):
+        try:
+            ip = subprocess.run(["ipconfig", "getifaddr", iface], capture_output=True, text=True, timeout=3).stdout.strip()
+            if ip:
+                urls.append(f"http://{ip}:{_port()}")
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return urls
+
+
+def _port() -> int:
+    return int(os.environ.get("SNAPSTL_PORT", "8317"))
+
+
+def _restart_service_soon() -> bool:
+    """Restart the launchd service so it listens on the new address (only when run by launchd)."""
+    import subprocess
+    import threading
+
+    label = "local.snapmagicians.snapstl"
+    if os.environ.get("XPC_SERVICE_NAME") != label:
+        return False
+
+    def go():
+        time.sleep(1.0)
+        subprocess.Popen(["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{label}"])
+
+    threading.Thread(target=go, daemon=True).start()
+    return True
+
+
+@app.get("/api/portal")
+def portal_info():
+    return {"lan_access": SETTINGS.lan_access, "password_set": auth.enabled(),
+            "listening_on_network": os.environ.get("SNAPSTL_BIND", "127.0.0.1") != "127.0.0.1",
+            "urls": _portal_urls() if SETTINGS.lan_access else []}
+
+
+@app.post("/api/portal")
+async def portal_update(req: Request):
+    global SETTINGS
+    body = await req.json()
+    pw = str(body.get("password", ""))
+    if pw:
+        try:
+            auth.set_password(pw)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+    enable = bool(body.get("enabled", SETTINGS.lan_access))
+    if enable and not auth.enabled():
+        raise HTTPException(400, "Set a portal password first (at least 10 characters)")
+    changed = enable != SETTINGS.lan_access
+    SETTINGS.lan_access = enable
+    save_settings(SETTINGS)
+    restarting = _restart_service_soon() if changed else False
+    return {"lan_access": enable, "password_set": auth.enabled(), "restarting": restarting,
+            "note": "" if (restarting or not changed) else "Restart SnapSTL for this to take effect"}
 
 
 # ---------------- app ----------------
@@ -134,11 +225,11 @@ def _version() -> str:
 
 
 @app.get("/api/meta")
-def meta():
+def meta(request: Request):
     return {
         "fonts": FONTS, "rotate_text": ROTATE_TEXT, "ranges": NUMBER_RANGES,
         "compartment_range": COMPARTMENT_RANGE,
-        "local": not auth.enabled(),  # desktop app on this Mac (no login, Finder buttons)
+        "local": is_local(request),  # on the SnapSTL Mac: no login, Finder buttons, folder settings
         "version": _version(),
     }
 
@@ -148,7 +239,7 @@ def state():
     with db.tx() as con:
         counts = {r["state"]: r["n"] for r in db.rows(con, "SELECT state, COUNT(*) n FROM orders GROUP BY state")}
     return {
-        "counts": counts, "license_set": bool(get_password()),
+        "counts": counts, "license_set": bool(SETTINGS.license_password),
         "downloader": DOWNLOADER.snapshot(),
         "queue": B.queue_counts(), "building": MANAGER.building, "log": MANAGER.log[-120:],
     }
@@ -367,9 +458,19 @@ def retry_downloads():
 HELPER_DIR = Path(__file__).resolve().parents[2] / "helper"
 
 
+@app.get("/api/helper/config")
+def helper_config():
+    """Which MakerWorld page the helper must be on (Settings → MakerWorld model page link)."""
+    from .settings import design_id
+
+    return {"model_url": SETTINGS.makerworld_url, "design_id": design_id(SETTINGS.makerworld_url)}
+
+
 @app.get("/api/helper/next")
-def helper_next(status: str = ""):
-    DOWNLOADER.seen(status)
+def helper_next(status: str = "", on_page: int = 1):
+    DOWNLOADER.seen(status, bool(on_page))
+    if not on_page:  # never hand out work to a tab that isn't on the model page
+        return {"job": None, "paused": DOWNLOADER.paused}
     return {"job": B.helper_next(), "paused": DOWNLOADER.paused}
 
 
@@ -377,7 +478,8 @@ def helper_next(status: str = ""):
 async def helper_ping(req: Request):
     body = await req.json()
     if not body.get("probe"):  # the popup's "is the app running?" check doesn't count as the helper working
-        DOWNLOADER.seen(str(body.get("status", "")))
+        on_page = body.get("on_page")
+        DOWNLOADER.seen(str(body.get("status", "")), None if on_page is None else bool(on_page))
     return {"paused": DOWNLOADER.paused}
 
 
@@ -472,9 +574,9 @@ def downloads():
 
 
 @app.post("/api/downloads/reveal")
-def downloads_reveal():
-    """Desktop app only: open the Downloads folder (saved models) in Finder."""
-    if auth.enabled():
+def downloads_reveal(request: Request):
+    """SnapSTL Mac only: open the Downloads folder (saved models) in Finder."""
+    if not is_local(request):
         raise HTTPException(404)
     import subprocess
 
@@ -541,8 +643,8 @@ def batch_file(batch_id: int, path: str):
 
 @app.post("/api/batches/{batch_id}/reveal")
 async def batch_reveal(batch_id: int, req: Request):
-    """Desktop app only: show the batch folder (or one plate file) in Finder."""
-    if auth.enabled():
+    """SnapSTL Mac only: show the batch folder (or one plate file) in Finder."""
+    if not is_local(req):
         raise HTTPException(404)
     body = await req.json()
     root = Path(_batch(batch_id)["out_dir"] or "/nonexistent").resolve()
@@ -589,7 +691,8 @@ async def put_settings(req: Request):
         new = Settings.from_dict(await req.json())
     except (TypeError, ValueError) as e:
         raise HTTPException(400, f"Invalid settings: {e}") from e
-    if not auth.enabled():  # desktop app: the output folder can be changed
+    new.lan_access = SETTINGS.lan_access  # changed only through /api/portal (this Mac)
+    if is_local(req):  # on the SnapSTL Mac: folders can be changed
         out = Path(new.output_dir).expanduser()
         if not out.is_absolute():
             raise HTTPException(400, "Output folder must be a full path (e.g. /Users/you/SnapSTL/output)")
@@ -609,6 +712,8 @@ async def put_settings(req: Request):
     else:
         new.output_dir = SETTINGS.output_dir
         new.downloads_dir = SETTINGS.downloads_dir
+        new.license_passwords = SETTINGS.license_passwords  # passwords are managed on the SnapSTL Mac
+        new.makerworld_url = SETTINGS.makerworld_url
     errs = new.validate()
     if errs:
         raise HTTPException(400, "; ".join(errs))
@@ -627,9 +732,3 @@ def reset_settings():
     save_settings(SETTINGS)
     return SETTINGS.to_dict()
 
-
-@app.post("/api/license")
-async def license_password(req: Request):
-    body = await req.json()
-    set_password(str(body.get("password", "")))
-    return {"license_set": bool(get_password())}

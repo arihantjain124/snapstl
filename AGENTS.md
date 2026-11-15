@@ -37,6 +37,10 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - Never add code that hides automation, spoofs browser fingerprints, or solves CAPTCHAs/Cloudflare
   checks. Security checks are completed by the human; the helper waits.
 - The app accepts extension calls **only** on `/api/helper/*` from 127.0.0.1. Don't widen that.
+- The helper must keep checking, before every name, that its working tab is on the configured model
+  page (designId); the app must never hand out work when `on_page` is false.
+- Other computers: off by default; only with `lan_access` + portal password; they must sign in and can
+  never use Mac-only actions (`MAC_ONLY_PREFIXES`, `…/reveal`, folder / model link / password changes).
 - Database: add columns **only** via `MIGRATIONS` in `db.py`; never drop/rename columns or tables.
 - Clean-up must keep bundled orders. Every destructive maintenance action takes a backup first.
 - No new runtime dependencies, frameworks or build steps without the owner asking. The UI stays one
@@ -44,7 +48,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 
 **Privacy**
 - Customer name/phone/address live only in the local database. Never send them anywhere, log them, or
-  put them in git. Secrets only via `keychain.py`.
+  put them in git. License passwords live only in `settings.json` (per model) — never in model folders
+  (`info.json`), logs, reports or git.
 - Never commit customer files (`*.xlsx`, `*.csv` reports), outputs, or anything in
   `~/Library/Application Support/SnapSTL`.
 
@@ -64,6 +69,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | 3MF writing | `threemf.py`, `export.write_plate` |
 | Report import / review rules | `ingest.py` |
 | Batch lifecycle / download queue / Re-download / Rebuild | `batches.py` (+ endpoints in `server.py`) |
+| Model link / per-model license passwords | `settings.py` (`makerworld_url`, `license_passwords`, `design_id`) + Settings card in `index.html` |
+| Access control / other computers | `server._blocked`, `server.access_control`, `/api/portal`, `__init__.serve` (bind address) |
 | Downloads page (queue + folder) | `<section id="t-downloads">` in `index.html`; `cache.py` for the folder |
 | MakerWorld page interaction | `helper/content.js`, `helper/inject.js` (bump `helper/manifest.json` version; reload extension) |
 | Backups / clean-up / reset | `maintenance.py` |

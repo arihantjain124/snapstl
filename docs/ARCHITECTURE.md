@@ -32,12 +32,12 @@ Webstore "Order Reconciliation Report" (.xlsx)
 
 | Piece | What / where |
 |---|---|
-| **Service** | `snapstl-serve` → FastAPI/uvicorn on **http://127.0.0.1:8317** (`SNAPSTL_PORT` to change). Started at login by launchd: `~/Library/LaunchAgents/local.snapmagicians.snapstl.plist` (`RunAtLoad`, `KeepAlive`). Hosts the portal, the helper API, the download queue and the batch builder thread. Runs `caffeinate -i` while alive. |
+| **Service** | `snapstl-serve` → FastAPI/uvicorn on **http://127.0.0.1:8317** (`SNAPSTL_PORT` to change); on `0.0.0.0:8317` only when Settings → *Other computers* is on (see §13). Started at login by launchd: `~/Library/LaunchAgents/local.snapmagicians.snapstl.plist` (`RunAtLoad`, `KeepAlive`). Hosts the portal, the helper API, the download queue and the batch builder thread. Runs `caffeinate -i` while alive. |
 | **App window** | `~/Applications/SnapSTL.app` → `snapstl` → pywebview window on the same URL (adds native folder picker; text selection on). UI = side navigation: Orders · Batches · Downloads · Settings · Help. If the service isn't up it kickstarts it. Closing the window doesn't stop the service. |
 | **SnapSTL Helper** | Chrome extension (`helper/`, *Load unpacked*) in the user's **normal** Chrome, on the MakerWorld model-maker tab. Generates each queued name on the real page and uploads the files. |
 | **Data** | `~/Library/Application Support/SnapSTL/` (`APP_DIR`, override with `SNAPSTL_HOME`): `snapstl.db`, `settings.json`, `backups/`, `auth.json` (only if a portal password is set). |
 | **Downloaded models** | Settings → Downloads folder (default **`~/SnapSTL/Downloads`**): one readable folder per model, `<Name> - <N> comp - <cache key>/{base.stl, name.stl, info.json}`. **Never deleted by SnapSTL** — the user cleans up in Finder; a deleted model is re-downloaded when a batch needs it. Models from the old hidden `APP_DIR/cache/` are moved here once at startup (`cache.migrate_old_cache`). |
-| **Secrets** | MakerWorld license password → macOS Keychain (service `SnapSTL`). |
+| **Secrets** | MakerWorld license password **per model** (by designId) in `settings.json` (mode 600), editable in Settings; portal password hash in `auth.json`. Never written to downloaded model folders, logs or git. |
 | **Output** | Settings → output folder (default `~/SnapSTL/output`). |
 | **Log** | `~/Library/Logs/SnapSTL.log` |
 
@@ -59,7 +59,6 @@ the `.app`). The app runs **from the project folder** — moving it means re-run
 | 2-D geometry | shapely (footprints, collisions) | 2.2.0 |
 | Numerics | numpy | 2.5.4 |
 | Spreadsheets | python-calamine (the webstore XLSX has a stylesheet openpyxl rejects) | 0.9.1 |
-| Secrets | keyring (macOS Keychain) | 25.7.0 |
 | Storage | SQLite (WAL) via stdlib `sqlite3` | — |
 | Plate format | **3MF core spec**, own writer/reader (`threemf.py`, stdlib zip/xml) | — |
 | Browser side | Chrome extension, Manifest V3, vanilla JS | helper 2.0.1 |
@@ -87,13 +86,13 @@ Snapstl/
 │   └── make_app.sh           installer: uv, deps, launchd service, ~/Applications/SnapSTL.app
 ├── helper/                   SnapSTL Helper — Chrome extension (Manifest V3)
 │   ├── manifest.json         permissions: makerworld.com + http://127.0.0.1:8317 only; version
-│   ├── background.js         service worker: relays tab ↔ app (/api/helper/*), one active tab
-│   ├── content.js            model-maker tab: job loop, form filling, Generate, upload
+│   ├── background.js         service worker: relays tab ↔ app (/api/helper/*); working tab; page check
+│   ├── content.js            on makerworld.com: works only in the working tab on the configured model page
 │   ├── inject.js             page world: copies plate_1/plate_2 .obj responses (read-only)
-│   └── popup.html, popup.js  status (app reachable? tab open?) + "Open MakerWorld tab"
+│   └── popup.html, popup.js  app status, model designId, working tab on/off the page; "Open model page", "Use this tab"
 ├── src/snapstl/
 │   ├── __init__.py           entry points: main() (window), serve() (service); port, caffeinate, folder picker
-│   ├── server.py             FastAPI app: every HTTP endpoint (§11), cross-site guard, tab/filter SQL
+│   ├── server.py             FastAPI app: every HTTP endpoint (§11), access control (§13), tab/filter SQL
 │   ├── settings.py           dataclasses + defaults (§12); APP_DIR, CACHE_DIR, output path, MakerWorld URL
 │   ├── db.py                 SQLite schema + MIGRATIONS, tx(), batch helpers (create/finish/release)
 │   ├── ingest.py             report parsing (XLSX/CSV), name cleaning, upsert by Order ID, review edits
@@ -109,8 +108,7 @@ Snapstl/
 │   ├── threemf.py            core-spec 3MF writer + reader
 │   ├── orders.py             `Order` dataclass (one organizer copy inside a batch)
 │   ├── maintenance.py        backups, clean-up (keeps made orders), reset
-│   ├── keychain.py           license password (Keychain; file fallback when SNAPSTL_HOME is set)
-│   ├── auth.py               optional portal password + signed session cookie; `snapstl-admin`
+│   ├── auth.py               portal password (other computers) + signed session cookie; `snapstl-admin`
 │   └── static/
 │       ├── index.html        the whole UI: side navigation (Orders, Batches, Downloads, Settings, Help)
 │       └── login.html        used only if a portal password is set
@@ -190,7 +188,10 @@ qty = exact; combined with AND; also used by *Select all matching* and *Export C
 ## 7. MakerWorld & the SnapSTL Helper (`helper/`, `batches.py`)
 
 Model: **Custom Name Desk Organizer v2.34** (`designId=2600234`) on MakerWorld's Parametric Model
-Maker (URL in `settings.MAKERWORLD_URL` and `helper/background.js`).
+Maker. The link is a setting (`makerworld_url`, default `settings.MAKERWORLD_URL`); `settings.design_id()`
+validates it (https://makerworld.com…/makerlab/parametricModelMaker?designId=N). A different model must
+have the same parameters. Download keys include the designId for any model other than 2600234, so
+models never share downloads (existing 2600234 keys unchanged).
 
 | Parameter | Value |
 |---|---|
@@ -198,21 +199,30 @@ Maker (URL in `settings.MAKERWORLD_URL` and `helper/background.js`).
 | Name line 1 / 2 | the order's name / always empty (single line only) |
 | Font, Font size 30–120, Thickness 30–120, Outline 4–15, Rotate text | Settings, same for every name |
 | Compartments 1–10 | scaling table, by letter count |
-| License password | Settings → Keychain (removes anti-sale markings) |
+| License password | Settings, **per model** (`license_passwords[designId]`); each batch snapshots it; sent to the helper with each job; removes anti-sale markings |
 
 NO AMS output: `plate_1.obj` = base (upright: X length, Y depth, Z height); `plate_2.obj` = name
 (flat: X length, Y letter height, Z 4 mm). The app tells them apart **by height**, not by order.
 
-**Helper protocol** (one MakerWorld tab, one name at a time):
+**Working tab & page check.** The content script loads on every `makerworld.com` page (the site changes
+pages without reloading). Each loop it fetches `/api/helper/config` (model link + designId) and checks
+the tab is on exactly that model page. Only the **working tab** works: the one chosen with **Use this
+tab** in the popup, or else the first tab found on the model page. If the working tab is elsewhere it
+reports `on_page=false` and gets no work (`/api/helper/next?on_page=0` always returns no job); the app
+sidebar shows "Helper tab is not on the model page". A name interrupted by navigating away is released
+back to the queue.
+
+**Helper protocol** (working tab, one name at a time):
 
 ```
 content.js ──message──► background.js ──HTTP──► app (127.0.0.1:8317)
-  GET  /api/helper/next?status=…  → {job: {job_id, name, compartments, params, license_password, pause_after_s} | null, paused}
+  GET  /api/helper/config          → {model_url, design_id}
+  GET  /api/helper/next?status=…&on_page=1  → {job: {job_id, name, compartments, params, license_password, pause_after_s} | null, paused}
   fill form (XPath on labels; native value setter for React inputs; MUI menus via mousedown) → click Generate
   inject.js copies plate_1/plate_2 .obj → POST /api/helper/jobs/{id}/result   (multipart plate_1, plate_2)
   error            → POST /api/helper/jobs/{id}/fail {error}       (1 retry, then failed)
   reload mid-name  → POST /api/helper/jobs/{id}/release            (back to queue, attempt not counted)
-  status           → POST /api/helper/ping {status}                (every ~5 s while generating; popup sends {probe:true})
+  status           → POST /api/helper/ping {status, on_page}       (every ~5 s while generating; popup sends {probe:true})
 ```
 
 Security checks: the helper never touches them — it reports *Complete the MakerWorld security
@@ -326,8 +336,9 @@ the files. Clashing file names get ` (2)`; names over 200 characters are shorten
 | Orders | `POST /api/ingest` (multipart `file`), `GET /api/orders`, `GET /api/orders/ids`, `GET /api/orders/facets`, `GET /api/orders.csv`, `POST /api/orders/{id}/name` `{name,color}`, `POST /api/orders/{id}/reset`, `POST /api/orders/{id}/skip` |
 | Batches | `POST /api/batches` `{order_ids}`, `POST /api/batches/{id}/download` (`{force:true}` = Re-download), `POST /api/batches/{id}/build` (also Rebuild), `POST /api/batches/{id}/cancel`, `GET /api/batches`, `GET /api/batches/{id}`, `GET /api/batches/{id}/file?path=`, `POST /api/batches/{id}/reveal` (local only), `GET /api/batches/{id}/zip` |
 | Downloads | `GET /api/downloads` (queue + Downloads folder stats), `POST /api/downloads/retry`, `POST /api/downloads/reveal` (local only), `POST /api/downloader/pause`, `POST /api/downloader/resume` |
-| Helper | `GET /api/helper/next`, `POST /api/helper/ping`, `POST /api/helper/jobs/{id}/result`, `…/fail`, `…/release`, `GET /api/helper.zip` |
-| Settings | `GET` / `PUT /api/settings`, `POST /api/settings/reset`, `POST /api/license` `{password}` |
+| Helper | `GET /api/helper/config`, `GET /api/helper/next`, `POST /api/helper/ping`, `POST /api/helper/jobs/{id}/result`, `…/fail`, `…/release`, `GET /api/helper.zip` |
+| Settings | `GET` / `PUT /api/settings` (includes `makerworld_url`, `license_passwords`), `POST /api/settings/reset` |
+| Portal | `GET /api/portal` (on/off, password set, addresses), `POST /api/portal` `{enabled, password}` — this Mac only |
 | Maintenance | `GET /api/maintenance`, `POST /api/maintenance/backup`, `POST /api/maintenance/cleanup` `{older_than_days}`, `POST /api/maintenance/reset` `{confirm:"RESET", clear_cache}` |
 
 Order list parameters: `tab` (`ready ready_single ready_clubbed needs_review in_batch bundled skipped
@@ -344,23 +355,28 @@ f_status f_name f_color f_qty`, `q`, `limit`, `offset`.
 | model | `Font_size` 30–120 / `Thickness` 30–120 / `Outline` 4–15 / `Rotate_text` | 60 / 50 / 6 / no |
 | scaling | `bands` (table §9), `base_y_scale`, `name_z_scale`, `min_height`, `max_height`, `max_length` | 1.0, 0.5, 85, 90, 240 |
 | plate | `bed_x/y/z`, `margin`, `gap`, `max_names_per_plate`, `bases_per_plate`, `rotations` | 256, 5, 5, 3, 3, [0, 180] |
-| top level | `output_dir`, `downloads_dir` (both editable in local mode only), `delay_between_downloads_s` | ~/SnapSTL/output, ~/SnapSTL/Downloads, 3 |
+| top level | `output_dir`, `downloads_dir`, `makerworld_url`, `license_passwords` (editable on this Mac only), `delay_between_downloads_s` | ~/SnapSTL/output, ~/SnapSTL/Downloads, MakerWorld model link, {}, 3 |
+| top level | `lan_access` (changed only via `/api/portal`) | false |
 
 Unknown keys are ignored on load, so older settings files keep working.
 
 ---
 
-## 13. Security & privacy
+## 13. Security, privacy & other computers (`server._blocked`, `server.access_control`)
 
-* Local mode (no portal password): only `127.0.0.1` / `localhost` host headers are accepted;
-  requests with a foreign `Origin` are rejected (CSRF / DNS-rebinding guard). `chrome-extension://`
-  origins are accepted **only** on `/api/helper/*`.
-* Optional portal password (`uv run snapstl-admin set-password`): scrypt hash + signed 30-day cookie
-  in `APP_DIR/auth.json`. Only needed if the portal is ever exposed beyond this Mac.
-* Customer name / phone / address are stored only in the local database (owner's request) — never
-  sent anywhere, never in git. License password only in the Keychain.
-
----
+* **This Mac** (client 127.0.0.1/::1): no login. Host header must be `127.0.0.1`/`localhost`
+  (DNS-rebinding guard).
+* **Other websites** in any browser: rejected — a request's `Origin` must match its host.
+  `chrome-extension://` origins are accepted **only** on `/api/helper/*` and only from this Mac.
+* **Other computers** (opt-in): only when Settings → *Other computers* is on (`lan_access`) **and** a
+  portal password is set. The service then listens on `0.0.0.0:8317` (`serve()` picks the address at
+  start; toggling restarts it via `launchctl kickstart -k`). They must sign in (scrypt hash + signed
+  30-day cookie, `auth.json`; cookie `Secure` only over https). Never allowed from other computers:
+  `/api/helper/*`, Finder (`…/reveal`), `/api/portal`, `/api/maintenance/reset`, and changing folders,
+  the model link or license passwords.
+* Customer name / phone / address are stored only in the local database (owner's request) — never sent
+  anywhere, never in git. License passwords live only in `settings.json` (mode 600); `info.json` in
+  model folders never contains them.
 
 ## 14. Maintenance (`maintenance.py`, Settings → Database)
 
@@ -374,7 +390,7 @@ ever removed by the user in Finder.
 
 ## 15. Testing
 
-`uv run pytest -q` — 25 tests, ~3 s, no network, temporary `SNAPSTL_HOME`:
+`uv run pytest -q` — 26 tests, ~3 s, no network, temporary `SNAPSTL_HOME`:
 
 * `test_engine.py` — scaling, fit check (pass, mismatch detected, failing pair held back), packing/nesting,
   grouping, file names, 3MF round trip, per-day folders
@@ -382,7 +398,8 @@ ever removed by the user in Finder.
 * `test_flow.py` — over HTTP: create → start download → helper → models_ready → build; failures and
   retries; pause/release/cancel; resume after restart; tabs/filters/customer fields; maintenance;
   cross-site guard; Rebuild (new folder, old kept); Re-download (+ Stop); readable Downloads folders;
-  move from the old cache; reset keeps models
+  move from the old cache; reset keeps models; other computers refused until the portal is on, must sign
+  in, and can never reach the helper / Finder / portal / reset
 
 The helper is exercised by calling `/api/helper/*` directly — tests never contact MakerWorld.
 Dev instance with its own data: `SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn
@@ -408,6 +425,9 @@ snapstl.server:app --port 8320`.
 | 12 | Side navigation (Orders, Batches, Downloads, Settings, Help) + in-app Help page | owner's request; Help explains the workflow for staff |
 | 13 | Downloaded models in a visible folder (`~/SnapSTL/Downloads`), readable names, never auto-deleted | owner wants to see and clean them in Finder |
 | 14 | Re-download / Rebuild for finished batches; Queue download / Queue build buttons | owner wants to redo batches and queue steps manually |
+| 15 | Model link + license password per model in Settings (Keychain storage removed) | different models have different passwords; owner wants them editable |
+| 16 | Helper works only in its working tab on the exact configured model page (designId) | it used to keep "working" after the tab moved to another MakerWorld page |
+| 17 | Optional web portal for other computers (off by default, password, Mac-only actions) | staff can use SnapSTL from other computers; the main Mac runs service + helper |
 
 ---
 
@@ -435,4 +455,4 @@ snapstl.server:app --port 8320`.
 | Change output layout / names | `pipeline.new_batch_dir`, `pipeline.plate_folder`, `export.plate_filename`; update §10 and README |
 | Change where / how models are saved | `cache.py` (keep: readable folder names ending in the key; never auto-delete) |
 | Change MakerWorld interaction | `helper/content.js` / `inject.js`; bump `helper/manifest.json` version |
-| Add an endpoint | `server.py`; anything the helper calls must live under `/api/helper/` |
+| Add an endpoint | `server.py`; anything the helper calls must live under `/api/helper/`; anything that touches this Mac's files or setup must be Mac-only (`MAC_ONLY_PREFIXES` / `is_local`) |

@@ -41,11 +41,15 @@ def set_root(path: str | Path) -> Path:
     return ROOT
 
 
-def cache_key(name: str, model: ModelParams, compartments: int, password: str) -> str:
+DEFAULT_DESIGN = "2600234"  # Custom Name Desk Organizer — keys for it stay as before (no re-downloads)
+
+
+def cache_key(name: str, model: ModelParams, compartments: int, password: str, design: str | None = None) -> str:
     pw = hashlib.sha256(("snapstl:" + password).encode()).hexdigest()[:16] if password else ""
-    payload = json.dumps(
-        {"v": CACHE_VERSION, "name": name, "model": asdict(model), "compartments": int(compartments), "pw": pw}, sort_keys=True
-    )
+    data = {"v": CACHE_VERSION, "name": name, "model": asdict(model), "compartments": int(compartments), "pw": pw}
+    if design and design != DEFAULT_DESIGN:
+        data["design"] = design  # a different MakerWorld model never shares downloads
+    payload = json.dumps(data, sort_keys=True)
     return hashlib.sha256(payload.encode()).hexdigest()[:24]
 
 
