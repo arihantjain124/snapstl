@@ -1,32 +1,24 @@
-"""Database for orders, ingested files, batches and the download queue.
+"""The local database (SQLite in the app folder): orders, ingested files, batches, download queue.
 
-Two kinds, same SQL:
-  * SQLite in the app folder (default): this computer only.
-  * PostgreSQL (Supabase) when .env sets SNAPSTL_DATABASE_URL: shared by every SnapSTL computer.
-    Tables live in their own schema `snapstl` (not exposed by Supabase's web API).
-
-Code writes SQLite-style SQL (`?` placeholders, LIKE); `_pg()` adapts it for Postgres (LIKE becomes
-ILIKE so searches stay case-insensitive). Stores what's needed to make and track each order (order id,
-status, name, colour, quantity) plus customer name / phone / address shown in the app.
+Each computer has its own. The shared order records in Supabase are a separate, add-and-update-only
+copy kept in step by `sync.py`; resetting this database never touches them.
+Stores what's needed to make and track each order (order id, status, name, colour, quantity) plus
+customer name / phone / address shown in the app.
 """
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
-import threading
 import time
+import uuid
 from contextlib import contextmanager
-from functools import lru_cache
 from pathlib import Path
 from typing import Iterator
 
-from . import computer, config
+from . import computer
 from .settings import APP_DIR
 
 DB_PATH = APP_DIR / "snapstl.db"
-PG_SCHEMA = "snapstl"
-SCHEMA_VERSION = 2  # bump when the database layout changes; older SnapSTLs then ask to be updated
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS orders (
@@ -43,8 +35,8 @@ CREATE TABLE IF NOT EXISTS orders (
     color           TEXT,          -- normalised colour
     name_edited     INTEGER NOT NULL DEFAULT 0,
     review_reason   TEXT,          -- why it needs a human; NULL when fine
-    state           TEXT NOT NULL, -- ready | needs_review | in_batch | bundled | skipped | not_needed
-    batch_id        INTEGER,
+    state           TEXT NOT NULL, -- ready | needs_review | in_batch | bundled | printed | skipped | not_needed
+    batch_id        INTEGER,       -- this computer's batch (NULL when batched on another computer)
     last_error      TEXT,
     first_file      TEXT,
     last_file       TEXT,
@@ -88,30 +80,57 @@ CREATE INDEX IF NOT EXISTS downloads_key ON downloads(cache_key);
 MIGRATIONS = [
     ("batches", "settings", "TEXT"),       # JSON settings snapshot used for this batch
     ("batches", "finished_at", "REAL"),
-    ("orders", "customer_name", "TEXT"),   # shown in the UI (owner's request, local only)
+    ("orders", "customer_name", "TEXT"),   # shown in the UI
     ("orders", "phone", "TEXT"),
     ("orders", "address", "TEXT"),         # address, city, state, pincode joined
     ("downloads", "batch_id", "INTEGER"),  # batch that queued this download (shown in the queue)
     ("downloads", "watermark", "INTEGER"),  # 1 = MakerWorld watermark found on the base, 0 = clean
     ("downloads", "license_check", "TEXT"),  # what the helper confirmed about the license password
-    # shared database: every batch belongs to the computer that created it (it downloads + builds it)
-    ("batches", "computer_id", "TEXT"),
+    ("batches", "computer_id", "TEXT"),     # this computer (a batch is made where it's created)
     ("batches", "computer_name", "TEXT"),
-    ("batches", "progress", "TEXT"),        # JSON written by the owning computer (others can't see its files)
-    ("downloads", "computer_id", "TEXT"),   # computer whose helper downloads it (= the batch's computer)
+    ("batches", "progress", "TEXT"),        # JSON: models downloaded / failed
+    ("downloads", "computer_id", "TEXT"),
+    # shared order records (sync.py)
+    ("batches", "uid", "TEXT"),             # unique id in the shared records (local ids restart after a reset)
+    ("batches", "synced", "INTEGER"),       # 1 = the shared records have this batch as it is now
+    ("orders", "state_at", "REAL"),         # when `state` last changed (trigger below)
+    ("orders", "status_at", "TEXT"),        # how recent source_status is (ingest.status_stamp)
+    ("orders", "in_remote", "INTEGER"),     # 1 = the shared records have this order
+    ("orders", "batch_uid", "TEXT"),        # its batch in the shared records (also batches of other computers)
+    ("orders", "batch_label", "TEXT"),      # e.g. "Batch 2 - 2026-11-15"
+    ("orders", "batch_computer", "TEXT"),   # computer that batched it (name)
+    ("orders", "batch_computer_id", "TEXT"),  # … and its id
+    ("orders", "bundled_at", "REAL"),
+    ("orders", "printed_at", "REAL"),       # marked printed by a person
 ]
 
+# Bookkeeping for the shared records, kept by triggers so no code path can forget it:
+#  * orders.state_at = time of the last state change (unless the writer sets it itself);
+#  * sync_outbox = orders whose change still has to reach the shared records. Changes written by the
+#    sync itself (inside `quiet()`) are not queued again;
+#  * batches.synced = 0 whenever a batch changes.
+_NOW = "(julianday('now') - 2440587.5) * 86400.0"
+POST_SCHEMA = f"""
+CREATE TABLE IF NOT EXISTS sync_outbox (order_id TEXT PRIMARY KEY, queued_at REAL);
+CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS sync_flags (quiet INTEGER NOT NULL);
+CREATE TRIGGER IF NOT EXISTS orders_state_at AFTER UPDATE OF state ON orders
+  WHEN NEW.state IS NOT OLD.state AND NEW.state_at IS OLD.state_at
+  BEGIN UPDATE orders SET state_at = {_NOW} WHERE order_id = NEW.order_id; END;
+CREATE TRIGGER IF NOT EXISTS orders_outbox_upd AFTER UPDATE ON orders
+  WHEN (NEW.state IS NOT OLD.state OR NEW.source_status IS NOT OLD.source_status
+        OR NEW.status_at IS NOT OLD.status_at OR NEW.name IS NOT OLD.name OR NEW.color IS NOT OLD.color)
+   AND (COALESCE(NEW.in_remote, 0) = 1 OR NEW.state IN ('in_batch', 'bundled', 'printed'))
+   AND NOT EXISTS (SELECT 1 FROM sync_flags WHERE quiet = 1)
+  BEGIN INSERT OR REPLACE INTO sync_outbox(order_id, queued_at) VALUES (NEW.order_id, {_NOW}); END;
+CREATE TRIGGER IF NOT EXISTS orders_outbox_ins AFTER INSERT ON orders
+  WHEN NEW.state IN ('in_batch', 'bundled', 'printed') AND NOT EXISTS (SELECT 1 FROM sync_flags WHERE quiet = 1)
+  BEGIN INSERT OR REPLACE INTO sync_outbox(order_id, queued_at) VALUES (NEW.order_id, {_NOW}); END;
+CREATE TRIGGER IF NOT EXISTS batches_unsynced AFTER UPDATE OF status, summary, out_dir, order_ids ON batches
+  BEGIN UPDATE batches SET synced = 0 WHERE id = NEW.id; END;
+"""
 
-def shared() -> bool:
-    """True when this SnapSTL uses the shared Postgres database (.env SNAPSTL_DATABASE_URL)."""
-    return bool(config.database_url())
 
-
-def kind() -> str:
-    return "postgres" if shared() else "sqlite"
-
-
-# ---------------- SQLite ----------------
 def connect(path: Path | None = None) -> sqlite3.Connection:
     p = path or DB_PATH
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -124,112 +143,18 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
         cols = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
         if col not in cols:
             con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
-    # one computer, one database: everything belongs to this computer
+    con.executescript(POST_SCHEMA)
+    # older rows: everything here is this computer's, and every batch gets a unique id
     con.execute("UPDATE batches SET computer_id=?, computer_name=? WHERE computer_id IS NULL", (computer.ID, computer.NAME))
     con.execute("UPDATE downloads SET computer_id=? WHERE computer_id IS NULL", (computer.ID,))
+    con.execute("UPDATE batches SET uid=lower(hex(randomblob(16))) WHERE uid IS NULL")
+    con.execute("UPDATE orders SET state_at=COALESCE(updated_at, first_seen) WHERE state_at IS NULL")
     con.commit()
     return con
 
 
-# ---------------- PostgreSQL ----------------
-class Row(dict):
-    """A result row usable like sqlite3.Row: r["col"] and r[0]."""
-
-    def __getitem__(self, k):
-        if isinstance(k, int):
-            return list(self.values())[k]
-        return dict.__getitem__(self, k)
-
-
-def _row_factory(cursor):
-    names = [c.name for c in cursor.description] if cursor.description else []
-    return lambda values: Row(zip(names, values))
-
-
-@lru_cache(maxsize=512)
-def _pg(sql: str) -> str:
-    sql = sql.replace("%", "%%").replace("?", "%s")
-    return re.sub(r"\bLIKE\b", "ILIKE", sql)
-
-
-class PGConnection:
-    """Wraps a psycopg connection so callers use the same API as sqlite3."""
-
-    def __init__(self, con) -> None:
-        self._c = con
-
-    def execute(self, sql: str, params=()):
-        return self._c.execute(_pg(sql), tuple(params))
-
-
-_POOL = None
-_POOL_LOCK = threading.Lock()
-
-
-def _pg_schema() -> str:
-    t = SCHEMA.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY").replace(" REAL", " DOUBLE PRECISION")
-    return re.sub(r"--[^\n]*", "", t)
-
-
-def _setup_pg(con) -> None:
-    """Create / upgrade the shared tables once per start, under a lock (several computers may start at once)."""
-    con.execute("SELECT pg_advisory_xact_lock(83170001)")
-    con.execute(f"CREATE SCHEMA IF NOT EXISTS {PG_SCHEMA}")
-    con.execute(f"SET search_path TO {PG_SCHEMA}")
-    for stmt in _pg_schema().split(";"):
-        if stmt.strip():
-            con.execute(stmt)
-    for table, col, typ in MIGRATIONS:
-        typ = "DOUBLE PRECISION" if typ == "REAL" else typ
-        con.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}")
-    con.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
-    r = con.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-    have = int(r["value"]) if r else 0
-    if have > SCHEMA_VERSION:
-        raise RuntimeError("The shared database was set up by a newer SnapSTL — update this computer "
-                           "(Settings → Updates, or scripts/update)")
-    if have < SCHEMA_VERSION:
-        con.execute("INSERT INTO meta(key,value) VALUES ('schema_version',%s) "
-                    "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", (str(SCHEMA_VERSION),))
-
-
-def _pool():
-    global _POOL
-    with _POOL_LOCK:
-        if _POOL is None:
-            import psycopg
-            from psycopg_pool import ConnectionPool
-
-            url = config.database_url()
-            with psycopg.connect(url, row_factory=_row_factory, prepare_threshold=None, connect_timeout=15) as c:
-                _setup_pg(c)
-
-            def configure(c):
-                c.execute(f"SET search_path TO {PG_SCHEMA}")
-                c.commit()
-
-            _POOL = ConnectionPool(url, min_size=1, max_size=6, open=True, timeout=30, configure=configure,
-                                   kwargs={"row_factory": _row_factory, "prepare_threshold": None,
-                                           "connect_timeout": 15})
-        return _POOL
-
-
-def close_pool() -> None:
-    global _POOL
-    with _POOL_LOCK:
-        if _POOL is not None:
-            _POOL.close()
-            _POOL = None
-
-
-# ---------------- both ----------------
 @contextmanager
-def tx(path: Path | None = None) -> Iterator:
-    """One transaction: committed at the end, rolled back on error. A path forces a local SQLite file."""
-    if path is None and shared():
-        with _pool().connection() as c:  # commits on success, rolls back on an exception
-            yield PGConnection(c)
-        return
+def tx(path: Path | None = None) -> Iterator[sqlite3.Connection]:
     con = connect(path)
     try:
         with con:
@@ -238,11 +163,14 @@ def tx(path: Path | None = None) -> Iterator:
         con.close()
 
 
-def lock(con, name: str) -> None:
-    """Serialise a critical step across every SnapSTL computer (Postgres) for this transaction.
-    SQLite needs nothing: it allows one writer at a time anyway."""
-    if isinstance(con, PGConnection):
-        con.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (name,))
+@contextmanager
+def quiet(con) -> Iterator[None]:
+    """Changes made inside are not queued for the shared records (they came from there)."""
+    con.execute("INSERT INTO sync_flags(quiet) VALUES (1)")
+    try:
+        yield
+    finally:
+        con.execute("DELETE FROM sync_flags")
 
 
 def now() -> float:
@@ -253,14 +181,16 @@ def rows(con, sql: str, *args) -> list[dict]:
     return [dict(r) for r in con.execute(sql, args).fetchall()]
 
 
-def create_batch(con, order_ids: list[str], out_dir: str, settings_json: str = "{}", status: str = "waiting") -> int:
-    """A new batch owned by this computer."""
-    r = con.execute(
-        "INSERT INTO batches(created_at,out_dir,status,order_ids,summary,settings,computer_id,computer_name) "
-        "VALUES (?,?,?,?,?,?,?,?) RETURNING id",
-        (now(), out_dir, status, json.dumps(order_ids), "{}", settings_json, computer.ID, computer.NAME),
-    ).fetchone()
-    return int(r["id"])
+def create_batch(con, order_ids: list[str], out_dir: str, settings_json: str = "{}", status: str = "waiting",
+                 uid: str | None = None) -> int:
+    """A new batch on this computer."""
+    cur = con.execute(
+        "INSERT INTO batches(created_at,out_dir,status,order_ids,summary,settings,computer_id,computer_name,uid,synced) "
+        "VALUES (?,?,?,?,?,?,?,?,?,0)",
+        (now(), out_dir, status, json.dumps(order_ids), "{}", settings_json, computer.ID, computer.NAME,
+         uid or uuid.uuid4().hex),
+    )
+    return int(cur.lastrowid)
 
 
 def finish_batch(con, batch_id: int, status: str, summary: dict, bundled_ids: list[str]) -> None:
@@ -272,8 +202,11 @@ def finish_batch(con, batch_id: int, status: str, summary: dict, bundled_ids: li
     if bundled_ids:
         q = ",".join("?" * len(bundled_ids))
         con.execute(
-            f"UPDATE orders SET state='bundled', batch_id=?, last_error=NULL, updated_at=? WHERE order_id IN ({q})",
-            (batch_id, now(), *bundled_ids),
+            f"UPDATE orders SET state='bundled', batch_id=?, last_error=NULL, updated_at=?, bundled_at=?, "
+            f"batch_label=?, batch_computer=?, batch_computer_id=?, "
+            f"batch_uid=(SELECT uid FROM batches WHERE id=?) WHERE order_id IN ({q})",
+            (batch_id, now(), now(), summary.get("label") or None, computer.NAME, computer.ID, batch_id,
+             *bundled_ids),
         )
     release_batch_orders(con, batch_id)
 
@@ -282,6 +215,7 @@ def release_batch_orders(con, batch_id: int) -> None:
     """Orders still marked in_batch for this batch return to ready / needs_review."""
     con.execute(
         "UPDATE orders SET state=CASE WHEN review_reason IS NULL THEN 'ready' ELSE 'needs_review' END, "
-        "batch_id=NULL, updated_at=? WHERE batch_id=? AND state='in_batch'",
+        "batch_id=NULL, batch_uid=NULL, batch_label=NULL, batch_computer=NULL, batch_computer_id=NULL, updated_at=? "
+        "WHERE batch_id=? AND state='in_batch'",
         (now(), batch_id),
     )

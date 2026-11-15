@@ -42,13 +42,14 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - Other computers: off by default; only with `lan_access` + portal password; they must sign in and can
   never use Mac-only actions (`MAC_ONLY_PREFIXES`, `…/reveal`, folder / model link / password changes).
 - Database: add columns **only** via `MIGRATIONS` in `db.py`; never drop/rename columns or tables.
-  Every change must work on **both** SQLite and the shared Postgres (run the tests on both, README →
-  Development); bump `db.SCHEMA_VERSION` when the layout changes. Write SQLite-style SQL (`?`, LIKE);
-  no SQLite-only functions (use CASE, not 2-argument MAX).
-- Shared database: a batch belongs to `batches.computer_id`. Downloads, builds, files and batch actions
-  happen only on that computer (`batches._require_mine`, `server._own_batch`); anything that picks
-  work (downloads, builds, restarts) must filter by `computer.ID`. Taking orders into a batch stays
-  under `db.lock(con, "orders")` with the `state='ready'` re-check.
+- Shared order records (`sync.py`, Supabase): **never delete** there — no DELETE/TRUNCATE in code, keep
+  the `refuse_delete` triggers. Settings never go there. Conflict rules live in the SQL (`_WIN`,
+  `_CLAIM`); keep a batch's claim before its local creation, and refuse to create a batch when the
+  records can't be reached. Local changes reach the outbox only through the triggers in
+  `db.POST_SCHEMA`; writes coming from the records go inside `db.quiet()`. Run the tests with a
+  throwaway Postgres too (README → Development) when touching sync, ingest or batch states.
+- A webstore status only replaces a stored one when its `status_at` stamp is at least as high
+  (`ingest.status_stamp`); never let an older report undo a newer status.
 - OS differences go only in `platform_os.py` (Mac and Windows); never call `open`, `launchctl`,
   `scutil` or Windows commands elsewhere.
 - Clean-up must keep bundled orders. Every destructive maintenance action takes a backup first.
@@ -56,8 +57,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   file (`static/index.html`, vanilla JS).
 
 **Privacy**
-- Customer name/phone/address live only in the database: the local one, or the owner's shared
-  Supabase database (Mumbai) set in `.env`. Never send them anywhere else, log them, or put them in
+- Customer name/phone/address live only in the local database and the owner's shared order records
+  (Supabase, Mumbai) set in `.env`. Never send them anywhere else, log them, or put them in
   git. `.env` (database password) is never committed; `.env.example` lists the keys with no values. License passwords live only in `settings.json` (per model) — never in model folders
   (`info.json`), logs, reports or git. The helper's `check` carries only booleans/"sent" — never the password.
 - Never weaken the license guard: no download without the model's password, no saving a download the
@@ -91,7 +92,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Backups / clean-up / reset | `maintenance.py` |
 | Install / service / window | Mac `scripts/make_app.sh`; Windows `scripts/windows/*.ps1`; `src/snapstl/__init__.py` |
 | Mac vs Windows (folders, Finder/Explorer, keep awake, restart, LAN name) | `platform_os.py` |
-| Shared database (Supabase/Postgres), .env, computer ownership | `config.py`, `db.py`, `computer.py`, `dbtool.py` (`snapstl-db`), `maintenance.copy_local_to_shared` |
+| Shared order records (Supabase), .env, sync, claims | `sync.py`, `config.py`, `computer.py`, `dbtool.py` (`snapstl-db`), triggers in `db.POST_SCHEMA` |
+| Printed tab / report status timestamps | `ingest.set_printed`, `ingest.status_stamp`, `server.TABS`, `index.html` (`SELKIND`) |
 
 ## 4. How to work
 

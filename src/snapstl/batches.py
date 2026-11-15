@@ -8,16 +8,15 @@ Flow:
   3. The manager thread builds a batch's plates as soon as all its models are cached (or the
      user presses "Build now"); missing orders go back to ready.
 
-Shared database: a batch belongs to the computer that created it (batches.computer_id). Only that
-computer downloads its models (its helper, its Downloads folder), builds its plates and shows its
-files; other computers see the batch, its status and progress, but can't act on it. Orders taken
-into a batch leave Ready on every computer at once (a lock makes two computers taking the same
-order impossible).
+Several computers: a batch is made entirely on the computer that created it (its helper, its
+Downloads folder, its plates). With the shared order records (sync.py) its orders are claimed
+there when the batch is created, so they leave Ready on every computer and no order is made twice.
 """
 from __future__ import annotations
 
 import json
 import threading
+import uuid
 from pathlib import Path
 import time
 import traceback
@@ -82,26 +81,50 @@ def _require_mine(b) -> None:
 
 
 def create_batch(order_ids: list[str], settings: Settings) -> dict:
+    """Take ready orders into a new batch of this computer.
+
+    With the shared records (Supabase) set up, the orders are claimed there first: an order another
+    computer has already taken is left out (and leaves Ready here). If the shared records can't be
+    reached, no batch is created — so no order is ever made twice."""
+    from . import sync
+
     if not order_ids:
         raise ValueError("Select at least one order")
     with db.tx() as con:
-        db.lock(con, "orders")  # one computer at a time takes orders into batches
         q = ",".join("?" * len(order_ids))
         rows = db.rows(con, f"SELECT * FROM orders WHERE state='ready' AND order_id IN ({q}) ORDER BY order_date, order_id", *order_ids)
+    if not rows:
+        raise ValueError("None of the selected orders are ready (they may need review or be in another batch)")
+    uid = uuid.uuid4().hex
+    state_at = None
+    if sync.enabled():
+        try:
+            claimed, state_at = sync.claim(rows, uid)
+        except sync.SyncError as e:
+            raise ValueError(f"{e} — no batch was created, so no order can be made twice. Try again in a moment.") from e
+        taken = len(rows) - len(claimed)
+        rows = [r for r in rows if r["order_id"] in set(claimed)]
         if not rows:
-            raise ValueError("None of the selected orders are ready (they may need review or be in another batch)")
+            raise ValueError("Every selected order was already taken into a batch on another computer — "
+                             "they've left Ready here")
+    else:
+        taken = 0
+    with db.tx() as con:
         orders = _expand(rows, settings)
         ids = [r["order_id"] for r in rows]
-        batch_id = db.create_batch(con, ids, "", json.dumps(settings.to_dict()), status="created")
+        batch_id = db.create_batch(con, ids, "", json.dumps(settings.to_dict()), status="created", uid=uid)
         n = con.execute(
-            f"UPDATE orders SET state='in_batch', batch_id=?, updated_at=? "
+            f"UPDATE orders SET state='in_batch', batch_id=?, updated_at=?, batch_uid=?, batch_label=NULL, "
+            f"batch_computer=?, batch_computer_id=?, in_remote=?, state_at=COALESCE(?, state_at) "
             f"WHERE state='ready' AND order_id IN ({','.join('?' * len(ids))})",
-            (batch_id, db.now(), *ids),
+            (batch_id, db.now(), uid, computer.NAME, computer.ID, 1 if state_at else 0, state_at, *ids),
         ).rowcount
-        if n != len(ids):  # another computer took some of them a moment ago: undo this batch entirely
-            raise ValueError("Some of these orders were just put in a batch on another computer — refresh and try again")
+        if n != len(ids):  # changed meanwhile (e.g. a report upload): undo this batch entirely
+            raise ValueError("Some of these orders changed a moment ago — refresh and try again")
+        if state_at:  # already in the shared records exactly like this: nothing to push
+            con.execute(f"DELETE FROM sync_outbox WHERE order_id IN ({','.join('?' * len(ids))})", ids)
     return {"batch_id": batch_id, "orders": len(ids), "skipped": len(order_ids) - len(ids),
-            "models": len(_needed(orders, settings))}
+            "taken_elsewhere": taken, "models": len(_needed(orders, settings))}
 
 
 FINISHED = ("done", "done_with_problems", "failed")
@@ -344,6 +367,7 @@ def cancel_batch(batch_id: int) -> None:
             con.execute("UPDATE batches SET status='cancelled', finished_at=? WHERE id=?", (db.now(), batch_id))
             db.release_batch_orders(con, batch_id)
         _cancel_unneeded_downloads(con)
+    _kick_sync()
 
 
 def _cancel_unneeded_downloads(con) -> None:
@@ -364,6 +388,12 @@ def _cancel_unneeded_downloads(con) -> None:
             continue  # a single object re-downloaded from a built batch
         if d["cache_key"] not in needed:
             con.execute("UPDATE downloads SET state='cancelled', updated_at=? WHERE id=?", (db.now(), d["id"]))
+
+
+def _kick_sync() -> None:
+    from . import sync
+
+    sync.LOOP.kick()  # bundled / released orders go to the shared records soon
 
 
 # ---------------- download queue ----------------
@@ -669,11 +699,13 @@ class Manager:
             with db.tx() as con:
                 db.finish_batch(con, batch_id, "done" if summary["ok"] else "done_with_problems", summary, done_ids)
             self._log(f"Batch #{batch_id} done: {len(res.plates)} plates")
+            _kick_sync()
         except Exception as e:  # noqa: BLE001
             self._log(f"Batch #{batch_id} failed: {e}")
             self._log(traceback.format_exc().splitlines()[-1])
             with db.tx() as con:
                 db.finish_batch(con, batch_id, "failed", {"errors": [str(e)]}, [])
+            _kick_sync()
         finally:
             self.building = None
             with db.tx() as con:

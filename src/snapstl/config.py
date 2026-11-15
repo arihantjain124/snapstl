@@ -4,8 +4,8 @@
 environment win over the file (tests and dev runs rely on that).
 
 Keys:
-  SNAPSTL_DATABASE_URL   Postgres connection string of the shared database (Supabase). Empty =
-                         this computer keeps its own database (SQLite), as before.
+  SNAPSTL_DATABASE_URL   Postgres connection string of the shared order records (Supabase, sync.py).
+                         Empty = no sharing (this computer only). The local database is SQLite either way.
   SNAPSTL_COMPUTER_NAME  How this computer is named on batches (default: the computer's name).
   SNAPSTL_PORT           Port of the local web portal (default 8317).
 """

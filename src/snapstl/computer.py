@@ -1,4 +1,4 @@
-"""This computer's identity on batches (shared database).
+"""This computer's identity on batches and in the shared order records.
 
 A batch belongs to the computer that created it: only that computer downloads its models, builds
 its plates and keeps its files. The id is generated once and saved in the app folder; the name comes

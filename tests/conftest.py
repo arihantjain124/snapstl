@@ -4,15 +4,10 @@ import tempfile
 # Isolate every test run from the real SnapSTL data folder (must happen before snapstl is imported).
 os.environ["SNAPSTL_HOME"] = tempfile.mkdtemp(prefix="snapstl-test-")
 os.environ["SNAPSTL_SECURE_COOKIE"] = "0"  # test client talks plain HTTP
-# Never the real shared database from .env: SQLite, or a throwaway Postgres given in SNAPSTL_TEST_DATABASE_URL
-# (its `snapstl` schema is dropped first).
-os.environ["SNAPSTL_DATABASE_URL"] = os.environ.get("SNAPSTL_TEST_DATABASE_URL", "")
+# Never the real shared records from .env. tests/test_sync.py uses a throwaway Postgres given in
+# SNAPSTL_TEST_DATABASE_URL (its `snapstl` schema is dropped first); every other test runs without sync.
+os.environ["SNAPSTL_DATABASE_URL"] = ""
 os.environ["SNAPSTL_COMPUTER_NAME"] = "Test computer"
-if os.environ["SNAPSTL_DATABASE_URL"]:
-    import psycopg
-
-    with psycopg.connect(os.environ["SNAPSTL_DATABASE_URL"], autocommit=True) as _c:
-        _c.execute("DROP SCHEMA IF EXISTS snapstl CASCADE")
 
 import numpy as np
 import pytest

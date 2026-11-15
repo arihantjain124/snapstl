@@ -17,6 +17,8 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from datetime import datetime, timezone
+
 from . import db
 
 SKU = "magicians_35"
@@ -39,6 +41,8 @@ class IngestSummary:
     to_print_new: int = 0
     needs_review_new: int = 0
     became_not_needed: int = 0
+    kept_newer_status: int = 0  # the database already had a newer webstore status for these orders
+    report_date: str = ""       # end of the report's "Date Range" (YYYY-MM-DD), if it has one
     warnings: list[str] = field(default_factory=list)
 
 
@@ -121,6 +125,49 @@ def normalise_color(raw: str) -> str:
     return COLOR_ALIASES.get(c, c)
 
 
+# ---------------- how recent is a status? ----------------
+# The webstore report has no "generated at" time. A row's status is dated by, in order:
+#   1. the latest of the row's own event dates (pickup, delivered, RTO, return),
+#   2. the end of the report's "Date Range: … to DD/MM/YYYY" line,
+#   3. when the report was uploaded here.
+# These make one sortable text (status_at): a status only replaces a stored one when its stamp is
+# at least as high, so uploading an older report never undoes a newer status.
+EVENT_COLUMNS = ("Pickup Date", "Delivered Date", "RTO Initiated Date", "RTO Delivered Date",
+                 "Return Created Date", "Return Delivered Date")
+_NO_DATE = "0000-00-00"
+
+
+def _date(v: str) -> str:
+    """'14/11/2026', '14-11-2026', '2026-11-14', with or without a time → '2026-11-14' ('' if none)."""
+    from datetime import datetime
+
+    v = (v or "").strip()
+    if not v:
+        return ""
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y %H:%M:%S", "%d-%m-%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S",
+                "%d/%m/%Y %H:%M", "%d-%m-%Y %H:%M"):
+        try:
+            return datetime.strptime(v, fmt).date().isoformat()
+        except ValueError:
+            continue
+    m = re.match(r"(\d{4}-\d{2}-\d{2})", v)  # e.g. ISO with T / timezone
+    return m.group(1) if m else ""
+
+
+def report_end_date(table: list[list[str]], header_row: int) -> str:
+    """'Date Range: 30/10/2026 to 14/11/2026' above the header → '2026-11-14'."""
+    for r in table[:header_row]:
+        for c in r:
+            m = re.search(r"to\s+(\d{1,2}[/-]\d{1,2}[/-]\d{4})", c or "", re.I)
+            if m:
+                return _date(m.group(1))
+    return ""
+
+
+def status_stamp(event_date: str, report_date: str, uploaded: str) -> str:
+    return f"{event_date or _NO_DATE}|{report_date or _NO_DATE}|{uploaded}"
+
+
 # ---------------- ingest ----------------
 def ingest(data: bytes, filename: str, db_path: Path | None = None) -> IngestSummary:
     sha = hashlib.sha256(data).hexdigest()
@@ -136,9 +183,10 @@ def ingest(data: bytes, filename: str, db_path: Path | None = None) -> IngestSum
     s = IngestSummary(filename=filename)
     body = [r for r in table[h + 1 :] if any(c.strip() for c in r)]
     s.rows_total = len(body)
+    s.report_date = report_end_date(table, h)
+    uploaded = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
     with db.tx(db_path) as con:
-        db.lock(con, "orders")  # two computers uploading at once take turns
         if con.execute("SELECT 1 FROM files WHERE sha256=?", (sha,)).fetchone():
             s.already_seen_file = True
         for r in body:
@@ -159,6 +207,8 @@ def ingest(data: bytes, filename: str, db_path: Path | None = None) -> IngestSum
                 "customer_name": get(r, "Customer Name"),
                 "phone": get(r, "Mobile"),
                 "address": ", ".join(x for x in (get(r, "Address"), get(r, "City"), get(r, "State"), get(r, "Pincode")) if x),
+                "status_at": status_stamp(max((_date(get(r, c)) for c in EVENT_COLUMNS), default=""),
+                                          s.report_date, uploaded),
             })
         con.execute(
             "INSERT INTO files(filename,sha256,ingested_at,summary) VALUES (?,?,?,?)",
@@ -212,11 +262,11 @@ def _upsert(con, s: IngestSummary, filename: str, o: dict) -> None:
         con.execute(
             """INSERT INTO orders(order_id,clubbed_id,sku,order_date,source_status,quantity,raw_name,raw_color,
                special_request,name,color,review_reason,state,first_file,last_file,first_seen,updated_at,
-               customer_name,phone,address)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               customer_name,phone,address,status_at,state_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (o["order_id"], o["clubbed_id"], "Magicians_35", o["order_date"], o["source_status"], o["quantity"],
              raw_name, raw_color, special, name, color, review, state, filename, filename, t, t,
-             o["customer_name"], o["phone"], o["address"]),
+             o["customer_name"], o["phone"], o["address"], o["status_at"], t),
         )
         s.new += 1
         if state == "ready":
@@ -225,7 +275,14 @@ def _upsert(con, s: IngestSummary, filename: str, o: dict) -> None:
             s.needs_review_new += 1
         return
 
-    # Existing order: refresh report status; never duplicate, never undo a bundle.
+    # Existing order: refresh report status if this report is newer; never duplicate, never undo a bundle.
+    if (cur["status_at"] or "") > o["status_at"]:
+        s.kept_newer_status += 1  # an older report: keep the newer status we already have
+        con.execute("UPDATE orders SET last_file=?, customer_name=COALESCE(NULLIF(customer_name,''),?), "
+                    "phone=COALESCE(NULLIF(phone,''),?), address=COALESCE(NULLIF(address,''),?) WHERE order_id=?",
+                    (filename, o["customer_name"], o["phone"], o["address"], o["order_id"]))
+        s.unchanged += 1
+        return
     changed = cur["source_status"] != o["source_status"]
     state = cur["state"]
     review = cur["review_reason"]
@@ -235,10 +292,10 @@ def _upsert(con, s: IngestSummary, filename: str, o: dict) -> None:
     elif state == "not_needed" and o["source_status"] in PRINT_STATUSES and not cur["batch_id"]:
         state = "needs_review" if review else "ready"
     con.execute(
-        "UPDATE orders SET source_status=?, clubbed_id=?, quantity=?, state=?, last_file=?, updated_at=?, "
+        "UPDATE orders SET source_status=?, status_at=?, clubbed_id=?, quantity=?, state=?, last_file=?, updated_at=?, "
         "customer_name=COALESCE(NULLIF(?,''),customer_name), phone=COALESCE(NULLIF(?,''),phone), "
         "address=COALESCE(NULLIF(?,''),address) WHERE order_id=?",
-        (o["source_status"], o["clubbed_id"], o["quantity"], state, filename, t,
+        (o["source_status"], o["status_at"], o["clubbed_id"], o["quantity"], state, filename, t,
          o["customer_name"], o["phone"], o["address"], o["order_id"]),
     )
     if changed or state != cur["state"]:
@@ -269,14 +326,29 @@ def set_name(order_id: str, name: str, color: str | None = None, db_path: Path |
         return dict(con.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone())
 
 
+def set_printed(order_ids: list[str], printed: bool = True, db_path: Path | None = None) -> int:
+    """A person confirms bundled orders were printed (they move to the Printed tab and keep their batch),
+    or undoes that (back to Bundled). Returns how many changed."""
+    if not order_ids:
+        return 0
+    q = ",".join("?" * len(order_ids))
+    with db.tx(db_path) as con:
+        if printed:
+            return con.execute(f"UPDATE orders SET state='printed', printed_at=?, updated_at=? "
+                               f"WHERE state='bundled' AND order_id IN ({q})", (db.now(), db.now(), *order_ids)).rowcount
+        return con.execute(f"UPDATE orders SET state='bundled', printed_at=NULL, updated_at=? "
+                           f"WHERE state='printed' AND order_id IN ({q})", (db.now(), *order_ids)).rowcount
+
+
 def reset_to_ready(order_id: str, db_path: Path | None = None) -> None:
-    """Allow a bundled / skipped order to be made again (e.g. reprint)."""
+    """Allow a bundled / printed / skipped order to be made again (e.g. reprint)."""
     with db.tx(db_path) as con:
         cur = con.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
         if cur is None:
             raise KeyError(order_id)
         state = "needs_review" if cur["review_reason"] else "ready"
         con.execute(
-            "UPDATE orders SET state=?, batch_id=NULL, updated_at=? WHERE order_id=?",
+            "UPDATE orders SET state=?, batch_id=NULL, batch_uid=NULL, batch_label=NULL, batch_computer=NULL, "
+            "batch_computer_id=NULL, printed_at=NULL, updated_at=? WHERE order_id=?",
             (state, db.now(), order_id),
         )
