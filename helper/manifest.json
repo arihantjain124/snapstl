@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SnapSTL Helper",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "description": "Generates SnapSTL name-organizer models on the MakerWorld model maker in your own Chrome and hands them to the SnapSTL app on this Mac.",
   "permissions": [
     "storage"
