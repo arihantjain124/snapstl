@@ -5,24 +5,13 @@ import trimesh
 
 from snapstl.export import plate_filename
 from snapstl.grouping import group_bases, group_names
-from snapstl.orders import Order, parse_orders
+from snapstl.orders import Order
 from snapstl.packing import make_part, pack, placed_footprint
 from snapstl.pipeline import build
 from snapstl.scaling import scale_pair
 from snapstl.settings import PlateSettings, ScalingSettings, Settings
 
 from .conftest import base_mesh, name_mesh
-
-
-def test_parse_orders_header_and_normalise():
-    orders, warns = parse_orders("﻿Name,Color\nAyra, Pink \n,blue\nManvi,pink\n")
-    assert [(o.name, o.color) for o in orders] == [("Ayra", "pink"), ("Manvi", "pink")]
-    assert any("empty name" in w for w in warns)
-
-
-def test_parse_orders_no_header():
-    orders, _ = parse_orders("Ayra,pink\nKabir,blue\n")
-    assert [o.name for o in orders] == ["Ayra", "Kabir"]
 
 
 def test_scaling_rules_v11():

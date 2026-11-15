@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS orders (
     color           TEXT,          -- normalised colour
     name_edited     INTEGER NOT NULL DEFAULT 0,
     review_reason   TEXT,          -- why it needs a human; NULL when fine
-    state           TEXT NOT NULL, -- needs_review | ready | bundled | not_needed
+    state           TEXT NOT NULL, -- ready | needs_review | in_batch | bundled | skipped | not_needed
     batch_id        INTEGER,
     last_error      TEXT,
     first_file      TEXT,
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS batches (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at  REAL,
     out_dir     TEXT,
-    status      TEXT,              -- waiting | build_requested | building | done | done_with_problems | failed | cancelled
+    status      TEXT,              -- created | waiting | models_ready | build_requested | building | done | done_with_problems | failed | cancelled
     order_ids   TEXT,              -- JSON list
     summary     TEXT               -- JSON (plates, errors, warnings)
 );

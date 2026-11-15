@@ -1,5 +1,8 @@
 """On-disk cache of unscaled meshes downloaded from MakerWorld.
 
+Layout: APP_DIR/cache/<key>/{base.stl, name.stl, meta.json}. STL is only the cache's internal
+format (exact, simple); plate output is .3mf (export.py).
+
 Key = hash of everything that changes the geometry (name + model params +
 whether/which license password). The password itself is never written; only a
 salted hash of it goes into the key.

@@ -1,8 +1,8 @@
-"""Build stage: cached meshes → scaled parts → plates → STL files + report.
+"""Build stage: cached meshes → scaled parts → plates → one .3mf per plate + report.csv.
 
-The download stage (makerworld.py) fills the cache; this module only needs the
-unscaled base/name meshes for each order, so a batch can be rebuilt instantly
-after changing plate or scaling settings.
+Input is the unscaled base/name meshes per order (filled into the cache by the SnapSTL
+Helper via batches.py), so plates can be rebuilt without downloading again.
+Output layout: <output>/<YYYY-MM-DD>/Batch N - <YYYY-MM-DD>/{Bases/, Names/<colour>/, report.csv}.
 """
 from __future__ import annotations
 
