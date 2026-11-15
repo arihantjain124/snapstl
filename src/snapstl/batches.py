@@ -189,6 +189,26 @@ def _info(key: str) -> dict:
         return {}
 
 
+_SCAN: dict[tuple[str, int], bool] = {}  # (key, base.stl mtime) → watermark found
+
+
+def scanned_watermark(key: str) -> bool | None:
+    """Watermark on a saved model: from info.json, else scanned now (older downloads) and remembered."""
+    info = _info(key)
+    if isinstance(info.get("watermark"), bool):
+        return info["watermark"]
+    d = cache.find(key)
+    if not d or not (d / "base.stl").exists():
+        return None
+    k = (key, int((d / "base.stl").stat().st_mtime))
+    if k not in _SCAN:
+        got = cache.load(key)
+        if not got:
+            return None
+        _SCAN[k] = watermark.detect(got[0]).present
+    return _SCAN[k]
+
+
 def batch_models(batch_id: int) -> list[dict]:
     """Every distinct object of a batch with its download + watermark state (for the Objects list)."""
     with db.tx() as con:
@@ -217,7 +237,7 @@ def batch_models(batch_id: int) -> list[dict]:
                 "key": key, "name": os_[0].name, "compartments": os_[0].compartments,
                 "copies": len(os_), "colors": sorted({o.color for o in os_}),
                 "status": status, "downloaded": info.get("downloaded"),
-                "watermark": info.get("watermark"),  # True / False / None (= downloaded before this check)
+                "watermark": scanned_watermark(key) if have else None,
                 "license_check": info.get("license_check"),
                 "error": last["error"] if last and state in ("failed", "queued") else None,
             })
