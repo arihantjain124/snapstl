@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS print_jobs (
     color         TEXT,            -- names: the plate's colour
     printer_id    INTEGER NOT NULL, -- Bambuddy's printer id
     printer_name  TEXT,
-    state         TEXT NOT NULL,   -- queued | slicing | uploading | sent | printing | done | failed | cancelled
+    state         TEXT NOT NULL,   -- queued | slicing | uploading | sent | printing | done | failed | cancelled | reprint
     sliced        TEXT,            -- sliced file used (relative to the batch folder)
     file_id       INTEGER,         -- Bambuddy library file
     queue_item_id INTEGER,         -- Bambuddy queue item
@@ -125,6 +125,8 @@ MIGRATIONS = [
     ("orders", "printed_at", "REAL"),       # marked printed by a person
     ("print_jobs", "options", "TEXT"),      # JSON print options for Bambuddy (bed levelling, flow cali, timelapse)
     ("print_jobs", "held", "INTEGER"),      # 1 = waiting in Bambuddy for a person to press Start
+    ("print_jobs", "autostart", "INTEGER"),  # 1 = a person pressed Start print (Make It): start once queued
+    ("orders", "made_at", "REAL"),          # base and name both printed (Make It) → Ready to ship
 ]
 
 # Bookkeeping for the shared records, kept by triggers so no code path can forget it:

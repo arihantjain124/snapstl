@@ -167,7 +167,7 @@ def bb(monkeypatch, tmp_path):
         con.execute("DELETE FROM print_jobs")
         con.execute("DELETE FROM downloads WHERE batch_id > ?", (first,))
         con.execute("DELETE FROM batches WHERE id > ?", (first,))
-        con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%' OR order_id LIKE 'PB%' OR order_id LIKE 'PS%'")
+        con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%' OR order_id LIKE 'PB%' OR order_id LIKE 'PS%' OR order_id LIKE 'PM%'")
     farm.CONFIG_PATH.unlink(missing_ok=True)
 
 
@@ -395,3 +395,83 @@ def test_printer_status_tab_has_everything_but_secrets(client, bb):
     assert r["printers"][1]["status"]["ams"][0]["tray"][2] == {"id": 2, "state": 9}  # every field, empty slots too
     d = client.get("/api/printer-status?download=1")
     assert "attachment" in d.headers["content-disposition"] and json.loads(d.text)["printers"][0]["id"] == 1
+
+
+def makeit_row(c, section, file):
+    return next(r for r in c.get("/api/makeit").json()[section] if r["file"] == file)
+
+
+def test_make_it_bases_names_start_completed_ready_to_ship(client, bb):
+    from snapstl import makeit
+
+    bb.printers[4] = {"id": 4, "name": "Base 2", "model": "A1", "serial_number": "S4", "ip_address": "10.0.0.12",
+                      "location": "Bases", "is_active": True}
+    bb.status[4] = {"connected": True, "state": "IDLE", "vt_tray": [tray(254, "FFFFFF", remain=95)]}  # more white left
+    client.get("/api/farm")
+    bid, folder = built_batch(client, "PM")
+    base, pink, blue = "Bases/{Ayra,pink},{Riya,blue}.3mf", "Names/pink/{Ayra,pink}.3mf", "Names/blue/{Riya,blue}.3mf"
+    for f in (base, pink, blue):
+        (folder / (f[:-4] + ".gcode.3mf")).write_bytes(sliced_bytes(f))
+
+    m = client.get("/api/makeit").json()
+    assert [r["file"] for r in m["bases"]] == [base] and {r["file"] for r in m["names"]} == {pink, blue}
+    assert m["bases"][0]["order_ids"] == ["PM1", "PM2"] and m["completed"] == []
+    assert m["bases"][0]["suggested"] == 4  # available base printer with the most white left
+    assert makeit_row(client, "names", pink)["suggested"] == 2 and makeit_row(client, "names", blue)["suggested"] is None
+    # (Names A has blue too, but it's already picked for pink — only *available* printers are pre-selected)
+
+    # nothing is sent until Start print; then it is sent AND started (that click is the start)
+    assert bb.queue == {}
+    r = client.post("/api/makeit/start", json={"batch_id": bid, "file": base, "printer_id": 4,
+                                               "options": {"timelapse": True}})
+    assert r.status_code == 200, r.text
+    wait_for(lambda: bb.queue and bb.queue[1].get("manual_start") is False)
+    assert bb.queue[1]["printer_id"] == 4 and bb.queue[1]["timelapse"] is True
+    assert client.post("/api/makeit/start", json={"batch_id": bid, "file": base, "printer_id": 4}).status_code == 400
+    # wrong colour refused
+    assert "needs blue" in client.post("/api/makeit/start", json={"batch_id": bid, "file": blue, "printer_id": 3}).json()["detail"]
+
+    # Bambuddy warns on start → stays held; Start print again with force starts it
+    bb.short_filament = True
+    client.post("/api/makeit/start", json={"batch_id": bid, "file": pink, "printer_id": 2})
+    j = wait_for(lambda: (lambda r: r["job"] if r["job"] and r["job"]["state"] == "sent" and r["job"]["error"] else None)(
+        makeit_row(client, "names", pink)))
+    assert j["held"] and "anyway" in j["error"]
+    r = client.post("/api/makeit/start", json={"batch_id": bid, "file": pink, "printer_id": 2})
+    assert r.status_code == 409
+    assert client.post("/api/makeit/start", json={"batch_id": bid, "file": pink, "printer_id": 2, "force": True}).status_code == 200
+    bb.short_filament = False
+    client.post("/api/makeit/start", json={"batch_id": bid, "file": blue, "printer_id": 2})
+    wait_for(lambda: len(bb.queue) == 3 and bb.queue[3].get("manual_start") is False)
+
+    # printed: base + pink done → Ayra (PM1) ready to ship; Riya waits for blue
+    bb.queue[1]["status"] = bb.queue[2]["status"] = "completed"
+    farm.WORKER.refresh()
+    m = client.get("/api/makeit").json()
+    assert {r["file"] for r in m["completed"]} == {base, pink} and [r["file"] for r in m["names"]] == [blue]
+    tab = lambda t: [o["order_id"] for o in client.get(f"/api/orders?tab={t}&limit=50").json()["orders"] if o["order_id"].startswith("PM")]
+    assert tab("ready_to_ship") == ["PM1"] and tab("bundled") == ["PM2"]
+    bb.queue[3]["status"] = "completed"
+    farm.WORKER.refresh()
+    assert sorted(tab("ready_to_ship")) == ["PM1", "PM2"] and client.get("/api/makeit").json()["names"] == []
+
+    # Reprint (after a failure is noticed): back to the queue, its orders leave Ready to ship
+    assert client.post("/api/makeit/reprint", json={"batch_id": bid, "file": pink}).status_code == 200
+    m = client.get("/api/makeit").json()
+    assert [r["file"] for r in m["names"]] == [pink] and m["names"][0]["job"]["state"] == "reprint"
+    assert tab("ready_to_ship") == ["PM2"] and tab("bundled") == ["PM1"]
+    assert client.post("/api/makeit/reprint", json={"batch_id": bid, "file": blue}).status_code == 200  # also done
+    assert client.post("/api/makeit/reprint", json={"batch_id": bid, "file": pink}).status_code == 400  # not completed
+
+
+def test_plate_orders_for_batches_built_before_order_ids():
+    from snapstl import makeit
+
+    plates = [{"kind": "bases", "file": "B", "names": ["Ayra", "Ayra", "Riya"], "colors": ["pink", "blue", "pink"]},
+              {"kind": "names", "file": "N1", "names": ["Ayra"], "colors": ["pink"]},
+              {"kind": "names", "file": "N2", "names": ["Ayra"], "colors": ["blue"]}]
+    orders = [{"order_id": "A1", "name": "Ayra", "color": "pink", "quantity": 1},
+              {"order_id": "A2", "name": "Ayra", "color": "blue", "quantity": 1},
+              {"order_id": "R1", "name": "Riya", "color": "pink", "quantity": 1}]
+    on = makeit.plate_order_ids(plates, orders)
+    assert sorted(on["B"]) == ["A1", "A2", "R1"] and on["N1"] == ["A1"] and on["N2"] == ["A2"]

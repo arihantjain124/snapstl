@@ -32,12 +32,13 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   **.3mf** per plate, file names `{name,color},{name2,color2}.3mf`, **never write ZIP files**. Sliced
   plates (print farm) go only in that batch's `Sliced/` folder, same path + `.gcode.3mf`.
 - **Print farm (Bambuddy):** plates reach printers only through Bambuddy on this computer, only after a
-  person presses **Push to queue** or **Print** (never automatically after a build), and only on a
+  person presses **Start print** in Make It (never automatically after a build), and only on a
   printer that fits: its Location in Bambuddy allows the kind and the plate's colour is loaded (white
   for bases). Never skip Bambuddy's "Clear plate" step. SnapSTL never talks to printers directly.
 - **No print starts by itself:** every queue item is created with `manual_start: true` (held) and is
-  released only by a person's **Start** (`farm.start_job`). Never create a queue item that can start
-  on its own, and never call Start from code paths a person didn't click.
+  released only by a person's click (**Start print** → `autostart`, or `farm.start_job`). Never create
+  a queue item that can start on its own, and never start one from a code path a person didn't click.
+  Reprint only after a person confirms a failure.
 - Printers, filament and printer settings are managed in Bambuddy; the Printers page stays read only
   (no adding printers, filament or roles in SnapSTL).
 
@@ -112,6 +113,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Mac vs Windows (folders, Finder/Explorer, keep awake, restart, LAN name) | `platform_os.py` |
 | Shared order records (Supabase): connection in Settings, sync, claims | `sync.py`, `config.py`, `computer.py`, `server.shared_records_*`, `server.setup_status`, `dbtool.py` (`snapstl-db`), triggers in `db.POST_SCHEMA` |
 | Print farm: Bambuddy connection, printers, Push to queue, slicing | `farm.py` (+ `/api/farm*`, `/api/batches/{id}/plates` and `/push`, `/api/print-jobs` in `server.py`); Printers page + Push to queue panel in `index.html`; `tests/test_farm.py` |
+| Make It tab (Bases / Names / Completed), Ready to ship | `makeit.py`, `/api/makeit*` in `server.py`, `server.TABS` (`ready_to_ship`), Make It section in `index.html`; `tests/test_farm.py` |
 | Bambuddy install / update | `scripts/bambuddy-mac.sh`, `scripts/windows/bambuddy.ps1`, `scripts/bambuddy-version.txt`, `platform_os.update_bambuddy` |
 | Printed tab / report status timestamps | `ingest.set_printed`, `ingest.status_stamp`, `server.TABS`, `index.html` (`SELKIND`) |
 

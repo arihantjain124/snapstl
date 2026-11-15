@@ -3,7 +3,7 @@
 SnapSTL turns Snap Magicians webstore orders for the **Custom Name Desk Organizer** (SKU
 `Magicians_35`) into print-ready Bambu Lab plate files (**.3mf**). It generates each name on
 MakerWorld, scales it to the agreed rules, puts 3 per plate and saves dated batch folders. With
-**Push to queue** it sends the finished plates to your Bambu printers through **Bambuddy**, the
+**Make It** it sends the finished plates to your Bambu printers through **Bambuddy**, the
 open-source print-farm manager installed with it.
 
 It runs on **macOS** and **Windows**. You install it with one command, and everything else is set up
@@ -141,7 +141,7 @@ shown again in full. Give it only to computers that run SnapSTL.
 ## 4. Your printers (print farm)
 
 SnapSTL sends plates to your printers through **Bambuddy**, which the installer put on this computer.
-Printers, filament and printer settings are all managed **in Bambuddy** (Printers page → **Open
+Printers, filament and printer settings are all managed **in Bambuddy** (Make It → **Open
 Bambuddy**). SnapSTL only reads them.
 
 1. **On each printer:** Settings → Network → turn on **LAN Only Mode**, then **Developer Mode**.
@@ -162,22 +162,26 @@ Bambuddy**). SnapSTL only reads them.
      filament preset names. SnapSTL then slices each plate when you push it. Bambu Studio's own
      command line can't slice on a Mac, so this needs the service.
 
-The **Printers** page shows every printer: what it makes, its state (printing %, time left, layer,
-temperatures), the filament in each slot, and **Clear plate** when its bed must be cleared. Below it,
-**Print jobs** lists every plate sent. Each one has a **printer** dropdown, **Print options** (bed
-levelling, flow calibration, timelapse; default = Bambuddy's settings), a **Print** button and, while
-it waits, **Start**.
+**Make It** (sidebar) is where plates are printed. It has four parts:
 
-**Nothing prints by itself.** A plate reaches Bambuddy only when you press **Push to queue** or
-**Print**, and it waits there **held** (*Waiting for Start*) until you press **Start**. After Start,
-Bambuddy prints it as soon as the printer is free and its bed has been cleared. If Bambuddy warns,
-for example about too little filament on the spool, SnapSTL asks before starting anyway.
+- **Bases**: every base plate of your built batches that still has to be printed. A printer is
+  already chosen: the next **available** printer (connected, idle, bed cleared, nothing of yours on
+  its way) that makes bases and has white loaded, with the **most filament left**. You can pick any
+  other printer that fits.
+- **Names**: every name plate with its colour. You can only pick printers that have that colour
+  loaded, as Bambuddy reports it. One is pre-selected when such a printer is available.
+- **Completed**: printed plates. **Reprint** is there only for a print that failed: it asks first,
+  then the plate goes back to Bases or Names.
+- **Printers**: each printer's state and the filament in every slot, with **Clear plate** when a bed
+  must be cleared.
 
-The **Print** button:
-
-- **Print** sends a failed or cancelled plate again.
-- **Print again** reprints a printed plate.
-- **Move** moves a plate still waiting in Bambuddy's queue to another printer and applies the options.
+**Nothing prints until you click Start print.** That click sends the plate to the chosen printer
+(slicing it first if a slicer service is set) and starts it. Bambuddy then prints it as soon as the
+printer is free and its bed has been cleared. Each row also has **Options** (bed levelling, flow
+calibration, timelapse; default = Bambuddy's settings). If Bambuddy warns, for example about too
+little filament, SnapSTL asks before starting anyway. When a plate is printed it moves to
+**Completed**. Once an order's base **and** its name are both printed, the order appears in
+**Orders → Ready to ship**.
 
 **Printer status** (sidebar) shows *everything* Bambuddy reports about each printer: its record, the
 full live status (temperatures, fans, every AMS unit and tray, nozzles, errors, print options,
@@ -193,7 +197,8 @@ copy. It's read only, and access codes and keys are hidden.
    - An older report never undoes a newer status.
 2. **Check the tabs:**
    - **Ready** (with sub-tabs **Single** and **Clubbed**), **Needs review**, **In a batch**,
-     **Bundled**, **Printed**, **Skipped**.
+     **Bundled** (made into plates, not printed yet), **Ready to ship** (base and name both printed
+     in Make It), **Printed**, **Skipped**.
    - **Delivered**, **RTO**, **In Transit**, **Cancelled**, **Others**, **All**.
    - Type in the boxes under the column names to filter.
    - In **Needs review**, fix the name or colour and click **Approve**.
@@ -205,19 +210,18 @@ copy. It's read only, and access codes and keys are hidden.
 6. **Check the fit.** The batch should say **Fit check: N/N**. A name that wouldn't fit its base is
    never printed and goes back to Ready.
 7. **Print.**
-   - **With Bambuddy:** open the batch → **Push to queue**. Each plate gets a suggested printer (the
-     right job and colour, the least busy). Change any of them, then click **Push to queue**. The
-     **Status** column follows each plate: *Sending* → *Waiting for Start*. Press **Start** on each plate
-     when you want it printed → *Started · in queue* → *Printing* → *Printed*.
-     After each print, clear that printer's bed and click **Clear plate** (in Bambuddy, or on SnapSTL's
-     Printers page) so its next plate starts. To change the printer or print options later, or to
-     print a plate again, use **Printers → Print jobs → Print**.
+   - **With Bambuddy:** go to **Make It**. In **Bases** and **Names**, check the printer on each plate
+     (one is pre-selected when available), then click **Start print** on each plate you want printed
+     now. The **Status** column follows it: *Sending* → *Started · in queue* → *Printing* →
+     *Printed*. After each print, clear that printer's bed and click **Clear plate** (in Bambuddy, or
+     Make It → Printers) so its next plate starts. Printed plates move to **Completed**. If a print
+     failed, click **Reprint** there and start it again from Bases or Names.
    - **By hand:** click **Show in Finder** (Windows: **Show in File Explorer**) and open the plates in
      Bambu Studio. Print bases in white, and names in the colour of their folder.
-8. **Mark them printed.** When every plate of a pushed batch is printed, its Push to queue panel
-   offers **Mark these orders printed**. Otherwise open the **Bundled** tab, tick the orders you printed (or click **Printed** on
-   a row), then click **Mark printed**. They move to **Printed** and keep their batch for the record.
-   **Back to Bundled** undoes this.
+8. **Ship and mark them printed.** **Orders → Ready to ship** lists the orders whose base and name are
+   both printed. Tick them (or click **Printed** on a row), then click **Mark printed**. They move to
+   **Printed** and keep their batch for the record. **Back to Bundled** undoes this. Orders printed by
+   hand are marked the same way from the **Bundled** tab.
 
 A finished batch can be redone:
 
@@ -282,10 +286,10 @@ was tested with (`scripts/bambuddy-version.txt`) at the same time.
 | "Can't reach the shared records … no batch was created" | Check the internet, then try again |
 | Connect / save says the password or address is wrong | Copy the **Session pooler** string again; put the password in place of `[YOUR-PASSWORD]` with no brackets |
 | Settings → Database shows changes waiting | They're sent on the next sync; **Sync now** shows any problem |
-| Printers page: **Bambuddy isn't answering** | Run the install command again (it repairs Bambuddy); log: `~/Library/Logs/Bambuddy` (Windows: `%LOCALAPPDATA%\Bambuddy\logs`) |
+| Make It: **Bambuddy isn't answering** | Run the install command again (it repairs Bambuddy); log: `~/Library/Logs/Bambuddy` (Windows: `%LOCALAPPDATA%\Bambuddy\logs`) |
 | Adding a printer in Bambuddy fails | Check the IP, serial and access code, and that LAN Only Mode **and** Developer Mode are on |
-| A plate **Not sliced** / push fails with "Not sliced yet" | Slice it in Bambu Studio and save it in the batch's `Sliced` folder, or set a slicer service; then **Print** (Printers → Print jobs) |
-| A printer is greyed out in Push to queue | It makes the other part (its **Location** in Bambuddy), it's offline, or that colour isn't loaded — load the spool; the Printers page shows what Bambuddy sees |
+| A plate **Not sliced** / push fails with "Not sliced yet" | Slice it in Bambu Studio and save it in the batch's `Sliced` folder, or set a slicer service; then **Start print** again (Make It) |
+| A printer is greyed out in Make It | It makes the other part (its **Location** in Bambuddy), it's offline, or that colour isn't loaded — load the spool; Make It → Printers shows what Bambuddy sees |
 | A pushed plate waits in Bambuddy | Its printer is busy or waiting for the bed to be cleared: **Clear plate** |
 | SnapSTL doesn't open | Run the install command again; it repairs and restarts SnapSTL |
 | Database getting big | Settings → Database → **Clean up** (orders already made are kept) |
