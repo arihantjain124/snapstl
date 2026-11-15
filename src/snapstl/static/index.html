@@ -93,6 +93,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
   <div class="foot">
     <span class="pill" id="dl" title="MakerWorld downloads">Downloads idle</span>
     <button id="dlpause" class="small">Pause downloads</button>
+    <button id="updbadge" class="small primary" hidden>Update available</button>
     <button id="logout" class="small">Sign out</button>
   </div>
 </aside>
@@ -233,6 +234,13 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
     <label>Portal password (at least 10 characters; leave empty to keep the current one)</label>
     <div class="row2" style="grid-template-columns:1fr auto"><input id="portalpw" type="password" autocomplete="new-password" placeholder="Not set"><button id="portalsave">Save</button></div>
     <p class="hint" id="portalinfo"></p>
+  </div>
+  <div class="card" id="updcard">
+    <h2>Updates</h2>
+    <p class="hint" id="updinfo">…</p>
+    <ul class="hint" id="updlist" style="padding-left:18px;margin:4px 0"></ul>
+    <div style="display:flex;gap:8px;margin-top:8px"><button id="updcheck">Check for updates</button><button id="updgo" class="primary" hidden>Update now</button></div>
+    <p class="hint">Updating fetches the latest SnapSTL from its repository, installs it and restarts SnapSTL (a few seconds). The Chrome helper reloads itself. Orders, batches, settings and downloaded models are kept.</p>
   </div>
   <div class="card">
     <h2>Database</h2>
@@ -412,7 +420,7 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   for(const s of ['orders','batches','downloads','settings','help'])$('t-'+s).hidden=s!==t;
-  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='downloads')loadQueue(); if(t==='settings'){loadDb();loadPortal()} try{localStorage.setItem('tab',t)}catch{}}
+  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='downloads')loadQueue(); if(t==='settings'){loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
 
 // ---------- orders ----------
 async function loadOrders(){
@@ -578,6 +586,24 @@ async function loadPortal(){if(!META.local){$('portalcard').hidden=true;return}
 $('portalsave').onclick=async()=>{try{const r=await post('/api/portal',{enabled:$('lan').checked,password:$('portalpw').value});$('portalpw').value='';
   $('portalinfo').textContent=r.restarting?'Saved — SnapSTL is restarting (a few seconds). macOS may ask to allow incoming connections: click Allow.':(r.note||'Saved.');setTimeout(loadPortal,4000)}catch(e){$('portalinfo').textContent=e.message;$('portalinfo').style.color='var(--err)'}};
 
+// ---------- updates ----------
+async function loadUpdates(fetch=1){if(!META.local){$('updcard').hidden=true;return}
+  $('updinfo').textContent='Checking…';
+  let u;try{u=await api('/api/update?fetch='+fetch)}catch(e){$('updinfo').textContent=e.message;return}
+  $('updbadge').hidden=!(u.behind>0);$('updgo').hidden=!(u.behind>0);
+  $('updlist').innerHTML=(u.changes||[]).map(c=>`<li>${esc(c)}</li>`).join('');
+  const ver='SnapSTL '+(u.version||'')+(u.current?` (${esc(u.current.split(' ')[0])})`:'');
+  $('updinfo').innerHTML=!u.git?esc(u.error):u.error?`${ver}. ${esc(u.error)}`:u.behind?`${ver}. <b>${u.behind} update${u.behind>1?'s':''} waiting:</b>`:`${ver} — up to date.`;
+  if(u.edited&&u.edited.length)$('updinfo').innerHTML+=` <span style="color:var(--err)">Files were changed by hand (${esc(u.edited.slice(0,3).join(', '))}), so updating is blocked.</span>`}
+$('updcheck').onclick=()=>loadUpdates(1);
+$('updbadge').onclick=()=>show('settings');
+$('updgo').onclick=async()=>{$('updgo').disabled=true;$('updinfo').textContent='Updating…';
+  try{const r=await post('/api/update');
+    if(!r.updated){$('updinfo').textContent='Already up to date.';loadUpdates(0);return}
+    $('updinfo').textContent=r.restarting?'Updated — SnapSTL is restarting. This page reloads in a few seconds.':(r.note||'Updated.');$('updlist').innerHTML='';
+    if(r.restarting)setTimeout(function wait(){fetch('/api/meta').then(x=>x.ok?location.reload():setTimeout(wait,1500)).catch(()=>setTimeout(wait,1500))},4000)}
+  catch(e){$('updinfo').textContent=e.message;$('updinfo').style.color='var(--err)'}finally{$('updgo').disabled=false}};
+
 // ---------- database ----------
 const fmtMB=b=>(b/1048576).toFixed(1)+' MB';
 async function loadDb(){const m=await api('/api/maintenance');const o=m.orders,sum=x=>Object.values(x).reduce((a,b)=>a+b,0);
@@ -616,7 +642,8 @@ async function refresh(){try{const st=await api('/api/state');
 }catch(e){}}
 function refreshAll(){lastKey='';refresh()}
 (async()=>{META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;
-  if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders'}catch{}if(!['orders','batches','downloads','settings','help'].includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;show(t);refresh();setInterval(refresh,2000)})();
+  if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders'}catch{}if(!['orders','batches','downloads','settings','help'].includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;show(t);refresh();setInterval(refresh,2000);
+  if(META.local){loadUpdates(1);setInterval(()=>loadUpdates(1),6*3600*1000)}})();
 </script>
 </body>
 </html>

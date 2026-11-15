@@ -489,3 +489,16 @@ snapstl.server:app --port 8320`.
 | Change where / how models are saved | `cache.py` (keep: readable folder names ending in the key; never auto-delete) |
 | Change MakerWorld interaction | `helper/content.js` / `inject.js`; bump `helper/manifest.json` version |
 | Add an endpoint | `server.py`; anything the helper calls must live under `/api/helper/`; anything that touches this Mac's files or setup must be Mac-only (`MAC_ONLY_PREFIXES` / `is_local`) |
+
+## Updates (git)
+
+Each SnapSTL folder is a git clone of the private repository, read-only through a per-computer
+**deploy key** (INSTALL.md). `updater.py`: `check()` = `git fetch` + how many commits `main` is
+behind; `apply()` = refuse if tracked files were edited by hand → `git pull --ff-only` → `uv sync`.
+`GET/POST /api/update` (this computer only) wrap them. POST refuses while a name is claimed or a
+batch is building, then restarts the launchd service. The UI checks at start and every 6 h and shows
+**Update available** in the sidebar. The helper's config response carries the helper version on disk.
+When it differs from the running one, background.js calls `chrome.runtime.reload()` once per version
+(never mid-name). `onInstalled` reloads open model-maker tabs so they run the new content script.
+`scripts/update.sh` does the same from Terminal. Customer data is outside the folder, so a pull
+can't touch it. Plan for a shared cloud database and Windows: docs/PLAN-shared-db-and-windows.md.

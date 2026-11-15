@@ -19,10 +19,25 @@ const postJSON = (path, body) =>
 let cfgCache = null, cfgAt = 0;
 async function config() {
   if (!cfgCache || Date.now() - cfgAt > 15000) {
-    cfgCache = await app("/api/helper/config");  // {model_url, design_id}
+    cfgCache = await app("/api/helper/config");  // {model_url, design_id, helper_version}
     cfgAt = Date.now();
+    await reloadIfUpdated(cfgCache.helper_version);
   }
   return cfgCache;
+}
+
+// After SnapSTL updates itself (git pull), the helper folder on disk has a newer version: reload so
+// Chrome uses it. Never mid-name, and only once per version (if Chrome loads the helper from another
+// folder the version can't change by reloading — then the popup says to reload it by hand).
+async function reloadIfUpdated(want) {
+  const have = chrome.runtime.getManifest().version;
+  if (!want || want === have) return;
+  const { workingJob } = await session.get("workingJob");
+  if (workingJob) return;
+  const { reloadTried } = await chrome.storage.local.get("reloadTried");
+  if (reloadTried === want) return;
+  await chrome.storage.local.set({ reloadTried: want });
+  chrome.runtime.reload();
 }
 
 function onModelPage(url, cfg) {
@@ -36,6 +51,13 @@ function onModelPage(url, cfg) {
 async function tab(id) {
   try { return await chrome.tabs.get(id); } catch { return null; }
 }
+
+// Installed, updated or reloaded: MakerWorld model-maker tabs still run the old page script (Chrome
+// doesn't swap it), so reload them to pick up this version.
+chrome.runtime.onInstalled.addListener(async () => {
+  const tabs = await chrome.tabs.query({ url: "https://makerworld.com/*" });
+  for (const t of tabs) if ((t.url || "").includes("/makerlab/parametricModelMaker")) chrome.tabs.reload(t.id);
+});
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   const tabId = sender.tab && sender.tab.id;

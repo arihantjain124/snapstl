@@ -20,7 +20,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
-from . import auth, cache, db
+from . import auth, cache, db, updater
 from .ingest import ingest, reset_to_ready, set_name
 from . import batches as B
 from . import maintenance as M
@@ -52,7 +52,8 @@ OPEN_PATHS = {"/login", "/api/login", "/api/auth-check", "/favicon.ico"}
 
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]", "::1")
 # Things only the SnapSTL Mac itself may do (helper, Finder, folders, portal setup, reset).
-MAC_ONLY_PREFIXES = ("/api/helper/", "/api/downloads/reveal", "/api/portal", "/api/maintenance/reset")
+MAC_ONLY_PREFIXES = ("/api/helper/", "/api/downloads/reveal", "/api/portal", "/api/maintenance/reset",
+                     "/api/update")
 
 
 def is_local(request: Request) -> bool:
@@ -180,6 +181,30 @@ def _restart_service_soon() -> bool:
 
     threading.Thread(target=go, daemon=True).start()
     return True
+
+
+@app.get("/api/update")
+def update_check(fetch: int = 1):
+    """Settings → Updates: is a newer SnapSTL waiting in the repository?"""
+    return updater.check(bool(fetch)) | {"version": _version()}
+
+
+@app.post("/api/update")
+def update_apply():
+    if DOWNLOADER.current is not None:
+        raise HTTPException(409, f"A name is being downloaded ({DOWNLOADER.current}) — pause downloads or wait, then update")
+    with db.tx() as con:
+        busy = con.execute("SELECT COUNT(*) n FROM batches WHERE status IN ('build_requested','building')").fetchone()["n"]
+    if busy:
+        raise HTTPException(409, "A batch is being built — wait for it to finish, then update")
+    try:
+        r = updater.apply()
+    except RuntimeError as e:
+        raise HTTPException(400, str(e)) from e
+    r["restarting"] = _restart_service_soon() if r["updated"] else False
+    if r["updated"] and not r["restarting"]:
+        r["note"] = "Updated — restart SnapSTL to use the new version"
+    return r
 
 
 @app.get("/api/portal")
@@ -464,7 +489,15 @@ def helper_config():
     """Which MakerWorld page the helper must be on (Settings → MakerWorld model page link)."""
     from .settings import design_id
 
-    return {"model_url": SETTINGS.makerworld_url, "design_id": design_id(SETTINGS.makerworld_url)}
+    return {"model_url": SETTINGS.makerworld_url, "design_id": design_id(SETTINGS.makerworld_url),
+            "helper_version": _helper_version()}  # the helper reloads itself when its files were updated
+
+
+def _helper_version() -> str:
+    try:
+        return json.loads((updater.ROOT / "helper" / "manifest.json").read_text())["version"]
+    except (OSError, ValueError, KeyError):
+        return ""
 
 
 @app.get("/api/helper/next")

@@ -74,6 +74,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Model link / per-model license passwords | `settings.py` (`makerworld_url`, `license_passwords`, `design_id`) + Settings card in `index.html` |
 | Watermark check / license confirmation | `watermark.py`, `batches.check_license` / `store_result`, `helper/content.js` (`runJob`), `helper/inject.js` |
 | Plate / object pictures | `render.py`, `pipeline._plate_picture`, `server.model_view` |
+| Updates (git pull, helper self-reload) | `updater.py`, `server.update_*`, `scripts/update.sh`, `helper/background.js` (`reloadIfUpdated`) |
 | Access control / other computers | `server._blocked`, `server.access_control`, `/api/portal`, `__init__.serve` (bind address) |
 | Downloads page (queue + folder) | `<section id="t-downloads">` in `index.html`; `cache.py` for the folder |
 | MakerWorld page interaction | `helper/content.js`, `helper/inject.js` (bump `helper/manifest.json` version; reload extension) |

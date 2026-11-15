@@ -241,3 +241,34 @@ def test_watermark_detector_and_render():
     for view in ("top", "back"):
         png = render.render([(watermarked(clean), r.faces)], view=view, px=1.0)
         assert png[:4] == b"\x89PNG"
+
+
+def test_updater_pulls_from_repository(tmp_path, monkeypatch):
+    import subprocess
+
+    from snapstl import updater
+
+    def git(cwd, *a):
+        subprocess.run(["git", "-C", str(cwd), *a], check=True, capture_output=True)
+
+    src = tmp_path / "src"; src.mkdir()
+    git(src, "init", "-q", "-b", "main"); git(src, "config", "user.email", "t@t"); git(src, "config", "user.name", "t")
+    (src / "a.txt").write_text("1"); git(src, "add", "."); git(src, "commit", "-qm", "first")
+    git(tmp_path, "clone", "-q", "--bare", str(src), "remote.git")
+    git(tmp_path, "clone", "-q", str(tmp_path / "remote.git"), "app")
+    git(src, "remote", "add", "origin", str(tmp_path / "remote.git"))
+    (src / "a.txt").write_text("2"); git(src, "commit", "-qam", "Second change"); git(src, "push", "-q", "origin", "main")
+
+    monkeypatch.setattr(updater, "ROOT", tmp_path / "app")
+    monkeypatch.setattr(updater, "uv_path", lambda: "true")  # `true sync …` stands in for uv
+    c = updater.check()
+    assert c["git"] and c["behind"] == 1 and c["changes"] == ["Second change"] and not c["edited"]
+    (tmp_path / "app" / "a.txt").write_text("edited by hand")
+    try:
+        updater.apply()
+        raise AssertionError("should refuse with hand edits")
+    except RuntimeError as e:
+        assert "changed by hand" in str(e)
+    git(tmp_path / "app", "checkout", "--", ".")
+    assert updater.apply()["updated"] and (tmp_path / "app" / "a.txt").read_text() == "2"
+    assert updater.check(fetch=False)["behind"] == 0

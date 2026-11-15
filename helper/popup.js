@@ -9,6 +9,11 @@ async function refresh() {
   if (!s.working) set("work", "None yet", "warn");
   else set("work", s.working.onPage ? "On the model page" : "Not on the model page", s.working.onPage ? "ok" : "err");
   $("status").textContent = s.status || "—";
+  const want = s.cfg && s.cfg.helper_version, have = chrome.runtime.getManifest().version;
+  if (want && want !== have) {
+    $("msg").textContent = `SnapSTL has helper ${want}, Chrome is running ${have}: reload the SnapSTL Helper in chrome://extensions (and check it's loaded from the SnapSTL folder).`;
+    $("msg").className = "hint err";
+  }
   const cur = s.current;
   $("use").disabled = !s.appOk || !cur || !cur.onPage || cur.isWorking;
   $("use").textContent = cur && cur.isWorking ? "This is the working tab" : "Use this tab";
