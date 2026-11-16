@@ -118,13 +118,212 @@ CREATE OR REPLACE TRIGGER batch_records_no_delete BEFORE DELETE ON snapstl.batch
     FOR EACH ROW EXECUTE FUNCTION snapstl.refuse_delete();
 CREATE OR REPLACE TRIGGER batch_records_no_truncate BEFORE TRUNCATE ON snapstl.batch_records
     FOR EACH STATEMENT EXECUTE FUNCTION snapstl.refuse_delete();
+-- The rest of the webstore report for every Magicians_35 order (report.py), for reading and querying.
+CREATE TABLE IF NOT EXISTS snapstl.report_rows (
+    order_id                  text PRIMARY KEY,
+    channel                   text,
+    product_code              text,
+    address_line              text,
+    city                      text,
+    delivery_state            text,
+    pincode                   text,
+    payment_method            text,
+    product_amount_incl_tax   numeric,
+    product_tax_pct           numeric,
+    product_tax_amount        numeric,
+    product_amount_excl_tax   numeric,
+    cod_charges_incl_tax      numeric,
+    cod_charges_tax_pct       numeric,
+    cod_charges_tax_amount    numeric,
+    cod_charges_excl_tax      numeric,
+    prepaid_discount          numeric,
+    delivery_fees_incl_tax    numeric,
+    delivery_fees_tax_pct     numeric,
+    delivery_fees_tax_amount  numeric,
+    delivery_fees_excl_tax    numeric,
+    total_amount_excl_tax     numeric,
+    total_tax_amount          numeric,
+    invoice_total_incl_tax    numeric,
+    shopdeck_service_fees     numeric,
+    cancellation_rto_revenue  numeric,
+    weight_kg                 numeric,
+    dimensions_cm             text,
+    initial_weight_slab       text,
+    final_weight_slab         text,
+    shipping_partner          text,
+    awb                       text,
+    pickup_address            text,
+    pickup_date               timestamp,
+    delivered_date            timestamp,
+    rto_initiated_date        timestamp,
+    rto_delivered_date        timestamp,
+    return_created_date       timestamp,
+    return_delivered_date     timestamp,
+    cod_remittance_status     text,
+    cod_remittance_date       timestamp,
+    cod_payable_amount        numeric,
+    remittance_id             text,
+    customer_invoice_id       text,
+    initial_shipping_charge   numeric,
+    weight_delta              numeric,
+    rto_delta                 numeric,
+    clubbing_delta            numeric,
+    final_shipping_charge     numeric,
+    billing_invoice_id        text,
+    coupon_code               text,
+    coupon_type               text,
+    coupon_discount           numeric,
+    customisation_applied     text,
+    return_condition          text,
+    status_at                 text,
+    report_file               text,
+    updated_by                text,
+    updated_at                timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS channel text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS product_code text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS address_line text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS city text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS delivery_state text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS pincode text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS payment_method text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS product_amount_incl_tax numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS product_tax_pct numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS product_tax_amount numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS product_amount_excl_tax numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS cod_charges_incl_tax numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS cod_charges_tax_pct numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS cod_charges_tax_amount numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS cod_charges_excl_tax numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS prepaid_discount numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS delivery_fees_incl_tax numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS delivery_fees_tax_pct numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS delivery_fees_tax_amount numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS delivery_fees_excl_tax numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS total_amount_excl_tax numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS total_tax_amount numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS invoice_total_incl_tax numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS shopdeck_service_fees numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS cancellation_rto_revenue numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS weight_kg numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS dimensions_cm text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS initial_weight_slab text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS final_weight_slab text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS shipping_partner text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS awb text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS pickup_address text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS pickup_date timestamp;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS delivered_date timestamp;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS rto_initiated_date timestamp;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS rto_delivered_date timestamp;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS return_created_date timestamp;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS return_delivered_date timestamp;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS cod_remittance_status text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS cod_remittance_date timestamp;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS cod_payable_amount numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS remittance_id text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS customer_invoice_id text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS initial_shipping_charge numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS weight_delta numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS rto_delta numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS clubbing_delta numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS final_shipping_charge numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS billing_invoice_id text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS coupon_code text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS coupon_type text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS coupon_discount numeric;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS customisation_applied text;
+ALTER TABLE snapstl.report_rows ADD COLUMN IF NOT EXISTS return_condition text;
+CREATE TABLE IF NOT EXISTS snapstl.report_uploads (
+    uid            text PRIMARY KEY,
+    filename       text,
+    sha256         text,
+    computer_name  text,
+    uploaded_at    timestamptz,
+    as_of          text,
+    report_date    text,
+    rows_total     integer,
+    magicians_rows integer,
+    new_orders     integer,
+    updated_orders integer
+);
+CREATE OR REPLACE TRIGGER report_rows_no_delete BEFORE DELETE ON snapstl.report_rows
+    FOR EACH ROW EXECUTE FUNCTION snapstl.refuse_delete();
+CREATE OR REPLACE TRIGGER report_rows_no_truncate BEFORE TRUNCATE ON snapstl.report_rows
+    FOR EACH STATEMENT EXECUTE FUNCTION snapstl.refuse_delete();
+CREATE OR REPLACE TRIGGER report_uploads_no_delete BEFORE DELETE ON snapstl.report_uploads
+    FOR EACH ROW EXECUTE FUNCTION snapstl.refuse_delete();
+CREATE OR REPLACE TRIGGER report_uploads_no_truncate BEFORE TRUNCATE ON snapstl.report_uploads
+    FOR EACH STATEMENT EXECUTE FUNCTION snapstl.refuse_delete();
+DROP VIEW IF EXISTS snapstl.orders_full;  -- made again: it lists the orders table's columns as they are now
+CREATE VIEW snapstl.orders_full WITH (security_invoker = true) AS
+    SELECT o.*, r.channel, r.product_code, r.address_line, r.city, r.delivery_state, r.pincode, r.payment_method, r.product_amount_incl_tax, r.product_tax_pct, r.product_tax_amount, r.product_amount_excl_tax, r.cod_charges_incl_tax, r.cod_charges_tax_pct, r.cod_charges_tax_amount, r.cod_charges_excl_tax, r.prepaid_discount, r.delivery_fees_incl_tax, r.delivery_fees_tax_pct, r.delivery_fees_tax_amount, r.delivery_fees_excl_tax, r.total_amount_excl_tax, r.total_tax_amount, r.invoice_total_incl_tax, r.shopdeck_service_fees, r.cancellation_rto_revenue, r.weight_kg, r.dimensions_cm, r.initial_weight_slab, r.final_weight_slab, r.shipping_partner, r.awb, r.pickup_address, r.pickup_date, r.delivered_date, r.rto_initiated_date, r.rto_delivered_date, r.return_created_date, r.return_delivered_date, r.cod_remittance_status, r.cod_remittance_date, r.cod_payable_amount, r.remittance_id, r.customer_invoice_id, r.initial_shipping_charge, r.weight_delta, r.rto_delta, r.clubbing_delta, r.final_shipping_charge, r.billing_invoice_id, r.coupon_code, r.coupon_type, r.coupon_discount, r.customisation_applied, r.return_condition, r.status_at AS report_status_at, r.report_file, r.updated_at AS report_updated_at
+      FROM snapstl.order_records o LEFT JOIN snapstl.report_rows r USING (order_id);
+COMMENT ON TABLE snapstl.report_rows IS 'Webstore report columns for each Magicians_35 order (one row per order_id), from the newest uploaded report. Join with order_records on order_id, or read orders_full. Read-only for anyone but SnapSTL.';
+COMMENT ON TABLE snapstl.report_uploads IS 'Every report uploaded on any SnapSTL computer: when, by which computer, and how recent the file is (as_of = newest date/time in it).';
+COMMENT ON VIEW snapstl.orders_full IS 'Each order (order_records: tab, ready_type, who is making it, name, colour …) with its report columns (report_rows). The easiest table to query.';
+COMMENT ON COLUMN snapstl.report_rows.status_at IS 'How recent this row is: event date | newest entry in its file | upload time (a newer file replaces it; blanks never erase).';
+COMMENT ON COLUMN snapstl.report_rows.channel IS 'Channel — Sales channel';
+COMMENT ON COLUMN snapstl.report_rows.product_code IS 'Product Code — Webstore product code';
+COMMENT ON COLUMN snapstl.report_rows.address_line IS 'Address — Delivery address line (city, state and pincode are separate)';
+COMMENT ON COLUMN snapstl.report_rows.city IS 'City — Delivery city';
+COMMENT ON COLUMN snapstl.report_rows.delivery_state IS 'State — Delivery state (Indian state)';
+COMMENT ON COLUMN snapstl.report_rows.pincode IS 'Pincode — Delivery pincode';
+COMMENT ON COLUMN snapstl.report_rows.payment_method IS 'Payment Method — e.g. COD or prepaid';
+COMMENT ON COLUMN snapstl.report_rows.product_amount_incl_tax IS 'Product Amount (Incl. Tax) — ₹';
+COMMENT ON COLUMN snapstl.report_rows.product_tax_pct IS 'Product Tax (%) — %';
+COMMENT ON COLUMN snapstl.report_rows.product_tax_amount IS 'Product Tax Amount — ₹';
+COMMENT ON COLUMN snapstl.report_rows.product_amount_excl_tax IS 'Product Amount (Excl. Tax) — ₹';
+COMMENT ON COLUMN snapstl.report_rows.cod_charges_incl_tax IS 'COD Charges (Incl. Tax) — ₹';
+COMMENT ON COLUMN snapstl.report_rows.cod_charges_tax_pct IS 'COD Charges Tax (%) — %';
+COMMENT ON COLUMN snapstl.report_rows.cod_charges_tax_amount IS 'COD Charges Tax Amount — ₹';
+COMMENT ON COLUMN snapstl.report_rows.cod_charges_excl_tax IS 'COD Charges (Excl. Tax) — ₹';
+COMMENT ON COLUMN snapstl.report_rows.prepaid_discount IS 'Prepaid Discount — ₹';
+COMMENT ON COLUMN snapstl.report_rows.delivery_fees_incl_tax IS 'Delivery Fees (Incl. Tax) — ₹';
+COMMENT ON COLUMN snapstl.report_rows.delivery_fees_tax_pct IS 'Delivery Fees Tax (%) — %';
+COMMENT ON COLUMN snapstl.report_rows.delivery_fees_tax_amount IS 'Delivery Fees Tax Amount — ₹';
+COMMENT ON COLUMN snapstl.report_rows.delivery_fees_excl_tax IS 'Delivery Fees (Excl. Tax) — ₹';
+COMMENT ON COLUMN snapstl.report_rows.total_amount_excl_tax IS 'Total Amount (Excl. Tax) — ₹';
+COMMENT ON COLUMN snapstl.report_rows.total_tax_amount IS 'Total Tax Amount — ₹';
+COMMENT ON COLUMN snapstl.report_rows.invoice_total_incl_tax IS 'Invoice Total (Incl. Tax) — ₹ the customer pays';
+COMMENT ON COLUMN snapstl.report_rows.shopdeck_service_fees IS 'Shopdeck Service Fees — ₹';
+COMMENT ON COLUMN snapstl.report_rows.cancellation_rto_revenue IS 'Cancellation/RTO Revenue — ₹';
+COMMENT ON COLUMN snapstl.report_rows.weight_kg IS 'Weight (kg) — Parcel weight (kg)';
+COMMENT ON COLUMN snapstl.report_rows.dimensions_cm IS 'Dimensions (cm) — Parcel dimensions (cm)';
+COMMENT ON COLUMN snapstl.report_rows.initial_weight_slab IS 'Initial Weight Slab — Courier weight slab';
+COMMENT ON COLUMN snapstl.report_rows.final_weight_slab IS 'Final Weight Slab — Courier weight slab after weighing';
+COMMENT ON COLUMN snapstl.report_rows.shipping_partner IS 'Shipping Partner — Courier';
+COMMENT ON COLUMN snapstl.report_rows.awb IS 'AWB — Courier tracking number';
+COMMENT ON COLUMN snapstl.report_rows.pickup_address IS 'Pickup Address — Where the courier picks up';
+COMMENT ON COLUMN snapstl.report_rows.pickup_date IS 'Pickup Date — Picked up by the courier';
+COMMENT ON COLUMN snapstl.report_rows.delivered_date IS 'Delivered Date — Delivered to the customer';
+COMMENT ON COLUMN snapstl.report_rows.rto_initiated_date IS 'RTO Initiated Date — Return to origin started';
+COMMENT ON COLUMN snapstl.report_rows.rto_delivered_date IS 'RTO Delivered Date — Returned to origin';
+COMMENT ON COLUMN snapstl.report_rows.return_created_date IS 'Return Created Date — Customer return created';
+COMMENT ON COLUMN snapstl.report_rows.return_delivered_date IS 'Return Delivered Date — Customer return delivered back';
+COMMENT ON COLUMN snapstl.report_rows.cod_remittance_status IS 'COD Remittance Status — COD money paid out?';
+COMMENT ON COLUMN snapstl.report_rows.cod_remittance_date IS 'COD Remittance Date — When COD money was paid out';
+COMMENT ON COLUMN snapstl.report_rows.cod_payable_amount IS 'COD Payable Amount — ₹ COD to be paid out';
+COMMENT ON COLUMN snapstl.report_rows.remittance_id IS 'Remittance ID — COD payout reference';
+COMMENT ON COLUMN snapstl.report_rows.customer_invoice_id IS 'Customer Invoice ID — Invoice number';
+COMMENT ON COLUMN snapstl.report_rows.initial_shipping_charge IS 'Initial Shipping Charge — ₹';
+COMMENT ON COLUMN snapstl.report_rows.weight_delta IS 'Weight Delta — ₹ extra for weight';
+COMMENT ON COLUMN snapstl.report_rows.rto_delta IS 'RTO Delta — ₹ extra for return to origin';
+COMMENT ON COLUMN snapstl.report_rows.clubbing_delta IS 'Clubbing Delta — ₹ change for clubbed shipping';
+COMMENT ON COLUMN snapstl.report_rows.final_shipping_charge IS 'Final Shipping Charge — ₹';
+COMMENT ON COLUMN snapstl.report_rows.billing_invoice_id IS 'Billing Invoice ID — Shopdeck billing invoice';
+COMMENT ON COLUMN snapstl.report_rows.coupon_code IS 'Coupon Code — Coupon used';
+COMMENT ON COLUMN snapstl.report_rows.coupon_type IS 'Coupon Type — Coupon kind';
+COMMENT ON COLUMN snapstl.report_rows.coupon_discount IS 'Coupon Discount — ₹';
+COMMENT ON COLUMN snapstl.report_rows.customisation_applied IS 'Customisation Applied — Whether the order has a customisation';
+COMMENT ON COLUMN snapstl.report_rows.return_condition IS 'Return Condition — Return policy / condition';
 -- Only SnapSTL (the database owner, through the connection string) reads or writes these tables.
 -- Row level security with no policies refuses everyone else, and Supabase's API roles get no access
 -- even if the schema is ever exposed in the Data API settings. The owner bypasses RLS.
 DO $$
 DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['order_records', 'batch_records', 'meta'] LOOP
+  FOREACH t IN ARRAY ARRAY['order_records', 'batch_records', 'meta', 'report_rows', 'report_uploads'] LOOP
     IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = format('snapstl.%I', t)::regclass) THEN
       EXECUTE format('ALTER TABLE snapstl.%I ENABLE ROW LEVEL SECURITY', t);
     END IF;

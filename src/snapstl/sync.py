@@ -59,6 +59,10 @@ _COLS = ("order_id", "clubbed_id", "order_date", "sku", "quantity", "customer_na
 from .ingest import PRINT_STATUSES as _PS  # noqa: E402
 
 PRINT_SQL = ", ".join(f"'{x}'" for x in sorted(_PS))
+from . import report as _report  # noqa: E402
+
+REPORT_SQL = _report.setup_sql(SCHEMA).strip() + "\n"
+_REPORT_UPSERT = _report.upsert_sql(SCHEMA)
 _SETUP_SQL = f"""
 CREATE SCHEMA IF NOT EXISTS {SCHEMA};
 CREATE TABLE IF NOT EXISTS {SCHEMA}.order_records (
@@ -177,13 +181,13 @@ CREATE OR REPLACE TRIGGER batch_records_no_delete BEFORE DELETE ON {SCHEMA}.batc
     FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.refuse_delete();
 CREATE OR REPLACE TRIGGER batch_records_no_truncate BEFORE TRUNCATE ON {SCHEMA}.batch_records
     FOR EACH STATEMENT EXECUTE FUNCTION {SCHEMA}.refuse_delete();
--- Only SnapSTL (the database owner, through the connection string) reads or writes these tables.
+{REPORT_SQL}-- Only SnapSTL (the database owner, through the connection string) reads or writes these tables.
 -- Row level security with no policies refuses everyone else, and Supabase's API roles get no access
 -- even if the schema is ever exposed in the Data API settings. The owner bypasses RLS.
 DO $$
 DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['order_records', 'batch_records', 'meta'] LOOP
+  FOREACH t IN ARRAY ARRAY['order_records', 'batch_records', 'meta', 'report_rows', 'report_uploads'] LOOP
     IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = format('{SCHEMA}.%I', t)::regclass) THEN
       EXECUTE format('ALTER TABLE {SCHEMA}.%I ENABLE ROW LEVEL SECURITY', t);
     END IF;
@@ -568,6 +572,29 @@ def _push_batches(rc) -> int:
     return len(bs)
 
 
+def _push_reports(rc) -> int:
+    """Report rows and uploads not in the shared records yet (report.py)."""
+    with db.tx() as con:
+        rows = db.rows(con, f"SELECT * FROM report_rows WHERE COALESCE(sent,0)=0 LIMIT {PUSH_BATCH}")
+        ups = db.rows(con, "SELECT * FROM files WHERE COALESCE(sent,0)=0")
+    _many(rc, _REPORT_UPSERT, [_report.payload(r, computer.NAME) for r in rows])
+    for f in ups:
+        s = json.loads(f.get("summary") or "{}")
+        rc.execute(f"INSERT INTO {SCHEMA}.report_uploads(uid, filename, sha256, computer_name, uploaded_at, as_of, "
+                   "report_date, rows_total, magicians_rows, new_orders, updated_orders) VALUES "
+                   "(%s,%s,%s,%s,to_timestamp(%s),%s,%s,%s,%s,%s,%s) ON CONFLICT (uid) DO NOTHING",
+                   (f"{computer.ID}:{f['sha256']}:{int(f['ingested_at'] or 0)}", f["filename"], f["sha256"],
+                    computer.NAME, f["ingested_at"] or 0, s.get("as_of"), s.get("report_date"), s.get("rows_total"),
+                    s.get("sku_rows"), s.get("new"), s.get("updated")))
+    with db.tx() as con:
+        for r in rows:  # only if it didn't change again meanwhile
+            con.execute("UPDATE report_rows SET sent=1 WHERE order_id=? AND status_at=? AND data=?",
+                        (r["order_id"], r["status_at"], r["data"]))
+        for f in ups:
+            con.execute("UPDATE files SET sent=1 WHERE id=?", (f["id"],))
+    return len(rows)
+
+
 def _pull(rc) -> int:
     with db.tx() as con:
         r = con.execute("SELECT value FROM sync_state WHERE key='pulled_until'").fetchone()
@@ -635,6 +662,7 @@ def sync_now() -> dict:
                     n = _push(rc)
                     STATUS.pushed += n
                 _push_batches(rc)
+                _push_reports(rc)
             with _remote() as rc:  # pushes are committed before pulling
                 STATUS.pulled = _pull(rc)
             with _remote() as rc:  # stale claims released while pulling
@@ -729,12 +757,15 @@ def _save_copy(rc, dest) -> dict:
     """Every shared record, as JSON, in `dest` (readable by this user only: names, phones, addresses)."""
     orders = rc.execute(f"SELECT * FROM {SCHEMA}.order_records ORDER BY order_id").fetchall()
     batches = rc.execute(f"SELECT * FROM {SCHEMA}.batch_records ORDER BY uid").fetchall()
+    reports = rc.execute(f"SELECT * FROM {SCHEMA}.report_rows ORDER BY order_id").fetchall()
+    uploads = rc.execute(f"SELECT * FROM {SCHEMA}.report_uploads ORDER BY uid").fetchall()
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump({"saved_at": time.time(), "by": computer.NAME, "order_records": orders,
-                   "batch_records": batches}, f, default=str, indent=1)
+                   "batch_records": batches, "report_rows": reports, "report_uploads": uploads},
+                  f, default=str, indent=1)
     os.replace(tmp, dest)
     return {"orders": len(orders), "batches": len(batches)}
 
@@ -783,7 +814,7 @@ def daily_copy() -> None:
 
 
 # ---------------- clean up: this computer matches the shared records ----------------
-def _apply_match(rows: list[dict], batch_uids: set[str]) -> dict:
+def _apply_match(rows: list[dict], batch_uids: set[str], report_ids: set[str] | None = None) -> dict:
     """Make this computer's database hold exactly what the shared records hold: every record's state is
     taken (merge(force=True)); orders the records don't have are removed, and so are this computer's
     batches they don't have (with their download, print and slice rows) — unless a shared order still
@@ -815,6 +846,12 @@ def _apply_match(rows: list[dict], batch_uids: set[str]) -> dict:
                     con.execute(f"DELETE FROM {t} WHERE batch_id=?", (bid,))
                 con.execute("UPDATE orders SET batch_id=NULL WHERE batch_id=?", (bid,))
                 con.execute("DELETE FROM batches WHERE id=?", (bid,))
+            # report rows go with their orders; ones the records lack are sent again
+            con.execute("DELETE FROM report_rows WHERE order_id NOT IN (SELECT order_id FROM orders)")
+            if report_ids is not None:
+                for (oid,) in con.execute("SELECT order_id FROM report_rows WHERE COALESCE(sent,0)=1").fetchall():
+                    if oid not in report_ids:
+                        con.execute("UPDATE report_rows SET sent=0 WHERE order_id=?", (oid,))
             # kept batches the records lack (e.g. cleared while its orders were sent again): send them again
             for (uid,) in con.execute("SELECT uid FROM batches").fetchall():
                 if uid not in batch_uids:
@@ -831,10 +868,11 @@ def _apply_match(rows: list[dict], batch_uids: set[str]) -> dict:
             "removed": len(gone), "batches_removed": len(drop)}
 
 
-def _everything(rc) -> tuple[list[dict], set[str]]:
+def _everything(rc) -> tuple[list[dict], set[str], set[str]]:
     rows = rc.execute(f"SELECT *, updated_at::text AS updated_text FROM {SCHEMA}.order_records").fetchall()
     uids = {r["uid"] for r in rc.execute(f"SELECT uid FROM {SCHEMA}.batch_records").fetchall()}
-    return rows, uids
+    reps = {r["order_id"] for r in rc.execute(f"SELECT order_id FROM {SCHEMA}.report_rows").fetchall()}
+    return rows, uids, reps
 
 
 def _follow_reset() -> None:
@@ -852,9 +890,9 @@ def _follow_reset() -> None:
         if not now or now == seen:
             return
         if seen:  # cleared since: match (first sync after updating just learns the id)
-            rows, uids = _everything(rc)
+            rows, uids, reps = _everything(rc)
             backup()
-            res = _apply_match(rows, uids)
+            res = _apply_match(rows, uids, reps)
             STATUS.note = (f"The shared records were cleared on a computer: this one now matches them "
                            f"({res['removed']} order(s), {res['batches_removed']} batch(es) removed here; backup saved)")
     with db.tx() as con:
@@ -877,8 +915,8 @@ def match() -> dict:
     path = M.backup()
     with _lock:
         with _remote() as rc:
-            rows, uids = _everything(rc)
-        res = _apply_match(rows, uids)
+            rows, uids, reps = _everything(rc)
+        res = _apply_match(rows, uids, reps)
     tidy = M.cleanup(30, orders=False, take_backup=False)
     sync_now()  # kept batches the records lacked go back up
     return res | {"backup": str(path), "tidied": {k: v for k, v in tidy.items() if k != "backup"}}

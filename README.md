@@ -262,8 +262,14 @@ back; Settings still works so you can fix it. Downloads already running finish.
 per order. `tab` says which Orders page tab it's in (`ready`, `needs_review`, `in_batch`, `bundled`,
 `ready_to_ship`, `printed`, `skipped`, `delivered`, `rto`, `in_transit`, `cancelled`, `others`) and,
 for Ready orders, `ready_type` says `single`, `clubbed` or `adhoc`; `review_reason` says why an order
-needs review. Every column has a description (Table Editor → schema `snapstl`). Read only — SnapSTL
-writes it. Example: `select tab, ready_type, count(*) from snapstl.order_records group by 1, 2;`
+needs review. Every other report column of each Magicians_35 order (channel, payment method,
+amounts, COD remittance, shipping partner, AWB, weight, pickup / delivery / RTO dates, coupon …) is in
+`snapstl.report_rows`, typed, from the newest uploaded report; `snapstl.orders_full` joins both, and
+`snapstl.report_uploads` lists every upload (which computer, how recent the file was). Every column
+has a description (Table Editor → schema `snapstl`). Read only — SnapSTL writes them. Examples:
+`select tab, ready_type, count(*) from snapstl.order_records group by 1, 2;`
+`select delivery_state, payment_method, count(*), sum(invoice_total_incl_tax) from snapstl.orders_full where tab = 'delivered' group by 1, 2;`
+After updating to 0.22.16, upload the latest report once so `report_rows` is filled.
 
 **Copies and privacy:** once a day each computer saves a copy of all shared records in its backups
 folder (`shared-records-daily-<date>.json`, the last 30 days kept); the card shows when. `uv run

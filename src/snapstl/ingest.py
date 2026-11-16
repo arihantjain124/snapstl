@@ -19,7 +19,7 @@ from pathlib import Path
 
 from datetime import datetime, timezone
 
-from . import db
+from . import db, report
 
 SKU = "magicians_35"
 PRINT_STATUSES = {"PRINT"}
@@ -230,6 +230,8 @@ def ingest(data: bytes, filename: str, db_path: Path | None = None) -> IngestSum
             if not oid:
                 s.warnings.append("A Magicians_35 row has no Order ID — skipped")
                 continue
+            stamp = status_stamp(max((_date(get(r, c)) for c in EVENT_COLUMNS), default=""), s.as_of, uploaded)
+            report.store(con, oid, report.parse(lambda hdr, r=r: get(r, hdr)), stamp, filename)
             _upsert(con, s, filename, {
                 "order_id": oid,
                 "clubbed_id": get(r, "Clubbed Order ID"),
@@ -240,8 +242,7 @@ def ingest(data: bytes, filename: str, db_path: Path | None = None) -> IngestSum
                 "customer_name": get(r, "Customer Name"),
                 "phone": get(r, "Mobile"),
                 "address": ", ".join(x for x in (get(r, "Address"), get(r, "City"), get(r, "State"), get(r, "Pincode")) if x),
-                "status_at": status_stamp(max((_date(get(r, c)) for c in EVENT_COLUMNS), default=""),
-                                          s.as_of, uploaded),
+                "status_at": stamp,
             })
         con.execute(
             "INSERT INTO files(filename,sha256,ingested_at,summary) VALUES (?,?,?,?)",
