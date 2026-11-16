@@ -428,9 +428,9 @@ def test_farm_setup_only_on_this_computer(monkeypatch):
     monkeypatch.setattr(server.SETTINGS, "lan_access", True)
     monkeypatch.setattr(auth, "enabled", lambda: True)
     for path in ("/api/farm/connect", "/api/farm/printers/1/clear-plate", "/api/farm/settings"):
-        assert server._blocked(_req(path, "192.168.1.30")) == "Only available on the SnapSTL computer"
-    assert server._blocked(_req("/api/farm", "192.168.1.30")) is None  # others may look
-    assert server._blocked(_req("/api/batches/1/push", "192.168.1.30")) is None  # and push (files stay here)
+        assert server._blocked(_req(path, "192.168.1.30")) is not None
+    assert server._blocked(_req("/api/farm", "192.168.1.30")) is not None  # logistics never exposes farm data
+    assert server._blocked(_req("/api/batches/1/push", "192.168.1.30")) is not None  # logistics never pushes plates
 
 
 def test_upload_names_fit_sd_cards():

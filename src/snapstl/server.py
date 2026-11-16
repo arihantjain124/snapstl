@@ -43,9 +43,13 @@ async def _lifespan(_app):
     MANAGER.start()  # builds batches once their models arrive
     DOWNLOADER.pause_s = SETTINGS.delay_between_downloads_s
     DOWNLOADER.start()  # re-queues names that were mid-download when the app stopped
+    from .logistics import start as start_logistics
+    logistics_server = start_logistics()
     sync.LOOP.start()   # shared order records (Supabase), if connected in Settings
     farm.WORKER.start()  # Push to queue → Bambuddy (connects by itself on a fresh install)
     yield
+    if logistics_server:
+        logistics_server.should_exit = True
 
 
 app = FastAPI(title="SnapSTL", docs_url=None, redoc_url=None, openapi_url=None, lifespan=_lifespan)
@@ -92,10 +96,7 @@ def _blocked(request: Request) -> str | None:
         elif origin.split("://", 1)[-1] != host:
             return "Cross-site request blocked"
     if not local:
-        if not (SETTINGS.lan_access and auth.enabled()):
-            return "This SnapSTL only accepts connections from its own computer (Settings → Connections → Other computers)"
-        if path.startswith(MAC_ONLY_PREFIXES) or path.endswith("/reveal"):
-            return "Only available on the SnapSTL computer"
+        return "The full SnapSTL app is local only; use the logistics address on port 8002"
     return None
 
 
@@ -164,8 +165,8 @@ def auth_check(request: Request):
 
 # ---------------- web portal for other computers (this computer only) ----------------
 def _portal_urls() -> list[str]:
-    urls = [f"http://{platform_os.lan_name()}:{_port()}"]
-    urls += [f"http://{ip}:{_port()}" for ip in platform_os.lan_ips()]
+    urls = [f"http://{platform_os.lan_name()}:8002"]
+    urls += [f"http://{ip}:8002" for ip in platform_os.lan_ips()]
     return urls
 
 
@@ -231,7 +232,7 @@ def update_restart():
 @app.get("/api/portal")
 def portal_info():
     return {"lan_access": SETTINGS.lan_access, "password_set": auth.enabled(),
-            "listening_on_network": os.environ.get("SNAPSTL_BIND", "127.0.0.1") != "127.0.0.1",
+            "listening_on_network": SETTINGS.lan_access and platform_os.WINDOWS,
             "urls": _portal_urls() if SETTINGS.lan_access else []}
 
 
@@ -246,12 +247,14 @@ async def portal_update(req: Request):
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
     enable = bool(body.get("enabled", SETTINGS.lan_access))
+    if enable and not platform_os.WINDOWS:
+        raise HTTPException(400, "Logistics hosting is available on Windows")
     if enable and not auth.enabled():
         raise HTTPException(400, "Set a portal password first (at least 10 characters)")
     changed = enable != SETTINGS.lan_access
     SETTINGS.lan_access = enable
     save_settings(SETTINGS)
-    restarting = _restart_service_soon() if changed else False
+    restarting = False  # hosting changes take effect after a person restarts safely
     return {"lan_access": enable, "password_set": auth.enabled(), "restarting": restarting,
             "note": "" if (restarting or not changed) else "Restart SnapSTL for this to take effect"}
 

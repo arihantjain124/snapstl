@@ -21,6 +21,8 @@ tr.other td{color:var(--muted)}
 .checklist li.todo .mark{background:var(--warn,#c77d00);color:#fff}
 .checklist li.opt .mark{background:var(--line);color:var(--muted)}
 .flash{outline:2px solid var(--accent,#3b82f6);outline-offset:3px;transition:outline-color .3s}
+body.logistics .otable thead th:first-child,body.logistics .otable thead th:last-child,body.logistics .otable tbody td:first-child:not([colspan]),body.logistics .otable tbody td:last-child:not([colspan]){display:none}
+body.logistics .app{grid-template-columns:minmax(0,1fr)}
 .app{display:grid;grid-template-columns:210px minmax(0,1fr);min-height:100vh}
 .side{position:sticky;top:0;height:100vh;background:var(--panel);border-right:1px solid var(--line);padding:16px 10px;display:flex;flex-direction:column;gap:12px}
 .side h1{font-size:17px;margin:0 6px 4px;font-weight:600}
@@ -85,7 +87,8 @@ details.objsbox summary{cursor:pointer;font-weight:600;margin:10px 0 6px}
 section[hidden],[hidden]{display:none!important}
 body,td,th,.hint,.pill,code{-webkit-user-select:text;user-select:text}
 .frow th{padding:3px 4px}.frow input,.frow select{padding:3px 5px;font-size:12px;min-width:60px}
-.otable td.addr{max-width:220px;font-size:12px}
+.otable td{font-size:14px;padding:10px 8px;line-height:1.4}.otable th{font-size:13px}.otable td.addr{min-width:180px;max-width:280px;font-size:14px}.otable tbody tr:hover{background:var(--chip)}
+.column-options{display:flex;flex-wrap:wrap;gap:8px 16px;padding:8px 0}.column-options label{font-size:13px;color:var(--text)}
 .club{font-size:11px;color:var(--accent)}
 iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;background:#000}
 .pushbox{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0;background:var(--bg)}
@@ -162,7 +165,6 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="toolbar">
       <label class="btn" style="margin:0;color:var(--text)">Upload report (.xlsx)<input id="report" type="file" accept=".xlsx,.xls,.csv" hidden></label>
       <button id="adhocgo" title="Type in an order for an ad-hoc request: name, mobile, colour">Add ad-hoc order</button>
-      <button id="ordrefresh" hidden title="Send this computer's changes to Supabase and load every computer's orders">Refresh from Supabase</button>
       <span class="grow hint" id="ingestmsg"></span>
     </div>
     <div class="msgs" id="ingestres"></div>
@@ -188,6 +190,11 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <span class="grow hint" id="fstate">Type in the boxes under the column names to filter; filters combine.</span>
       <a class="btn" id="csvlink" href="/api/orders.csv?tab=all">Export CSV</a>
     </div>
+    <div class="toolbar">
+      <label for="ordview">View</label><select id="ordview" aria-label="Order view"></select>
+      <button id="saveview" class="small">Save current view</button><button id="deleteview" class="small">Delete view</button>
+      <details><summary>Choose columns</summary><div class="column-options" id="ordercolumns"></div></details>
+    </div>
     <div class="toolbar" id="selbar">
       <span id="selcount" class="hint">No orders selected</span>
       <button id="selall" class="small">Select all matching</button>
@@ -200,7 +207,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="tw"><table class="otable"><thead><tr><th><input type="checkbox" id="pagecheck" title="Select this page"></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Address</th><th>Report status</th><th>Name to print</th><th>Colour</th><th>Qty</th><th>Size L×H · comp.</th><th>State</th><th></th></tr>
     <tr class="frow"><th></th><th><input data-f="order" placeholder="filter"></th><th><input data-f="date" placeholder="2026-11"></th><th><input data-f="customer" placeholder="filter"></th><th><input data-f="phone" placeholder="filter"></th><th><input data-f="address" placeholder="filter"></th><th><select data-f="status"><option value="">all</option></select></th><th><input data-f="name" placeholder="filter"></th><th><select data-f="color"><option value="">all</option></select></th><th><input data-f="qty" placeholder="=" style="width:44px"></th><th></th><th></th><th></th></tr></thead>
     <tbody id="orders"></tbody></table></div>
-    <div class="toolbar" style="margin-top:8px"><span class="hint grow" id="pageinfo"></span><button id="prev" class="small">Previous</button><button id="next" class="small">Next</button></div>
+    <div class="toolbar" style="margin-top:8px"><span class="hint grow" id="pageinfo" aria-live="polite"></span><label for="pagesize">Rows per page</label><select id="pagesize"><option>25</option><option>50</option><option selected>100</option><option>200</option><option>500</option></select><button id="prev" class="small">Previous</button><button id="next" class="small">Next</button></div>
   </div>
 </section>
 
@@ -438,7 +445,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
 
   <div class="sec" data-sec="connections" hidden>
-    <p class="intro">What SnapSTL talks to: the Chrome helper (MakerWorld), Bambuddy (your printers), the shared order records (other SnapSTL computers) and the web portal (browsers on your network).</p>
+    <p class="intro">What SnapSTL talks to: the Chrome helper (MakerWorld), Bambuddy (your printers), the shared order records (other SnapSTL computers) and read-only logistics (Windows host).</p>
     <div class="grid2">
       <div class="card" id="helpercard">
         <h2>SnapSTL Helper (Chrome)</h2>
@@ -480,16 +487,16 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
           <div class="toolbar"><button id="connmatch" title="Make this computer match Supabase exactly (backup first)">Clean up</button><button id="syncnow" class="primary" title="Push this computer's new changes to Supabase and load everyone's">Sync now</button><button id="sharedcheck">Show what's there</button></div>
           <p class="hint" id="connmatchmsg"></p>
           <div id="sharedholds"></div>
-          <div class="callout"><b>What is shared:</b> every order — uploading a report on any computer sends its orders to Supabase, and the other computers get them at their next sync (or <b>Refresh from Supabase</b> on the Orders page) — with who is making it (<i>In a batch</i>, <i>Bundled</i>, <i>Printed</i>), the newest webstore status and name fixes, plus each computer's batches. In Supabase they're in <b>Table Editor → schema <code>snapstl</code></b> (not <code>public</code>): <code>order_records</code> and <code>batch_records</code>. Syncs every minute and right after changes.</div>
+          <div class="callout"><b>What is shared:</b> every order — uploading a report on any computer sends its orders to Supabase, and the other computers get them at their next sync (or <b>Settings → Database → Sync</b> on the Orders page) — with who is making it (<i>In a batch</i>, <i>Bundled</i>, <i>Printed</i>), the newest webstore status and name fixes, plus each computer's batches. In Supabase they're in <b>Table Editor → schema <code>snapstl</code></b> (not <code>public</code>): <code>order_records</code> and <code>batch_records</code>. Syncs every minute and right after changes.</div>
           <h3>Clear shared records</h3>
           <p class="hint under">Empties the shared records of <b>every</b> computer (e.g. after testing). A copy of every record is saved first in this computer's backups folder. Orders this computer is still making are sent again at the next sync; to start completely fresh, also reset each computer's database (Maintenance).</p>
           <div class="toolbar" style="margin-top:6px"><button id="sharedclear" style="color:var(--err)">Clear shared records…</button><span class="hint grow" id="sharedclearmsg"></span></div>
         </div>
       </div>
       <div class="card" id="portalcard">
-        <h2>Other computers (web portal)</h2>
-        <p class="hint">Let other computers on this network open SnapSTL in their browser (upload reports, review orders, queue batches, download plates). This computer keeps running the service and the Chrome helper. Others sign in with the portal password; this computer never has to.</p>
-        <label class="check"><input type="checkbox" id="lan"> Allow other computers on this network</label>
+        <h2>Logistics access (Windows host)</h2>
+        <p class="hint">Host a read-only orders table on port 8002. Employees can browse categories, filter, copy rows and save views. The Windows host keeps data current through its normal shared-records sync. Restart SnapSTL after changing this option.</p>
+        <label class="check"><input type="checkbox" id="lan"> Enable read-only logistics on port 8002</label>
         <label>Portal password <span class="hint">— at least 10 characters; empty keeps the current one</span></label>
         <div class="row2" style="grid-template-columns:1fr auto"><input id="portalpw" type="password" autocomplete="new-password" placeholder="Not set"><button id="portalsave">Save</button></div>
         <p class="hint" id="portalinfo"></p>
@@ -516,7 +523,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
           <div class="callout" style="margin-top:8px"><b>Daily handling</b>
             <ul style="margin:6px 0 0 18px;padding:0">
               <li><b>Upload the report on any computer</b> (Orders → Upload report). Its orders go to Supabase straight away and reach every other computer. For an order already in SnapSTL, the <b>newest date or time in that file</b> (its date range, or the latest order / pickup / delivery / RTO / return date in it) says how recent its status is: a newer file updates the order everywhere, an older file never undoes a newer status.</li>
-              <li><b>Sync</b> — runs at once, no questions: <b>pushes this computer's new changes to Supabase</b> and loads every computer's. It also runs by itself every minute, after every upload, and with <b>Refresh from Supabase</b> on the Orders page.</li>
+              <li><b>Sync</b> — runs at once, no questions: <b>pushes this computer's new changes to Supabase</b> and loads every computer's. It also runs by itself every minute, after every upload, and with <b>Settings → Database → Sync</b> on the Orders page.</li>
               <li><b>Clean up</b> (also in Settings → Connections) — runs at once, no questions: syncs, then makes this computer <b>match Supabase exactly</b> (who is making each order, its status and name). Orders and batches Supabase doesn't have are removed here, with their download and print rows; batch folders and models on disk are never touched. Old history (30 days) is tidied too. A backup of this computer's database is saved first; nothing is deleted in Supabase. Use it when a computer looks different from the others.</li>
               <li><b>Reset this computer's database…</b> — empties this computer only (type RESET); Sync loads the shared orders back. Tick <b>also clear Supabase</b> to empty the shared records for <b>every</b> computer too (type RESET ALL); copies of both are saved first. Every other computer notices at its next sync (within a minute) and empties itself to match — with a backup first — so nothing comes back.</li>
               <li><b>SnapSTL works only with Supabase connected.</b> Without a working connection (the Session pooler address in Settings → Connections) nothing can be changed on any computer — orders, batches, printing stay disabled and a red bar says why — until the connection is back. Downloads already running finish.</li>
@@ -570,7 +577,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <tr><td>Skipped</td><td>You pressed Skip. <b>Make anyway</b> moves it back to Ready.</td></tr>
       <tr><td>Delivered · RTO · In Transit · Cancelled · Others</td><td>The report says these don't need making (Others = e.g. PACK).</td></tr>
     </table>
-    <p>Filter any column with the box under its heading — filters combine. <b>Export CSV</b> exports what you're looking at.</p>
+    <p>Filter columns with the boxes under their headings — filters combine. Choose columns and save the current category, filters and columns as a view in this browser. Change rows per page below the table. <b>Export CSV</b> exports matching orders.</p>
   </div>
 
   <div class="card" id="h-batches">
@@ -677,7 +684,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Product</b> — the MakerWorld model link and its license password (removes the anti-sale markings; each model keeps its own), the name style (font, size, thickness, outline, rotate text) and the size per letter count (Scaling Rules v1.1).</li>
       <li><b>Plates</b> — bed size (256 × 256 × 256 mm on the A1 and P1S), edge margin, gap between parts, names/bases per plate, allowed rotations (flat on the bed only).</li>
       <li><b>Folders</b> — where dated batch folders and downloaded models go; the pause between downloads.</li>
-      <li><b>Connections</b> — the Chrome helper, Bambuddy, the shared order records (several computers) and the web portal (browsers on your network).</li>
+      <li><b>Connections</b> — the Chrome helper, Bambuddy, the shared order records (several computers) and read-only logistics (Windows host).</li>
       <li><b>Maintenance</b> — updates, and the database: back up, clean up old records (orders already made are always kept), or reset. None of these delete files.</li>
     </ul>
     <p class="hint">Slicing profiles and print defaults are on the <b>Slicing</b> page.</p>
@@ -706,21 +713,14 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
 
   <div class="card" id="h-portal">
-    <h2>Using SnapSTL from other computers</h2>
-    <p>SnapSTL is a small web server running on this computer (the <b>main computer</b>). The main computer keeps the service running and has the <b>SnapSTL Helper</b> in its Chrome with the MakerWorld model page open — downloads always happen there.</p>
-    <ol>
-      <li>On the main computer: <b>Settings → Connections → Other computers</b> → tick <b>Allow other computers on this network</b>, set a portal password (10+ characters) → <b>Save</b>. SnapSTL restarts; if macOS or Windows asks to allow incoming connections, click <b>Allow</b>.</li>
-      <li>The card then shows the address, e.g. <code>http://snapstl-mac.local:8317</code> or <code>http://192.168.1.20:8317</code>.</li>
-      <li>On another computer on the same network: open that address in any browser and sign in with the portal password.</li>
-    </ol>
-    <p>From other computers you can upload reports, review orders, create and queue batches, and download plates (click a plate, or <b>Download ZIP</b>). Only the main computer can: run the helper, use the Finder / File Explorer buttons, change folders, the model link and its license password, turn the portal on/off, and reset the database. Turn the portal off again to keep SnapSTL to this computer only.</p>
+    <h2>Read-only logistics</h2><p>On the Windows host, enable <b>Settings → Connections → Logistics access</b> and set a password. Restart SnapSTL when no batch is downloading or building. Employees open <code>http://HOST-IP:8002</code> and sign in. Allow TCP 8002 for the local subnet in Windows Firewall if needed.</p><p>Employees can read, copy, filter and export orders, choose columns and save views. Refresh orders reloads the host's synchronized data; it also reloads every minute. Uploads, changes, batches, printers, slicing and settings are unavailable. The full app stays local on Mac and Windows.</p>
   </div>
 
   <div class="card" id="h-data">
     <h2>Your data</h2>
     <p>Settings and backups are on this computer (Mac: <code>~/Library/Application Support/SnapSTL</code>, Windows: <code>%LOCALAPPDATA%\SnapSTL</code>). Downloaded models: your Downloads folder. Plates: your output folder. SnapSTL never deletes downloaded models or batch folders — you clean them up yourself. Orders (with customer names, phones and addresses) are in this computer's own database, and — when connected in Settings → Shared order records — batched, bundled and printed orders also in your shared order records in Supabase (Settings → Database says which). SnapSTL runs in the background (it starts at login); the window is just a view — you can also open <code>http://127.0.0.1:8317</code> in a browser.</p>
     <h3>Several computers (shared order records)</h3>
-    <p>With the shared order records set up (<b>Settings → Connections → Shared order records</b>), every computer works in its own database, and every order taken into a batch, bundled or printed is recorded in Supabase. Creating a batch claims its orders there first: an order another computer already has is left out and shows <i>in Batch N · computer</i>. Bundled, printed and released orders and newer webstore statuses are sent right away and every minute; <b>Settings → Connections → Sync now</b> sends and loads everything at once. The records are never deleted one by one, and <b>Reset this computer's database</b> doesn't touch them — Sync loads them back. Mark orders printed in the <b>Bundled</b> tab (tick them → <b>Mark printed</b>); they move to <b>Printed</b> and keep their batch. Every order is shared: a report uploaded on any computer reaches Supabase right away, and <b>Refresh from Supabase</b> on the Orders page loads every computer's orders. <b>Show what's there</b> lists what Supabase holds (in Supabase: Table Editor → schema <code>snapstl</code>). <b>Clear shared records…</b> (type CLEAR) empties them for every computer, after saving a copy in this computer's backups folder; <b>Settings → Maintenance → Reset this computer's database…</b> with <i>also clear Supabase</i> ticked (type RESET ALL) empties this computer and Supabase together. Once a day, each computer also saves a copy of all shared records in its backups folder (<code>shared-records-daily-…json</code>, the last 30 days kept). Only SnapSTL can read the records: Supabase's public API has no access to them.</p>
+    <p>With the shared order records set up (<b>Settings → Connections → Shared order records</b>), every computer works in its own database, and every order taken into a batch, bundled or printed is recorded in Supabase. Creating a batch claims its orders there first: an order another computer already has is left out and shows <i>in Batch N · computer</i>. Bundled, printed and released orders and newer webstore statuses are sent right away and every minute; <b>Settings → Connections → Sync now</b> sends and loads everything at once. The records are never deleted one by one, and <b>Reset this computer's database</b> doesn't touch them — Sync loads them back. Mark orders printed in the <b>Bundled</b> tab (tick them → <b>Mark printed</b>); they move to <b>Printed</b> and keep their batch. Every order is shared: a report uploaded on any computer reaches Supabase right away, and <b>Settings → Database → Sync</b> on the Orders page loads every computer's orders. <b>Show what's there</b> lists what Supabase holds (in Supabase: Table Editor → schema <code>snapstl</code>). <b>Clear shared records…</b> (type CLEAR) empties them for every computer, after saving a copy in this computer's backups folder; <b>Settings → Maintenance → Reset this computer's database…</b> with <i>also clear Supabase</i> ticked (type RESET ALL) empties this computer and Supabase together. Once a day, each computer also saves a copy of all shared records in its backups folder (<code>shared-records-daily-…json</code>, the last 30 days kept). Only SnapSTL can read the records: Supabase's public API has no access to them.</p>
     <p class="hint" id="helpversion"></p>
   </div>
 </section>
@@ -728,6 +728,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 </div>
 </div>
 <script>
+const LOGISTICS=false;
 const $=id=>document.getElementById(id);
 const COLORS={pink:'#f4a7c0','hot pink':'#ff4fa0','baby pink':'#f9c9d9',lavender:'#b9a3e3',red:'#e5534b',orange:'#f39a3d',yellow:'#f2d04b',green:'#5fb36a',blue:'#4a86d9','baby blue':'#9fd0f3','sky blue':'#7cc4f0',purple:'#9a6bd1',black:'#333',white:'#fafafa',grey:'#999',lightgray:'#ccc'};
 const STATES=[['ready','Ready','ok'],['needs_review','Needs review','warn'],['in_batch','In a batch','info'],['bundled','Bundled','info'],['printed','Printed','ok'],['skipped','Skipped',''],['not_needed','Not needed','']];
@@ -758,14 +759,15 @@ async function loadOrders(){
   const p=filterParams({limit:LIMIT,offset:filter.offset});
   showFilterState();
   const r=await api('/api/orders?'+p);
-  $('pageinfo').textContent=r.total?`${filter.offset+1}–${Math.min(filter.offset+LIMIT,r.total)} of ${r.total}`:'';
+  if(r.total && filter.offset>=r.total){filter.offset=Math.floor((r.total-1)/LIMIT)*LIMIT;return loadOrders()}
+  $('pageinfo').textContent=r.total?`${filter.offset+1}–${Math.min(filter.offset+LIMIT,r.total)} of ${r.total} · Page ${Math.floor(filter.offset/LIMIT)+1} of ${Math.ceil(r.total/LIMIT)}`:'No orders';
   $('prev').disabled=filter.offset===0; $('next').disabled=filter.offset+LIMIT>=r.total;
   $('csvlink').href='/api/orders.csv?'+filterParams({});
   if(!r.orders.length){$('orders').innerHTML='<tr><td colspan="13" class="empty">No orders here</td></tr>';$('pagecheck').checked=false;return}
   PAGE=r.orders.filter(o=>o.state===SELKIND).map(o=>o.order_id);
   $('orders').innerHTML=r.orders.map(o=>{
     const st=STATES.find(s=>s[0]===o.state)||[o.state,o.state,''];
-    const nameCell=o.state==='needs_review'
+    const nameCell=!LOGISTICS&&o.state==='needs_review'
       ?`<div class="edit"><input value="${esc(o.name)}" data-n="${esc(o.order_id)}" placeholder="Name to print"><input value="${esc(o.color)}" data-c="${esc(o.order_id)}" style="max-width:90px" placeholder="colour"><button class="small primary" data-ok="${esc(o.order_id)}">Approve</button></div><div class="hint">Customer typed: ${esc(o.raw_name)||'—'}</div><div class="reason">${esc(o.review_reason)}</div>`
       :`${esc(o.name)}${o.name_edited?' <span class="hint">(edited)</span>':''}${o.raw_name&&o.raw_name.trim()!==o.name?`<div class="hint">typed: ${esc(o.raw_name)}</div>`:''}${o.last_error?`<div class="reason">${esc(o.last_error)}</div>`:''}`;
     const where=`${o.batch_label?esc(o.batch_label):(o.batch_id&&o.batch_here?'batch #'+o.batch_id:'a batch')}${o.batch_computer&&o.batch_computer!==META.computer.name?` · ${esc(o.batch_computer)}`:''}`;
@@ -778,7 +780,8 @@ async function loadOrders(){
     const cb=o.state===SELKIND?`<input type="checkbox" data-sel="${esc(o.order_id)}" ${SEL.has(o.order_id)?'checked':''}>`:'';
     const club=o.clubbed_id?`<div class="club" title="Clubbed order ID">${o.clubbed?'clubbed · ':''}${esc(o.clubbed_id)}</div>`
       :o.adhoc?`<div class="club" title="Typed in by hand">ad-hoc${o.added_at?' · added '+new Date(o.added_at*1000).toLocaleString([], {dateStyle:'short',timeStyle:'short'}):''}${o.special_request?' · '+esc(o.special_request):''}</div>`:'';
-    return `<tr><td>${cb}</td><td>${esc(o.order_id)}${club}</td><td style="white-space:nowrap">${esc(o.order_date)}</td><td>${esc(o.customer_name)}</td><td style="white-space:nowrap">${esc(o.phone)}</td><td class="addr">${esc(o.address)}</td><td>${esc(o.source_status)}</td><td>${nameCell}</td><td>${o.state==='needs_review'?'':sw(o.color)}</td><td>${o.quantity}</td><td>${o.target?`${o.target[0]}×${o.target[1]} · ${o.compartments}`:'—'}</td><td><span class="pill ${st[2]}">${st[1]}</span></td><td>${act}</td></tr>`}).join('');
+    return `<tr><td>${cb}</td><td>${esc(o.order_id)}${club}</td><td style="white-space:nowrap">${esc(o.order_date)}</td><td>${esc(o.customer_name)}</td><td style="white-space:nowrap">${esc(o.phone)}</td><td class="addr">${esc(o.address)}</td><td>${esc(o.source_status)}</td><td>${nameCell}</td><td>${!LOGISTICS&&o.state==='needs_review'?'':sw(o.color)}</td><td>${o.quantity}</td><td>${o.target?`${o.target[0]}×${o.target[1]} · ${o.compartments}`:'—'}</td><td><span class="pill ${st[2]}">${st[1]}</span></td><td>${act}</td></tr>`}).join('');
+  applyColumns();
   document.querySelectorAll('[data-ok]').forEach(b=>b.onclick=async()=>{const id=b.dataset.ok;
     const n=document.querySelector(`[data-n="${CSS.escape(id)}"]`).value, c=document.querySelector(`[data-c="${CSS.escape(id)}"]`).value;
     try{await post(`/api/orders/${encodeURIComponent(id)}/name`,{name:n,color:c});refreshAll()}catch(e){alert(e.message)}});
@@ -787,6 +790,7 @@ async function loadOrders(){
   document.querySelectorAll('[data-reset]').forEach(b=>b.onclick=async()=>{if(!confirm('Make this order again in the next batch?'))return;await post(`/api/orders/${encodeURIComponent(b.dataset.reset)}/reset`);refreshAll()});
   document.querySelectorAll('[data-batch]').forEach(a=>a.onclick=e=>{e.preventDefault();show('batches');openBatchDetail(+a.dataset.batch)});
   document.querySelectorAll('[data-sel]').forEach(c=>c.onchange=()=>{c.checked?SEL.add(c.dataset.sel):SEL.delete(c.dataset.sel);selUI()});
+  if(LOGISTICS)document.querySelectorAll('.otable tr').forEach(row=>{if(row.children.length===13){row.children[0].hidden=true;row.children[12].hidden=true}});
   selUI();
 }
 let PAGE=[];
@@ -823,7 +827,7 @@ $('mkbatch').onclick=async()=>{if(!SEL.size)return;
 function renderChips(counts){
   const top=filter.tab.startsWith('ready')?'ready':filter.tab;
   $('chips').innerHTML=TABS.map(([k,l])=>`<button data-s="${k}" class="${top===k?'on':''}">${l} · ${counts[k]||0}</button>`).join('');
-  $('adhocform').hidden=filter.tab!=='ready_adhoc';
+  $('adhocform').hidden=LOGISTICS||filter.tab!=='ready_adhoc';
   if(filter.tab==='ready_adhoc')$('ahcolors').innerHTML=[...new Set([...Object.keys(COLORS),...((FACETS&&FACETS.colors)||[])].filter(Boolean))].map(c=>`<option value="${esc(c)}">`).join('');
   $('subchips').innerHTML=top==='ready'?SUBTABS.map(([k,l])=>`<button data-s="${k}" class="${filter.tab===k?'on':''}">${l} · ${counts[k]||0}</button>`).join(''):'';
   document.querySelectorAll('#chips button,#subchips button').forEach(b=>b.onclick=()=>{filter.tab=b.dataset.s;filter.offset=0;loadFacets();loadOrders()});
@@ -834,12 +838,23 @@ $('adhocform').onsubmit=async e=>{e.preventDefault();
     $('ahmsg').innerHTML=`<div class="o">Added <b>${esc(o.order_id)}</b> — ${esc(o.name)}, ${esc(o.color)}${o.quantity>1?' ×'+o.quantity:''}. It's in Ready; tick it and press <b>Create batch</b>.</div>`;
     for(const k of ['ahname','ahphone','ahnote'])$(k).value='';$('ahqty').value=1;$('ahname').focus();refreshAll()}
   catch(err){$('ahmsg').innerHTML=`<div class="e">${esc(err.message)}</div>`}};
+// Views are kept in this browser only; they never change order data.
+const COLUMN_NAMES=['Order','Date','Customer','Phone','Address','Report status','Name to print','Colour','Qty','Size L×H · comp.','State'];
+const VIEW_KEY='snapstl-order-views-v1';
+let visibleColumns=COLUMN_NAMES.map((_,i)=>i+1), orderViews=Object.assign(Object.create(null),{'All columns':{tab:'all',f:{},columns:COLUMN_NAMES.map((_,i)=>i+1)},'Dispatch':{tab:'ready_to_ship',f:{},columns:[1,2,3,4,5,7,8,9,11]},'Production overview':{tab:'bundled',f:{},columns:[1,2,7,8,9,10,11]}});
+try{Object.assign(orderViews,JSON.parse(localStorage.getItem(VIEW_KEY)||'{}'))}catch{}
+function applyColumns(){document.querySelectorAll('.otable tr').forEach(row=>{if(row.children.length!==13)return; for(let i=1;i<=11;i++)row.children[i].hidden=!visibleColumns.includes(i)})}
+function renderColumns(){$('ordercolumns').innerHTML=COLUMN_NAMES.map((n,i)=>`<label><input type="checkbox" data-column="${i+1}" ${visibleColumns.includes(i+1)?'checked':''}> ${esc(n)}</label>`).join('');
+  document.querySelectorAll('[data-column]').forEach(c=>c.onchange=()=>{visibleColumns=[...document.querySelectorAll('[data-column]:checked')].map(x=>+x.dataset.column);applyColumns()});applyColumns()}
+function renderViews(){const selected=$('ordview').value;$('ordview').innerHTML='<option value="">Current view</option>'+Object.keys(orderViews).sort().map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');$('ordview').value=orderViews[selected]?selected:''}
+function saveViews(){try{localStorage.setItem(VIEW_KEY,JSON.stringify(orderViews))}catch{alert('Could not save views in this browser.')}}
+$('saveview').onclick=()=>{const name=prompt('Name this view');if(!name||!name.trim())return;orderViews[name.trim()]={tab:filter.tab,f:{...filter.f},columns:[...visibleColumns]};saveViews();renderViews();$('ordview').value=name.trim()};
+$('deleteview').onclick=()=>{const n=$('ordview').value;if(n&&confirm(`Delete view “${n}”?`)){delete orderViews[n];saveViews();renderViews()}};
+$('ordview').onchange=async()=>{const v=orderViews[$('ordview').value];if(!v)return;filter.tab=v.tab;filter.f={...v.f};filter.offset=0;visibleColumns=v.columns.filter(i=>Number.isInteger(i)&&i>=1&&i<=11);document.querySelectorAll('.frow [data-f]').forEach(el=>el.value=filter.f[el.dataset.f]||'');await loadFacets();document.querySelectorAll('.frow [data-f]').forEach(el=>el.value=filter.f[el.dataset.f]||'');renderColumns();loadOrders()};
+$('pagesize').onchange=()=>{LIMIT=+$('pagesize').value;filter.offset=0;loadOrders()};
+renderViews();renderColumns();
 $('prev').onclick=()=>{filter.offset=Math.max(0,filter.offset-LIMIT);loadOrders()};
 $('next').onclick=()=>{filter.offset+=LIMIT;loadOrders()};
-$('ordrefresh').onclick=async()=>{const b=$('ordrefresh');b.disabled=true;$('ingestmsg').textContent='Refreshing from Supabase…';
-  try{const s=await post('/api/sync');$('ingestmsg').textContent=s.error?'':`Refreshed ${new Date(s.last_ok*1000).toLocaleTimeString()} · sent ${s.pushed}, loaded ${s.pulled}`;
-    if(s.error)$('ingestres').innerHTML=`<div class="e">${esc(s.error)}</div>`;refreshAll()}
-  catch(err){$('ingestmsg').textContent='';$('ingestres').innerHTML=`<div class="e">${esc(err.message)}</div>`}finally{b.disabled=false}};
 $('report').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('ingestmsg').textContent='Reading '+f.name+'…';
   const fd=new FormData();fd.append('file',f);
   try{const s=await api('/api/ingest',{method:'POST',body:fd});$('ingestmsg').textContent='';
@@ -1159,7 +1174,7 @@ async function loadHealth(){try{HEALTH=await api('/api/health')}catch{return}con
   const n=h.network||{};$('hipv').textContent=n.ip||'not on a network';
   $('hip').title=n.ip?`This computer: ${n.ip} (${n.name}) — click to copy ${n.bambuddy_here?n.bambuddy_share:n.ip}.\n`
     +(n.bambuddy_here?`Bambuddy runs here: on other SnapSTL computers enter ${n.bambuddy_share} in Settings → Connections → Bambuddy address.\n`:`Bambuddy: ${n.bambuddy_url||'not set'}\n`)
-    +`This SnapSTL's web portal: ${n.portal} (Settings → Other computers).`:'No network address found'}
+    +`This SnapSTL's local app: ${n.portal} (Settings → Other computers).`:'No network address found'}
 $('hip').onclick=async e=>{e.preventDefault();const n=(HEALTH&&HEALTH.network)||{};const v=n.bambuddy_here?n.bambuddy_share:n.ip;if(!v)return;
   try{await navigator.clipboard.writeText(v);$('hipv').textContent='copied';setTimeout(()=>{$('hipv').textContent=n.ip},1500)}catch{prompt('Copy this address:',v)}};
 document.addEventListener('click',e=>{const a=e.target.closest('[data-go]');if(!a)return;e.preventDefault();const [t,sec]=a.dataset.go.split(':');show(t);if(sec)setSec(sec)});
@@ -1194,10 +1209,10 @@ function licHint(set){$('lichint').textContent=set?'Saved for the current model'
 
 // ---------- web portal ----------
 async function loadPortal(){if(!META.local){$('portalcard').hidden=true;return}
-  const p=await api('/api/portal');$('lan').checked=p.lan_access;
+  if(META.os!=='windows'){$('portalcard').hidden=true;return}const p=await api('/api/portal');$('lan').checked=p.lan_access;
   $('portalpw').placeholder=p.password_set?'Set (type to change)':'Not set';
   const urls=p.urls.length?p.urls.map(u=>`<code>${esc(u)}</code>`).join(' or '):'';
-  $('portalinfo').innerHTML=!p.lan_access?'Off — only this computer can open SnapSTL.':(p.listening_on_network?`On. Other computers open ${urls} and sign in with the portal password.`:'On — restarting SnapSTL to listen on the network…');}
+  $('portalinfo').innerHTML=!p.lan_access?'Off — only this computer can open SnapSTL.':(p.listening_on_network?`On. Employees open ${urls} and sign in with the logistics password.`:'On — restarting SnapSTL to listen on the network…');}
 $('portalsave').onclick=async()=>{try{const r=await post('/api/portal',{enabled:$('lan').checked,password:$('portalpw').value});$('portalpw').value='';
   $('portalinfo').textContent=r.restarting?'Saved — SnapSTL is restarting (a few seconds). macOS may ask to allow incoming connections: click Allow.':(r.note||'Saved.');setTimeout(loadPortal,4000)}catch(e){$('portalinfo').textContent=e.message;$('portalinfo').style.color='var(--err)'}};
 
@@ -1339,11 +1354,19 @@ async function refresh(){try{const st=await api('/api/state');showShared(st.shar
   const log=$('log');const atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-4;log.textContent=st.log.join('\n');if(atEnd)log.scrollTop=log.scrollHeight;
 }catch(e){}}
 function refreshAll(){lastKey='';refresh()}
-(async()=>{META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;
+(async()=>{if(LOGISTICS){
+  META={computer:{name:''}};document.body.classList.add('logistics');
+  document.querySelector('aside').hidden=true;document.querySelector('.content').style.marginLeft='0';
+  for(const id of PAGES)if(id!=='orders')$('t-'+id).remove();
+  $('report').closest('.card').hidden=true;$('selbar').hidden=true;$('adhocform').hidden=true;
+  $('status').textContent='Logistics · Read only · Data follows the host’s shared-records sync';
+  const b=document.createElement('button');b.textContent='Refresh orders';b.onclick=()=>{loadFacets();loadOrders()};$('status').parentNode.append(b);
+  await loadFacets();await loadOrders();setInterval(()=>{loadFacets();loadOrders()},60000);return;
+}META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;
   if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders';t=OLD_PAGES[t]||t}catch{}if(!PAGES.includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;
   document.querySelectorAll('.fm').forEach(x=>x.textContent='Show in '+META.file_manager);
   if(META.os==='windows')document.body.classList.add('win');
-  $('pcname').textContent=META.computer.name+(META.shared_records?' · shared records':'');$('ordrefresh').hidden=!META.shared_records;$('resetsharedl').hidden=!META.shared_records;$('dbshared').hidden=!META.shared_records;$('dblocal').hidden=!!META.shared_records;show(t);refresh();loadHealth();setInterval(refresh,2000);
+  $('pcname').textContent=META.computer.name+(META.shared_records?' · shared records':'');$('resetsharedl').hidden=!META.shared_records;$('dbshared').hidden=!META.shared_records;$('dblocal').hidden=!!META.shared_records;show(t);refresh();loadHealth();setInterval(refresh,2000);
   if(META.local){loadUpdates(1);setInterval(()=>loadUpdates(1),6*3600*1000)}})();
 </script>
 </body>

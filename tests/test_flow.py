@@ -210,33 +210,31 @@ def test_cleanup_keeps_made_orders_and_reset_empties(client):
     assert client.get("/api/maintenance").json()["backups"] >= 2
 
 
-def test_other_computers_need_portal_and_login(client):
-    from snapstl import server
-
-    remote = TestClient(server.app, base_url="http://192.168.1.20:8317", client=("192.168.1.50", 50001))
-    # portal off → other computers refused
-    assert remote.get("/api/state").status_code == 403
-    # turning it on needs a password; only this Mac can change it
-    assert client.post("/api/portal", json={"enabled": True}).status_code in (200, 400)
-    assert remote.post("/api/portal", json={"enabled": True, "password": "x" * 12}).status_code == 403
-    r = client.post("/api/portal", json={"enabled": True, "password": "portal-pass-123"})
-    assert r.status_code == 200 and r.json()["lan_access"] and r.json()["password_set"]
+def test_other_computers_need_portal_and_login(client, monkeypatch):
+    from snapstl import server, logistics
+    monkeypatch.setattr(server.platform_os, 'WINDOWS', True)
+    remote = TestClient(server.app, base_url='http://192.168.1.20:8317', client=('192.168.1.50', 50001))
+    staff = TestClient(logistics.app, base_url='http://192.168.1.20:8002', client=('192.168.1.50', 50001))
+    assert staff.get('/api/orders').status_code == 403
+    assert client.post('/api/portal', json={'enabled': True, 'password': 'portal-pass-123'}).status_code == 200
     try:
-        assert remote.get("/api/state").status_code == 401  # must sign in
-        assert remote.get("/", follow_redirects=False).status_code == 307
-        assert remote.post("/api/login", json={"password": "wrong"}).status_code == 401
-        assert remote.post("/api/login", json={"password": "portal-pass-123"}).status_code == 200
-        assert remote.get("/api/state").status_code == 200
-        assert remote.get("/api/meta").json()["local"] is False
-        # never from another computer: the helper, Finder, portal setup, reset
-        assert remote.get("/api/helper/next").status_code == 403
-        assert remote.post("/api/downloads/reveal").status_code == 403
-        assert remote.post("/api/maintenance/reset", json={"confirm": "RESET"}).status_code == 403
-        # this Mac never needs to sign in
-        assert client.get("/api/state").status_code == 200 and client.get("/api/meta").json()["local"] is True
+        assert remote.get('/api/state').status_code == 403
+        assert remote.post('/api/login', json={'password': 'portal-pass-123'}).status_code == 403
+        assert staff.get('/api/orders').status_code == 401
+        assert staff.post('/api/login', json={'password': 'wrong'}).status_code == 401
+        assert staff.post('/api/login', json={'password': 'portal-pass-123'}).status_code == 200
+        assert staff.get('/').status_code == 200
+        assert staff.get('/api/orders?tab=all&limit=25').status_code == 200
+        assert staff.get('/api/orders/facets').status_code == 200
+        for path in ['/api/settings', '/api/state', '/api/farm/printers', '/api/helper/next']:
+            assert staff.get(path).status_code == 403
+        for path in ['/api/sync', '/api/orders/printed', '/api/ingest', '/api/batches', '/api/portal']:
+            assert staff.post(path, json={}).status_code == 403
+        assert staff.get('/api/orders', headers={'Origin': 'http://evil.example'}).status_code == 403
+        assert client.get('/api/state').status_code == 200
     finally:
-        client.post("/api/portal", json={"enabled": False})
-    assert remote.get("/api/state").status_code == 403
+        client.post('/api/portal', json={'enabled': False})
+    assert staff.get('/api/orders').status_code == 403
 
 
 def _req(path, origin=None, host="127.0.0.1:8317", client_ip="127.0.0.1"):
