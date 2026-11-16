@@ -3,7 +3,8 @@
 #   * a background task "SnapSTL" that starts at log-on and restarts SnapSTL if it stops
 #     (web portal http://127.0.0.1:8317, downloads, plate builds)
 #   * "SnapSTL" shortcuts in the Start menu and on the Desktop (the app window)
-#   * Bambuddy, the print-farm manager (bambuddy.ps1; skip with SNAPSTL_NO_BAMBUDDY=1)
+#   * Bambuddy: SNAPSTL_BAMBUDDY_URL=http://<Bambuddy computer>:8000 connects to yours; SNAPSTL_BAMBUDDY=docker
+#     sets it up (with its slicer service) in Docker on this PC - see Install-Bambuddy in common.ps1
 # Run:  powershell -ExecutionPolicy Bypass -File scripts\windows\install.ps1
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -45,10 +46,10 @@ foreach ($Dir in @([Environment]::GetFolderPath("Programs"), [Environment]::GetF
   $L.Save()
 }
 
-Write-Host "Installing Bambuddy (print farm: SnapSTL's Push to queue sends plates there)..."
 Install-Bambuddy
 
 if (Wait-SnapSTL 90) {
+  Connect-Bambuddy
   Write-Host "SnapSTL is running: open it from the Start menu (or http://127.0.0.1:8317)."
 } else {
   Write-Host "SnapSTL didn't answer yet. Log: $LogFile"

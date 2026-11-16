@@ -15,7 +15,10 @@ fi
 before="$(git rev-parse HEAD)"
 git pull --ff-only --quiet
 bambuddy() {  # the Bambuddy version this SnapSTL was tested with (scripts/bambuddy-version.txt)
-  if [ "${SNAPSTL_NO_BAMBUDDY:-0}" != 1 ]; then zsh "$PROJECT/scripts/bambuddy-mac.sh" || echo "Bambuddy update failed (SnapSTL still works)."; fi
+  # only a Bambuddy an older SnapSTL installed next to it; Docker Bambuddy: run bambuddy-server.sh again
+  if [ "${SNAPSTL_NO_BAMBUDDY:-0}" != 1 ] && [ -d "$HOME/SnapSTL-Bambuddy/.git" ]; then
+    zsh "$PROJECT/scripts/bambuddy-mac.sh" || echo "Bambuddy update failed (SnapSTL still works)."
+  fi
 }
 if [ "$before" = "$(git rev-parse HEAD)" ]; then echo "SnapSTL is already up to date ($(git log -1 --format='%h %s'))."; bambuddy; exit 0; fi
 echo "Updated:"; git log --format='  • %s' "$before"..HEAD

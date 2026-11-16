@@ -222,7 +222,8 @@ def connect(url: str | None = None, api_key: str | None = None) -> dict:
                             "(Queue, Read status, Library, Control printer) and paste it here")
         made = api("POST", "/api-keys/", cfg=cfg, key="", json_body={
             "name": f"SnapSTL ({computer.NAME})"[:100], "can_queue": True, "can_read_status": True,
-            "can_manage_library": True, "can_control_printer": True})
+            "can_manage_library": True, "can_control_printer": True,
+            "can_access_cloud": True})  # Bambu Cloud slicer profiles (Slicing) need it
         cfg["api_key"] = (made or {}).get("key", "")
         if not cfg["api_key"]:
             raise FarmError("Bambuddy didn't hand out an API key")
