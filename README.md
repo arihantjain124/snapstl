@@ -238,7 +238,10 @@ batches per computer are in Supabase right now). In Supabase they're in **Table 
 then type `CLEAR`. It empties them for **every** computer. First it saves a copy of every record in
 this computer's backups folder (`shared-records-<date>.json`). Orders this computer is still making
 are sent again at the next sync. To start completely fresh, also reset each computer's database
-(**Settings → Maintenance → Database**).
+(**Settings → Maintenance → Database**). Or do both at once: tick **also clear Supabase** next to
+**Reset this computer's database…** and type `RESET ALL` — this computer's database and the shared
+records are emptied together (a backup of each is saved first) and nothing is sent back. Other
+computers keep their own databases; reset them too for a fresh start everywhere.
 
 **Copies and privacy:** once a day each computer saves a copy of all shared records in its backups
 folder (`shared-records-daily-<date>.json`, the last 30 days kept); the card shows when. `uv run

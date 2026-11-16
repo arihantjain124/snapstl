@@ -320,3 +320,27 @@ def test_uploaded_orders_reach_every_computer(two):
         assert remote("U4")["state"] == "bundled"
         assert order("U4")["state"] == "bundled" and order("U4")["batch_computer"] == "PC A"
         assert order("U2")["name"] == "Anu"
+
+
+def test_reset_also_clears_the_shared_records(two, tmp_path, monkeypatch):
+    """Settings → Maintenance → Reset with "also clear Supabase": both emptied, copies saved first,
+    and nothing of this computer is sent back afterwards."""
+    import json
+
+    from snapstl import batches as B
+
+    monkeypatch.setattr(maintenance, "BACKUP_DIR", tmp_path / "backups")
+    with two("A"):
+        ingest.ingest(report([("Z1", "PRINT", "Esha", ""), ("Z2", "PRINT", "Om", "")]), "r.csv")
+        B.create_batch(["Z1"], Settings())
+        ok(sync.sync_now())
+        with db.tx() as con:  # a change not sent yet doesn't block it: everything is being emptied
+            con.execute("UPDATE orders SET state='bundled' WHERE order_id='Z1'")
+        r = maintenance.reset(shared=True)
+        assert r["cleared"] == {"orders": 2, "batches": 1}
+        saved = json.loads(open(r["shared_backup"]).read())
+        assert sorted(o["order_id"] for o in saved["order_records"]) == ["Z1", "Z2"]
+        assert os.path.exists(r["backup"])
+        assert order("Z1") is None and order("Z2") is None
+        ok(sync.sync_now())
+        assert sync.summary() == {"orders": {}, "batches": {}}  # nothing came back

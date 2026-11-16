@@ -99,15 +99,30 @@ def cleanup(older_than_days: int = 30) -> dict:
     return res
 
 
-def reset() -> dict:
+def reset(shared: bool = False) -> dict:
     """Empty this computer's database (after a backup).
 
-    Never touches files (batch folders and downloaded models stay) and never touches the shared
-    records in Supabase: Sync loads the orders that are batched, bundled or printed back from there.
-    Refused while changes of this computer haven't reached the shared records yet (they'd be lost).
+    Never touches files (batch folders and downloaded models stay). Without `shared` it never touches
+    the shared records in Supabase: Sync loads the orders back from there, and it is refused while
+    changes of this computer haven't reached them yet (they'd be lost).
+
+    With `shared` (owner-requested, typed RESET ALL) the shared records are emptied too, for every
+    computer, through `sync.clear` (a copy of every record is saved first). No sync runs in between,
+    so nothing of this computer is sent again; other computers keep their own databases.
     """
     from . import sync
 
+    if shared:
+        if not sync.enabled():
+            raise RuntimeError("No shared order records connected")
+        with db.tx() as con:
+            if _busy(con):
+                raise RuntimeError("A batch is being built right now — try again in a minute")
+        path = backup()
+        with sync._lock:  # the background sync waits until both are empty
+            cleared = sync.clear("CLEAR")
+            _empty()
+        return {"backup": str(path), "shared_backup": cleared["backup"], "cleared": cleared["cleared"]}
     if sync.enabled():
         sync.sync_now()
         left = sync.pending()
@@ -115,6 +130,11 @@ def reset() -> dict:
             raise RuntimeError(f"{left} change(s) of this computer haven't reached the shared records yet "
                                f"({sync.STATUS.error or 'try Sync now'}) — reset after they're synced")
     path = backup()
+    _empty()
+    return {"backup": str(path)}
+
+
+def _empty() -> None:
     with db.tx() as con:
         if _busy(con):
             raise RuntimeError("A batch is being built right now — try again in a minute")
@@ -122,7 +142,6 @@ def reset() -> dict:
             con.execute(f"DELETE FROM {t}")
         con.execute("DELETE FROM sqlite_sequence WHERE name IN ('downloads','batches','files','print_jobs','slices')")
     _vacuum()
-    return {"backup": str(path)}
 
 
 def _vacuum() -> None:
