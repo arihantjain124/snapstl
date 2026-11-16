@@ -191,3 +191,35 @@ def test_clear_shared_records(two, tmp_path, monkeypatch):
         assert order("C1")["state"] == "in_batch"  # this computer still makes it …
         ok(sync.sync_now())
         assert remote("C1")["state"] == "in_batch"  # … so it's sent again
+
+
+def test_old_batch_orders_get_their_owner(two):
+    """A batch made before its orders recorded their batch (uid / computer) was sent without an owner;
+    then the owner's own Bundled was refused and pulled the orders out of the batch. Opening the
+    database fills the owner in and sends it again; an ownerless in_batch record takes it."""
+    import sqlite3
+
+    from snapstl import batches as B
+
+    with two("A"):
+        ingest.ingest(report([("L1", "PRINT", "Lata", ""), ("L2", "PRINT", "Mohan", "")]), "r.csv")
+        a = B.create_batch(["L1", "L2"], Settings())
+        ok(sync.sync_now())
+        # as an older SnapSTL left it: the orders don't name their batch, nor do their records
+        raw = sqlite3.connect(db.DB_PATH)
+        raw.execute("UPDATE orders SET batch_uid=NULL, batch_computer=NULL, batch_computer_id=NULL")
+        raw.commit()
+        raw.close()
+        with sync._remote() as rc:
+            rc.execute("UPDATE snapstl.order_records SET batch_uid=NULL, computer_id=NULL, computer_name=NULL")
+
+        assert order("L1")["batch_computer_id"] == computer.ID  # filled in from its batch on opening
+        ok(sync.sync_now())
+        assert remote("L1")["computer_id"] == computer.ID and remote("L1")["computer_name"] == "PC A"
+        assert remote("L1")["batch_uid"] == order("L1")["batch_uid"]
+
+        with db.tx() as con:
+            db.finish_batch(con, a["batch_id"], "done", {"label": "Batch 1 - 2026-11-16"}, ["L1", "L2"])
+        ok(sync.sync_now())
+        assert order("L1")["state"] == "bundled" and order("L1")["batch_id"] == a["batch_id"]
+        assert remote("L1")["state"] == "bundled" and remote("L2")["state"] == "bundled"

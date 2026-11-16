@@ -17,7 +17,8 @@ the orders that have entered the making process, so all computers agree on who m
     computer, then drops the whole `snapstl` schema and starts it again empty.
 
 Conflicts are settled in the database, by rules, not by whoever writes last (see `_WIN`):
-  * the computer that claimed an order owns its in_batch → bundled steps (and can release it);
+  * the computer that claimed an order owns its in_batch → bundled steps (and can release it); an
+    in_batch record without an owner (sent by an older SnapSTL) takes the next computer that sends it;
   * anyone can mark a bundled order printed, or undo that, or send a made order back to Ready;
   * a change only applies if it is at least as new as the stored one (state_at);
   * a webstore status only applies if its report is newer (status_at, see ingest.status_stamp).
@@ -123,6 +124,7 @@ def schema_sql() -> str:
 _WIN = """(EXCLUDED.state_at >= r.state_at AND (
            r.state = 'released'
         OR r.computer_id = %(actor)s
+        OR (r.state = 'in_batch' AND r.computer_id IS NULL)
         OR (EXCLUDED.state = 'printed'  AND r.state IN ('bundled', 'printed'))
         OR (EXCLUDED.state = 'bundled'  AND r.state = 'printed')
         OR (EXCLUDED.state = 'released' AND r.state IN ('bundled', 'printed'))))"""
