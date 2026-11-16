@@ -22,7 +22,7 @@ from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from . import auth, cache, computer, config, db, farm, makeit, platform_os, sync, updater
-from .ingest import ingest, reset_to_ready, set_name, set_printed
+from .ingest import add_adhoc, ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
 from . import maintenance as M
 from .batches import DOWNLOADER, MANAGER, compartments_for
@@ -296,7 +296,7 @@ def _order_view(r: dict) -> dict:
         "state": r["state"], "batch_id": r["batch_id"], "last_error": r["last_error"], "letters": letters,
         "batch_computer": r.get("batch_computer") or "", "batch_label": r.get("batch_label") or "",
         "batch_here": bool(r.get("batch_id")), "printed_at": r.get("printed_at"), "bundled_at": r.get("bundled_at"),
-        "made_at": r.get("made_at"),
+        "made_at": r.get("made_at"), "adhoc": r.get("sku") == "Adhoc", "added_at": r.get("first_seen"),
         "clubbed": bool(r.get("club_size", 1) > 1),
         "target": [min(band.length, SETTINGS.scaling.max_length), band.height] if band else None,
         "compartments": compartments_for(letters, SETTINGS) if letters else None,
@@ -309,8 +309,9 @@ _CLUB = ("(CASE WHEN COALESCE(clubbed_id,'')='' THEN 1 ELSE "
 _NN = "state='not_needed' AND "
 TABS = {
     "ready": "state='ready'",
-    "ready_single": f"state='ready' AND {_CLUB} <= 1",
+    "ready_single": f"state='ready' AND {_CLUB} <= 1 AND sku<>'Adhoc'",
     "ready_clubbed": f"state='ready' AND {_CLUB} > 1",
+    "ready_adhoc": "state='ready' AND sku='Adhoc'",  # typed in by hand (ingest.add_adhoc)
     "needs_review": "state='needs_review'",
     "in_batch": "state='in_batch'",
     "bundled": "state='bundled' AND made_at IS NULL",
@@ -399,7 +400,7 @@ def order_facets(request: Request, tab: str = "ready"):
 def export_orders(request: Request, tab: str = "all"):
     w, args = _where(request, tab)
     with db.tx() as con:
-        rs = db.rows(con, "SELECT order_id,clubbed_id,order_date,customer_name,phone,address,source_status,quantity,"
+        rs = db.rows(con, "SELECT order_id,clubbed_id,sku,order_date,customer_name,phone,address,source_status,quantity,"
                           "raw_name,name,raw_color,color,state,batch_id,review_reason,last_error,first_file,last_file "
                           f"FROM orders WHERE {w} ORDER BY order_date", *args)
     f = io.StringIO()
@@ -409,6 +410,18 @@ def export_orders(request: Request, tab: str = "all"):
         wr.writerows(rs)
     return StreamingResponse(iter([f.getvalue()]), media_type="text/csv",
                              headers={"Content-Disposition": "attachment; filename=snapstl-orders.csv"})
+
+
+@app.post("/api/orders/adhoc")
+async def new_adhoc_order(req: Request):
+    """An order typed in by hand (Orders → Ready → Ad-hoc): name to print, mobile, colour."""
+    body = await req.json()
+    try:
+        o = add_adhoc(str(body.get("name", "")), str(body.get("phone", "")), str(body.get("color", "")),
+                      body.get("quantity") or 1, str(body.get("note", "")))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return _order_view(o)
 
 
 @app.post("/api/orders/{order_id}/name")

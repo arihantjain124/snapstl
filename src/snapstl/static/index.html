@@ -122,6 +122,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 .pdtable select{min-width:120px;padding:3px 6px}.pdtable td{vertical-align:middle}
 @media (max-width:800px){.app{grid-template-columns:minmax(0,1fr)}nav#tabs{flex-wrap:wrap}.hint code,.callout code{word-break:break-all}.toolbar{flex-wrap:wrap}.side{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:0;border-bottom:1px solid var(--line);padding:8px 10px}
   nav#tabs{flex-direction:row}nav#tabs button{width:auto;padding:6px 9px}.side .foot{margin:0;flex-direction:row;flex-wrap:wrap}.health{flex-direction:row;flex-wrap:wrap;border:0;padding:0}.bar{display:none}}
+.adhoc{border:1px solid var(--line);border-radius:10px;padding:12px;margin:8px 0}.adhocrow{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}.adhocrow label{display:flex;flex-direction:column;gap:4px;font-size:12px;min-width:0;flex:1 1 140px;margin:0}.adhocrow label.grow{flex:2 1 200px}.adhocrow input{width:100%;box-sizing:border-box}
 </style>
 </head>
 <body>
@@ -155,6 +156,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <div class="card">
     <div class="toolbar">
       <label class="btn" style="margin:0;color:var(--text)">Upload report (.xlsx)<input id="report" type="file" accept=".xlsx,.xls,.csv" hidden></label>
+      <button id="adhocgo" title="Type in an order for an ad-hoc request: name, mobile, colour">Add ad-hoc order</button>
       <span class="grow hint" id="ingestmsg"></span>
     </div>
     <div class="msgs" id="ingestres"></div>
@@ -162,6 +164,19 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <div class="card">
     <div class="chips" id="chips"></div>
     <div class="chips" id="subchips"></div>
+    <form id="adhocform" class="adhoc" hidden autocomplete="off">
+      <p class="hint" style="margin:0 0 8px">An order for an ad-hoc request, typed in by hand. It goes straight to Ready with today's date and time and an <b>AH-…</b> order ID; tick it and <b>Create batch</b> like any other order — it's batched, printed and shared the same way.</p>
+      <div class="adhocrow">
+        <label>Name to print<input id="ahname" required maxlength="40" placeholder="e.g. Aarav"></label>
+        <label>Mobile<input id="ahphone" required inputmode="tel" maxlength="20" placeholder="e.g. 98765 43210"></label>
+        <label>Colour<input id="ahcolor" required list="ahcolors" maxlength="30" placeholder="e.g. pink"></label>
+        <label style="max-width:80px">Qty<input id="ahqty" type="number" min="1" max="50" value="1"></label>
+        <label class="grow">Note (optional)<input id="ahnote" maxlength="200" placeholder="who asked, by when…"></label>
+        <button class="primary" type="submit">Add order</button>
+      </div>
+      <datalist id="ahcolors"></datalist>
+      <div class="msgs" id="ahmsg"></div>
+    </form>
     <div class="toolbar">
       <button id="fclear" class="small" title="Clear every column filter and show all orders">Clear all filters</button>
       <span class="grow hint" id="fstate">Type in the boxes under the column names to filter; filters combine.</span>
@@ -532,6 +547,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <tr><th>Tab</th><th>What's in it</th></tr>
       <tr><td>Ready → Single</td><td>Orders to make where the clubbed order ID has only this one name.</td></tr>
       <tr><td>Ready → Clubbed</td><td>Orders to make that share a clubbed order ID with other names (one customer, several organizers).</td></tr>
+      <tr><td>Ready → Ad-hoc</td><td>Orders you typed in with <b>Add ad-hoc order</b> (name to print, mobile, colour; quantity and note optional). They get an <b>AH-…</b> order ID and today's date and time, and are batched, printed and marked printed like any other order. A report never changes them.</td></tr>
       <tr><td>Needs review</td><td>Report says PRINT, but the name or colour needs a human (space in the name, symbols, missing colour, special request).</td></tr>
       <tr><td>In a batch</td><td>Reserved by a batch that isn't built yet.</td></tr>
       <tr><td>Bundled</td><td>Made into plates in a batch, not printed yet. Never made again unless you press <b>Remake</b>.</td></tr>
@@ -699,7 +715,7 @@ const $=id=>document.getElementById(id);
 const COLORS={pink:'#f4a7c0','hot pink':'#ff4fa0','baby pink':'#f9c9d9',lavender:'#b9a3e3',red:'#e5534b',orange:'#f39a3d',yellow:'#f2d04b',green:'#5fb36a',blue:'#4a86d9','baby blue':'#9fd0f3','sky blue':'#7cc4f0',purple:'#9a6bd1',black:'#333',white:'#fafafa',grey:'#999',lightgray:'#ccc'};
 const STATES=[['ready','Ready','ok'],['needs_review','Needs review','warn'],['in_batch','In a batch','info'],['bundled','Bundled','info'],['printed','Printed','ok'],['skipped','Skipped',''],['not_needed','Not needed','']];
 const TABS=[['ready','Ready'],['needs_review','Needs review'],['in_batch','In a batch'],['bundled','Bundled'],['ready_to_ship','Ready to ship'],['printed','Printed'],['skipped','Skipped'],['delivered','Delivered'],['rto','RTO'],['in_transit','In Transit'],['cancelled','Cancelled'],['others','Others'],['all','All']];
-const SUBTABS=[['ready','All ready'],['ready_single','Single'],['ready_clubbed','Clubbed']];
+const SUBTABS=[['ready','All ready'],['ready_single','Single'],['ready_clubbed','Clubbed'],['ready_adhoc','Ad-hoc']];
 let S=null,META=null,filter={tab:'ready',f:{},offset:0},LIMIT=100,openBatch=null,tab='orders',FACETS=null;
 const SEL=new Set();
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -743,7 +759,8 @@ async function loadOrders(){
       :(o.state==='ready'||o.state==='needs_review')?`<button class="small" data-skip="${esc(o.order_id)}">Skip</button>`
       :`<button class="small" data-reset="${esc(o.order_id)}">Make anyway</button>`;
     const cb=o.state===SELKIND?`<input type="checkbox" data-sel="${esc(o.order_id)}" ${SEL.has(o.order_id)?'checked':''}>`:'';
-    const club=o.clubbed_id?`<div class="club" title="Clubbed order ID">${o.clubbed?'clubbed · ':''}${esc(o.clubbed_id)}</div>`:'';
+    const club=o.clubbed_id?`<div class="club" title="Clubbed order ID">${o.clubbed?'clubbed · ':''}${esc(o.clubbed_id)}</div>`
+      :o.adhoc?`<div class="club" title="Typed in by hand">ad-hoc${o.added_at?' · added '+new Date(o.added_at*1000).toLocaleString([], {dateStyle:'short',timeStyle:'short'}):''}${o.special_request?' · '+esc(o.special_request):''}</div>`:'';
     return `<tr><td>${cb}</td><td>${esc(o.order_id)}${club}</td><td style="white-space:nowrap">${esc(o.order_date)}</td><td>${esc(o.customer_name)}</td><td style="white-space:nowrap">${esc(o.phone)}</td><td class="addr">${esc(o.address)}</td><td>${esc(o.source_status)}</td><td>${nameCell}</td><td>${o.state==='needs_review'?'':sw(o.color)}</td><td>${o.quantity}</td><td>${o.target?`${o.target[0]}×${o.target[1]} · ${o.compartments}`:'—'}</td><td><span class="pill ${st[2]}">${st[1]}</span></td><td>${act}</td></tr>`}).join('');
   document.querySelectorAll('[data-ok]').forEach(b=>b.onclick=async()=>{const id=b.dataset.ok;
     const n=document.querySelector(`[data-n="${CSS.escape(id)}"]`).value, c=document.querySelector(`[data-c="${CSS.escape(id)}"]`).value;
@@ -789,9 +806,17 @@ $('mkbatch').onclick=async()=>{if(!SEL.size)return;
 function renderChips(counts){
   const top=filter.tab.startsWith('ready')?'ready':filter.tab;
   $('chips').innerHTML=TABS.map(([k,l])=>`<button data-s="${k}" class="${top===k?'on':''}">${l} · ${counts[k]||0}</button>`).join('');
+  $('adhocform').hidden=filter.tab!=='ready_adhoc';
+  if(filter.tab==='ready_adhoc')$('ahcolors').innerHTML=[...new Set([...Object.keys(COLORS),...((FACETS&&FACETS.colors)||[])].filter(Boolean))].map(c=>`<option value="${esc(c)}">`).join('');
   $('subchips').innerHTML=top==='ready'?SUBTABS.map(([k,l])=>`<button data-s="${k}" class="${filter.tab===k?'on':''}">${l} · ${counts[k]||0}</button>`).join(''):'';
   document.querySelectorAll('#chips button,#subchips button').forEach(b=>b.onclick=()=>{filter.tab=b.dataset.s;filter.offset=0;loadFacets();loadOrders()});
 }
+$('adhocgo').onclick=()=>{filter.tab='ready_adhoc';filter.offset=0;loadFacets().then(()=>$('ahname').focus());loadOrders()};
+$('adhocform').onsubmit=async e=>{e.preventDefault();
+  try{const o=await post('/api/orders/adhoc',{name:$('ahname').value,phone:$('ahphone').value,color:$('ahcolor').value,quantity:+$('ahqty').value||1,note:$('ahnote').value});
+    $('ahmsg').innerHTML=`<div class="o">Added <b>${esc(o.order_id)}</b> — ${esc(o.name)}, ${esc(o.color)}${o.quantity>1?' ×'+o.quantity:''}. It's in Ready; tick it and press <b>Create batch</b>.</div>`;
+    for(const k of ['ahname','ahphone','ahnote'])$(k).value='';$('ahqty').value=1;$('ahname').focus();refreshAll()}
+  catch(err){$('ahmsg').innerHTML=`<div class="e">${esc(err.message)}</div>`}};
 $('prev').onclick=()=>{filter.offset=Math.max(0,filter.offset-LIMIT);loadOrders()};
 $('next').onclick=()=>{filter.offset+=LIMIT;loadOrders()};
 $('report').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('ingestmsg').textContent='Reading '+f.name+'…';

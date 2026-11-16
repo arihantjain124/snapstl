@@ -352,3 +352,44 @@ def reset_to_ready(order_id: str, db_path: Path | None = None) -> None:
             "batch_computer_id=NULL, printed_at=NULL, updated_at=? WHERE order_id=?",
             (state, db.now(), order_id),
         )
+
+
+# ---------------- ad-hoc orders (typed in by hand) ----------------
+ADHOC_SKU = "Adhoc"
+
+
+def add_adhoc(name: str, phone: str, color: str, quantity: int = 1, note: str = "",
+              db_path: Path | None = None) -> dict:
+    """An order typed in by hand for an ad-hoc request: only the name to print, mobile and colour are
+    known. It goes straight to Ready (marked SKU 'Adhoc', status PRINT) and is batched, printed and
+    shared like any webstore order; the report columns it doesn't have stay empty."""
+    import secrets
+
+    raw_name, raw_color, phone, note = (name or "").strip(), (color or "").strip(), (phone or "").strip(), (note or "").strip()
+    clean, _ = clean_name(raw_name)
+    if not clean:
+        raise ValueError("Enter the name to print (letters)")
+    digits = re.sub(r"\D", "", phone)
+    if not 7 <= len(digits) <= 15 or re.search(r"[^\d+\s()-]", phone):
+        raise ValueError("Enter a mobile number (digits, may start with +)")
+    col = normalise_color(raw_color)
+    if not col:
+        raise ValueError("Enter a colour")
+    try:
+        qty = max(1, min(int(quantity or 1), 50))
+    except (TypeError, ValueError):
+        raise ValueError("Quantity must be a number") from None
+    now = datetime.now()
+    oid = f"AH-{now:%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
+    t = db.now()
+    stamp = status_stamp(now.date().isoformat(), "", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+    with db.tx(db_path) as con:
+        con.execute(
+            """INSERT INTO orders(order_id,clubbed_id,sku,order_date,source_status,quantity,raw_name,raw_color,
+               special_request,name,color,name_edited,review_reason,state,first_file,last_file,first_seen,updated_at,
+               customer_name,phone,address,status_at,state_at)
+               VALUES (?,'',?,?,?,?,?,?,?,?,?,0,NULL,'ready','added by hand','added by hand',?,?,?,?,'',?,?)""",
+            (oid, ADHOC_SKU, now.date().isoformat(), "PRINT", qty, raw_name, raw_color, note, clean, col,
+             t, t, raw_name, phone, stamp, t),
+        )
+        return dict(con.execute("SELECT * FROM orders WHERE order_id=?", (oid,)).fetchone())

@@ -112,7 +112,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Plate grouping / packing | `grouping.py`, `packing.py` |
 | Output folders / file names | `pipeline.new_batch_dir`, `pipeline.plate_folder`, `export.plate_filename` |
 | 3MF writing | `threemf.py`, `export.write_plate` |
-| Report import / review rules | `ingest.py` |
+| Report import / review rules / ad-hoc orders | `ingest.py` |
 | Batch lifecycle / download queue / Re-download / Rebuild | `batches.py` (+ endpoints in `server.py`) |
 | Model link / per-model license passwords | `settings.py` (`makerworld_url`, `license_passwords`, `design_id`) + Settings card in `index.html` |
 | Watermark check / license confirmation | `watermark.py`, `batches.check_license` / `store_result`, `helper/content.js` (`runJob`), `helper/inject.js` |
