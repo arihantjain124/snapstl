@@ -585,6 +585,7 @@ snapstl.server:app --port 8320`.
 | 45 | **Bambuddy scripts are Windows only** (0.22.3): `bambuddy-server.sh` and `bambuddy-mac.sh` removed; the Mac installer / updater only connect SnapSTL to the Windows Bambuddy computer (`SNAPSTL_BAMBUDDY_URL`), `update_bambuddy` runs on Windows only. SnapSTL itself stays on Mac + Windows | owner: the Bambuddy computer is a Windows PC; no Bambuddy or slicer scripts needed for a Mac |
 | 46 | **Batched orders always name their batch's owner** (0.22.1): opening the local database copies a batch's `uid` and computer onto its orders that lack them and queues them for the shared records; `_WIN` lets a push take an `in_batch` record that has no owner | batches made before 0.8.0 were sent to Supabase without `computer_id`, so the owner's own *Bundled* was refused and `merge(force=True)` pulled the orders out of their batch |
 | 47 | **Only SnapSTL reaches the shared records; a daily copy on every computer** (0.22.4): the setup SQL turns on row level security (no policies) on the `snapstl` tables and revokes `anon` / `authenticated` (Supabase's API roles) from the schema on every start; SnapSTL connects as the owner, which bypasses RLS. After a good sync, once a day, each computer saves every record to `backups/shared-records-daily-<date>.json` (mode 600, newest 30 kept); `snapstl-db export` saves one on demand | the records hold customer names, phones and addresses; Supabase's free plan keeps no backups the owner can download |
+| 48 | **Every uploaded order is shared** (0.22.5): orders the records don't have are offered as `released` (`sync._OFFER`: inserts, or only takes a newer status and missing details — never changes a stored state; a stored batched/bundled/printed state is merged back here). Orders first seen through a pull get the report's review rules (`sync._review`); a name/colour fixed on one computer reaches the others while nobody makes the order. Upload syncs before and after ingesting; Orders → **Refresh from Supabase** runs Sync now. Pushes are pipelined (`executemany`, 1000 per round). Supersedes the "only batched orders" part of #22 | owner wanted a report uploaded on any computer to update Supabase and every computer, and a refresh on the Orders page |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -725,6 +726,10 @@ in `APP_DIR/shared-records.json` (mode 600, never returned in full). Without it 
     (or now `in_batch`/`bundled`/`printed`).
   - `batches.synced` becomes 0 when a batch changes.
   - Writes made by the sync itself run inside `db.quiet()` and are not queued again.
+- **Offer:** every local order the records don't have (`in_remote = 0`, not batched) is sent with
+  `_OFFER` as `released`: new rows are inserted; for an existing row only a newer webstore status and
+  missing customer details are taken, never the state. If the stored row is batched / bundled /
+  printed, it is merged here (`merge(force=True)`). An upload syncs before and right after ingesting.
 - **Push:** outbox orders are upserted with rules in SQL (`_WIN`):
   - A state change applies only if it is at least as new (`state_at`), and only if one of these
     holds: the record is `released`; the writer owns it; it is `in_batch` with no owner (sent by an

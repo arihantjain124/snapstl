@@ -9,7 +9,12 @@ the orders that have entered the making process, so all computers agree on who m
   * Every later change is queued locally (sync_outbox, kept by triggers in db.py) and **pushed**:
     bundled, printed (by a person), released (back to Ready, cancelled batch, reset to ready) and newer
     webstore statuses from an uploaded report.
+  * Every order from an uploaded report is **offered** as `released` (nobody is making it yet), so all
+    computers see the same orders whichever one the report was uploaded on. An offer never changes
+    the state of a record that's already there (`_OFFER`); if another computer has it, this one
+    takes that state.
   * Changes from other computers are **pulled** (rows updated since the last pull) and merged locally.
+    An order first seen this way gets the same review rules as an uploaded report.
   * The shared records are only ever added to and updated, never deleted row by row: the app has no
     DELETE, and triggers in the database refuse DELETE and TRUNCATE. Resetting the app's database
     leaves them as they are; the next sync loads them back. The one exception is `clear()` (Settings →
@@ -176,6 +181,20 @@ _CLAIM = (
     "WHERE r.state = 'released' OR (r.state = 'in_batch' AND r.computer_id = %(actor)s "
     "AND NOT (r.batch_uid = ANY(%(live_uids)s))) RETURNING order_id"
 )
+# Offering an order from an uploaded report: new → stored as released; already there → only a newer
+# webstore status and missing details are taken, the state is never changed.
+_OFFER = (
+    f"INSERT INTO {SCHEMA}.order_records AS r ({', '.join(_COLS)}) "
+    f"VALUES ({', '.join('%(' + c + ')s' for c in _COLS)}) ON CONFLICT (order_id) DO UPDATE SET "
+    + ", ".join(f"{c} = COALESCE(r.{c}, EXCLUDED.{c})" for c in _KEEP_FIRST) + ", "
+    + ", ".join(f"{c} = COALESCE(NULLIF(r.{c}, ''), EXCLUDED.{c})" for c in ("customer_name", "phone", "address"))
+    + ", source_status = CASE WHEN COALESCE(EXCLUDED.status_at, '') > COALESCE(r.status_at, '') "
+      "THEN EXCLUDED.source_status ELSE r.source_status END"
+    + ", status_at = GREATEST(r.status_at, EXCLUDED.status_at)"
+    + ", updated_at = clock_timestamp(), updated_by = EXCLUDED.updated_by "
+    "RETURNING *"
+)
+PUSH_BATCH = 1000  # orders sent per round trip group; sync_now repeats until the queue is empty
 
 
 class SyncError(RuntimeError):
@@ -262,6 +281,33 @@ def _evaluate(local: dict, status: str | None) -> str:
     return "needs_review" if (local.get("review_reason") or not local.get("color")) else "ready"
 
 
+def _review(r: dict) -> tuple[str, str | None]:
+    """(state, review_reason) for an order first seen in the shared records: the same rules as an
+    uploaded report (ingest). A name changed by a person on another computer counts as checked."""
+    from .ingest import _evaluate as judge, clean_name
+
+    name0, review = clean_name(r.get("raw_name") or "")
+    if r.get("name") and r["name"] != name0:
+        review = None
+    if r.get("special_request"):
+        review = "; ".join(x for x in [review, f"Special request: {r['special_request']}"] if x)
+    return judge(r.get("name") or "", r.get("color") or "", review, (r.get("source_status") or "").upper())
+
+
+def _many(rc, sql: str, params: list[dict]) -> list[dict]:
+    """One statement per params, sent together (pipelined); the RETURNING row of each, in order."""
+    if not params:
+        return []
+    cur = rc.cursor()
+    cur.executemany(sql, params, returning=True)
+    out = []
+    while True:
+        out.append(cur.fetchone())
+        if not cur.nextset():
+            break
+    return out
+
+
 def _local_batch_uids(con) -> set[str]:
     return {r[0] for r in con.execute("SELECT uid FROM batches WHERE uid IS NOT NULL")}
 
@@ -277,8 +323,9 @@ def merge(con, r: dict, force: bool = False) -> str | None:
     if L is None:
         state = r["state"]
         stale = state == "in_batch" and mine and r.get("batch_uid") not in uids
+        review = None
         if state == "released" or stale:
-            state = _evaluate({"color": r.get("color")}, r.get("source_status"))
+            state, review = _review(r)
         local_batch = None
         if mine and r.get("batch_uid") in uids:
             row = con.execute("SELECT id FROM batches WHERE uid=?", (r["batch_uid"],)).fetchone()
@@ -290,7 +337,7 @@ def merge(con, r: dict, force: bool = False) -> str | None:
             "batch_computer_id,printed_at,bundled_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?)",
             (oid, r.get("clubbed_id"), r.get("sku") or "Magicians_35", r.get("order_date"), r.get("source_status"),
              r.get("quantity") or 1, r.get("raw_name"), r.get("raw_color"), r.get("special_request"), r.get("name"),
-             r.get("color"), None, state, local_batch, "shared records", "shared records", db.now(), db.now(),
+             r.get("color"), review, state, local_batch, "shared records", "shared records", db.now(), db.now(),
              r.get("customer_name"), r.get("phone"), r.get("address"), r["state_at"], r.get("status_at"),
              r.get("batch_uid") if state in ("in_batch", "bundled", "printed") else None, r.get("batch_label"),
              r.get("computer_name"), r.get("computer_id"), r.get("printed_at"), r.get("bundled_at")))
@@ -304,6 +351,14 @@ def merge(con, r: dict, force: bool = False) -> str | None:
             sets["state"] = _evaluate(L, r.get("source_status"))
     # who's making it: the newer change wins (unless this computer has its own change on the way)
     pending = con.execute("SELECT 1 FROM sync_outbox WHERE order_id=?", (oid,)).fetchone() is not None
+    # a name / colour fixed on another computer (not yet made anywhere)
+    if (not pending and r.get("state") == "released" and r.get("name")
+            and L["state"] in ("ready", "needs_review", "not_needed")
+            and (r["name"], r.get("color") or L.get("color")) != (L.get("name"), L.get("color"))):
+        color = r.get("color") or L.get("color")
+        sets.update(name=r["name"], color=color, name_edited=1, review_reason=None)
+        if sets.get("state", L["state"]) in ("ready", "needs_review"):
+            sets["state"] = "ready" if color else "needs_review"
     stale = None
     if force or (not pending and float(r["state_at"]) > float(L.get("state_at") or 0)):
         st = r["state"]
@@ -368,26 +423,30 @@ def claim(orders: list[dict], batch_uid: str) -> tuple[list[str], float]:
 
 # ---------------- push / pull ----------------
 def _push(rc) -> int:
+    """Send queued changes and offer orders the shared records don't have yet. Returns how many."""
     with db.tx() as con:
         con.execute("INSERT OR IGNORE INTO sync_outbox(order_id, queued_at) SELECT order_id, ? FROM orders "
-                    "WHERE COALESCE(in_remote,0)=0 AND state IN ('in_batch','bundled','printed')", (db.now(),))
+                    "WHERE COALESCE(in_remote,0)=0", (db.now(),))
         queued = db.rows(con, "SELECT o.*, q.queued_at FROM sync_outbox q JOIN orders o USING(order_id) "
-                              "ORDER BY q.queued_at LIMIT 500")
+                              f"ORDER BY q.queued_at LIMIT {PUSH_BATCH}")
         orphans = [r[0] for r in con.execute("SELECT order_id FROM sync_outbox WHERE order_id NOT IN "
                                              "(SELECT order_id FROM orders)")]
         if orphans:
             con.execute(f"DELETE FROM sync_outbox WHERE order_id IN ({','.join('?' * len(orphans))})", orphans)
+    offers = [o for o in queued if not o.get("in_remote") and o["state"] not in ("in_batch", "bundled", "printed")]
+    changes = [o for o in queued if o not in offers]
     results = []
-    for o in queued:
-        p = _payload(o)
-        back = rc.execute(_UPSERT, p).fetchone()
-        results.append((o, p, back))
+    for group, sql in ((offers, _OFFER), (changes, _UPSERT)):
+        ps = [_payload(o) for o in group]
+        results += [(o, p, back, sql is _OFFER) for o, p, back in zip(group, ps, _many(rc, sql, ps))]
     with db.tx() as con:
         stale = []
         with db.quiet(con):
-            for o, p, back in results:
-                if (back["state"], back["state_at"], back.get("batch_uid")) != (p["state"], p["state_at"], p["batch_uid"]):
-                    s = merge(con, back, force=True)  # refused by the rules: take the stored truth
+            for o, p, back, offer in results:
+                refused = (back["state"] != "released" if offer else
+                           (back["state"], back["state_at"], back.get("batch_uid")) != (p["state"], p["state_at"], p["batch_uid"]))
+                if refused:
+                    s = merge(con, back, force=True)  # someone else has it / refused by the rules: take the stored truth
                     if s:
                         stale.append(s)
                 else:
@@ -457,7 +516,8 @@ class Status:
 
     def snapshot(self) -> dict:
         with db.tx() as con:
-            pending = con.execute("SELECT COUNT(*) FROM sync_outbox").fetchone()[0]
+            pending = con.execute("SELECT COUNT(*) FROM (SELECT order_id FROM sync_outbox UNION "
+                                  "SELECT order_id FROM orders WHERE COALESCE(in_remote,0)=0)").fetchone()[0]
         return {"enabled": enabled(), "last_ok": self.last_ok, "last_try": self.last_try, "error": self.error,
                 "pending": pending, "pushed": self.pushed, "pulled": self.pulled, "running": self.running,
                 "computer": computer.NAME, "last_copy": last_copy(), "copy_error": self.copy_error}
@@ -475,7 +535,12 @@ def sync_now() -> dict:
         STATUS.last_try = time.time()
         try:
             with _remote() as rc:
-                STATUS.pushed = _push(rc)
+                STATUS.pushed = n = _push(rc)
+                for _ in range(20):  # a big report: keep sending until everything is there
+                    if n < PUSH_BATCH:
+                        break
+                    n = _push(rc)
+                    STATUS.pushed += n
                 _push_batches(rc)
             with _remote() as rc:  # pushes are committed before pulling
                 STATUS.pulled = _pull(rc)

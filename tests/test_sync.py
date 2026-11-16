@@ -180,17 +180,18 @@ def test_clear_shared_records(two, tmp_path, monkeypatch):
         ingest.ingest(report([("C1", "PRINT", "Asha", ""), ("C2", "PRINT", "Ravi", "")]), "r.csv")
         B.create_batch(["C1"], Settings())
         ok(sync.sync_now())
-        assert sync.summary()["orders"] == {"in_batch": 1}
+        assert sync.summary()["orders"] == {"in_batch": 1, "released": 1}  # C2 is shared too, nobody makes it yet
         with pytest.raises(sync.SyncError, match="CLEAR"):
             sync.clear("yes")
         r = sync.clear("CLEAR")
-        assert r["cleared"] == {"orders": 1, "batches": 1}
+        assert r["cleared"] == {"orders": 2, "batches": 1}
         saved = json.loads(open(r["backup"]).read())
-        assert [o["order_id"] for o in saved["order_records"]] == ["C1"]  # nothing lost: kept on this computer
+        assert [o["order_id"] for o in saved["order_records"]] == ["C1", "C2"]  # nothing lost: kept on this computer
         assert sync.summary() == {"orders": {}, "batches": {}}  # empty, tables there again
         assert order("C1")["state"] == "in_batch"  # this computer still makes it …
         ok(sync.sync_now())
         assert remote("C1")["state"] == "in_batch"  # … so it's sent again
+        assert remote("C2")["state"] == "released"  # and its report's orders are offered again
 
 
 def test_old_batch_orders_get_their_owner(two):
@@ -280,3 +281,42 @@ def test_daily_copy_of_the_shared_records(two):
 
         r = sync.export()  # `snapstl-db export`: a kept, timestamped copy
         assert r["orders"] == 1 and "daily" not in r["file"]
+
+
+def test_uploaded_orders_reach_every_computer(two):
+    """A report uploaded on one computer is in the shared records; the others get its orders with the
+    same review rules, and name fixes; an offer never undoes what another computer is making."""
+    from snapstl import batches as B
+
+    pc = two
+    data = report([("U1", "PRINT", "Kabir", ""), ("U2", "PRINT", "Anu Sharma", ""), ("U3", "DELIVERED", "Ira", "12/11/2026"),
+                   ("U4", "PRINT", "Zoya", "")])
+    with pc("A"):
+        ingest.ingest(data, "r.csv")
+        s = ok(sync.sync_now())
+        assert s["pending"] == 0
+        assert remote("U1")["state"] == "released" and remote("U1")["customer_name"] == "Private Person"
+        a = B.create_batch(["U4"], Settings())
+        with db.tx() as con:
+            db.finish_batch(con, a["batch_id"], "done", {"label": "Batch 1 - 2026-11-16"}, ["U4"])
+        ok(sync.sync_now())
+    with pc("B"):  # never uploaded the report
+        ok(sync.sync_now())
+        assert order("U1")["state"] == "ready" and order("U1")["name"] == "Kabir"
+        assert order("U2")["state"] == "needs_review" and "space" in order("U2")["review_reason"]
+        assert order("U3")["state"] == "not_needed"
+        assert order("U4")["state"] == "bundled" and order("U4")["batch_computer"] == "PC A"
+    with pc("A"):  # a person fixes the name on A …
+        ingest.set_name("U2", "Anu")
+        ok(sync.sync_now())
+    with pc("B"):  # … B gets it
+        ok(sync.sync_now())
+        assert order("U2")["name"] == "Anu" and order("U2")["state"] == "ready"
+
+    with pc("C"):  # uploads the same report without having synced: its offers don't undo A's work
+        ingest.ingest(data, "r.csv")
+        assert order("U4")["state"] == "ready"
+        ok(sync.sync_now())
+        assert remote("U4")["state"] == "bundled"
+        assert order("U4")["state"] == "bundled" and order("U4")["batch_computer"] == "PC A"
+        assert order("U2")["name"] == "Anu"

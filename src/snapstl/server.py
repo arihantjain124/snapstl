@@ -280,8 +280,11 @@ async def upload_report(file: UploadFile = File(...)):
         s = ingest(data, name)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    sync.LOOP.kick()  # newer webstore statuses go to the shared records
-    return s.__dict__
+    out = s.__dict__
+    if sync.enabled():  # the report's orders and newer statuses go to the shared records now
+        st = await run_in_threadpool(sync.sync_now)
+        out = out | {"shared": {"error": st["error"], "pending": st["pending"]}}
+    return out
 
 
 def _order_view(r: dict) -> dict:
