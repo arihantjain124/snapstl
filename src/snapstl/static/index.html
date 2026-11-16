@@ -159,6 +159,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="toolbar">
       <label class="btn" style="margin:0;color:var(--text)">Upload report (.xlsx)<input id="report" type="file" accept=".xlsx,.xls,.csv" hidden></label>
       <button id="adhocgo" title="Type in an order for an ad-hoc request: name, mobile, colour">Add ad-hoc order</button>
+      <button id="ordrefresh" hidden title="Send this computer's changes to Supabase and load every computer's orders">Refresh from Supabase</button>
       <span class="grow hint" id="ingestmsg"></span>
     </div>
     <div class="msgs" id="ingestres"></div>
@@ -471,7 +472,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
           <p class="hint" id="syncinfo"></p>
           <div class="toolbar"><button id="syncnow" class="primary" title="Send this computer's changes to the shared order records and load everyone's">Sync now</button><button id="sharedcheck">Show what's there</button></div>
           <div id="sharedholds"></div>
-          <div class="callout"><b>What is shared:</b> only orders taken into a batch — <i>In a batch</i>, <i>Bundled</i>, <i>Printed</i>, and orders released back to Ready — with their newest webstore status, plus each computer's batches. Orders that are only <i>Ready</i> or <i>Needs review</i> stay on the computer that uploaded the report: upload the report on every computer. In Supabase they're in <b>Table Editor → schema <code>snapstl</code></b> (not <code>public</code>): <code>order_records</code> and <code>batch_records</code>. Syncs every minute and right after changes.</div>
+          <div class="callout"><b>What is shared:</b> every order — uploading a report on any computer sends its orders to Supabase, and the other computers get them at their next sync (or <b>Refresh from Supabase</b> on the Orders page) — with who is making it (<i>In a batch</i>, <i>Bundled</i>, <i>Printed</i>), the newest webstore status and name fixes, plus each computer's batches. In Supabase they're in <b>Table Editor → schema <code>snapstl</code></b> (not <code>public</code>): <code>order_records</code> and <code>batch_records</code>. Syncs every minute and right after changes.</div>
           <h3>Clear shared records</h3>
           <p class="hint under">Empties the shared records of <b>every</b> computer (e.g. after testing). A copy of every record is saved first in this computer's backups folder. Orders this computer is still making are sent again at the next sync; to start completely fresh, also reset each computer's database (Maintenance).</p>
           <div class="toolbar" style="margin-top:6px"><button id="sharedclear" style="color:var(--err)">Clear shared records…</button><span class="hint grow" id="sharedclearmsg"></span></div>
@@ -696,7 +697,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <h2>Your data</h2>
     <p>Settings and backups are on this computer (Mac: <code>~/Library/Application Support/SnapSTL</code>, Windows: <code>%LOCALAPPDATA%\SnapSTL</code>). Downloaded models: your Downloads folder. Plates: your output folder. SnapSTL never deletes downloaded models or batch folders — you clean them up yourself. Orders (with customer names, phones and addresses) are in this computer's own database, and — when connected in Settings → Shared order records — batched, bundled and printed orders also in your shared order records in Supabase (Settings → Database says which). SnapSTL runs in the background (it starts at login); the window is just a view — you can also open <code>http://127.0.0.1:8317</code> in a browser.</p>
     <h3>Several computers (shared order records)</h3>
-    <p>With the shared order records set up (<b>Settings → Connections → Shared order records</b>), every computer works in its own database, and every order taken into a batch, bundled or printed is recorded in Supabase. Creating a batch claims its orders there first: an order another computer already has is left out and shows <i>in Batch N · computer</i>. Bundled, printed and released orders and newer webstore statuses are sent right away and every minute; <b>Settings → Connections → Sync now</b> sends and loads everything at once. The records are never deleted one by one, and <b>Reset this computer's database</b> doesn't touch them — Sync loads them back. Mark orders printed in the <b>Bundled</b> tab (tick them → <b>Mark printed</b>); they move to <b>Printed</b> and keep their batch. Only orders taken into a batch are shared — <i>Ready</i> orders stay on the computer that uploaded the report. <b>Show what's there</b> lists what Supabase holds (in Supabase: Table Editor → schema <code>snapstl</code>). <b>Clear shared records…</b> (type CLEAR) empties them for every computer, after saving a copy in this computer's backups folder. Once a day, each computer also saves a copy of all shared records in its backups folder (<code>shared-records-daily-…json</code>, the last 30 days kept). Only SnapSTL can read the records: Supabase's public API has no access to them.</p>
+    <p>With the shared order records set up (<b>Settings → Connections → Shared order records</b>), every computer works in its own database, and every order taken into a batch, bundled or printed is recorded in Supabase. Creating a batch claims its orders there first: an order another computer already has is left out and shows <i>in Batch N · computer</i>. Bundled, printed and released orders and newer webstore statuses are sent right away and every minute; <b>Settings → Connections → Sync now</b> sends and loads everything at once. The records are never deleted one by one, and <b>Reset this computer's database</b> doesn't touch them — Sync loads them back. Mark orders printed in the <b>Bundled</b> tab (tick them → <b>Mark printed</b>); they move to <b>Printed</b> and keep their batch. Every order is shared: a report uploaded on any computer reaches Supabase right away, and <b>Refresh from Supabase</b> on the Orders page loads every computer's orders. <b>Show what's there</b> lists what Supabase holds (in Supabase: Table Editor → schema <code>snapstl</code>). <b>Clear shared records…</b> (type CLEAR) empties them for every computer, after saving a copy in this computer's backups folder. Once a day, each computer also saves a copy of all shared records in its backups folder (<code>shared-records-daily-…json</code>, the last 30 days kept). Only SnapSTL can read the records: Supabase's public API has no access to them.</p>
     <p class="hint" id="helpversion"></p>
   </div>
 </section>
@@ -812,10 +813,14 @@ $('adhocform').onsubmit=async e=>{e.preventDefault();
   catch(err){$('ahmsg').innerHTML=`<div class="e">${esc(err.message)}</div>`}};
 $('prev').onclick=()=>{filter.offset=Math.max(0,filter.offset-LIMIT);loadOrders()};
 $('next').onclick=()=>{filter.offset+=LIMIT;loadOrders()};
+$('ordrefresh').onclick=async()=>{const b=$('ordrefresh');b.disabled=true;$('ingestmsg').textContent='Refreshing from Supabase…';
+  try{const s=await post('/api/sync');$('ingestmsg').textContent=s.error?'':`Refreshed ${new Date(s.last_ok*1000).toLocaleTimeString()} · sent ${s.pushed}, loaded ${s.pulled}`;
+    if(s.error)$('ingestres').innerHTML=`<div class="e">${esc(s.error)}</div>`;refreshAll()}
+  catch(err){$('ingestmsg').textContent='';$('ingestres').innerHTML=`<div class="e">${esc(err.message)}</div>`}finally{b.disabled=false}};
 $('report').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('ingestmsg').textContent='Reading '+f.name+'…';
   const fd=new FormData();fd.append('file',f);
   try{const s=await api('/api/ingest',{method:'POST',body:fd});$('ingestmsg').textContent='';
-    $('ingestres').innerHTML=`<div class="o">${esc(s.filename)}: ${s.sku_rows} Magicians_35 rows — ${s.new} new (${s.to_print_new} ready, ${s.needs_review_new} need review), ${s.updated} updated, ${s.unchanged} unchanged${s.became_not_needed?`, ${s.became_not_needed} no longer need making`:''}.${s.already_seen_file?' This exact file was uploaded before.':''}</div>`+s.warnings.map(w=>`<div class="w">${esc(w)}</div>`).join('');
+    $('ingestres').innerHTML=`<div class="o">${esc(s.filename)}: ${s.sku_rows} Magicians_35 rows — ${s.new} new (${s.to_print_new} ready, ${s.needs_review_new} need review), ${s.updated} updated, ${s.unchanged} unchanged${s.became_not_needed?`, ${s.became_not_needed} no longer need making`:''}.${s.already_seen_file?' This exact file was uploaded before.':''}</div>`+(s.shared?(s.shared.error?`<div class="w">Not shared with the other computers yet: ${esc(s.shared.error)} — it's sent automatically once Supabase can be reached.</div>`:`<div class="o">Shared with the other computers (Supabase).</div>`):'')+s.warnings.map(w=>`<div class="w">${esc(w)}</div>`).join('');
     refreshAll()}catch(err){$('ingestmsg').textContent='';$('ingestres').innerHTML=`<div class="e">${esc(err.message)}</div>`}e.target.value=''};
 
 // ---------- batches ----------
@@ -1275,7 +1280,7 @@ function refreshAll(){lastKey='';refresh()}
   if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders';t=OLD_PAGES[t]||t}catch{}if(!PAGES.includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;
   document.querySelectorAll('.fm').forEach(x=>x.textContent='Show in '+META.file_manager);
   if(META.os==='windows')document.body.classList.add('win');
-  $('pcname').textContent=META.computer.name+(META.shared_records?' · shared records':'');show(t);refresh();loadHealth();setInterval(refresh,2000);
+  $('pcname').textContent=META.computer.name+(META.shared_records?' · shared records':'');$('ordrefresh').hidden=!META.shared_records;show(t);refresh();loadHealth();setInterval(refresh,2000);
   if(META.local){loadUpdates(1);setInterval(()=>loadUpdates(1),6*3600*1000)}})();
 </script>
 </body>

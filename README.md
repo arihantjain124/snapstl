@@ -224,10 +224,12 @@ and click **Run**. No password is needed for that, and it's safe to run again. I
 and loads everyone else's, and says how many it sent and loaded. If that first sync fails, it says
 why instead of "connected". The sidebar then shows "*name* · shared records".
 
-**What is shared, and how to check it.** Only orders taken into a batch (*In a batch*, *Bundled*,
-*Printed*, and orders released back to Ready), with their newest webstore status, plus every
-computer's batches. Orders that are only *Ready* or *Needs review* stay on the computer that
-uploaded the report, so upload the report on each computer. The same card shows the last sync,
+**What is shared, and how to check it.** Every order. Uploading a report on any computer sends its
+orders to Supabase straight away (the upload says "Shared with the other computers"); the other
+computers get them at their next sync, or at once with **Refresh from Supabase** on the Orders page.
+Shared with each order: who is making it (*In a batch*, *Bundled*, *Printed*), the newest webstore
+status and name fixes; plus every computer's batches. A report never undoes an order another
+computer is already making. The same card shows the last sync,
 changes waiting, any error, **Sync now** and **Show what's there** (how many orders per state and
 batches per computer are in Supabase right now). In Supabase they're in **Table Editor → schema
 `snapstl`** (switch the schema from `public`): `order_records` and `batch_records`.
@@ -448,7 +450,7 @@ next to SnapSTL keeps running until you remove it.
 | "Can't reach the shared records … no batch was created" | Check the internet, then try again |
 | Connect / save says the password or address is wrong | Copy the **Session pooler** string again; put the password in place of `[YOUR-PASSWORD]` with no brackets |
 | Settings → Connections shows changes waiting | They're sent on the next sync; **Sync now** shows any problem |
-| Shared records: Supabase looks empty / another computer doesn't see orders | Only orders taken into a batch are shared — upload the report on each computer. In Supabase look in **Table Editor → schema `snapstl`**, not `public`. **Settings → Connections → Show what's there** shows what's stored |
+| Shared records: Supabase looks empty / another computer doesn't see orders | Press **Refresh from Supabase** on the Orders page on both computers; an upload that couldn't reach Supabase says so and is sent automatically later. In Supabase look in **Table Editor → schema `snapstl`**, not `public`. **Settings → Connections → Show what's there** shows what's stored |
 | "Connected, but sync fails" | Read the message under it. Usually the password or the address: copy the **Session pooler** string again (the direct `db.….supabase.co` one needs IPv6), then **Connect / save** |
 | Bambuddy lost its printers after installing SnapSTL (0.17 or older) | SnapSTL's installer had started a second, empty Bambuddy next to yours. Run the SnapSTL install command again: it now stops SnapSTL's copy and starts yours again; your printers and data were never deleted |
 | **Bambuddy isn't answering** | On the Bambuddy computer: is it on? Services → **Bambuddy** running? Run the step-0 command again (it starts it and re-applies the firewall rules). Logs: `C:\ProgramData\Bambuddy\logs`. From a SnapSTL computer, open `http://<Bambuddy computer>:8000` in a browser: if it doesn't load, check both are on the same network and the firewall rule *SnapSTL Bambuddy (TCP 8000)* exists |
