@@ -258,6 +258,13 @@ status, on any computer.
 Without it a red bar says why and nothing can be changed — orders, batches, printing — until it's
 back; Settings still works so you can fix it. Downloads already running finish.
 
+**Reading the orders from another tool or agent.** In Supabase, `snapstl.order_records` has one row
+per order. `tab` says which Orders page tab it's in (`ready`, `needs_review`, `in_batch`, `bundled`,
+`ready_to_ship`, `printed`, `skipped`, `delivered`, `rto`, `in_transit`, `cancelled`, `others`) and,
+for Ready orders, `ready_type` says `single`, `clubbed` or `adhoc`; `review_reason` says why an order
+needs review. Every column has a description (Table Editor → schema `snapstl`). Read only — SnapSTL
+writes it. Example: `select tab, ready_type, count(*) from snapstl.order_records group by 1, 2;`
+
 **Copies and privacy:** once a day each computer saves a copy of all shared records in its backups
 folder (`shared-records-daily-<date>.json`, the last 30 days kept); the card shows when. `uv run
 snapstl-db export` saves one now. Only SnapSTL can read the records: row level security is on and

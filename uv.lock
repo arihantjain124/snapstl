@@ -1055,7 +1055,7 @@ wheels = [
 
 [[package]]
 name = "snapstl"
-version = "0.22.14"
+version = "0.22.15"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },

@@ -50,6 +50,62 @@ CREATE TABLE IF NOT EXISTS snapstl.meta (key text PRIMARY KEY, value text);
 -- A new id every time the records are created (again, after Clear / Reset with "also clear Supabase"):
 -- each computer notices it changed and makes itself match the empty records (sync._follow_reset).
 INSERT INTO snapstl.meta(key, value) VALUES ('instance', gen_random_uuid()::text) ON CONFLICT (key) DO NOTHING;
+-- The Orders page's tabs, for anyone reading the records (e.g. another agent querying them): the app
+-- sends its own state, review reason and Ready-to-ship time; a trigger works out `tab` and `ready_type`
+-- from the row with the same rules as the Orders page, whichever computer (or SnapSTL version) wrote it.
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS app_state text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS review_reason text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS made_at double precision;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS tab text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS ready_type text;
+CREATE INDEX IF NOT EXISTS order_records_tab ON snapstl.order_records (tab, ready_type);
+CREATE INDEX IF NOT EXISTS order_records_club ON snapstl.order_records (clubbed_id);
+CREATE OR REPLACE FUNCTION snapstl.set_tab() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE st text := upper(coalesce(NEW.source_status, ''));
+BEGIN
+  NEW.tab := CASE
+    WHEN NEW.state = 'in_batch' THEN 'in_batch'
+    WHEN NEW.state = 'bundled' AND NEW.made_at IS NOT NULL THEN 'ready_to_ship'
+    WHEN NEW.state = 'bundled' THEN 'bundled'
+    WHEN NEW.state = 'printed' THEN 'printed'
+    WHEN NEW.app_state IN ('ready', 'needs_review', 'skipped') THEN NEW.app_state
+    WHEN NEW.app_state IS NULL AND st IN ('PRINT') THEN 'ready'
+    WHEN st = 'DELIVERED' THEN 'delivered'
+    WHEN st LIKE 'RTO%' THEN 'rto'
+    WHEN replace(replace(st, '_', '-'), ' ', '-') = 'IN-TRANSIT' THEN 'in_transit'
+    WHEN st LIKE 'CANCEL%' THEN 'cancelled'
+    ELSE 'others' END;
+  NEW.ready_type := CASE
+    WHEN NEW.tab <> 'ready' THEN NULL
+    WHEN NEW.sku = 'Adhoc' THEN 'adhoc'
+    WHEN coalesce(NEW.clubbed_id, '') <> '' AND (SELECT count(*) FROM snapstl.order_records o
+         WHERE o.clubbed_id = NEW.clubbed_id AND o.order_id <> NEW.order_id) > 0 THEN 'clubbed'
+    ELSE 'single' END;
+  RETURN NEW;
+END $$;
+CREATE OR REPLACE TRIGGER order_records_tab BEFORE INSERT OR UPDATE ON snapstl.order_records
+    FOR EACH ROW EXECUTE FUNCTION snapstl.set_tab();
+-- a new order of a clubbed group makes its partners "clubbed" too
+CREATE OR REPLACE FUNCTION snapstl.retab_club() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF coalesce(NEW.clubbed_id, '') <> '' THEN
+    UPDATE snapstl.order_records SET ready_type = ready_type
+     WHERE clubbed_id = NEW.clubbed_id AND order_id <> NEW.order_id AND tab = 'ready' AND ready_type IS DISTINCT FROM 'clubbed';
+  END IF;
+  RETURN NULL;
+END $$;
+CREATE OR REPLACE TRIGGER order_records_retab_club AFTER INSERT ON snapstl.order_records
+    FOR EACH ROW EXECUTE FUNCTION snapstl.retab_club();
+UPDATE snapstl.order_records SET tab = tab WHERE tab IS NULL;
+COMMENT ON TABLE snapstl.order_records IS 'SnapSTL orders shared by every computer (one row per webstore order ID). Read-only for anyone but SnapSTL. Never deleted.';
+COMMENT ON COLUMN snapstl.order_records.tab IS 'Orders page tab: ready | needs_review | in_batch | bundled | ready_to_ship | printed | skipped | delivered | rto | in_transit | cancelled | others (the last five are orders that need no making, by webstore status). Set by a trigger.';
+COMMENT ON COLUMN snapstl.order_records.ready_type IS 'For tab = ready: single | clubbed (several orders share clubbed_id) | adhoc (typed in by hand, sku Adhoc); NULL otherwise. Set by a trigger.';
+COMMENT ON COLUMN snapstl.order_records.state IS 'Who is making it: in_batch | bundled | printed (computer_name has it) | released (nobody yet — see tab).';
+COMMENT ON COLUMN snapstl.order_records.app_state IS 'SnapSTL''s own state on the computer that last wrote the row: ready | needs_review | in_batch | bundled | printed | skipped | not_needed.';
+COMMENT ON COLUMN snapstl.order_records.review_reason IS 'Why the order needs a person to check it (tab = needs_review), e.g. a name with a space or a special request.';
+COMMENT ON COLUMN snapstl.order_records.made_at IS 'When base and name were both printed (epoch seconds) → tab ready_to_ship.';
+COMMENT ON COLUMN snapstl.order_records.source_status IS 'Webstore order status from the newest uploaded report (status_at says how recent).';
+COMMENT ON COLUMN snapstl.order_records.name IS 'Name to print (cleaned or corrected); raw_name is what the customer typed.';
 CREATE OR REPLACE FUNCTION snapstl.refuse_delete() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   RAISE EXCEPTION 'SnapSTL records are never deleted (% on %.%)', TG_OP, TG_TABLE_SCHEMA, TG_TABLE_NAME;
