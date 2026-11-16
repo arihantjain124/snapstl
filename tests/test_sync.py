@@ -408,3 +408,60 @@ def test_clean_up_sends_back_a_batch_its_shared_orders_still_name(two, tmp_path,
         r = sync.match()
         assert r["batches_removed"] == 0 and order("K1")["batch_id"] == a["batch_id"]
         assert sync.summary()["batches"] == {"PC A": 1}  # sent again
+
+
+def test_shared_records_carry_the_orders_page_tab(two):
+    """Every record says which Orders page tab (and Ready sub-tab) it's in, for anyone reading Supabase."""
+    from snapstl import batches as B
+
+    f = io.StringIO()
+    w = csv.writer(f)
+    w.writerow(["Order Reconciliation Report"])
+    w.writerow(["Date Range: 30/10/2026 to 14/11/2026"])
+    w.writerow(["Order ID", "Clubbed Order ID", "Order Creation Date", "Order Status", "SKU Code", "Quantity",
+                "Customer Name", "Delivered Date", "Product Customisation"])
+    for oid, club, status, name in [("T1", "", "PRINT", "Asha"), ("T2", "C9", "PRINT", "Ravi"),
+                                    ("T3", "C9", "PRINT", "Neha"), ("T4", "", "PRINT", "Anu Sharma"),
+                                    ("T5", "", "DELIVERED", "Ira"), ("T6", "", "RTO_INITIATED", "Om")]:
+        w.writerow([oid, club, "01-11-2026", status, "Magicians_35", 1, "Private Person", "",
+                    f"Enter Your First Name: {name}\nColor: Pink\n"])
+    tab = lambda oid: (lambda r: (r["tab"], r["ready_type"]))(remote(oid))  # noqa: E731
+    with two("A"):
+        ingest.ingest(f.getvalue().encode(), "r.csv")
+        ad = ingest.add_adhoc("Kiara", "98765 43210", "pink")
+        ok(sync.sync_now())
+        assert tab("T1") == ("ready", "single")
+        assert tab("T2") == ("ready", "clubbed") and tab("T3") == ("ready", "clubbed")
+        assert tab("T4") == ("needs_review", None) and "space" in remote("T4")["review_reason"]
+        assert tab("T5") == ("delivered", None) and tab("T6") == ("rto", None)
+        assert tab(ad["order_id"]) == ("ready", "adhoc")
+        assert remote("T1")["app_state"] == "ready"
+
+        ingest.set_name("T4", "Anu")  # reviewed → Ready
+        a = B.create_batch(["T1"], Settings())
+        ok(sync.sync_now())
+        assert tab("T4") == ("ready", "single") and tab("T1") == ("in_batch", None)
+        with db.tx() as con:
+            db.finish_batch(con, a["batch_id"], "done", {"label": "Batch 1 - 2026-11-16"}, ["T1"])
+        ok(sync.sync_now())
+        assert tab("T1") == ("bundled", None)
+        with db.tx() as con:  # base and name both printed (Print) → Ready to ship
+            con.execute("UPDATE orders SET made_at=? WHERE order_id='T1'", (db.now(),))
+        ok(sync.sync_now())
+        assert tab("T1") == ("ready_to_ship", None)
+        ingest.set_printed(["T1"])
+        ok(sync.sync_now())
+        assert tab("T1") == ("printed", None)
+
+        # a row written by an older SnapSTL (no app_state) still gets a tab from its status
+        with sync._remote() as rc:
+            rc.execute("UPDATE snapstl.order_records SET app_state=NULL, review_reason=NULL WHERE order_id IN ('T2','T5')")
+        assert tab("T2") == ("ready", "clubbed") and tab("T5") == ("delivered", None)
+        # first sync after updating sends every order once, so the records get the app's own state
+        with db.tx() as con:
+            con.execute("DELETE FROM sync_state WHERE key=?", (sync.TABS_SENT,))
+        ok(sync.sync_now())
+        assert remote("T2")["app_state"] == "ready" and remote("T5")["app_state"] == "not_needed"
+    with two("B"):  # another computer reads the same tabs
+        ok(sync.sync_now())
+        assert order("T4")["name"] == "Anu" and tab("T4") == ("ready", "single")

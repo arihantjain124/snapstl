@@ -597,6 +597,7 @@ snapstl.server:app --port 8320`.
 | 54 | **Clean up and resets match Supabase strictly** (0.22.12): `sync._apply_match` makes the local database hold exactly the shared records — orders not there are removed (no exception for this computer's own), and this computer's batches the records lack (with their downloads / print jobs / slices) unless a shared order still names them, in which case the batch is kept and sent again. `snapstl.meta` gets an `instance` id (new each time the schema is created); every sync first checks it (`_follow_reset`) and, if it changed, backs up and matches, so a Clear / Reset-all on one computer empties every computer within a minute and nothing is sent back. `clear()` no longer marks this computer's orders to be re-sent. Supersedes the keep-own-work part of #51 | owner: batches and other rows weren't cleaned and came back after a reset |
 | 55 | **Updated by hand → Restart** (0.22.13): `updater.STARTED_AT` is the commit SnapSTL started from; `check()` adds `restart_needed` (and `running`) when the folder's HEAD has moved since (a `git pull` by hand, or an update whose restart didn't happen), and Settings → Updates shows **Restart SnapSTL** (`POST /api/update/restart`, refused while a name downloads or a batch builds) instead of "up to date" | owner ran `git pull` by hand; the app then said up to date and offered nothing, while still running the old code |
 | 56 | **Plate type per printer** (0.22.14): Slicing → Print defaults has a *Plate type* per printer (`print_defaults[id].plate_type`, one of `farm.PLATE_TYPES` = Bambuddy 1.3.1's `BED_TYPES`; empty = the process profile's `curr_bed_type`). It is sent as `bed_type` on `POST /library/files/{id}/slice`, stored with the slice's profiles (`presets.plate`) and part of the slice key (`farm.target`), so another plate means a new slice; no plate type keeps the old key. Not a queue print option — the plate Bambuddy and the printer show comes from the sliced file | Bambuddy showed every print as Cool Plate (the profiles' default) while the printers have other plates on |
+| 57 | **Orders page tabs in Supabase** (0.22.15): `order_records` gets `app_state`, `review_reason`, `made_at` (sent by the app) and `tab`, `ready_type` (set by the `set_tab` trigger with the Orders page's rules), with column comments, so another tool or agent can read and query the orders by tab. The local outbox trigger (`orders_outbox_upd2`) also sends review-reason and Ready-to-ship changes | owner wants the Supabase table usable read-only by another agent |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -711,6 +712,12 @@ in `APP_DIR/shared-records.json` (mode 600, never returned in full). Without it 
   state `in_batch`, `bundled`, `printed` or `released`. It also stores the batch (uid, label), the
   owning computer, the order fields, the webstore status and two clocks: `state_at` (epoch seconds)
   and `status_at` (text, see below). `snapstl.batch_records` holds every computer's batches.
+  Since 0.22.15 each record also says where the Orders page shows it: the app sends `app_state` (its
+  own state), `review_reason` and `made_at` (both in `_STATE_GROUP`, so `_WIN` decides), and the
+  trigger `snapstl.set_tab()` sets `tab` (the `server.TABS` key) and `ready_type` (single / clubbed /
+  adhoc) on every insert and update, so they're right whichever computer or version wrote the row;
+  `retab_club()` marks a clubbed group's partners when a new one arrives. Columns carry `COMMENT`s for
+  anyone reading the table. Each computer sends every order once after updating (`sync.TABS_SENT`).
   Settings are never shared.
 - **Never deleted:** the app has no DELETE on these tables, and `BEFORE DELETE` / `BEFORE TRUNCATE`
   triggers (`refuse_delete`) reject deletes from anyone. Local reset and clean-up only touch SQLite.

@@ -71,6 +71,9 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   only after checking `farm.py`'s calls against that release. The setup scripts must keep running
   under `irm … | iex` (Windows PowerShell 5.1, ASCII only, no `exit`). Slicing on this computer is gone for good (#43).
 - Database: add columns **only** via `MIGRATIONS` in `db.py`; never drop/rename columns or tables.
+- `order_records.tab` / `ready_type` are set by the `set_tab()` trigger from the row (state, app_state,
+  made_at, source_status, clubbed_id, sku): when the Orders page's tabs (`server.TABS`) change, change
+  that trigger the same way, and keep the column `COMMENT`s true — other agents read the table by them.
 - Shared-records schema changes go in `sync._SETUP_SQL`; regenerate `docs/supabase-schema.sql`
   (`uv run snapstl-db schema > docs/supabase-schema.sql`) — a test checks they match.
 - Shared order records (`sync.py`, Supabase): **never delete** there — no DELETE/TRUNCATE in code, keep

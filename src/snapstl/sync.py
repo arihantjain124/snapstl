@@ -54,8 +54,11 @@ REMOTE_STATES = ("in_batch", "bundled", "printed", "released")
 _COLS = ("order_id", "clubbed_id", "order_date", "sku", "quantity", "customer_name", "phone", "address",
          "raw_name", "raw_color", "special_request", "name", "color", "source_status", "status_at",
          "state", "state_at", "batch_uid", "batch_label", "computer_id", "computer_name", "bundled_at",
-         "printed_at", "updated_by")
+         "printed_at", "app_state", "review_reason", "made_at", "updated_by")
 
+from .ingest import PRINT_STATUSES as _PS  # noqa: E402
+
+PRINT_SQL = ", ".join(f"'{x}'" for x in sorted(_PS))
 _SETUP_SQL = f"""
 CREATE SCHEMA IF NOT EXISTS {SCHEMA};
 CREATE TABLE IF NOT EXISTS {SCHEMA}.order_records (
@@ -106,6 +109,62 @@ CREATE TABLE IF NOT EXISTS {SCHEMA}.meta (key text PRIMARY KEY, value text);
 -- A new id every time the records are created (again, after Clear / Reset with "also clear Supabase"):
 -- each computer notices it changed and makes itself match the empty records (sync._follow_reset).
 INSERT INTO {SCHEMA}.meta(key, value) VALUES ('instance', gen_random_uuid()::text) ON CONFLICT (key) DO NOTHING;
+-- The Orders page's tabs, for anyone reading the records (e.g. another agent querying them): the app
+-- sends its own state, review reason and Ready-to-ship time; a trigger works out `tab` and `ready_type`
+-- from the row with the same rules as the Orders page, whichever computer (or SnapSTL version) wrote it.
+ALTER TABLE {SCHEMA}.order_records ADD COLUMN IF NOT EXISTS app_state text;
+ALTER TABLE {SCHEMA}.order_records ADD COLUMN IF NOT EXISTS review_reason text;
+ALTER TABLE {SCHEMA}.order_records ADD COLUMN IF NOT EXISTS made_at double precision;
+ALTER TABLE {SCHEMA}.order_records ADD COLUMN IF NOT EXISTS tab text;
+ALTER TABLE {SCHEMA}.order_records ADD COLUMN IF NOT EXISTS ready_type text;
+CREATE INDEX IF NOT EXISTS order_records_tab ON {SCHEMA}.order_records (tab, ready_type);
+CREATE INDEX IF NOT EXISTS order_records_club ON {SCHEMA}.order_records (clubbed_id);
+CREATE OR REPLACE FUNCTION {SCHEMA}.set_tab() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE st text := upper(coalesce(NEW.source_status, ''));
+BEGIN
+  NEW.tab := CASE
+    WHEN NEW.state = 'in_batch' THEN 'in_batch'
+    WHEN NEW.state = 'bundled' AND NEW.made_at IS NOT NULL THEN 'ready_to_ship'
+    WHEN NEW.state = 'bundled' THEN 'bundled'
+    WHEN NEW.state = 'printed' THEN 'printed'
+    WHEN NEW.app_state IN ('ready', 'needs_review', 'skipped') THEN NEW.app_state
+    WHEN NEW.app_state IS NULL AND st IN ({PRINT_SQL}) THEN 'ready'
+    WHEN st = 'DELIVERED' THEN 'delivered'
+    WHEN st LIKE 'RTO%' THEN 'rto'
+    WHEN replace(replace(st, '_', '-'), ' ', '-') = 'IN-TRANSIT' THEN 'in_transit'
+    WHEN st LIKE 'CANCEL%' THEN 'cancelled'
+    ELSE 'others' END;
+  NEW.ready_type := CASE
+    WHEN NEW.tab <> 'ready' THEN NULL
+    WHEN NEW.sku = 'Adhoc' THEN 'adhoc'
+    WHEN coalesce(NEW.clubbed_id, '') <> '' AND (SELECT count(*) FROM {SCHEMA}.order_records o
+         WHERE o.clubbed_id = NEW.clubbed_id AND o.order_id <> NEW.order_id) > 0 THEN 'clubbed'
+    ELSE 'single' END;
+  RETURN NEW;
+END $$;
+CREATE OR REPLACE TRIGGER order_records_tab BEFORE INSERT OR UPDATE ON {SCHEMA}.order_records
+    FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.set_tab();
+-- a new order of a clubbed group makes its partners "clubbed" too
+CREATE OR REPLACE FUNCTION {SCHEMA}.retab_club() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF coalesce(NEW.clubbed_id, '') <> '' THEN
+    UPDATE {SCHEMA}.order_records SET ready_type = ready_type
+     WHERE clubbed_id = NEW.clubbed_id AND order_id <> NEW.order_id AND tab = 'ready' AND ready_type IS DISTINCT FROM 'clubbed';
+  END IF;
+  RETURN NULL;
+END $$;
+CREATE OR REPLACE TRIGGER order_records_retab_club AFTER INSERT ON {SCHEMA}.order_records
+    FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.retab_club();
+UPDATE {SCHEMA}.order_records SET tab = tab WHERE tab IS NULL;
+COMMENT ON TABLE {SCHEMA}.order_records IS 'SnapSTL orders shared by every computer (one row per webstore order ID). Read-only for anyone but SnapSTL. Never deleted.';
+COMMENT ON COLUMN {SCHEMA}.order_records.tab IS 'Orders page tab: ready | needs_review | in_batch | bundled | ready_to_ship | printed | skipped | delivered | rto | in_transit | cancelled | others (the last five are orders that need no making, by webstore status). Set by a trigger.';
+COMMENT ON COLUMN {SCHEMA}.order_records.ready_type IS 'For tab = ready: single | clubbed (several orders share clubbed_id) | adhoc (typed in by hand, sku Adhoc); NULL otherwise. Set by a trigger.';
+COMMENT ON COLUMN {SCHEMA}.order_records.state IS 'Who is making it: in_batch | bundled | printed (computer_name has it) | released (nobody yet — see tab).';
+COMMENT ON COLUMN {SCHEMA}.order_records.app_state IS 'SnapSTL''s own state on the computer that last wrote the row: ready | needs_review | in_batch | bundled | printed | skipped | not_needed.';
+COMMENT ON COLUMN {SCHEMA}.order_records.review_reason IS 'Why the order needs a person to check it (tab = needs_review), e.g. a name with a space or a special request.';
+COMMENT ON COLUMN {SCHEMA}.order_records.made_at IS 'When base and name were both printed (epoch seconds) → tab ready_to_ship.';
+COMMENT ON COLUMN {SCHEMA}.order_records.source_status IS 'Webstore order status from the newest uploaded report (status_at says how recent).';
+COMMENT ON COLUMN {SCHEMA}.order_records.name IS 'Name to print (cleaned or corrected); raw_name is what the customer typed.';
 CREATE OR REPLACE FUNCTION {SCHEMA}.refuse_delete() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   RAISE EXCEPTION 'SnapSTL records are never deleted (% on %.%)', TG_OP, TG_TABLE_SCHEMA, TG_TABLE_NAME;
@@ -158,7 +217,7 @@ _WIN = """(EXCLUDED.state_at >= r.state_at AND (
         OR (EXCLUDED.state = 'bundled'  AND r.state = 'printed')
         OR (EXCLUDED.state = 'released' AND r.state IN ('bundled', 'printed'))))"""
 _STATE_GROUP = ("state", "state_at", "batch_uid", "batch_label", "computer_id", "computer_name", "bundled_at",
-                "printed_at")
+                "printed_at", "app_state", "review_reason", "made_at")
 _KEEP_FIRST = ("clubbed_id", "order_date", "sku", "quantity", "raw_name", "raw_color", "special_request")
 _UPSERT = (
     f"INSERT INTO {SCHEMA}.order_records AS r ({', '.join(_COLS)}) "
@@ -194,6 +253,8 @@ _OFFER = (
     f"VALUES ({', '.join('%(' + c + ')s' for c in _COLS)}) ON CONFLICT (order_id) DO UPDATE SET "
     + ", ".join(f"{c} = COALESCE(r.{c}, EXCLUDED.{c})" for c in _KEEP_FIRST) + ", "
     + ", ".join(f"{c} = COALESCE(NULLIF(r.{c}, ''), EXCLUDED.{c})" for c in ("customer_name", "phone", "address"))
+    + ", app_state = CASE WHEN r.state = 'released' THEN COALESCE(r.app_state, EXCLUDED.app_state) ELSE r.app_state END"
+    + ", review_reason = CASE WHEN r.app_state IS NULL THEN EXCLUDED.review_reason ELSE r.review_reason END"
     + ", source_status = CASE WHEN COALESCE(EXCLUDED.status_at, '') > COALESCE(r.status_at, '') "
       "THEN EXCLUDED.source_status ELSE r.source_status END"
     + ", status_at = GREATEST(r.status_at, EXCLUDED.status_at)"
@@ -288,6 +349,7 @@ def _payload(o: dict) -> dict:
         "computer_id": o.get("batch_computer_id") if own else None,
         "computer_name": o.get("batch_computer") if own else None,
         "bundled_at": o.get("bundled_at"), "printed_at": o.get("printed_at") if st == "printed" else None,
+        "app_state": o.get("state"), "review_reason": o.get("review_reason"), "made_at": o.get("made_at"),
         "updated_by": computer.NAME, "actor": computer.ID,
     }
 
@@ -442,9 +504,17 @@ def claim(orders: list[dict], batch_uid: str) -> tuple[list[str], float]:
 
 
 # ---------------- push / pull ----------------
+TABS_SENT = "tabs_v1"  # sync_state key: every order sent once with app_state / review_reason / made_at
+
+
 def _push(rc) -> int:
     """Send queued changes and offer orders the shared records don't have yet. Returns how many."""
     with db.tx() as con:
+        if not con.execute("SELECT 1 FROM sync_state WHERE key=?", (TABS_SENT,)).fetchone():
+            # since 0.22.15 the records carry the Orders page tab: send every order once more
+            con.execute("INSERT OR IGNORE INTO sync_outbox(order_id, queued_at) SELECT order_id, ? FROM orders "
+                        "WHERE COALESCE(in_remote,0)=1", (db.now(),))
+            con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES (?, '1')", (TABS_SENT,))
         con.execute("INSERT OR IGNORE INTO sync_outbox(order_id, queued_at) SELECT order_id, ? FROM orders "
                     "WHERE COALESCE(in_remote,0)=0", (db.now(),))
         queued = db.rows(con, "SELECT o.*, q.queued_at FROM sync_outbox q JOIN orders o USING(order_id) "

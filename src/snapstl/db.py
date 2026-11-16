@@ -169,9 +169,11 @@ CREATE TABLE IF NOT EXISTS sync_flags (quiet INTEGER NOT NULL);
 CREATE TRIGGER IF NOT EXISTS orders_state_at AFTER UPDATE OF state ON orders
   WHEN NEW.state IS NOT OLD.state AND NEW.state_at IS OLD.state_at
   BEGIN UPDATE orders SET state_at = {_NOW} WHERE order_id = NEW.order_id; END;
-CREATE TRIGGER IF NOT EXISTS orders_outbox_upd AFTER UPDATE ON orders
+DROP TRIGGER IF EXISTS orders_outbox_upd;
+CREATE TRIGGER IF NOT EXISTS orders_outbox_upd2 AFTER UPDATE ON orders
   WHEN (NEW.state IS NOT OLD.state OR NEW.source_status IS NOT OLD.source_status
-        OR NEW.status_at IS NOT OLD.status_at OR NEW.name IS NOT OLD.name OR NEW.color IS NOT OLD.color)
+        OR NEW.status_at IS NOT OLD.status_at OR NEW.name IS NOT OLD.name OR NEW.color IS NOT OLD.color
+        OR NEW.review_reason IS NOT OLD.review_reason OR NEW.made_at IS NOT OLD.made_at)
    AND (COALESCE(NEW.in_remote, 0) = 1 OR NEW.state IN ('in_batch', 'bundled', 'printed'))
    AND NOT EXISTS (SELECT 1 FROM sync_flags WHERE quiet = 1)
   BEGIN INSERT OR REPLACE INTO sync_outbox(order_id, queued_at) VALUES (NEW.order_id, {_NOW}); END;
