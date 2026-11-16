@@ -730,10 +730,11 @@ def sync_run():
 @app.post("/api/maintenance/reset")
 async def maintenance_reset(req: Request):
     body = await req.json()
-    if body.get("confirm") != "RESET":
-        raise HTTPException(400, 'Type RESET to confirm')
+    shared = bool(body.get("shared"))  # also empty the shared records in Supabase (every computer)
+    if body.get("confirm") != ("RESET ALL" if shared else "RESET"):
+        raise HTTPException(400, "Type RESET ALL to confirm" if shared else "Type RESET to confirm")
     try:
-        return M.reset()
+        return await run_in_threadpool(M.reset, shared)
     except RuntimeError as e:
         raise HTTPException(409, str(e)) from e
 

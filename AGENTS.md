@@ -74,7 +74,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - Shared order records (`sync.py`, Supabase): **never delete** there — no DELETE/TRUNCATE in code, keep
   the `refuse_delete` triggers. The only exception is `sync.clear` (owner-requested, 0.19.1): a person
   types CLEAR, every record is saved to a JSON file in the backups folder first, then the schema is
-  dropped and created again empty. Never call it from anywhere else. Settings never go there. Conflict rules live in the SQL (`_WIN`,
+  dropped and created again empty. It is called only from there and from Maintenance → Reset with
+  "also clear Supabase" ticked (`maintenance.reset(shared=True)`, typed RESET ALL, 0.22.6). Never call it from anywhere else. Settings never go there. Conflict rules live in the SQL (`_WIN`,
   `_CLAIM`); keep a batch's claim before its local creation, and refuse to create a batch when the
   records can't be reached. Local changes reach the outbox only through the triggers in
   `db.POST_SCHEMA`; writes coming from the records go inside `db.quiet()`. Run the tests with a
