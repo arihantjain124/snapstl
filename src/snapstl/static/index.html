@@ -85,7 +85,8 @@ details.objsbox summary{cursor:pointer;font-weight:600;margin:10px 0 6px}
 section[hidden],[hidden]{display:none!important}
 body,td,th,.hint,.pill,code{-webkit-user-select:text;user-select:text}
 .frow th{padding:3px 4px}.frow input,.frow select{padding:3px 5px;font-size:12px;min-width:60px}
-.otable td.addr{max-width:220px;font-size:12px}
+.otable td{font-size:14px;padding:10px 8px;line-height:1.4}.otable th{font-size:13px}.otable td.addr{min-width:180px;max-width:280px;font-size:14px}.otable tbody tr:hover{background:var(--chip)}
+.column-options{display:flex;flex-wrap:wrap;gap:8px 16px;padding:8px 0}.column-options label{font-size:13px;color:var(--text)}
 .club{font-size:11px;color:var(--accent)}
 iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;background:#000}
 .pushbox{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0;background:var(--bg)}
@@ -188,6 +189,11 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <span class="grow hint" id="fstate">Type in the boxes under the column names to filter; filters combine.</span>
       <a class="btn" id="csvlink" href="/api/orders.csv?tab=all">Export CSV</a>
     </div>
+    <div class="toolbar">
+      <label for="ordview">View</label><select id="ordview" aria-label="Order view"></select>
+      <button id="saveview" class="small">Save current view</button><button id="deleteview" class="small">Delete view</button>
+      <details><summary>Choose columns</summary><div class="column-options" id="ordercolumns"></div></details>
+    </div>
     <div class="toolbar" id="selbar">
       <span id="selcount" class="hint">No orders selected</span>
       <button id="selall" class="small">Select all matching</button>
@@ -200,7 +206,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="tw"><table class="otable"><thead><tr><th><input type="checkbox" id="pagecheck" title="Select this page"></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Address</th><th>Report status</th><th>Name to print</th><th>Colour</th><th>Qty</th><th>Size L×H · comp.</th><th>State</th><th></th></tr>
     <tr class="frow"><th></th><th><input data-f="order" placeholder="filter"></th><th><input data-f="date" placeholder="2026-11"></th><th><input data-f="customer" placeholder="filter"></th><th><input data-f="phone" placeholder="filter"></th><th><input data-f="address" placeholder="filter"></th><th><select data-f="status"><option value="">all</option></select></th><th><input data-f="name" placeholder="filter"></th><th><select data-f="color"><option value="">all</option></select></th><th><input data-f="qty" placeholder="=" style="width:44px"></th><th></th><th></th><th></th></tr></thead>
     <tbody id="orders"></tbody></table></div>
-    <div class="toolbar" style="margin-top:8px"><span class="hint grow" id="pageinfo"></span><button id="prev" class="small">Previous</button><button id="next" class="small">Next</button></div>
+    <div class="toolbar" style="margin-top:8px"><span class="hint grow" id="pageinfo" aria-live="polite"></span><label for="pagesize">Rows per page</label><select id="pagesize"><option>25</option><option>50</option><option selected>100</option><option>200</option><option>500</option></select><button id="prev" class="small">Previous</button><button id="next" class="small">Next</button></div>
   </div>
 </section>
 
@@ -570,7 +576,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <tr><td>Skipped</td><td>You pressed Skip. <b>Make anyway</b> moves it back to Ready.</td></tr>
       <tr><td>Delivered · RTO · In Transit · Cancelled · Others</td><td>The report says these don't need making (Others = e.g. PACK).</td></tr>
     </table>
-    <p>Filter any column with the box under its heading — filters combine. <b>Export CSV</b> exports what you're looking at.</p>
+    <p>Filter columns with the boxes under their headings — filters combine. Choose columns and save the current category, filters and columns as a view in this browser. Change rows per page below the table. <b>Export CSV</b> exports matching orders.</p>
   </div>
 
   <div class="card" id="h-batches">
@@ -758,7 +764,8 @@ async function loadOrders(){
   const p=filterParams({limit:LIMIT,offset:filter.offset});
   showFilterState();
   const r=await api('/api/orders?'+p);
-  $('pageinfo').textContent=r.total?`${filter.offset+1}–${Math.min(filter.offset+LIMIT,r.total)} of ${r.total}`:'';
+  if(r.total && filter.offset>=r.total){filter.offset=Math.floor((r.total-1)/LIMIT)*LIMIT;return loadOrders()}
+  $('pageinfo').textContent=r.total?`${filter.offset+1}–${Math.min(filter.offset+LIMIT,r.total)} of ${r.total} · Page ${Math.floor(filter.offset/LIMIT)+1} of ${Math.ceil(r.total/LIMIT)}`:'No orders';
   $('prev').disabled=filter.offset===0; $('next').disabled=filter.offset+LIMIT>=r.total;
   $('csvlink').href='/api/orders.csv?'+filterParams({});
   if(!r.orders.length){$('orders').innerHTML='<tr><td colspan="13" class="empty">No orders here</td></tr>';$('pagecheck').checked=false;return}
@@ -779,6 +786,7 @@ async function loadOrders(){
     const club=o.clubbed_id?`<div class="club" title="Clubbed order ID">${o.clubbed?'clubbed · ':''}${esc(o.clubbed_id)}</div>`
       :o.adhoc?`<div class="club" title="Typed in by hand">ad-hoc${o.added_at?' · added '+new Date(o.added_at*1000).toLocaleString([], {dateStyle:'short',timeStyle:'short'}):''}${o.special_request?' · '+esc(o.special_request):''}</div>`:'';
     return `<tr><td>${cb}</td><td>${esc(o.order_id)}${club}</td><td style="white-space:nowrap">${esc(o.order_date)}</td><td>${esc(o.customer_name)}</td><td style="white-space:nowrap">${esc(o.phone)}</td><td class="addr">${esc(o.address)}</td><td>${esc(o.source_status)}</td><td>${nameCell}</td><td>${o.state==='needs_review'?'':sw(o.color)}</td><td>${o.quantity}</td><td>${o.target?`${o.target[0]}×${o.target[1]} · ${o.compartments}`:'—'}</td><td><span class="pill ${st[2]}">${st[1]}</span></td><td>${act}</td></tr>`}).join('');
+  applyColumns();
   document.querySelectorAll('[data-ok]').forEach(b=>b.onclick=async()=>{const id=b.dataset.ok;
     const n=document.querySelector(`[data-n="${CSS.escape(id)}"]`).value, c=document.querySelector(`[data-c="${CSS.escape(id)}"]`).value;
     try{await post(`/api/orders/${encodeURIComponent(id)}/name`,{name:n,color:c});refreshAll()}catch(e){alert(e.message)}});
@@ -834,6 +842,21 @@ $('adhocform').onsubmit=async e=>{e.preventDefault();
     $('ahmsg').innerHTML=`<div class="o">Added <b>${esc(o.order_id)}</b> — ${esc(o.name)}, ${esc(o.color)}${o.quantity>1?' ×'+o.quantity:''}. It's in Ready; tick it and press <b>Create batch</b>.</div>`;
     for(const k of ['ahname','ahphone','ahnote'])$(k).value='';$('ahqty').value=1;$('ahname').focus();refreshAll()}
   catch(err){$('ahmsg').innerHTML=`<div class="e">${esc(err.message)}</div>`}};
+// Views are kept in this browser only; they never change order data.
+const COLUMN_NAMES=['Order','Date','Customer','Phone','Address','Report status','Name to print','Colour','Qty','Size L×H · comp.','State'];
+const VIEW_KEY='snapstl-order-views-v1';
+let visibleColumns=COLUMN_NAMES.map((_,i)=>i+1), orderViews=Object.create(null);
+try{Object.assign(orderViews,JSON.parse(localStorage.getItem(VIEW_KEY)||'{}'))}catch{}
+function applyColumns(){document.querySelectorAll('.otable tr').forEach(row=>{if(row.children.length!==13)return; for(let i=1;i<=11;i++)row.children[i].hidden=!visibleColumns.includes(i)})}
+function renderColumns(){$('ordercolumns').innerHTML=COLUMN_NAMES.map((n,i)=>`<label><input type="checkbox" data-column="${i+1}" ${visibleColumns.includes(i+1)?'checked':''}> ${esc(n)}</label>`).join('');
+  document.querySelectorAll('[data-column]').forEach(c=>c.onchange=()=>{visibleColumns=[...document.querySelectorAll('[data-column]:checked')].map(x=>+x.dataset.column);applyColumns()});applyColumns()}
+function renderViews(){const selected=$('ordview').value;$('ordview').innerHTML='<option value="">Current view</option>'+Object.keys(orderViews).sort().map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');$('ordview').value=orderViews[selected]?selected:''}
+function saveViews(){try{localStorage.setItem(VIEW_KEY,JSON.stringify(orderViews))}catch{alert('Could not save views in this browser.')}}
+$('saveview').onclick=()=>{const name=prompt('Name this view');if(!name||!name.trim())return;orderViews[name.trim()]={tab:filter.tab,f:{...filter.f},columns:[...visibleColumns]};saveViews();renderViews();$('ordview').value=name.trim()};
+$('deleteview').onclick=()=>{const n=$('ordview').value;if(n&&confirm(`Delete view “${n}”?`)){delete orderViews[n];saveViews();renderViews()}};
+$('ordview').onchange=async()=>{const v=orderViews[$('ordview').value];if(!v)return;filter.tab=v.tab;filter.f={...v.f};filter.offset=0;visibleColumns=v.columns.filter(i=>Number.isInteger(i)&&i>=1&&i<=11);document.querySelectorAll('.frow [data-f]').forEach(el=>el.value=filter.f[el.dataset.f]||'');await loadFacets();document.querySelectorAll('.frow [data-f]').forEach(el=>el.value=filter.f[el.dataset.f]||'');renderColumns();loadOrders()};
+$('pagesize').onchange=()=>{LIMIT=+$('pagesize').value;filter.offset=0;loadOrders()};
+renderViews();renderColumns();
 $('prev').onclick=()=>{filter.offset=Math.max(0,filter.offset-LIMIT);loadOrders()};
 $('next').onclick=()=>{filter.offset+=LIMIT;loadOrders()};
 $('ordrefresh').onclick=async()=>{const b=$('ordrefresh');b.disabled=true;$('ingestmsg').textContent='Refreshing from Supabase…';

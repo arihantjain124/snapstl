@@ -384,7 +384,7 @@ The bottom of the sidebar shows at a glance whether the **Helper**, **Bambuddy**
      **Bundled** (made into plates, not printed yet), **Ready to ship** (base and name both printed
      in Print), **Printed**, **Skipped**.
    - **Delivered**, **RTO**, **In Transit**, **Cancelled**, **Others**, **All**.
-   - Type in the boxes under the column names to filter.
+   - Type in the boxes under the column names to filter. Choose columns under **Choose columns**; **Save current view** remembers the columns, category and filters in this browser. Use the controls below the table to change pages and rows per page.
    - In **Needs review**, fix the name or colour and click **Approve**.
 3. **Make a batch.** Tick orders (or **Select all matching**), then click **Create batch**.
 4. **Download the models.** Go to **Batches → Queue download**. The helper makes each name in your

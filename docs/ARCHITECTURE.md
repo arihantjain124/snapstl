@@ -234,7 +234,7 @@ or a special request → review.
 
 *Single* = the order's clubbed ID has only this line (ad-hoc orders excluded); *Clubbed* = one clubbed ID with
 several lines; *Ad-hoc* = `sku = 'Adhoc'`.
-Tab SQL lives in `server.TABS`; column filters in `server.FILTERS` (text = contains; status, colour,
+The Orders table offers browser-local saved views (column visibility, tab and filters) and a selectable page size; these preferences do not change order records. Tab SQL lives in `server.TABS`; column filters in `server.FILTERS` (text = contains; status, colour,
 qty = exact; combined with AND; also used by *Select all matching* and *Export CSV*).
 
 ---
