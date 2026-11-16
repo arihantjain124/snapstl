@@ -53,6 +53,9 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - Other computers: off by default; only with `lan_access` + portal password; they must sign in and can
   never use Mac-only actions (`MAC_ONLY_PREFIXES`, `…/reveal`, folder / model link / password changes,
   `/api/farm/*`).
+- Installers must **never run a second Bambuddy or stop one they didn't install**: detect an existing
+  Bambuddy (service, data folder, launchd job, or the port answering) and use it; stop only processes
+  started from SnapSTL's own Bambuddy folder; never delete Bambuddy data.
 - Bambuddy stays on 127.0.0.1 and at the version in `scripts/bambuddy-version.txt`; bump it only after
   checking `farm.py`'s calls against that release. Don't retry slicing with the Bambu Studio app's
   command line on a Mac — it crashes (ARCHITECTURE decision log #28).
@@ -80,8 +83,9 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - SnapSTL's Bambuddy API key lives only in `farm.json` (mode 600) and is never sent to the UI; SnapSTL
   never handles printer access codes. Plate files go only to this
   computer's Bambuddy, never to a cloud print service.
-- **Slicing**: OrcaSlicer's command line on this computer (`slicer.py`, default when installed) or
-  Bambuddy's slicer (`farm.engine`). Always `--arrange 0 --orient 0` (parts stay where SnapSTL put and
+- **Slicing**: OrcaSlicer's or Bambu Studio's command line on this computer (`slicer.py`; Bambu Studio
+  refused on macOS) or Bambuddy's slicer (`farm.engine`), always with the presets of the printer the
+  plate goes to (`farm.target`). Always `--arrange 0 --orient 0` (parts stay where SnapSTL put and
   checked them); bases sliced white, names in their colour. Never Bambu Studio's command line on a
   Mac (it crashes, decision log #28). Presets are read from the slicer apps' folders, never edited there.
   Slicing never blocks the worker: one slice at a time, followed by polling, stopped after

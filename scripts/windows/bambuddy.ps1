@@ -12,6 +12,32 @@ $Version = if ($env:BAMBUDDY_VERSION) { $env:BAMBUDDY_VERSION } else { (Get-Cont
 $Repo = "https://github.com/maziggy/bambuddy.git"
 $Changed = $false
 
+# Never a second Bambuddy next to one you installed yourself: SnapSTL uses yours.
+$Other = Get-OtherBambuddy
+$Ours = Test-Path (Join-Path $BambuddyDir ".git")
+if ($Other) {
+  if ($Ours) {
+    # SnapSTL's copy was installed next to yours (it took port $BambuddyPort): stand it down, start yours again.
+    # Nothing is deleted - SnapSTL's copy stays in $BambuddyDir, unused.
+    Write-Host "Found your own Bambuddy - SnapSTL's extra copy is stopped and yours is started again."
+    Unregister-ScheduledTask -TaskName $BambuddyTask -Confirm:$false -ErrorAction SilentlyContinue
+    Stop-Bambuddy
+    foreach ($s in @($Other.Service)) { if ($s) { Start-Service -Name $s.Name -ErrorAction SilentlyContinue } }
+  } else {
+    Write-Host "Found Bambuddy already installed on this PC - SnapSTL uses it (nothing installed or changed)."
+  }
+  exit 0
+}
+if (-not $Ours) {
+  try {
+    $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 "http://127.0.0.1:$BambuddyPort/api/v1/auth/status"
+    if ($r.StatusCode -eq 200) {
+      Write-Host "A Bambuddy is already answering on port $BambuddyPort - SnapSTL uses it (nothing installed)."
+      exit 0
+    }
+  } catch { }
+}
+
 if (Test-Path (Join-Path $BambuddyDir ".git")) {
   $Current = git -C $BambuddyDir describe --tags --exact-match 2>$null
   if ($Current -ne $Version) {

@@ -9,9 +9,20 @@ $BambuddyPort = if ($env:BAMBUDDY_PORT) { [int]$env:BAMBUDDY_PORT } else { 8000 
 $BambuddyDir = Join-Path $HOME "SnapSTL-Bambuddy"
 $BambuddyData = Join-Path $env:LOCALAPPDATA "Bambuddy"
 
+# Stops only the Bambuddy SnapSTL installed (its python runs from $BambuddyDir) - never another Bambuddy or
+# whatever else listens on the port.
 function Stop-Bambuddy {
-  Get-NetTCPConnection -LocalPort $BambuddyPort -State Listen -ErrorAction SilentlyContinue |
-    ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+  Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -and $_.CommandLine -like "*$BambuddyDir*" } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+}
+
+# A Bambuddy installed some other way (its own Windows installer: a service + C:\ProgramData\Bambuddy).
+function Get-OtherBambuddy {
+  $svc = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*bambuddy*" -or $_.DisplayName -like "*Bambuddy*" }
+  $data = Join-Path $env:ProgramData "Bambuddy"
+  if ($svc -or (Test-Path $data)) { return @{ Service = $svc; Data = $data } }
+  return $null
 }
 
 # OrcaSlicer: Make It slices plates with its command line. Never fails the SnapSTL install.

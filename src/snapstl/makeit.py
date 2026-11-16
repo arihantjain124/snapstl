@@ -109,7 +109,6 @@ def choose(plates: list[dict], prs: list[dict], active: dict[int, int]) -> dict[
 def board(prs: list[dict] | None = None) -> dict:
     """Bases queue, Names queue and Completed, with printer choices and pre-selections."""
     slices = farm.latest_slices()
-    models = farm.printer_models(prs or []) or [""]
     with db.tx() as con:
         batches = _batches(con)
         latest: dict[tuple[int, str], dict] = {}
@@ -137,18 +136,11 @@ def board(prs: list[dict] | None = None) -> dict:
                 if not (open_orders or active or done):
                     continue  # its orders were marked printed / made again elsewhere
                 sliced = farm.find_sliced(out_dir, p["file"]) if out_dir else None
-                per_model = {}
-                for m in models:
-                    x = farm.slice_for(slices, b["id"], p["file"], m)
-                    per_model[m] = ({"state": "done", "by": "file"} if sliced else
-                                    {"state": x["state"], "progress": x["progress"], "error": x["error"]} if x else None)
-                sj = per_model.get(models[0])  # the farm's main model; the others are listed per model
-                slice_info = sj
                 rows.append({
                     "batch_id": b["id"], "batch": summ.get("label") or f"Batch #{b['id']}", "file": p["file"],
                     "kind": p["kind"], "names": p.get("names", []), "colors": p.get("colors", []),
-                    "order_ids": ids, "sliced": bool(sj and sj["state"] == "done"),
-                    "slice": slice_info, "slices": {m or "any": v for m, v in per_model.items()}, "job": _job(j), "job_active": active, "done": done,
+                    "order_ids": ids, "sliced": bool(sliced), "by_file": bool(sliced), "slice": None,
+                    "job": _job(j), "job_active": active, "done": done,
                     "need": farm.needed_color(p),
                 })
     prs = prs or []
@@ -159,10 +151,22 @@ def board(prs: list[dict] | None = None) -> dict:
                          "available": available(p, active_jobs.get(p["id"], 0)), "left": spool_left(p, r["need"]),
                          "state": (p.get("status") or {}).get("state", "")} for p in prs]
     pick = choose(pending, prs, active_jobs) if prs else {}
+    keys: dict = {}
     for r in pending:
         r["suggested"] = pick.get(r["file"])
+        # sliced with the presets of the printer this plate goes to: its job's printer, else the pre-selected one
+        pid = ((r["job"] or {}).get("printer_id") if r["job_active"] else None) or r["suggested"]
+        if pid not in keys:
+            keys[pid] = farm.target(pid)[0]
+        r["slice_for"] = pid
+        if not r["by_file"]:
+            x = farm.slice_for(slices, r["batch_id"], r["file"], keys[pid])
+            r["slice"] = {"state": x["state"], "progress": x["progress"], "error": x["error"]} if x else None
+            r["sliced"] = bool(x and x["state"] == "done")
+        else:
+            r["slice"] = {"state": "done", "by": "file"}
     done = sorted([r for r in rows if r["done"]], key=lambda r: -(r["job"] or {}).get("updated_at", 0))[:300]
-    return {"models": [m for m in models if m], "bases": [r for r in pending if r["kind"] == "bases"],
+    return {"bases": [r for r in pending if r["kind"] == "bases"],
             "names": [r for r in pending if r["kind"] == "names"],
             "completed": done, "removed": removed}
 
@@ -197,9 +201,10 @@ def _latest(batch_id: int, file: str) -> dict | None:
     return dict(j) if j else None
 
 
-def waiting_plates() -> list[dict]:
-    """Plates in Bases / Names with no print on its way (automatic slicing works through these)."""
-    b = board(None)
+def waiting_plates(prs: list[dict] | None = None) -> list[dict]:
+    """Plates in Bases / Names with no print on its way, with their pre-selected printer (automatic
+    slicing works through these)."""
+    b = board(prs)
     return [r for r in b["bases"] + b["names"] if not r["job_active"]]
 
 

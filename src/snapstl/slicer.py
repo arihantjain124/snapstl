@@ -1,17 +1,18 @@
-"""Slicing on this computer with OrcaSlicer's command line (Make It → Slice).
+"""Slicing on this computer with OrcaSlicer's or Bambu Studio's command line (Slicing tab).
 
-Why OrcaSlicer: it's built from Bambu Studio's code (same engine, same Bambu printer / process /
-filament presets), and its command line works on macOS — Bambu Studio's own crashes there (ARCHITECTURE
-decision log #28). SnapSTL runs it headless, one plate at a time in a background thread:
+Both share one engine (OrcaSlicer is built from Bambu Studio) and the same Bambu printer / process /
+filament presets. Bambu Studio's command line works on Windows; on macOS it crashes (ARCHITECTURE decision
+log #28), so there OrcaSlicer is the one. SnapSTL runs the chosen one headless, one plate at a time in a
+background thread:
 
-    OrcaSlicer --arrange 0 --orient 0 --slice 0 --load-settings "printer.json;process.json"
-               --load-filaments filament.json --export-3mf <out>.gcode.3mf <plate>.3mf
+    <slicer> --arrange 0 --orient 0 --slice 0 --load-settings "printer.json;process.json"
+             --load-filaments filament.json --outputdir <tmp> --export-3mf plate.gcode.3mf <plate>.3mf
 
 `--arrange 0 --orient 0` keep every part exactly where SnapSTL placed and checked it.
 
 Presets: OrcaSlicer's command line needs *complete* preset files, so SnapSTL reads the presets where the
 slicer apps keep them and resolves their `inherits` chain itself:
-  * presets added in SnapSTL (Make It → Slice → Add preset…): APP_DIR/slicer-presets/<machine|process|filament>
+  * presets added in SnapSTL (Slicing → Add preset…): APP_DIR/slicer-presets/<machine|process|filament>
   * your own presets saved in OrcaSlicer or Bambu Studio (their `user` folders)
   * the system presets (Bambu Lab printers, processes, filaments) from OrcaSlicer's or Bambu Studio's
     folders, or from inside the Bambu Studio app.
@@ -44,12 +45,34 @@ class SlicerError(Exception):
     """Something the person can fix, in plain English."""
 
 
-def orca_path() -> Path | None:
-    """OrcaSlicer's program, or None when it isn't installed."""
-    for p in platform_os.orca_candidates():
+NAMES = {"orca": "OrcaSlicer", "bambu": "Bambu Studio"}
+
+
+def exe_path(engine: str = "orca") -> Path | None:
+    """The slicer's program ("orca" | "bambu"), or None when it isn't installed."""
+    cands = platform_os.orca_candidates() if engine == "orca" else platform_os.bambu_candidates()
+    for p in cands:
         if p and Path(p).is_file():
             return Path(p)
     return None
+
+
+def orca_path() -> Path | None:
+    return exe_path("orca")
+
+
+def works_here(engine: str) -> bool:
+    """Bambu Studio's command line crashes on macOS; everything else is fine."""
+    return not (engine == "bambu" and platform_os.MAC)
+
+
+def _system_root(chain: list[dict]) -> str:
+    """Name of the first Bambu system preset in a preset's chain (itself if it is one)."""
+    for d in chain:
+        frm = str(d.get("from", "")).lower()
+        if frm == "system" or d.get("setting_id") or (frm != "user" and str(d.get("instantiation", "")).lower() == "true"):
+            return str(d["name"])  # a pickable system preset — never an abstract base like fdm_machine_common
+    return str(chain[0]["name"]) if chain else ""
 
 
 def preset_roots() -> list[tuple[str, Path]]:
@@ -121,7 +144,7 @@ def flatten(slot: str, name: str) -> dict:
         if hit is None:
             if cur == name:
                 raise SlicerError(f"The {slot} preset “{name}” isn't on this computer any more — choose another in "
-                                  "Make It → Slice")
+                                  "Slicing")
             break  # parent not found: use what we have
         chain.append(hit["data"])
         cur = hit["data"].get("inherits") or ""
@@ -130,7 +153,19 @@ def flatten(slot: str, name: str) -> dict:
         out.update(d)
     out.pop("inherits", None)
     out["name"] = name
+    out["_system"] = _system_root(chain)
     return out
+
+
+def for_engine(d: dict, engine: str) -> dict:
+    """A flattened preset as the slicer wants it. Bambu Studio checks printer / process compatibility by
+    the *system* presets they come from, so its copy is a user preset (named apart) that inherits that
+    system preset and carries every value; OrcaSlicer takes the flat preset as it is."""
+    d = dict(d)
+    root = d.pop("_system", "") or d["name"]
+    if engine == "bambu":
+        d.update({"from": "User", "inherits": root, "name": f"SnapSTL {d['name']}"[:120]})
+    return d
 
 
 def model_name(model: str) -> str:
@@ -154,46 +189,50 @@ def defaults_for(model: str) -> dict[str, str]:
 
 
 def slice_plate(src: Path, dst: Path, presets: dict[str, str], color_hex: str | None = None,
-                timeout: float = 900) -> Path:
-    """Slice one plate with OrcaSlicer (parts stay where they are). Raises SlicerError with the reason."""
-    exe = orca_path()
+                timeout: float = 900, engine: str = "orca") -> Path:
+    """Slice one plate with OrcaSlicer or Bambu Studio (parts stay where they are). Raises SlicerError."""
+    app = NAMES.get(engine, engine)
+    if not works_here(engine):
+        raise SlicerError("Bambu Studio's command line can't slice on macOS — choose OrcaSlicer in Slicing")
+    exe = exe_path(engine)
     if exe is None:
-        raise SlicerError("OrcaSlicer isn't installed on this computer — install it (the SnapSTL installer does), "
-                          "then slice again")
+        raise SlicerError(f"{app} isn't installed on this computer — install it, or choose the other slicer in "
+                          "Slicing")
     missing = [s for s in CATS if not presets.get(s)]
     if missing:
-        raise SlicerError(f"Choose the {', '.join(missing)} preset in Make It → Slice")
+        raise SlicerError(f"Choose the {', '.join(missing)} preset in Slicing")
     with tempfile.TemporaryDirectory(prefix="snapstl-slice-") as tmp:
         t = Path(tmp)
         files = {}
         for slot in CATS:
-            d = flatten(slot, presets[slot])
+            d = for_engine(flatten(slot, presets[slot]), engine)
             if slot == "filament" and color_hex:
                 d["filament_colour"] = [color_hex]
             files[slot] = t / f"{slot}.json"
             files[slot].write_text(json.dumps(d), encoding="utf-8")
         out = t / "plate.gcode.3mf"  # --export-3mf is relative to --outputdir (where OrcaSlicer also writes its log)
-        cmd = [str(exe), "--outputdir", str(t), "--arrange", "0", "--orient", "0", "--slice", "0",
+        cmd = [str(exe), *(["--debug", "2"] if engine == "bambu" else []), "--outputdir", str(t),
+               "--arrange", "0", "--orient", "0", "--slice", "0",
                "--load-settings", f"{files['printer']};{files['process']}", "--load-filaments", str(files["filament"]),
                "--export-3mf", out.name, str(src)]
         try:
             r = subprocess.run(cmd, cwd=tmp, capture_output=True, text=True, timeout=timeout,
                                creationflags=platform_os.NO_WINDOW)
         except subprocess.TimeoutExpired as e:
-            raise SlicerError(f"OrcaSlicer didn't finish in {int(timeout // 60)} min") from e
+            raise SlicerError(f"{app} didn't finish in {int(timeout // 60)} min") from e
         except OSError as e:
-            raise SlicerError(f"Couldn't start OrcaSlicer: {e}") from e
+            raise SlicerError(f"Couldn't start {app}: {e}") from e
         if r.returncode != 0 or not out.is_file():
-            log = "".join(f.read_text(errors="replace") for f in sorted(t.glob("*.log")))  # OrcaSlicer's own log
+            log = "".join(f.read_text(errors="replace") for f in sorted(t.glob("*.log")))  # the slicer's own log
             why = _why(log + r.stdout + r.stderr) or f"exit code {r.returncode}"
             if "not compatible with printer" in why:
                 why = (f"the process preset “{presets['process']}” isn't made for the printer preset "
-                       f"“{presets['printer']}” — choose a matching pair in Make It → Slice")
-            raise SlicerError(f"OrcaSlicer couldn't slice it: {why}")
+                       f"“{presets['printer']}” — choose a matching pair in Slicing")
+            raise SlicerError(f"{app} couldn't slice it: {why}")
         data = out.read_bytes()
         names = zipfile.ZipFile(io.BytesIO(data)).namelist()
         if not any(n.startswith("Metadata/plate_") and n.endswith(".gcode") for n in names):
-            raise SlicerError("OrcaSlicer's file has no sliced plate inside")
+            raise SlicerError(f"{app}'s file has no sliced plate inside")
         dst.parent.mkdir(parents=True, exist_ok=True)
         part = dst.with_name(dst.name + ".part")
         shutil.copyfile(out, part)
@@ -236,7 +275,7 @@ def import_preset(filename: str, data: bytes, kind: str = "") -> dict:
         if not cat or not d.get("name"):
             skipped += 1  # bundle info files and the like
             continue
-        if want and cat != want:
+        if want and cat != want and low.endswith(".json"):  # a bundle brings all its presets
             errors.append(f"“{d['name']}” is a {'printer' if cat == 'machine' else cat} preset, not a {kind} preset")
             continue
         folder = IMPORT_DIR / cat
@@ -253,6 +292,25 @@ def import_preset(filename: str, data: bytes, kind: str = "") -> dict:
         except SlicerError as e:
             errors.append(str(e))
     return {"imported": len(added), "skipped": skipped, "errors": errors, "names": added}
+
+
+def test_slice(engine: str, presets: dict[str, str]) -> dict:
+    """Slicing → Test slicer: slice a small test plate (a 20 mm cube) with these presets."""
+    import numpy as np
+
+    from .threemf import Object3MF, write_3mf
+
+    v = np.array([[x, y, z] for z in (0, 20) for y in (118, 138) for x in (118, 138)], float)
+    f = np.array([[0, 2, 1], [1, 2, 3], [4, 5, 6], [5, 7, 6], [0, 1, 5], [0, 5, 4], [2, 6, 7], [2, 7, 3],
+                  [0, 4, 6], [0, 6, 2], [1, 3, 7], [1, 7, 5]])
+    with tempfile.TemporaryDirectory(prefix="snapstl-test-slice-") as tmp:
+        src = Path(tmp) / "test cube.3mf"
+        write_3mf(src, [Object3MF("Test cube", v, f)])
+        t = time.time()
+        out = slice_plate(src, Path(tmp) / "test cube.gcode.3mf", presets, "#FFFFFF", timeout=300, engine=engine)
+        g = zipfile.ZipFile(out).read("Metadata/plate_1.gcode").decode(errors="replace")
+    model = re.search(r"^; printer_model = (.*)$", g, re.M)
+    return {"seconds": round(time.time() - t, 1), "printer_model": model.group(1).strip() if model else ""}
 
 
 _running = threading.Lock()

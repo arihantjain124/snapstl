@@ -125,6 +125,19 @@ def orca_candidates() -> list[Path]:
             Path.home() / "Applications" / "OrcaSlicer.app" / "Contents" / "MacOS" / "OrcaSlicer"]
 
 
+def bambu_candidates() -> list[Path]:
+    """Where Bambu Studio's program may be (SNAPSTL_BAMBU_STUDIO overrides: tests, unusual installs)."""
+    if os.environ.get("SNAPSTL_BAMBU_STUDIO") is not None:
+        return [Path(os.environ["SNAPSTL_BAMBU_STUDIO"])] if os.environ["SNAPSTL_BAMBU_STUDIO"] else []
+    if WINDOWS:
+        out = [Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Bambu Studio" / "bambu-studio.exe"]
+        if os.environ.get("LOCALAPPDATA"):
+            out.append(Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Bambu Studio" / "bambu-studio.exe")
+        return out
+    return [Path("/Applications/BambuStudio.app/Contents/MacOS/BambuStudio"),
+            Path.home() / "Applications" / "BambuStudio.app" / "Contents" / "MacOS" / "BambuStudio"]
+
+
 def slicer_data_dir(app: str) -> Path | None:
     """A slicer app's settings folder ("OrcaSlicer" / "BambuStudio"): its system/ and user/ presets.
     SNAPSTL_SLICER_HOME replaces the base folder (tests)."""

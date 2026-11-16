@@ -563,7 +563,7 @@ def test_no_presets_listed_falls_back_to_standard(client, bb):
     assert client.put("/api/makeit/presets", json=p["chosen"]).status_code == 200
 
 
-def test_presets_per_printer_model_auto_slice_import_and_speed(client, bb):
+def test_presets_per_printer_auto_slice_import_and_speed(client, bb):
     bb.printers[4] = {"id": 4, "name": "P1S names", "model": "P1S", "serial_number": "S4", "ip_address": "10.0.0.31",
                       "location": "", "is_active": True}
     bb.status[4] = {"connected": True, "state": "IDLE", "ams": [{"id": 0, "tray": [tray(0, "F55A74")]}]}  # Pink
@@ -573,23 +573,22 @@ def test_presets_per_printer_model_auto_slice_import_and_speed(client, bb):
     bid, folder = built_batch(client, "PV")
     base, pink = "Bases/{Ayra,pink},{Riya,blue}.3mf", "Names/pink/{Ayra,pink}.3mf"
 
-    # P1S gets its own printer preset; A1 keeps the default
-    p = client.get("/api/makeit/presets?model=P1S").json()
-    assert p["models"] == ["A1", "P1S"] and p["own"] == [] and p["auto_slice"] is False
-    assert client.put("/api/makeit/presets", json={**p["chosen"], "model": "P1S", "printer": "local:11"}).status_code == 200
-    assert client.get("/api/makeit/presets?model=P1S").json()["names"]["printer"] == "P1S organizers"
-    assert client.get("/api/makeit/presets?model=A1").json()["names"]["printer"] == "Bambu Lab A1 0.4 nozzle"
+    # the P1S printer gets its own printer preset; the others keep the default
+    p = client.get("/api/makeit/presets?printer_id=4").json()
+    assert [x["name"] for x in p["printers"]] == ["Base 1", "Names A", "Names B", "P1S names"] and p["auto_slice"] is False
+    assert client.put("/api/makeit/presets", json={**p["chosen"], "printer_id": 4, "printer": "local:11"}).status_code == 200
+    p4 = client.get("/api/makeit/presets?printer_id=4").json()
+    assert p4["names"]["printer"] == "P1S organizers" and [x["own"] for x in p4["printers"]] == [False, False, False, True]
+    assert client.get("/api/makeit/presets?printer_id=2").json()["names"]["printer"] == "Bambu Lab A1 0.4 nozzle"
 
-    # automatic slicing: every waiting plate, for every model in the farm
+    # automatic slicing: each waiting plate, for the printer pre-selected for it (and only that one)
     assert client.put("/api/makeit/settings", json={"auto_slice": True}).json()["auto_slice"] is True
     farm.WORKER.auto_slice()
-    wait_for(lambda: all(r["slices"].get("A1", {}) and r["slices"]["A1"]["state"] == "done" and
-                         r["slices"]["P1S"] and r["slices"]["P1S"]["state"] == "done"
-                         for r in client.get("/api/makeit").json()["names"]))
-    printers_used = {b["printer_preset"]["id"] for _, b in bb.slice_bodies}
-    assert printers_used == {"Bambu Lab A1 0.4 nozzle", "11"} and len(bb.slice_bodies) == 6  # 3 plates × 2 models
+    wait_for(lambda: all(r["sliced"] for r in client.get("/api/makeit").json()["names"] + client.get("/api/makeit").json()["bases"]
+                         if r["suggested"]))
+    n = len(bb.slice_bodies)
     farm.WORKER.auto_slice()
-    assert len(bb.slice_bodies) == 6  # nothing sliced twice
+    assert len(bb.slice_bodies) == n  # nothing sliced twice
 
     # Start print on the P1S with Sport speed: sends the P1S slice; speed applied once printing
     client.post("/api/makeit/start", json={"batch_id": bid, "file": pink, "printer_id": 4, "speed": "sport"})
@@ -608,12 +607,13 @@ def test_presets_per_printer_model_auto_slice_import_and_speed(client, bb):
 
     # a failed automatic slice is not retried by itself
     bb.slicer = "unreachable"
-    farm.request_slices([(bid, base, "bases", "")], again=True, models=["A1"])
-    wait_for(lambda: makeit_row(client, "bases", base)["slices"]["A1"]["state"] == "failed")
-    n = len(bb.slice_bodies)
+    farm.request_slices([(bid, base, "bases", "")], [makeit_row(client, "bases", base)["suggested"]], again=True)
+    wait_for(lambda: (makeit_row(client, "bases", base)["slice"] or {}).get("state") == "failed")
+    bases_sliced = lambda: sum(1 for fid, _ in bb.slice_bodies if " - Bases - " in bb.files[fid]["filename"])  # noqa: E731
+    n = bases_sliced()
     farm.WORKER.auto_slice()
     farm.WORKER.slice_next()
-    assert len(bb.slice_bodies) == n
+    assert bases_sliced() == n
 
     # preset files go to Bambuddy, one kind at a time
     r = client.post("/api/makeit/presets/import", data={"kind": "filament"},

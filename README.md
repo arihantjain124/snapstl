@@ -152,19 +152,25 @@ Bambuddy**). SnapSTL only reads them.
    Bambuddy, with Bambu's colour names (e.g. *Hot Pink*, *Jade White*). Base plates need white loaded;
    a name plate needs its colour. A close colour (e.g. *Hot Pink* for a *pink* order) is offered, but
    marked *loaded: hot pink*. The exact colour is suggested first.
-4. **Slicing** is done on this computer by **OrcaSlicer**, which the installer puts in Applications.
-   It's built from Bambu Studio, with the same engine and Bambu presets. Bambu Studio's own command
-   line can't slice on a Mac, which is why SnapSTL uses OrcaSlicer's. In **Make It → Slice**:
-   - **Presets** come from Bambu Studio and OrcaSlicer on this computer, including **your own saved
-     presets**. Save a preset in Bambu Studio and it shows up in the lists by itself. Choose the
-     printer, process and filament presets → **Save presets**.
-   - **Presets for** lets each printer model (A1, P1S, …) have its own presets. A model without its
-     own uses the default set, or else its own Bambu defaults. Print speeds, layer height and infill
-     are part of the **process** preset.
-   - **Add printer / process / filament preset…** takes preset files exported from another
-     computer (.json, .bbscfg, .bbsflmt).
-   - **Slicer**: OrcaSlicer on this computer (the default), or Bambuddy's slicer if you run that
-     instead (Bambuddy → Settings → Slicer, Docker).
+4. **Slicing** happens on this computer, set up in the **Slicing** tab (sidebar):
+   - **Slicer**: **OrcaSlicer** (the installer installs it) or **Bambu Studio**; both use the same
+     engine and Bambu presets. On Windows either works. On a Mac only OrcaSlicer works, because Bambu
+     Studio's command line crashes there. Bambuddy's own slicer (Docker) is a third choice.
+     **Test slicer** slices a small test cube: press it once on a new computer.
+   - **Presets for printer**: give each printer (Base 1, Names A, …) its own printer / process /
+     filament presets → **Save presets**. A printer without its own uses the default (*All
+     printers*), or else its model's Bambu defaults. A plate is always sliced with the presets of
+     the printer it goes to. Print speeds, layer height and infill are part of the **process**
+     preset.
+   - **Slice new plates automatically** (on by default) slices each new plate for the printer
+     pre-selected for it. **Start print** on a different printer slices it again for that one first.
+   - **Presets from Bambu Studio on the same PC:** save the preset in Bambu Studio and it appears
+     in the lists by itself; SnapSTL reads Bambu Studio's and OrcaSlicer's preset folders, your own
+     presets included.
+   - **Presets from another computer:** in Bambu Studio there, **File → Export → Export Preset
+     Bundle** → *Printer preset bundle* (the printer with its processes and filaments, .bbscfg) or
+     *Filament preset bundle* (.bbsflmt). Here, click **Add printer preset…** (or process / filament)
+     and pick the file. Everything inside it is added. Then choose the presets for the printer.
 
 **Make It** (sidebar) is where plates are printed. It has four parts:
 
@@ -304,6 +310,7 @@ was tested with (`scripts/bambuddy-version.txt`) at the same time.
 | "Can't reach the shared records … no batch was created" | Check the internet, then try again |
 | Connect / save says the password or address is wrong | Copy the **Session pooler** string again; put the password in place of `[YOUR-PASSWORD]` with no brackets |
 | Settings → Database shows changes waiting | They're sent on the next sync; **Sync now** shows any problem |
+| Bambuddy lost its printers after installing SnapSTL (0.17 or older) | SnapSTL's installer had started a second, empty Bambuddy next to yours. Run the SnapSTL install command again: it now stops SnapSTL's copy and starts yours again; your printers and data were never deleted |
 | Make It: **Bambuddy isn't answering** | Run the install command again (it repairs Bambuddy); log: `~/Library/Logs/Bambuddy` (Windows: `%LOCALAPPDATA%\Bambuddy\logs`) |
 | Adding a printer in Bambuddy fails | Check the IP, serial and access code, and that LAN Only Mode **and** Developer Mode are on |
 | A plate shows **Slicing failed** | Read the message. "OrcaSlicer isn't installed" → run the install command again. "isn't made for the printer preset" → choose a process preset for that printer in Make It → Slice. Then click **Slice** again |

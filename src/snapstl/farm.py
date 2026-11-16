@@ -17,13 +17,11 @@ SnapSTL:
     to Bambuddy's library and added to that printer's queue; the job is followed until it's printed.
     Bambuddy waits for a person to clear the bed before each next print.
 
-Printers only print *sliced* plates. Slicing is done by **Bambuddy's slicer** only (Make It → Slice):
-SnapSTL uploads the plate to Bambuddy's library and asks Bambuddy to slice it with the printer /
-process / filament presets chosen in Make It → Slice (from Bambuddy's own preset list); the sliced file
-stays in Bambuddy's library and is what gets queued. Slicing runs in the background, one plate at a
-time, followed until it's done, failed or timed out (`SLICE_TIMEOUT_S`) — never blocking printing.
-A sliced file already in the batch folder (`Sliced/<plate>.gcode.3mf`, e.g. exported by hand) is used
-as it is. The Bambu Studio app's own command line can't slice on macOS (ARCHITECTURE decision log #28).
+Printers only print *sliced* plates. Slicing (Slicing tab) runs on this computer with OrcaSlicer or
+Bambu Studio (`slicer.py`), or with Bambuddy's slicer — always with the presets of the printer the plate
+goes to (`target`: each printer's own presets, else its model's, else the default). Slices run in the
+background one at a time and never block printing; a sliced file already in the batch folder is used as
+it is.
 
 Secrets: the Bambuddy API key is kept only in `farm.json` in the app folder (this user only). SnapSTL
 never sees printer access codes.
@@ -33,6 +31,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -66,9 +65,11 @@ DEFAULTS = {
     "presets": {},                # for every printer model without its own
     "presets_by_model": {},       # printer model (as in Bambuddy, e.g. "A1") → its own presets
     "auto_slice": True,           # slice new plates by themselves (printing still needs Start print)
-    "slicer": "",                 # "orca" (OrcaSlicer on this computer) | "bambuddy" | "" = Orca when installed
+    "slicer": "",                 # "orca" | "bambu" (Bambu Studio, Windows) on this computer | "bambuddy" | "" = auto
     "orca_presets": {},           # OrcaSlicer: {"printer"|"process"|"filament": preset name} for every model
     "orca_presets_by_model": {},  # printer model → its own preset names
+    "orca_presets_by_printer": {},  # Bambuddy printer id (str) → its own preset names (wins over its model's)
+    "presets_by_printer": {},     # same, for Bambuddy's slicer
 }
 SPEEDS_SET = {"silent": 1, "standard": 2, "sport": 3, "ludicrous": 4}  # print speed per job (Make It)
 # A Bambu "standard" preset is picked by name when nothing was chosen yet (if Bambuddy lists it).
@@ -494,78 +495,93 @@ def bambuddy_presets(cfg: dict | None = None) -> dict:
     return out
 
 
-def chosen_presets(cfg: dict | None = None, available: dict | None = None, model: str = "") -> dict:
-    """The presets slicing uses for a printer model: that model's own (Make It → Slice), else the default
-    set, else Bambu's standard A1 ones by name."""
+def chosen_presets(cfg: dict | None = None, available: dict | None = None, model: str = "",
+                   printer_id: int | None = None) -> dict:
+    """Bambuddy's slicer: the presets for a printer — its own, else its model's, else the default set,
+    else Bambu's standard A1 ones by name."""
     cfg = cfg or load_config()
-    own = (cfg.get("presets_by_model") or {}).get(model or "") if model else None
-    chosen = dict(own or cfg.get("presets") or {})
-    if available is not None:
-        for slot, name in DEFAULT_PRESETS.items():
-            if slot not in chosen:
-                hit = next((p for p in available.get(slot, []) if p["name"] == name), None)
-                src, pid = hit["key"].split(":", 1) if hit else ("standard", name)  # the slicer resolves it by name
-                chosen[slot] = {"source": src, "id": pid, "name": name}
+    chosen = dict(cfg.get("presets") or {})
+    chosen.update((cfg.get("presets_by_model") or {}).get(model or "") or {} if model else {})
+    chosen.update((cfg.get("presets_by_printer") or {}).get(str(printer_id)) or {} if printer_id else {})
+    for slot, name in DEFAULT_PRESETS.items():
+        if slot not in chosen:
+            hit = next((p for p in (available or {}).get(slot, []) if p["name"] == name), None)
+            src, pid = hit["key"].split(":", 1) if hit else ("standard", name)  # the slicer resolves it by name
+            chosen[slot] = {"source": src, "id": pid, "name": name}
     return chosen
 
 
-def set_presets(keys: dict, model: str = "", clear: bool = False) -> dict:
-    """Make It → Slice: save the printer / process / filament preset ("source:id" from Bambuddy's list) —
-    for one printer model, or (model "") the default for every model without its own. `clear` drops a
-    model's own presets (it uses the default again)."""
-    if model and clear:
-        cfg = load_config()
-        (cfg.setdefault("presets_by_model", {})).pop(model, None)
+def set_presets(keys: dict, model: str = "", clear: bool = False, printer_id: int | None = None) -> dict:
+    """Slicing (Bambuddy's slicer): save the printer / process / filament preset ("source:id" from
+    Bambuddy's list) for one printer, a printer model, or (neither) the default. `clear` drops that
+    printer's / model's own presets (it uses the default again)."""
+    cfg = load_config()
+    where, key = (("presets_by_printer", str(printer_id)) if printer_id else ("presets_by_model", model) if model
+                  else ("presets", ""))
+    if clear and key:
+        cfg.setdefault(where, {}).pop(key, None)
         save_config(cfg)
-        return chosen_presets(cfg, None, model)
+        return chosen_presets(cfg, None, model, printer_id)
     avail = bambuddy_presets()
     chosen = {}
     for slot in ("printer", "process", "filament"):
-        key = str(keys.get(slot) or "")
-        hit = next((p for p in avail[slot] if p["key"] == key), None)
-        if hit is None and key == f"standard:{DEFAULT_PRESETS[slot]}":
+        k = str(keys.get(slot) or "")
+        hit = next((p for p in avail[slot] if p["key"] == k), None)
+        if hit is None and k == f"standard:{DEFAULT_PRESETS[slot]}":
             hit = {"name": DEFAULT_PRESETS[slot]}
         if hit is None:
             raise FarmError(f"Choose a {slot} preset from Bambuddy's list")
-        src, pid = key.split(":", 1)
+        src, pid = k.split(":", 1)
         chosen[slot] = {"source": src, "id": pid, "name": hit["name"]}
-    cfg = load_config()
-    if model:
-        cfg.setdefault("presets_by_model", {})[model] = chosen
+    if key:
+        cfg.setdefault(where, {})[key] = chosen
     else:
         cfg["presets"] = chosen
     save_config(cfg)
     return chosen
 
 
+LOCAL = ("orca", "bambu")  # slicers run on this computer
+
+
 def engine(cfg: dict | None = None) -> str:
-    """Which slicer slices: OrcaSlicer on this computer (default when installed) or Bambuddy's."""
+    """Which slicer slices: the one chosen in Slicing, else OrcaSlicer when installed, else Bambu Studio
+    (where its command line works), else Bambuddy's."""
     from . import slicer
 
     cfg = cfg or load_config()
-    if cfg.get("slicer") in ("orca", "bambuddy"):
+    if cfg.get("slicer") in ("orca", "bambu", "bambuddy"):
         return cfg["slicer"]
-    return "orca" if slicer.orca_path() else "bambuddy"
+    if slicer.exe_path("orca"):
+        return "orca"
+    if slicer.exe_path("bambu") and slicer.works_here("bambu"):
+        return "bambu"
+    return "bambuddy"
 
 
-def orca_presets_for(model: str, cfg: dict | None = None) -> dict[str, str]:
-    """Preset names OrcaSlicer slices with for a printer model: the model's own, else the default set,
-    else the model's own Bambu defaults (its printer preset's default process / filament)."""
+def orca_presets_for(model: str, cfg: dict | None = None, printer_id: int | None = None) -> dict[str, str]:
+    """Preset names a slicer on this computer uses for a printer: its own (Slicing), else its model's,
+    else the default set, else the model's own Bambu defaults (its printer preset's default process /
+    filament)."""
     from . import slicer
 
     cfg = cfg or load_config()
     out = dict(slicer.defaults_for(model or "A1"))
     out.update({k: v for k, v in (cfg.get("orca_presets") or {}).items() if v})
     out.update({k: v for k, v in ((cfg.get("orca_presets_by_model") or {}).get(model or "") or {}).items() if v})
+    if printer_id:
+        out.update({k: v for k, v in ((cfg.get("orca_presets_by_printer") or {}).get(str(printer_id)) or {}).items() if v})
     return out
 
 
-def set_orca_presets(names: dict, model: str = "", clear: bool = False) -> dict[str, str]:
+def set_orca_presets(names: dict, model: str = "", clear: bool = False, printer_id: int | None = None) -> dict[str, str]:
     from . import slicer
 
     cfg = load_config()
-    if model and clear:
-        (cfg.setdefault("orca_presets_by_model", {})).pop(model, None)
+    where, key = (("orca_presets_by_printer", str(printer_id)) if printer_id else ("orca_presets_by_model", model)
+                  if model else ("orca_presets", ""))
+    if clear and key:
+        cfg.setdefault(where, {}).pop(key, None)
     else:
         avail = slicer.list_presets()
         chosen = {}
@@ -574,12 +590,26 @@ def set_orca_presets(names: dict, model: str = "", clear: bool = False) -> dict[
             if not any(p["name"] == name for p in avail[slot]):
                 raise FarmError(f"Choose a {slot} preset from the list")
             chosen[slot] = name
-        if model:
-            cfg.setdefault("orca_presets_by_model", {})[model] = chosen
+        if key:
+            cfg.setdefault(where, {})[key] = chosen
         else:
             cfg["orca_presets"] = chosen
     save_config(cfg)
-    return orca_presets_for(model, cfg)
+    return orca_presets_for(model, cfg, printer_id)
+
+
+def target(printer_id: int | None, cfg: dict | None = None) -> tuple[str, dict]:
+    """What a plate is sliced with for a printer: (key, presets). The key is the slicer + those presets, so
+    printers with the same presets share one slice, and changing a printer's presets means a new slice."""
+    import hashlib
+
+    cfg = cfg or load_config()
+    eng = engine(cfg)
+    model = WORKER.model_of(printer_id) if printer_id else ""
+    presets = (orca_presets_for(model, cfg, printer_id) if eng in LOCAL
+               else chosen_presets(cfg, None, model, printer_id))
+    key = eng + ":" + hashlib.sha1(json.dumps(presets, sort_keys=True).encode()).hexdigest()[:12]
+    return key, presets
 
 
 def import_presets(filename: str, data: bytes) -> dict:
@@ -624,37 +654,41 @@ def _slice_set(slice_id: int, **cols) -> None:
 
 
 def latest_slices(batch_id: int | None = None) -> dict[tuple[int, str, str], dict]:
-    """(batch, plate, printer model) → its newest slice (model "" = sliced before models were tracked)."""
+    """(batch, plate, target key) → its newest slice (see `target`)."""
     with db.tx() as con:
         rs = db.rows(con, "SELECT * FROM slices WHERE computer_id=?" + (" AND batch_id=?" if batch_id else "") +
                      " ORDER BY id", computer.ID, *([batch_id] if batch_id else []))
     return {(r["batch_id"], r["plate"], r.get("model") or ""): r for r in rs}
 
 
-def slice_for(slices: dict, batch_id: int, plate: str, model: str) -> dict | None:
-    """The slice to use for a printer model: that model's, else one made before models were tracked."""
-    return slices.get((batch_id, plate, model or "")) or (slices.get((batch_id, plate, "")) if model else None)
+def slice_for(slices: dict, batch_id: int, plate: str, key: str) -> dict | None:
+    return slices.get((batch_id, plate, key or ""))
 
 
-def request_slices(plates: list[tuple[int, str, str, str]], again: bool = False, models: list[str] | None = None,
-                   skip_failed: bool = False) -> int:
-    """Slice these plates [(batch_id, plate, kind, color)] with Bambuddy for each printer model (one at a
-    time, in the background). Skipped: being sliced, already sliced (unless `again`), failed (with
-    `skip_failed` — automatic slicing never retries a failure by itself)."""
+def request_slices(plates: list[tuple[int, str, str, str]], printer_ids: list[int | None] | None = None,
+                   again: bool = False, skip_failed: bool = False) -> int:
+    """Slice these plates [(batch_id, plate, kind, color)] for these printers (their presets; None = the
+    default), one at a time in the background. Skipped: being sliced, already sliced with those presets
+    (unless `again`), failed (with `skip_failed` — automatic slicing never retries a failure by itself)."""
+    cfg = load_config()
     cur = latest_slices()
-    eng = engine()
+    eng = engine(cfg)
+    targets = {}
+    for pid in (printer_ids or [None]):
+        key, presets = target(pid, cfg)
+        targets[key] = presets
     n = 0
     now = db.now()
     with db.tx() as con:
         for bid, plate, kind, color in plates:
-            for model in (models or [""]):
-                s = cur.get((bid, plate, model or ""))
+            for key, presets in targets.items():
+                s = cur.get((bid, plate, key))
                 if s and s["state"] in ("queued", "uploading", "slicing") or (s and s["state"] == "done" and not again) \
                         or (s and s["state"] == "failed" and skip_failed):
                     continue
-                con.execute("INSERT INTO slices(batch_id,plate,kind,color,model,engine,state,created_at,updated_at,"
-                            "computer_id) VALUES (?,?,?,?,?,?,'queued',?,?,?)",
-                            (bid, plate, kind, color or "", model or "", eng, now, now, computer.ID))
+                con.execute("INSERT INTO slices(batch_id,plate,kind,color,model,engine,presets,state,created_at,"
+                            "updated_at,computer_id) VALUES (?,?,?,?,?,?,?,'queued',?,?,?)",
+                            (bid, plate, kind, color or "", key, eng, json.dumps(presets), now, now, computer.ID))
                 n += 1
     WORKER.kick()
     return n
@@ -1015,8 +1049,8 @@ class Worker:
                      files=[("file", _upload_name(label, kind, sliced.name), data, "application/octet-stream")])
             file_id = int(up["id"])
         else:  # sliced by Bambuddy for this printer's model (Make It → Slice), or slice it now and send it after
-            model = self.model_of(j["printer_id"])
-            s = slice_for(latest_slices(j["batch_id"]), j["batch_id"], j["plate"], model)
+            key, _ = target(j["printer_id"], cfg)  # sliced with this printer's presets
+            s = slice_for(latest_slices(j["batch_id"]), j["batch_id"], j["plate"], key)
             if s and s["state"] == "done" and s.get("sliced_path") and Path(s["sliced_path"]).is_file():
                 data = Path(s["sliced_path"]).read_bytes()  # sliced by OrcaSlicer on this computer
                 check_sliced(data)
@@ -1034,7 +1068,7 @@ class Worker:
                 raise FarmError(f"Slicing failed: {s['error']}")
             else:
                 if not (s and s["state"] in ("queued", "uploading", "slicing")):
-                    request_slices([(j["batch_id"], j["plate"], j["kind"], j["color"])], again=True, models=[model])
+                    request_slices([(j["batch_id"], j["plate"], j["kind"], j["color"])], [j["printer_id"]], again=True)
                 _set(j["id"], state="slicing", error=None)  # sent once Bambuddy has sliced it
                 return
         # Held (manual_start): Bambuddy never starts it by itself — a person presses Start.
@@ -1065,21 +1099,22 @@ class Worker:
         if s is None:
             return
         s = dict(s)
-        if (s.get("engine") or engine()) == "orca":
+        eng = s.get("engine") or engine()
+        if eng in LOCAL:
             if not b or not b["out_dir"] or not (Path(b["out_dir"]) / s["plate"]).is_file():
                 _slice_set(s["id"], state="failed", error="The plate file is gone")
                 return
-            names = orca_presets_for(s.get("model") or "")
-            _slice_set(s["id"], state="slicing", progress=0, started_at=db.now(), error=None,
-                       presets=json.dumps({k: {"name": v} for k, v in names.items()}))
-            threading.Thread(target=self._orca, args=(s, Path(b["out_dir"]), names), daemon=True,
-                             name="orca-slice").start()
+            names = json.loads(s.get("presets") or "{}") or orca_presets_for("")
+            _slice_set(s["id"], state="slicing", progress=0, started_at=db.now(), error=None)
+            threading.Thread(target=self._local, args=(s, Path(b["out_dir"]), names, eng), daemon=True,
+                             name="local-slice").start()
             return
         try:
             if not b or not b["out_dir"] or not (Path(b["out_dir"]) / s["plate"]).is_file():
                 raise FarmError("The plate file is gone")
             cfg = load_config()
-            presets = chosen_presets(cfg, bambuddy_presets(cfg), s.get("model") or "")
+            saved = json.loads(s.get("presets") or "{}")
+            presets = saved if all(isinstance(v, dict) for v in saved.values()) and saved else chosen_presets(cfg, bambuddy_presets(cfg))
             body = slice_request(presets, _slice_color(s) or None)
             _slice_set(s["id"], state="uploading", error=None, presets=json.dumps(presets))
             src = Path(b["out_dir"]) / s["plate"]
@@ -1095,15 +1130,17 @@ class Worker:
             _slice_set(s["id"], state="failed", error=slicer_hint(str(e)))
             self._log(f"Slicing {Path(s['plate']).name}: {e}")
 
-    def _orca(self, s: dict, out_dir: Path, names: dict) -> None:
-        """One plate with OrcaSlicer on this computer (its own thread: printing never waits for it)."""
+    def _local(self, s: dict, out_dir: Path, names: dict, eng: str = "orca") -> None:
+        """One plate with OrcaSlicer / Bambu Studio on this computer (own thread: printing never waits)."""
         from . import slicer
 
-        dst = out_dir / "Sliced" / (s.get("model") or "any") / (_stem(s["plate"]) + ".gcode.3mf")
+        folder = re.sub(r"[^A-Za-z0-9._-]", "_", (s.get("model") or "any").split(":")[-1])  # the presets' key
+        dst = out_dir / "Sliced" / folder / (_stem(s["plate"]) + ".gcode.3mf")
         try:
-            slicer.slice_plate(out_dir / s["plate"], dst, names, COLOR_HEX.get(_slice_color(s)), timeout=SLICE_TIMEOUT_S)
+            slicer.slice_plate(out_dir / s["plate"], dst, names, COLOR_HEX.get(_slice_color(s)), timeout=SLICE_TIMEOUT_S,
+                               engine=eng)
             _slice_set(s["id"], state="done", progress=100, sliced_path=str(dst), error=None)
-            self._log(f"Sliced {Path(s['plate']).name} with OrcaSlicer" + (f" for {s['model']}" if s.get("model") else ""))
+            self._log(f"Sliced {Path(s['plate']).name} with {slicer.NAMES.get(eng, eng)} ({names.get('printer', '')})")
         except Exception as e:  # noqa: BLE001 — SlicerError, or anything unexpected: the slice fails, visibly
             _slice_set(s["id"], state="failed", error=str(e))
             self._log(f"Slicing {Path(s['plate']).name}: {e}")
@@ -1152,7 +1189,7 @@ class Worker:
             return
         sl = latest_slices()
         for j in js:
-            s = slice_for(sl, j["batch_id"], j["plate"], self.model_of(j["printer_id"]))
+            s = slice_for(sl, j["batch_id"], j["plate"], target(j["printer_id"])[0])
             if s is None or s["state"] == "done":
                 _set(j["id"], state="queued")
             elif s["state"] == "failed":
@@ -1176,12 +1213,17 @@ class Worker:
         from . import makeit
 
         try:
-            models = printer_models(printers(cfg, with_status=False)) or [""]
+            prs = printers(cfg)
         except FarmError:
             return
-        todo = [(r["batch_id"], r["file"], r["kind"], (r["colors"] or [""])[0]) for r in makeit.waiting_plates()]
-        if todo and request_slices(todo, models=models, skip_failed=True):
-            self._log("Slicing new plates automatically")
+        n = 0
+        for r in makeit.waiting_plates(prs):  # for the printer pre-selected for each plate (or its job's)
+            pid = r.get("suggested") or ((r.get("job") or {}).get("printer_id") or None)
+            if pid:
+                n += request_slices([(r["batch_id"], r["file"], r["kind"], (r["colors"] or [""])[0])], [pid],
+                                    skip_failed=True)
+        if n:
+            self._log(f"Slicing {n} plate(s) automatically for their pre-selected printers")
 
     def refresh(self) -> None:
         """Follow jobs sent to Bambuddy: waiting → printing → printed (or failed / cancelled there)."""
