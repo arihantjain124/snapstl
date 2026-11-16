@@ -158,7 +158,7 @@ def board(prs: list[dict] | None = None) -> dict:
         r["slice_for"] = pid
         missing = farm.missing_presets(pid) if pid else None
         if missing:
-            r["slice"] = {"state": "needs_presets", "model": missing}
+            r["slice"] = {"state": "needs_presets", "printer": missing}
         else:
             x = farm.slice_for(slices, r["batch_id"], r["file"], keys[pid])
             r["slice"] = {"state": x["state"], "progress": x["progress"], "error": x["error"]} if x else None
@@ -228,7 +228,7 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
         raise farm.FarmError(f"{printer['name']} {why}")
     missing = farm.missing_presets(printer["id"])
     if missing:
-        raise farm.FarmError(f"Pick the slicing profiles for {missing} printers in Slicing first")
+        raise farm.FarmError(f"Pick the slicing profiles for {missing} in Slicing first")
     j = _latest(batch_id, file)
     if j and j["state"] == "sent" and j.get("held"):
         if j["printer_id"] != printer["id"] or opts:
@@ -301,9 +301,9 @@ def slicing_summary() -> dict:
                                   for k, v in json.loads(r["presets"] or "{}").items()}})
     count = lambda st: sum(1 for i in items if i["state"] == st)  # noqa: E731
     cfg = farm.load_config()
-    by_model = {m: ({k: (v["name"] if isinstance(v, dict) else v) for k, v in p.items()})
-                for m, p in (cfg.get("presets_by_model") or {}).items()}
-    return {"presets_by_model": by_model, "items": items,
+    by_printer = {pid: ({k: (v["name"] if isinstance(v, dict) else v) for k, v in p.items()})
+                  for pid, p in (cfg.get("presets_by_printer") or {}).items()}
+    return {"presets_by_printer": by_printer, "items": items,
             "counts": {st: count(st) for st in ("queued", "uploading", "slicing", "done", "failed")}}
 
 

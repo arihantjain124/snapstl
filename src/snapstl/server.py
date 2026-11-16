@@ -1012,25 +1012,26 @@ async def makeit_start(req: Request):
 
 
 @app.get("/api/makeit/presets")
-def makeit_presets(model: str = "", refresh: int = 0):
-    """Slicing: every profile stored in Bambuddy, the ones picked per printer model, the farm's printers
-    (with their print defaults) and automatic slicing. `refresh=1` makes Bambuddy re-read its cloud lists."""
+def makeit_presets(printer: int = 0, refresh: int = 0):
+    """Slicing: every profile stored in Bambuddy, the ones picked per printer, the farm's printers (with
+    their print defaults) and automatic slicing. `refresh=1` makes Bambuddy re-read its cloud lists."""
     cfg = farm.load_config()
     try:
         prs = farm.printers(with_status=False)
     except farm.FarmError:
         prs = []
-    models = farm.printer_models(prs)
-    if model == "" and models:
-        model = models[0]
-    set_for = {m: bool(all(farm.chosen_presets(m, cfg).get(sl) for sl in farm.PRESET_SLOTS)) for m in models}
-    base = {"model": model, "models": models, "set_for": set_for,
+    ids = [p["id"] for p in prs]
+    if printer not in ids:
+        printer = ids[0] if ids else 0
+    set_for = {str(p["id"]): bool(all(farm.chosen_presets(p["id"], cfg).get(sl) for sl in farm.PRESET_SLOTS))
+               for p in prs}
+    base = {"printer": printer, "set_for": set_for,
             "printers": [{"id": p["id"], "name": p["name"], "model": p.get("model") or "",
                           "defaults": farm.print_defaults(p["id"], cfg)} for p in prs],
             "auto_slice": bool(cfg.get("auto_slice", True)), "bambuddy_url": cfg.get("bambuddy_url") or "",
             "speeds": list(farm.SPEEDS_SET), "options": {k: list(v) for k, v in farm.OPTIONS.items()},
             "activity": makeit.slicing_summary()}
-    chosen = farm.chosen_presets(model, cfg)
+    chosen = farm.chosen_presets(printer, cfg)
     base |= {"chosen": {k: f"{v['source']}:{v['id']}" for k, v in chosen.items()},
              "names": {k: v["name"] for k, v in chosen.items()}}
     status: dict = {}
@@ -1043,15 +1044,19 @@ def makeit_presets(model: str = "", refresh: int = 0):
 
 @app.put("/api/makeit/presets")
 async def makeit_presets_save(req: Request):
-    """{model, printer, process, filament} ("source:id" from Bambuddy's list) or {model, clear: true} — every
-    printer of that model slices with those Bambuddy profiles."""
+    """{printer_id, printer, process, filament} ("source:id" from Bambuddy's list) or {printer_id, clear: true}
+    — that printer slices with those Bambuddy profiles."""
     b = await req.json()
-    model, clear = str(b.get("model") or ""), bool(b.get("clear"))
-    if not model:
-        raise HTTPException(400, "Choose the printer model these profiles are for")
+    try:
+        pid = int(b.get("printer_id") or 0)
+    except (TypeError, ValueError):
+        pid = 0
+    clear = bool(b.get("clear"))
+    if not pid:
+        raise HTTPException(400, "Choose the printer these profiles are for")
     _health_stale()
     try:
-        chosen = await run_in_threadpool(farm.set_presets, b, model, clear)
+        chosen = await run_in_threadpool(farm.set_presets, b, pid, clear)
     except farm.FarmError as e:
         raise _farm_err(e) from e
     return {"names": {k: v["name"] for k, v in chosen.items()}}
@@ -1151,8 +1156,7 @@ def health():
             prs = farm.printers(cfg)
             total = len(prs)
             online = sum(1 for p in prs if (p.get("status") or {}).get("connected"))
-            missing = [m for m in farm.printer_models(prs) if farm.missing_presets(
-                next(p["id"] for p in prs if p.get("model") == m), cfg)]
+            missing = [p["name"] for p in prs if farm.missing_presets(p["id"], cfg)]
         except farm.FarmError:
             pass
     # Bambuddy's slicer runs with Bambuddy (its sidecar); a slicer that's down shows on the plates it fails
@@ -1203,6 +1207,18 @@ async def farm_connect(req: Request):
                                        str(body.get("api_key") or "") or None)
     except farm.FarmError as e:
         raise _farm_err(e) from e
+
+
+@app.put("/api/farm/printers/{pid}/color")
+async def farm_color_override(pid: int, req: Request):
+    """Printers → a spool's "Counts as": {key: "<slot>|<hex>", color} ("" = Bambuddy's name)."""
+    b = await req.json()
+    try:
+        out = farm.set_color_override(pid, str(b.get("key") or ""), str(b.get("color") or ""))
+    except farm.FarmError as e:
+        raise _farm_err(e) from e
+    _health_stale()
+    return {"overrides": out}
 
 
 @app.post("/api/farm/printers/{pid}/clear-plate")

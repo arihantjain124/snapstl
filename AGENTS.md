@@ -40,7 +40,9 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   a queue item that can start on its own, and never start one from a code path a person didn't click.
   Reprint only after a person confirms a failure.
 - Printers, filament and printer settings are managed in Bambuddy; the Printers page stays read only
-  (no adding printers, filament or roles in SnapSTL).
+  (no adding printers, filament or roles in SnapSTL). The one exception: a spool's **prints as …**
+  colour (`farm.color_overrides`, owner-requested 0.22.7) — it changes only how SnapSTL reads that
+  spool, is never sent to Bambuddy, and lapses when another spool is loaded in the slot.
 
 **Technical rules**
 - MakerWorld models come **only** from the SnapSTL Helper (`helper/`) in the user's own Chrome.
@@ -96,8 +98,9 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   never handles printer access codes. Plate files go only to this
   computer's Bambuddy, never to a cloud print service.
 - **Slicing**: only Bambuddy's slicer (its sidecar), with the Bambuddy profiles picked per printer
-  model (`farm.target`); bases sliced white, names in their colour. SnapSTL keeps **no slicing
-  settings**: only references (source + id + name) to Bambuddy profiles in `presets_by_model`. Never
+  (`farm.target`); bases sliced white, names in their colour. SnapSTL keeps **no slicing
+  settings**: only references (source + id + name) to Bambuddy profiles in `presets_by_printer`
+  (`presets_by_model` = fallback from before 0.22.7). Never
   add a slicer on this computer, a preset store/import, or use of hand-made sliced files again
   (owner decision, ARCHITECTURE #43). Profiles are added in Bambuddy, never by SnapSTL.
   Slicing never blocks the worker: one slice at a time, followed by polling, stopped after
@@ -137,7 +140,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Shared order records (Supabase): connection in Settings, sync, claims | `sync.py`, `config.py`, `computer.py`, `server.shared_records_*`, `server.setup_status`, `dbtool.py` (`snapstl-db`), triggers in `db.POST_SCHEMA` |
 | Print farm: Bambuddy connection, printers, Push to queue, slicing | `farm.py` (+ `/api/farm*`, `/api/batches/{id}/plates` and `/push`, `/api/print-jobs` in `server.py`); Printers page + Push to queue panel in `index.html`; `tests/test_farm.py` |
 | Print tab (Bases / Names / Completed / Removed), Ready to ship | `makeit.py`, `/api/makeit*` in `server.py`, `server.TABS` (`ready_to_ship`), `<section id="t-makeit">` in `index.html`; `tests/test_farm.py` |
-| Slicing tab (Bambuddy profiles per printer model, print defaults per printer) | `farm.py` (`bambuddy_presets`, `chosen_presets`, `set_presets`, `missing_presets`, `target`, `print_defaults`, `forget_local_slicing`), `/api/makeit/presets` `/print-defaults`; `<section id="t-slicing">`; `tests/test_farm.py` |
+| Slicing tab (Bambuddy profiles and print defaults per printer) | `farm.py` (`bambuddy_presets`, `chosen_presets`, `set_presets`, `missing_presets`, `target`, `print_defaults`, `forget_local_slicing`), `/api/makeit/presets` `/print-defaults`; `<section id="t-slicing">`; `tests/test_farm.py` |
 | Printers page, sidebar status | `farm.everything` / `summarize`, `/api/printer-status`, `/api/health`; `<section id="t-printers">`, `loadHealth` in `index.html` |
 | Settings sections (Setup · Product · Plates · Folders · Connections · Maintenance) | `data-sec` blocks + `setSec` in `index.html`; checklist from `/api/setup` |
 | Bambuddy computer (Docker: Bambuddy + slicer sidecars) | `scripts/windows/bambuddy-server.ps1`, `scripts/bambuddy-docker/docker-compose.yml`, `scripts/bambuddy-version.txt` |
