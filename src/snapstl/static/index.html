@@ -497,8 +497,9 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <h2>Logistics access</h2>
         <p class="hint">Host a read-only orders table on port 8002. Employees can browse categories, filter, copy rows and save views. This computer keeps data current through its normal shared-records sync. Save starts or stops logistics immediately; the full app keeps running.</p>
         <label class="check"><input type="checkbox" id="lan"> Enable read-only logistics on port 8002</label>
-        <label>Portal password <span class="hint">— at least 10 characters; empty keeps the current one</span></label>
-        <div class="row2" style="grid-template-columns:1fr auto"><input id="portalpw" type="password" autocomplete="new-password" placeholder="Not set"><button id="portalsave">Save</button></div>
+        <label for="portalpw"><b>Set or change logistics password</b></label>
+        <p class="hint" id="portalpwhint">Use at least 10 characters. Employees enter this password when signing in.</p>
+        <div class="toolbar"><input id="portalpw" type="password" autocomplete="new-password" placeholder="Enter a new password (10+ characters)" aria-describedby="portalpwhint" style="flex:1;min-width:220px"><button id="portalpwshow" type="button" aria-controls="portalpw" aria-pressed="false">Show</button><button id="portalsave" class="primary">Save logistics access</button></div>
         <p class="hint" id="portalinfo" aria-live="polite"></p><div id="logisticsurls"></div>
       </div>
     </div>
@@ -1214,11 +1215,12 @@ function licHint(set){$('lichint').textContent=set?'Saved for the current model'
 // ---------- web portal ----------
 async function loadPortal(){if(!META.local){$('portalcard').hidden=true;return}
   const p=await api('/api/portal');$('lan').checked=p.lan_access;
-  $('portalpw').placeholder=p.password_set?'Set (type to change)':'Not set';
+  $('portalpwhint').textContent=p.password_set?'A password is already set. Leave this field blank to keep it, or enter a new password of at least 10 characters. Saved passwords cannot be displayed.':'No password is set. Enter at least 10 characters, then press Save logistics access.';
   const urls=p.urls.length?p.urls.map(u=>`<code>${esc(u)}</code>`).join(' or '):'';
   $('logisticsurls').innerHTML=p.lan_access?p.urls.map(u=>`<div class="toolbar"><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a><input aria-label="Logistics address" readonly value="${esc(u)}" style="min-width:240px"><button type="button" class="small" data-copy-logistics>Copy address</button></div>`).join(''):'';
   document.querySelectorAll('[data-copy-logistics]').forEach(b=>b.onclick=async()=>{const input=b.previousElementSibling;try{await navigator.clipboard.writeText(input.value);b.textContent='Copied'}catch{input.focus();input.select();b.textContent=document.execCommand('copy')?'Copied':'Select and copy address'}});
   $('portalinfo').innerHTML=!p.lan_access?'Off — logistics is disabled.':p.error?esc(p.error):p.listening_on_network?`Listening on port 8002. Employees open ${urls}. If it opens on this computer at http://127.0.0.1:8002 but not another computer, allow incoming TCP 8002 for the local subnet in the host’s firewall and check both computers are on the same network.`:'Enabled, but not listening. Press Save to start logistics.';}
+$('portalpwshow').onclick=()=>{const show=$('portalpw').type==='password';$('portalpw').type=show?'text':'password';$('portalpwshow').textContent=show?'Hide':'Show';$('portalpwshow').setAttribute('aria-pressed',String(show))};
 $('portalsave').onclick=async()=>{const b=$('portalsave');b.disabled=true;try{await post('/api/portal',{enabled:$('lan').checked,password:$('portalpw').value});$('portalpw').value='';await loadPortal()}catch(e){$('portalinfo').textContent=e.message;$('portalinfo').style.color='var(--err)'}finally{b.disabled=false}};
 
 // ---------- settings sections ----------

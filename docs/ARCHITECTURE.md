@@ -813,3 +813,7 @@ The full app now listens only on localhost on Mac and Windows. On Mac or Windows
 Orders pagination includes a Page selector to jump directly to any page. Logistics uses the same control. Logistics hosting is available on both Mac and Windows; Settings reports whether port 8002 is actually listening. Allow incoming connections in the host firewall for LAN access. The UTF-8 interface is decoded explicitly on Windows.
 
 Settings → Connections → Logistics access shows the current host LAN IP addresses as clickable links with Copy address buttons (port 8002). Use a numeric IP link from another computer on the same network.
+
+The logistics password field is labelled **Set or change logistics password** in Settings → Connections → Logistics access. Show reveals only the newly typed password. Saved passwords are hashed and cannot be displayed; leaving the field blank keeps the existing password.
+
+Listener lifecycle tests bind a temporary OS-assigned port so an active logistics host on port 8002 is never affected.

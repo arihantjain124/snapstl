@@ -212,6 +212,7 @@ def test_cleanup_keeps_made_orders_and_reset_empties(client):
 
 def test_other_computers_need_portal_and_login(client, monkeypatch):
     from snapstl import server, logistics
+    monkeypatch.setattr(logistics, 'PORT', 0)  # disposable port; never collide with the owner's listener
     remote = TestClient(server.app, base_url='http://192.168.1.20:8317', client=('192.168.1.50', 50001))
     staff = TestClient(logistics.app, base_url='http://192.168.1.20:8002', client=('192.168.1.50', 50001))
     assert staff.get('/api/orders').status_code == 403
