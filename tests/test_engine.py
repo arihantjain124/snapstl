@@ -261,8 +261,10 @@ def test_updater_pulls_from_repository(tmp_path, monkeypatch):
 
     monkeypatch.setattr(updater, "ROOT", tmp_path / "app")
     monkeypatch.setattr(updater, "uv_path", lambda: "true")  # `true sync …` stands in for uv
+    monkeypatch.setattr(updater, "STARTED_AT", updater.head())  # SnapSTL started on the first commit
     c = updater.check()
     assert c["git"] and c["behind"] == 1 and c["changes"] == ["Second change"] and not c["edited"]
+    assert c["restart_needed"] is False
     (tmp_path / "app" / "a.txt").write_text("edited by hand")
     try:
         updater.apply()
@@ -271,4 +273,10 @@ def test_updater_pulls_from_repository(tmp_path, monkeypatch):
         assert "changed by hand" in str(e)
     git(tmp_path / "app", "checkout", "--", ".")
     assert updater.apply()["updated"] and (tmp_path / "app" / "a.txt").read_text() == "2"
-    assert updater.check(fetch=False)["behind"] == 0
+    c = updater.check(fetch=False)
+    assert c["behind"] == 0
+    # the folder moved on (here by the update; just the same after `git pull` by hand): until SnapSTL
+    # restarts it still runs the first commit, and says so instead of "up to date"
+    assert c["restart_needed"] is True and c["running"].endswith("first")
+    monkeypatch.setattr(updater, "STARTED_AT", updater.head())  # restarted
+    assert updater.check(fetch=False)["restart_needed"] is False

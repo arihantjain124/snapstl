@@ -538,6 +538,7 @@ SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn snapstl.server:ap
 
 - **Publishing an update:** merge into `main` and push. Every installed SnapSTL then shows **Update
   available**.
+- **Updated with `git pull` by hand?** The running SnapSTL keeps the old code until it restarts; **Settings → Updates** then shows **Restart SnapSTL**. (Versions before 0.22.13 don't have that button: restart once by hand — Mac: `launchctl kickstart -k gui/$(id -u)/local.snapmagicians.snapstl`; Windows PowerShell: `Stop-ScheduledTask SnapSTL; Start-ScheduledTask SnapSTL`, or sign out and in.)
 - **Never commit secrets.** The repository is public: the license passwords, the Supabase connection
   string and the portal password are entered in the app and stay on each computer. For tests and
   development, the `SNAPSTL_DATABASE_URL` and `SNAPSTL_COMPUTER_NAME` environment variables override

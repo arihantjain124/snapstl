@@ -213,6 +213,21 @@ def update_apply():
     return r
 
 
+@app.post("/api/update/restart")
+def update_restart():
+    """Settings → Updates: the folder was updated by hand (git pull) — restart to run the new version."""
+    if DOWNLOADER.current is not None:
+        raise HTTPException(409, f"A name is being downloaded ({DOWNLOADER.current}) — pause downloads or wait, then restart")
+    with db.tx() as con:
+        busy = con.execute("SELECT COUNT(*) AS n FROM batches WHERE status IN ('build_requested','building') "
+                           "AND computer_id=?", (computer.ID,)).fetchone()["n"]
+    if busy:
+        raise HTTPException(409, "A batch is being built — wait for it to finish, then restart")
+    if not _restart_service_soon():
+        raise HTTPException(400, "SnapSTL isn't running as a background service here — quit and start it again")
+    return {"restarting": True}
+
+
 @app.get("/api/portal")
 def portal_info():
     return {"lan_access": SETTINGS.lan_access, "password_set": auth.enabled(),
@@ -1060,7 +1075,7 @@ def makeit_presets(printer: int = 0, refresh: int = 0):
                           "defaults": farm.print_defaults(p["id"], cfg)} for p in prs],
             "auto_slice": bool(cfg.get("auto_slice", True)), "bambuddy_url": cfg.get("bambuddy_url") or "",
             "speeds": list(farm.SPEEDS_SET), "options": {k: list(v) for k, v in farm.OPTIONS.items()},
-            "activity": makeit.slicing_summary()}
+            "plates": list(farm.PLATE_TYPES), "activity": makeit.slicing_summary()}
     chosen = farm.chosen_presets(printer, cfg)
     base |= {"chosen": {k: f"{v['source']}:{v['id']}" for k, v in chosen.items()},
              "names": {k: v["name"] for k, v in chosen.items()}}
@@ -1098,7 +1113,8 @@ async def makeit_presets_save(req: Request):
 
 @app.put("/api/makeit/print-defaults")
 async def makeit_print_defaults(req: Request):
-    """Slicing → Print defaults: {printer_id, speed, bed_levelling, flow_cali, timelapse} ("" = Bambuddy's)."""
+    """Slicing → Print defaults: {printer_id, speed, bed_levelling, flow_cali, timelapse, plate_type} ("" =
+    Bambuddy's; plate_type "" = the process profile's plate)."""
     b = await req.json()
     if not b.get("printer_id"):
         raise HTTPException(400, "Choose a printer")
