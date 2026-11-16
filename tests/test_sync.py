@@ -37,6 +37,7 @@ def two(tmp_path, monkeypatch):
     import psycopg
 
     with psycopg.connect(os.environ["SNAPSTL_TEST_DATABASE_URL"], autocommit=True) as c:
+        c.execute("DROP SCHEMA IF EXISTS shop CASCADE")
         c.execute("DROP SCHEMA IF EXISTS snapstl CASCADE")
     monkeypatch.setattr(sync, "_setup_done", "")
     monkeypatch.setenv("SNAPSTL_DATABASE_URL", os.environ["SNAPSTL_TEST_DATABASE_URL"])
@@ -512,3 +513,105 @@ def test_report_columns_reach_the_shared_records(two):
         with pytest.raises(sync.SyncError, match="never deleted"):
             with sync._remote() as rc:
                 rc.execute("DELETE FROM snapstl.report_rows")
+
+
+def _full_report(rows, end="14/11/2026"):
+    """rows: dicts of report columns (any product)."""
+    cols = ["Order ID", "Clubbed Order ID", "Order Creation Date", "Channel", "Order Status", "Product Code", "SKU Code",
+            "Quantity", "Customer Name", "Mobile", "Address", "Pincode", "City", "State", "Payment Method",
+            "Invoice Total (Incl. Tax)", "COD Remittance Status", "COD Payable Amount", "Shipping Partner", "AWB",
+            "Dimensions (cm)", "Delivered Date", "Online Transaction ID", "Product Customisation"]
+    f = io.StringIO()
+    w = csv.writer(f)
+    w.writerow(["Order Reconciliation Report"])
+    w.writerow([f"Date Range: 30/10/2026 to {end}"])
+    w.writerow(cols)
+    for r in rows:
+        w.writerow([r.get(c, "") for c in cols])
+    return f.getvalue().encode()
+
+
+def test_shop_schema_holds_the_whole_report(two):
+    """Every product's row reaches shop.* (tidied in the database); the app still shows only Magicians_35;
+    shop.production matches the app."""
+    base = {"Channel": "WEB", "Quantity": "1", "Customer Name": "Private Person", "Address": "1 Road", "City": "Pune",
+            "State": "Maharashtra", "Pincode": "411001", "Online Transaction ID": "TXN-SECRET"}
+    rows = [
+        base | {"Order ID": "W1", "Order Creation Date": "01-11-2026", "Order Status": "PRINT", "Product Code": "P35",
+                "SKU Code": "Magicians_35", "Mobile": "+91 98765 43210", "Payment Method": "COD",
+                "Invoice Total (Incl. Tax)": "₹1,299", "Product Customisation": "Enter Your First Name: Anu Sharma\nColor: Pink"},
+        base | {"Order ID": "W2", "Order Creation Date": "02-11-2026", "Order Status": "DELIVERED", "Product Code": "P77",
+                "SKU Code": "Magicians_77", "Mobile": "9876543210", "Payment Method": "PARTIAL-COD",
+                "Invoice Total (Incl. Tax)": "499", "COD Remittance Status": "PENDING", "COD Payable Amount": "300",
+                "Shipping Partner": "Xpressbees Surface SURFACE", "AWB": "AWB2", "Dimensions (cm)": "8.48 x 8.48 x 8.48",
+                "Delivered Date": "05/11/2026"},
+        base | {"Order ID": "W3", "Order Creation Date": "02-11-2026", "Order Status": "RTO_INITIATED", "Product Code": "S6",
+                "SKU Code": "Stickers_006", "Mobile": "9123456789", "Payment Method": "ONLINE",
+                "Shipping Partner": "Blue Dart AIR"},
+    ]
+    with two("A"):
+        s = ingest.ingest(_full_report(rows), "full.csv")
+        assert s.sku_rows == 1 and order("W2") is None  # the app keeps Magicians_35 only
+        ok(sync.sync_now())
+        with sync._remote() as rc:
+            q = lambda sql, *a: rc.execute(sql, a).fetchall()  # noqa: E731
+            o = {r["order_id"]: r for r in q("SELECT * FROM shop.orders")}
+            assert set(o) == {"W1", "W2", "W3"}
+            assert o["W2"]["status"] == "delivered" and o["W3"]["status_group"] == "rto" and o["W1"]["status"] == "print"
+            assert o["W2"]["payment_method"] == "partial_cod" and o["W2"]["is_cod"] and not o["W3"]["is_cod"]
+            assert str(o["W1"]["order_date"]) == "2026-11-01" and o["W1"]["colour"] == "pink"
+            assert o["W1"]["customisation"]["enter your first name"] == "Anu Sharma"
+            assert o["W1"]["customer_id"] == o["W2"]["customer_id"]  # same mobile, written two ways
+            c = q("SELECT * FROM shop.customers WHERE customer_id=%s", o["W1"]["customer_id"])[0]
+            assert c["mobile"] == "9876543210" and c["state"] == "Maharashtra" and str(c["first_order_date"]) == "2026-11-01"
+            f = {r["order_id"]: r for r in q("SELECT * FROM shop.order_finance")}
+            assert float(f["W1"]["invoice_total"]) == 1299 and f["W2"]["cod_remittance_status"] == "pending"
+            sh = {r["order_id"]: r for r in q("SELECT * FROM shop.shipments")}
+            assert (sh["W2"]["courier"], sh["W2"]["mode"]) == ("Xpressbees", "surface") and sh["W3"]["mode"] == "air"
+            assert float(sh["W2"]["length_cm"]) == 8.48 and sh["W2"]["days_to_deliver"] == 3
+            assert {r["sku"]: r["made_by_snapstl"] for r in q("SELECT * FROM shop.products")} == {
+                "Magicians_35": True, "Magicians_77": False, "Stickers_006": False}
+            assert "TXN-SECRET" not in str(q("SELECT data FROM shop.report_lines"))
+            p = q("SELECT * FROM shop.production WHERE order_id='W1'")[0]  # what the app shows
+            assert p["tab"] == "needs_review" and p["tab"] == order("W1")["state"] and "space" in p["review_reason"]
+            assert q("SELECT orders FROM shop.production_queue WHERE tab='needs_review'")[0]["orders"] == 1
+            assert q("SELECT * FROM shop.cod_outstanding")[0]["order_id"] == "W2"
+            assert q("SELECT term FROM shop.glossary WHERE term='partial_cod'")
+        # a newer file: W3 comes back (RTO delivered), AWB added; an older file changes nothing
+        ingest.ingest(_full_report([rows[2] | {"Order Status": "RTO_DELIVERED", "AWB": "AWB3"}], end="16/11/2026"), "new.csv")
+        ingest.ingest(_full_report([rows[2] | {"Order Status": "IN-TRANSIT"}], end="10/11/2026"), "old.csv")
+        ok(sync.sync_now())
+        with sync._remote() as rc:
+            r = rc.execute("SELECT o.status, s.awb FROM shop.orders o JOIN shop.shipments s USING (order_id) "
+                           "WHERE order_id='W3'").fetchone()
+            assert (r["status"], r["awb"]) == ("rto_delivered", "AWB3")
+            hist = [h["status"] for h in rc.execute("SELECT status FROM shop.status_history WHERE order_id='W3' ORDER BY id")]
+            assert hist == ["rto_initiated", "rto_delivered"]
+        # the app's review fix travels: shop.production follows
+        ingest.set_name("W1", "Anu")
+        ok(sync.sync_now())
+        with sync._remote() as rc:
+            assert rc.execute("SELECT tab FROM shop.production WHERE order_id='W1'").fetchone()["tab"] == "ready"
+        # Clear empties shop too, and every computer follows
+        sync.clear("CLEAR")
+        ok(sync.sync_now())
+        with sync._remote() as rc:
+            assert rc.execute("SELECT count(*) AS n FROM shop.orders").fetchone()["n"] == 0
+        with db.tx() as con:
+            assert con.execute("SELECT count(*) FROM shop_lines").fetchone()[0] == 0
+
+
+def test_review_state_survives_clock_noise(two):
+    """Supabase keeps a state time a few microseconds off this computer's: the app's ready / needs-review
+    view still gets there (the 27-orders bug of 0.22.15)."""
+    with two("A"):
+        ingest.ingest(report([("N1", "PRINT", "Anu Sharma", "")]), "r.csv")
+        ok(sync.sync_now())
+        with sync._remote() as rc:  # as found in the live records
+            rc.execute("UPDATE snapstl.order_records SET state_at = state_at + 0.000003, app_state = NULL, "
+                       "review_reason = NULL WHERE order_id='N1'")
+        with db.tx() as con:
+            con.execute("INSERT OR REPLACE INTO sync_outbox(order_id, queued_at) VALUES ('N1', ?)", (db.now(),))
+        ok(sync.sync_now())
+        r = remote("N1")
+        assert r["app_state"] == "needs_review" and r["tab"] == "needs_review" and "space" in r["review_reason"]

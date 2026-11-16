@@ -199,6 +199,9 @@ BEGIN
   END IF;
 END $$;
 """
+from . import shop as _shop  # noqa: E402
+
+_SETUP_SQL += _shop.setup_sql()  # the `shop` schema for questions (shop.py) — after snapstl, it reads it
 SCHEMA_VERSION = 1  # of the shared records; a newer one makes older apps stop syncing (update them)
 
 
@@ -213,7 +216,7 @@ def schema_sql() -> str:
             "    ON CONFLICT (key) DO NOTHING;\n")
 
 # When may an incoming change replace the stored state? (r = stored row, EXCLUDED = incoming)
-_WIN = """(EXCLUDED.state_at >= r.state_at AND (
+_WIN = """(EXCLUDED.state_at >= r.state_at - 0.001 AND (  -- 1 ms: local clocks are stored with rounding noise
            r.state = 'released'
         OR r.computer_id = %(actor)s
         OR (r.state = 'in_batch' AND r.computer_id IS NULL)
@@ -221,12 +224,17 @@ _WIN = """(EXCLUDED.state_at >= r.state_at AND (
         OR (EXCLUDED.state = 'bundled'  AND r.state = 'printed')
         OR (EXCLUDED.state = 'released' AND r.state IN ('bundled', 'printed'))))"""
 _STATE_GROUP = ("state", "state_at", "batch_uid", "batch_label", "computer_id", "computer_name", "bundled_at",
-                "printed_at", "app_state", "review_reason", "made_at")
+                "printed_at", "made_at")
+# The app's own view of an order nobody makes yet (ready / needs review / not needed, and why) — the newest
+# one sent applies, whatever the state rules say (they are about who makes it).
+_VIEW = ("app_state", "review_reason")
 _KEEP_FIRST = ("clubbed_id", "order_date", "sku", "quantity", "raw_name", "raw_color", "special_request")
 _UPSERT = (
     f"INSERT INTO {SCHEMA}.order_records AS r ({', '.join(_COLS)}) "
     f"VALUES ({', '.join('%(' + c + ')s' for c in _COLS)}) ON CONFLICT (order_id) DO UPDATE SET "
     + ", ".join(f"{c} = CASE WHEN {_WIN} THEN EXCLUDED.{c} ELSE r.{c} END" for c in _STATE_GROUP) + ", "
+    + ", ".join(f"{c} = CASE WHEN {_WIN} OR (r.state = 'released' AND EXCLUDED.state = 'released') "
+                f"THEN EXCLUDED.{c} ELSE r.{c} END" for c in _VIEW) + ", "
     + ", ".join(f"{c} = CASE WHEN {_WIN} THEN COALESCE(EXCLUDED.{c}, r.{c}) ELSE r.{c} END" for c in ("name", "color"))
     + ", "
     + ", ".join(f"{c} = COALESCE(r.{c}, EXCLUDED.{c})" for c in _KEEP_FIRST) + ", "
@@ -242,7 +250,7 @@ _UPSERT = (
 _CLAIM = (
     f"INSERT INTO {SCHEMA}.order_records AS r ({', '.join(_COLS)}) "
     f"VALUES ({', '.join('%(' + c + ')s' for c in _COLS)}) ON CONFLICT (order_id) DO UPDATE SET "
-    + ", ".join(f"{c} = EXCLUDED.{c}" for c in _STATE_GROUP + ("name", "color"))
+    + ", ".join(f"{c} = EXCLUDED.{c}" for c in _STATE_GROUP + _VIEW + ("name", "color"))
     + ", source_status = CASE WHEN COALESCE(EXCLUDED.status_at, '') > COALESCE(r.status_at, '') "
       "THEN EXCLUDED.source_status ELSE r.source_status END"
     + ", status_at = GREATEST(r.status_at, EXCLUDED.status_at)"
@@ -595,6 +603,26 @@ def _push_reports(rc) -> int:
     return len(rows)
 
 
+def _push_lines(rc) -> int:
+    """Every product's uploaded report rows → shop.report_lines (shop.put_line tidies them in Supabase)."""
+    total = 0
+    for _ in range(20):
+        with db.tx() as con:
+            rows = db.rows(con, f"SELECT * FROM shop_lines WHERE COALESCE(sent,0)=0 LIMIT {PUSH_BATCH}")
+        if not rows:
+            break
+        _many(rc, _shop.PUT_LINE, [{"order_id": r["order_id"], "data": r["data"], "status_at": r["status_at"] or "",
+                                     "file": r["file"], "by": computer.NAME} for r in rows])
+        with db.tx() as con:
+            for r in rows:  # only if it didn't change again meanwhile
+                con.execute("UPDATE shop_lines SET sent=1 WHERE order_id=? AND status_at=? AND data=?",
+                            (r["order_id"], r["status_at"], r["data"]))
+        total += len(rows)
+        if len(rows) < PUSH_BATCH:
+            break
+    return total
+
+
 def _pull(rc) -> int:
     with db.tx() as con:
         r = con.execute("SELECT value FROM sync_state WHERE key='pulled_until'").fetchone()
@@ -663,6 +691,7 @@ def sync_now() -> dict:
                     STATUS.pushed += n
                 _push_batches(rc)
                 _push_reports(rc)
+                _push_lines(rc)
             with _remote() as rc:  # pushes are committed before pulling
                 STATUS.pulled = _pull(rc)
             with _remote() as rc:  # stale claims released while pulling
@@ -743,6 +772,7 @@ def clear(confirm: str) -> dict:
         try:
             with psycopg.connect(config.database_url(), autocommit=True, connect_timeout=12,
                                  prepare_threshold=None, application_name="snapstl") as c:
+                c.execute("DROP SCHEMA IF EXISTS shop CASCADE")  # made again empty with the rest
                 c.execute(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE")
         except psycopg.Error as e:
             raise SyncError(f"The shared records couldn't be cleared: {_short(e)}") from e
@@ -759,12 +789,14 @@ def _save_copy(rc, dest) -> dict:
     batches = rc.execute(f"SELECT * FROM {SCHEMA}.batch_records ORDER BY uid").fetchall()
     reports = rc.execute(f"SELECT * FROM {SCHEMA}.report_rows ORDER BY order_id").fetchall()
     uploads = rc.execute(f"SELECT * FROM {SCHEMA}.report_uploads ORDER BY uid").fetchall()
+    lines = rc.execute("SELECT * FROM shop.report_lines ORDER BY order_id").fetchall()
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump({"saved_at": time.time(), "by": computer.NAME, "order_records": orders,
-                   "batch_records": batches, "report_rows": reports, "report_uploads": uploads},
+                   "batch_records": batches, "report_rows": reports, "report_uploads": uploads,
+                   "shop_report_lines": lines},
                   f, default=str, indent=1)
     os.replace(tmp, dest)
     return {"orders": len(orders), "batches": len(batches)}
@@ -814,7 +846,8 @@ def daily_copy() -> None:
 
 
 # ---------------- clean up: this computer matches the shared records ----------------
-def _apply_match(rows: list[dict], batch_uids: set[str], report_ids: set[str] | None = None) -> dict:
+def _apply_match(rows: list[dict], batch_uids: set[str], report_ids: set[str] | None = None,
+                 line_ids: set[str] | None = None) -> dict:
     """Make this computer's database hold exactly what the shared records hold: every record's state is
     taken (merge(force=True)); orders the records don't have are removed, and so are this computer's
     batches they don't have (with their download, print and slice rows) — unless a shared order still
@@ -848,6 +881,10 @@ def _apply_match(rows: list[dict], batch_uids: set[str], report_ids: set[str] | 
                 con.execute("DELETE FROM batches WHERE id=?", (bid,))
             # report rows go with their orders; ones the records lack are sent again
             con.execute("DELETE FROM report_rows WHERE order_id NOT IN (SELECT order_id FROM orders)")
+            if line_ids is not None:  # every-product report rows: only what shop.report_lines has
+                for (oid,) in con.execute("SELECT order_id FROM shop_lines WHERE COALESCE(sent,0)=1").fetchall():
+                    if oid not in line_ids:
+                        con.execute("DELETE FROM shop_lines WHERE order_id=?", (oid,))
             if report_ids is not None:
                 for (oid,) in con.execute("SELECT order_id FROM report_rows WHERE COALESCE(sent,0)=1").fetchall():
                     if oid not in report_ids:
@@ -868,11 +905,12 @@ def _apply_match(rows: list[dict], batch_uids: set[str], report_ids: set[str] | 
             "removed": len(gone), "batches_removed": len(drop)}
 
 
-def _everything(rc) -> tuple[list[dict], set[str], set[str]]:
+def _everything(rc) -> tuple[list[dict], set[str], set[str], set[str]]:
     rows = rc.execute(f"SELECT *, updated_at::text AS updated_text FROM {SCHEMA}.order_records").fetchall()
     uids = {r["uid"] for r in rc.execute(f"SELECT uid FROM {SCHEMA}.batch_records").fetchall()}
     reps = {r["order_id"] for r in rc.execute(f"SELECT order_id FROM {SCHEMA}.report_rows").fetchall()}
-    return rows, uids, reps
+    lines = {r["order_id"] for r in rc.execute("SELECT order_id FROM shop.report_lines").fetchall()}
+    return rows, uids, reps, lines
 
 
 def _follow_reset() -> None:
@@ -890,9 +928,9 @@ def _follow_reset() -> None:
         if not now or now == seen:
             return
         if seen:  # cleared since: match (first sync after updating just learns the id)
-            rows, uids, reps = _everything(rc)
+            rows, uids, reps, lines = _everything(rc)
             backup()
-            res = _apply_match(rows, uids, reps)
+            res = _apply_match(rows, uids, reps, lines)
             STATUS.note = (f"The shared records were cleared on a computer: this one now matches them "
                            f"({res['removed']} order(s), {res['batches_removed']} batch(es) removed here; backup saved)")
     with db.tx() as con:
@@ -915,8 +953,8 @@ def match() -> dict:
     path = M.backup()
     with _lock:
         with _remote() as rc:
-            rows, uids, reps = _everything(rc)
-        res = _apply_match(rows, uids, reps)
+            rows, uids, reps, lines = _everything(rc)
+        res = _apply_match(rows, uids, reps, lines)
     tidy = M.cleanup(30, orders=False, take_backup=False)
     sync_now()  # kept batches the records lacked go back up
     return res | {"backup": str(path), "tidied": {k: v for k, v in tidy.items() if k != "backup"}}

@@ -334,5 +334,419 @@ BEGIN
     REVOKE ALL ON ALL TABLES IN SCHEMA snapstl FROM anon, authenticated;
   END IF;
 END $$;
+
+-- ======================= shop: the whole report, for questions (shop.py) =======================
+CREATE SCHEMA IF NOT EXISTS shop;
+COMMENT ON SCHEMA shop IS 'Every webstore order (all products) from the uploaded reports, organised for reading and querying, plus live views of SnapSTL''s own records. Written only by SnapSTL; read-only for everyone else. Start with shop.glossary and shop.orders.';
+
+-- --- tidy-up helpers ---
+CREATE OR REPLACE FUNCTION shop.txt(t text) RETURNS text LANGUAGE sql IMMUTABLE AS
+  $$ SELECT nullif(nullif(btrim(t), ''), '-') $$;
+CREATE OR REPLACE FUNCTION shop.num(t text) RETURNS numeric LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE v text := regexp_replace(coalesce(t, ''), '[₹,[:space:]]', '', 'g');
+BEGIN
+  IF v ~ '^-?[0-9]+(\.[0-9]+)?$' THEN RETURN v::numeric; END IF;
+  RETURN NULL;
+END $$;
+CREATE OR REPLACE FUNCTION shop.ts(t text) RETURNS timestamp LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE v text := btrim(coalesce(t, '')); m text[];
+BEGIN
+  IF v = '' OR v = '-' THEN RETURN NULL; END IF;
+  m := regexp_match(v, '^([0-9]{4})-([0-9]{2})-([0-9]{2})(?:[T ]([0-9]{1,2}):([0-9]{2})(?::([0-9]{2}))?)?');
+  IF m IS NULL THEN
+    m := regexp_match(v, '^([0-9]{1,2})[-/]([0-9]{1,2})[-/]([0-9]{4})(?:[ T]([0-9]{1,2}):([0-9]{2})(?::([0-9]{2}))?)?');
+    IF m IS NULL THEN RETURN NULL; END IF;
+    m := ARRAY[m[3], m[2], m[1], m[4], m[5], m[6]];
+  END IF;
+  RETURN make_timestamp(m[1]::int, m[2]::int, m[3]::int, coalesce(m[4], '0')::int, coalesce(m[5], '0')::int,
+                        coalesce(m[6], '0')::double precision);
+EXCEPTION WHEN others THEN RETURN NULL;
+END $$;
+CREATE OR REPLACE FUNCTION shop.code(t text) RETURNS text LANGUAGE sql IMMUTABLE AS
+  $$ SELECT nullif(lower(regexp_replace(btrim(coalesce(t, '')), '[[:space:]-]+', '_', 'g')), '') $$;
+CREATE OR REPLACE FUNCTION shop.status_group(c text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE WHEN c IS NULL THEN NULL WHEN c IN ('print', 'pack') THEN 'processing' WHEN c = 'in_transit' THEN 'in_transit'
+              WHEN c = 'delivered' THEN 'delivered' WHEN c LIKE 'cancel%' THEN 'cancelled' WHEN c LIKE 'rto%' THEN 'rto'
+              ELSE 'other' END $$;
+CREATE OR REPLACE FUNCTION shop.customisation(t text) RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
+  SELECT jsonb_object_agg(lower(btrim(split_part(l, ':', 1))), btrim(substr(l, strpos(l, ':') + 1)))
+    FROM regexp_split_to_table(coalesce(t, ''), E'\r?\n') AS l WHERE strpos(l, ':') > 1 $$;
+
+-- --- the report as uploaded, merged across uploads ---
+CREATE TABLE IF NOT EXISTS shop.report_lines (
+    order_id     text PRIMARY KEY,
+    data         jsonb NOT NULL,
+    status_at    text NOT NULL DEFAULT '',
+    report_file  text,
+    uploaded_by  text,
+    updated_at   timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+COMMENT ON TABLE shop.report_lines IS 'The report row of every order (all products) as uploaded, keyed by its column headers; merged across uploads (newer file wins, blanks never erase). The tidy tables below are made from it.';
+
+CREATE TABLE IF NOT EXISTS shop.products (
+    sku              text PRIMARY KEY,
+    product_code     text,
+    family           text,
+    made_by_snapstl  boolean NOT NULL DEFAULT false,
+    first_seen       date,
+    notes            text
+);
+COMMENT ON TABLE shop.products IS 'Every product (SKU) seen in a report. made_by_snapstl = the name organizer SnapSTL makes (Magicians_35). notes is free for people.';
+
+CREATE TABLE IF NOT EXISTS shop.customers (
+    customer_id       text PRIMARY KEY,
+    name              text,
+    mobile            text,
+    address_line      text,
+    city              text,
+    state             text,
+    pincode           text,
+    first_order_date  date,
+    updated_at        timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+COMMENT ON TABLE shop.customers IS 'One row per customer, by mobile number (last 10 digits); customer_id = md5 of it. Name and address from their newest order.';
+
+CREATE TABLE IF NOT EXISTS shop.orders (
+    order_id              text PRIMARY KEY,
+    clubbed_id            text,
+    order_date            date,
+    channel               text,
+    sku                   text,
+    product_code          text,
+    quantity              integer,
+    status                text,
+    status_group          text,
+    payment_method        text,
+    is_cod                boolean,
+    customer_id           text,
+    customised            boolean,
+    customisation         jsonb,
+    name_on_product       text,
+    colour                text,
+    return_condition      text,
+    customer_invoice_id   text,
+    status_at             text,
+    report_file           text,
+    updated_at            timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX IF NOT EXISTS shop_orders_date ON shop.orders (order_date);
+CREATE INDEX IF NOT EXISTS shop_orders_sku ON shop.orders (sku);
+CREATE INDEX IF NOT EXISTS shop_orders_status ON shop.orders (status_group, status);
+CREATE INDEX IF NOT EXISTS shop_orders_customer ON shop.orders (customer_id);
+COMMENT ON TABLE shop.orders IS 'Every webstore order of every product (one row per order_id), from the newest report. Join customers (customer_id), order_finance and shipments (order_id), products (sku); SnapSTL''s making state is in shop.production.';
+COMMENT ON COLUMN shop.orders.status IS 'Webstore status, tidied: print | pack | in_transit | delivered | cancelled_initiated | rto_initiated | rto_acknowledged | rto_delivered | awb_expired … (see shop.glossary).';
+COMMENT ON COLUMN shop.orders.status_group IS 'processing | in_transit | delivered | cancelled | rto | other.';
+COMMENT ON COLUMN shop.orders.payment_method IS 'online | cod | partial_cod | prepaid.';
+COMMENT ON COLUMN shop.orders.customisation IS 'What the customer typed, by field (e.g. "enter your first name", "color", "number of compartments", "special requests").';
+COMMENT ON COLUMN shop.orders.name_on_product IS 'customisation "enter your first name" (as typed; SnapSTL''s cleaned name is shop.production.name_to_print).';
+COMMENT ON COLUMN shop.orders.clubbed_id IS 'Orders with the same clubbed_id ship together.';
+
+CREATE TABLE IF NOT EXISTS shop.order_finance (
+    order_id                  text PRIMARY KEY,
+    product_amount_incl_tax   numeric,
+    product_amount_excl_tax   numeric,
+    product_tax_pct           numeric,
+    product_tax_amount        numeric,
+    cod_charges_incl_tax      numeric,
+    cod_charges_excl_tax      numeric,
+    prepaid_discount          numeric,
+    coupon_code               text,
+    coupon_type               text,
+    coupon_discount           numeric,
+    total_amount_excl_tax     numeric,
+    total_tax_amount          numeric,
+    invoice_total             numeric,
+    shopdeck_service_fees     numeric,
+    cancellation_rto_revenue  numeric,
+    cod_remittance_status     text,
+    cod_remittance_date       date,
+    cod_payable_amount        numeric,
+    remittance_id             text
+);
+COMMENT ON TABLE shop.order_finance IS 'Money per order in ₹ (one row per order_id): amounts with/without tax, discounts, invoice total (what the customer pays), Shopdeck fee, COD remittance (pending / remitted).';
+
+CREATE TABLE IF NOT EXISTS shop.shipments (
+    order_id                 text PRIMARY KEY,
+    courier                  text,
+    mode                     text,
+    shipping_partner         text,
+    awb                      text,
+    weight_kg                numeric,
+    length_cm                numeric,
+    width_cm                 numeric,
+    height_cm                numeric,
+    initial_weight_slab      numeric,
+    final_weight_slab        numeric,
+    pickup_address           text,
+    picked_up_at             timestamp,
+    delivered_at             timestamp,
+    rto_initiated_at         timestamp,
+    rto_delivered_at         timestamp,
+    return_created_at        timestamp,
+    return_delivered_at      timestamp,
+    days_to_deliver          integer,
+    initial_shipping_charge  numeric,
+    weight_delta             numeric,
+    rto_delta                numeric,
+    clubbing_delta           numeric,
+    final_shipping_charge    numeric
+);
+COMMENT ON TABLE shop.shipments IS 'Courier details per order (one row per order_id): courier and mode (air / surface), AWB tracking number, parcel weight and size, pickup / delivery / RTO / return times, days from order to delivery, shipping charges in ₹.';
+
+CREATE TABLE IF NOT EXISTS shop.status_history (
+    id            bigserial PRIMARY KEY,
+    order_id      text NOT NULL,
+    status        text,
+    status_group  text,
+    status_at     text,
+    report_file   text,
+    seen_at       timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX IF NOT EXISTS shop_status_history_order ON shop.status_history (order_id, seen_at);
+COMMENT ON TABLE shop.status_history IS 'Each webstore status an order was seen with, in order (one row per change between uploads).';
+
+CREATE TABLE IF NOT EXISTS shop.glossary (term text, kind text, meaning text, PRIMARY KEY (term, kind));
+COMMENT ON TABLE shop.glossary IS 'What every code in shop and snapstl means (statuses, groups, payment methods, SnapSTL tabs, tables).';
+INSERT INTO shop.glossary(term, kind, meaning) VALUES
+  ('print', 'status', 'Order placed and waiting to be made / packed (webstore status PRINT)'),
+  ('pack', 'status', 'Being packed (PACK)'),
+  ('in_transit', 'status', 'Handed to the courier, on its way (IN-TRANSIT)'),
+  ('delivered', 'status', 'Delivered to the customer (DELIVERED)'),
+  ('cancelled_initiated', 'status', 'Cancellation started (CANCELLED INITIATED)'),
+  ('rto_initiated', 'status', 'Return to origin started — the customer didn''t take it (RTO_INITIATED)'),
+  ('rto_acknowledged', 'status', 'Return to origin acknowledged by the courier (RTO_ACKNOWLEDGED)'),
+  ('rto_delivered', 'status', 'Parcel came back to us (RTO_DELIVERED)'),
+  ('awb_expired', 'status', 'The courier label expired before pickup (AWB EXPIRED)'),
+  ('processing', 'status_group', 'print or pack: not shipped yet'),
+  ('in_transit', 'status_group', 'With the courier'),
+  ('delivered', 'status_group', 'Delivered'),
+  ('cancelled', 'status_group', 'Cancelled'),
+  ('rto', 'status_group', 'Returned to origin, or on its way back'),
+  ('other', 'status_group', 'Any other status (e.g. awb_expired)'),
+  ('online', 'payment_method', 'Paid online in full'),
+  ('cod', 'payment_method', 'Cash on delivery'),
+  ('partial_cod', 'payment_method', 'Part paid online, the rest cash on delivery'),
+  ('prepaid', 'payment_method', 'Prepaid'),
+  ('ready', 'tab', 'SnapSTL: ready to be taken into a batch'),
+  ('needs_review', 'tab', 'SnapSTL: a person must check it first (see review_reason)'),
+  ('in_batch', 'tab', 'SnapSTL: in a batch on some computer (made_on)'),
+  ('bundled', 'tab', 'SnapSTL: plates built, waiting to be printed'),
+  ('ready_to_ship', 'tab', 'SnapSTL: base and name both printed'),
+  ('printed', 'tab', 'SnapSTL: marked printed by a person'),
+  ('skipped', 'tab', 'SnapSTL: skipped by a person'),
+  ('delivered / rto / in_transit / cancelled / others', 'tab', 'SnapSTL: needs no making; grouped by webstore status'),
+  ('single', 'ready_type', 'Ready order on its own'),
+  ('clubbed', 'ready_type', 'Ready order shipped together with others (same clubbed_id)'),
+  ('adhoc', 'ready_type', 'Ready order typed in by hand in SnapSTL (sku Adhoc)'),
+  ('Magicians_35', 'sku', 'The name organizer SnapSTL makes; the only product in shop.production'),
+  ('status_at', 'column', 'How recent a row is: event date | newest entry in its report file | upload time. A newer file wins.'),
+  ('orders_full', 'table', 'snapstl.orders_full: SnapSTL''s order with its report columns (Magicians_35 only)'),
+  ('shop.orders', 'table', 'Every webstore order of every product, one row per order_id. Join customers, order_finance, shipments on order_id / customer_id.')
+ON CONFLICT (term, kind) DO UPDATE SET meaning = EXCLUDED.meaning;
+
+-- --- one line → tidy rows ---
+CREATE OR REPLACE FUNCTION shop.put_line(p_id text, p_data jsonb, p_stamp text, p_file text, p_by text)
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE clean jsonb;
+BEGIN
+  SELECT coalesce(jsonb_object_agg(k, btrim(v)), '{}') INTO clean FROM jsonb_each_text(coalesce(p_data, '{}')) AS e(k, v)
+   WHERE shop.txt(v) IS NOT NULL AND k NOT IN ('Online Transaction ID', 'Refund Transaction ID');
+  INSERT INTO shop.report_lines AS l (order_id, data, status_at, report_file, uploaded_by)
+       VALUES (p_id, clean, coalesce(p_stamp, ''), p_file, p_by)
+  ON CONFLICT (order_id) DO UPDATE SET
+       data = CASE WHEN EXCLUDED.status_at >= l.status_at THEN l.data || EXCLUDED.data ELSE EXCLUDED.data || l.data END,
+       report_file = CASE WHEN EXCLUDED.status_at >= l.status_at THEN EXCLUDED.report_file ELSE l.report_file END,
+       uploaded_by = EXCLUDED.uploaded_by, status_at = greatest(l.status_at, EXCLUDED.status_at),
+       updated_at = clock_timestamp()
+  WHERE (CASE WHEN EXCLUDED.status_at >= l.status_at THEN l.data || EXCLUDED.data ELSE EXCLUDED.data || l.data END)
+        IS DISTINCT FROM l.data OR EXCLUDED.status_at > l.status_at;
+END $$;
+
+CREATE OR REPLACE FUNCTION shop.apply_line() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE d jsonb := NEW.data; oid text := NEW.order_id; st text; prev text; mob text; cid text; cus jsonb;
+        partner text; dims text[]; odate date; deliv timestamp;
+BEGIN
+  st := shop.code(d->>'Order Status');
+  odate := shop.ts(d->>'Order Creation Date')::date;
+  mob := right(regexp_replace(coalesce(d->>'Mobile', ''), '[^0-9]', '', 'g'), 10);
+  cid := CASE WHEN mob <> '' THEN md5(mob) END;
+  cus := shop.customisation(d->>'Product Customisation');
+  IF cid IS NOT NULL THEN
+    INSERT INTO shop.customers AS c (customer_id, name, mobile, address_line, city, state, pincode, first_order_date)
+    VALUES (cid, shop.txt(d->>'Customer Name'), mob, shop.txt(d->>'Address'), shop.txt(d->>'City'), shop.txt(d->>'State'),
+            shop.txt(d->>'Pincode'), odate)
+    ON CONFLICT (customer_id) DO UPDATE SET
+      name = coalesce(EXCLUDED.name, c.name), address_line = coalesce(EXCLUDED.address_line, c.address_line),
+      city = coalesce(EXCLUDED.city, c.city), state = coalesce(EXCLUDED.state, c.state),
+      pincode = coalesce(EXCLUDED.pincode, c.pincode),
+      first_order_date = least(c.first_order_date, EXCLUDED.first_order_date), updated_at = clock_timestamp();
+  END IF;
+  IF shop.txt(d->>'SKU Code') IS NOT NULL THEN
+    INSERT INTO shop.products AS p (sku, product_code, family, made_by_snapstl, first_seen)
+    VALUES (d->>'SKU Code', shop.txt(d->>'Product Code'), split_part(d->>'SKU Code', '_', 1),
+            d->>'SKU Code' = 'Magicians_35', odate)
+    ON CONFLICT (sku) DO UPDATE SET product_code = coalesce(EXCLUDED.product_code, p.product_code),
+      first_seen = least(p.first_seen, EXCLUDED.first_seen);
+  END IF;
+  SELECT status INTO prev FROM shop.orders WHERE order_id = oid;
+  INSERT INTO shop.orders AS o (order_id, clubbed_id, order_date, channel, sku, product_code, quantity, status, status_group,
+       payment_method, is_cod, customer_id, customised, customisation, name_on_product, colour, return_condition,
+       customer_invoice_id, status_at, report_file, updated_at)
+  VALUES (oid, shop.txt(d->>'Clubbed Order ID'), odate, shop.code(d->>'Channel'), shop.txt(d->>'SKU Code'),
+       shop.txt(d->>'Product Code'), shop.num(d->>'Quantity')::integer, st, shop.status_group(st),
+       shop.code(d->>'Payment Method'), shop.code(d->>'Payment Method') IN ('cod', 'partial_cod'), cid,
+       lower(coalesce(d->>'Customisation Applied', '')) IN ('true', 'yes', '1') OR cus IS NOT NULL, cus,
+       cus->>'enter your first name', lower(cus->>'color'), shop.txt(d->>'Return Condition'),
+       shop.txt(d->>'Customer Invoice ID'), NEW.status_at, NEW.report_file, clock_timestamp())
+  ON CONFLICT (order_id) DO UPDATE SET clubbed_id = EXCLUDED.clubbed_id, order_date = EXCLUDED.order_date,
+       channel = EXCLUDED.channel, sku = EXCLUDED.sku, product_code = EXCLUDED.product_code, quantity = EXCLUDED.quantity,
+       status = EXCLUDED.status, status_group = EXCLUDED.status_group, payment_method = EXCLUDED.payment_method,
+       is_cod = EXCLUDED.is_cod, customer_id = EXCLUDED.customer_id, customised = EXCLUDED.customised,
+       customisation = EXCLUDED.customisation, name_on_product = EXCLUDED.name_on_product, colour = EXCLUDED.colour,
+       return_condition = EXCLUDED.return_condition, customer_invoice_id = EXCLUDED.customer_invoice_id,
+       status_at = EXCLUDED.status_at, report_file = EXCLUDED.report_file, updated_at = clock_timestamp();
+  IF st IS NOT NULL AND st IS DISTINCT FROM prev THEN
+    INSERT INTO shop.status_history(order_id, status, status_group, status_at, report_file)
+    VALUES (oid, st, shop.status_group(st), NEW.status_at, NEW.report_file);
+  END IF;
+  INSERT INTO shop.order_finance AS f VALUES (oid,
+       shop.num(d->>'Product Amount (Incl. Tax)'), shop.num(d->>'Product Amount (Excl. Tax)'), shop.num(d->>'Product Tax (%)'),
+       shop.num(d->>'Product Tax Amount'), shop.num(d->>'COD Charges (Incl. Tax)'), shop.num(d->>'COD Charges (Excl. Tax)'),
+       shop.num(d->>'Prepaid Discount'), shop.txt(d->>'Coupon Code'), shop.code(d->>'Coupon Type'), shop.num(d->>'Coupon Discount'),
+       shop.num(d->>'Total Amount (Excl. Tax)'), shop.num(d->>'Total Tax Amount'), shop.num(d->>'Invoice Total (Incl. Tax)'),
+       shop.num(d->>'Shopdeck Service Fees'), shop.num(d->>'Cancellation/RTO Revenue'), shop.code(d->>'COD Remittance Status'),
+       shop.ts(d->>'COD Remittance Date')::date, shop.num(d->>'COD Payable Amount'), shop.txt(d->>'Remittance ID'))
+  ON CONFLICT (order_id) DO UPDATE SET product_amount_incl_tax = EXCLUDED.product_amount_incl_tax,
+       product_amount_excl_tax = EXCLUDED.product_amount_excl_tax, product_tax_pct = EXCLUDED.product_tax_pct,
+       product_tax_amount = EXCLUDED.product_tax_amount, cod_charges_incl_tax = EXCLUDED.cod_charges_incl_tax,
+       cod_charges_excl_tax = EXCLUDED.cod_charges_excl_tax, prepaid_discount = EXCLUDED.prepaid_discount,
+       coupon_code = EXCLUDED.coupon_code, coupon_type = EXCLUDED.coupon_type, coupon_discount = EXCLUDED.coupon_discount,
+       total_amount_excl_tax = EXCLUDED.total_amount_excl_tax, total_tax_amount = EXCLUDED.total_tax_amount,
+       invoice_total = EXCLUDED.invoice_total, shopdeck_service_fees = EXCLUDED.shopdeck_service_fees,
+       cancellation_rto_revenue = EXCLUDED.cancellation_rto_revenue, cod_remittance_status = EXCLUDED.cod_remittance_status,
+       cod_remittance_date = EXCLUDED.cod_remittance_date, cod_payable_amount = EXCLUDED.cod_payable_amount,
+       remittance_id = EXCLUDED.remittance_id;
+  partner := shop.txt(d->>'Shipping Partner');
+  dims := regexp_match(coalesce(d->>'Dimensions (cm)', ''), '([0-9.]+)[^0-9.]+([0-9.]+)[^0-9.]+([0-9.]+)');
+  deliv := shop.ts(d->>'Delivered Date');
+  INSERT INTO shop.shipments AS s VALUES (oid,
+       nullif(btrim(regexp_replace(coalesce(partner, ''), '([[:space:]]+(air|surface))+$', '', 'i')), ''),
+       CASE WHEN partner ~* 'air$' THEN 'air' WHEN partner ~* 'surface$' THEN 'surface' END, partner,
+       shop.txt(d->>'AWB'), shop.num(d->>'Weight (kg)'), shop.num(dims[1]), shop.num(dims[2]), shop.num(dims[3]),
+       shop.num(d->>'Initial Weight Slab'), shop.num(d->>'Final Weight Slab'), shop.txt(d->>'Pickup Address'),
+       shop.ts(d->>'Pickup Date'), deliv, shop.ts(d->>'RTO Initiated Date'), shop.ts(d->>'RTO Delivered Date'),
+       shop.ts(d->>'Return Created Date'), shop.ts(d->>'Return Delivered Date'), deliv::date - odate,
+       shop.num(d->>'Initial Shipping Charge'), shop.num(d->>'Weight Delta'), shop.num(d->>'RTO Delta'),
+       shop.num(d->>'Clubbing Delta'), shop.num(d->>'Final Shipping Charge'))
+  ON CONFLICT (order_id) DO UPDATE SET courier = EXCLUDED.courier, mode = EXCLUDED.mode,
+       shipping_partner = EXCLUDED.shipping_partner, awb = EXCLUDED.awb, weight_kg = EXCLUDED.weight_kg,
+       length_cm = EXCLUDED.length_cm, width_cm = EXCLUDED.width_cm, height_cm = EXCLUDED.height_cm,
+       initial_weight_slab = EXCLUDED.initial_weight_slab, final_weight_slab = EXCLUDED.final_weight_slab,
+       pickup_address = EXCLUDED.pickup_address, picked_up_at = EXCLUDED.picked_up_at, delivered_at = EXCLUDED.delivered_at,
+       rto_initiated_at = EXCLUDED.rto_initiated_at, rto_delivered_at = EXCLUDED.rto_delivered_at,
+       return_created_at = EXCLUDED.return_created_at, return_delivered_at = EXCLUDED.return_delivered_at,
+       days_to_deliver = EXCLUDED.days_to_deliver, initial_shipping_charge = EXCLUDED.initial_shipping_charge,
+       weight_delta = EXCLUDED.weight_delta, rto_delta = EXCLUDED.rto_delta, clubbing_delta = EXCLUDED.clubbing_delta,
+       final_shipping_charge = EXCLUDED.final_shipping_charge;
+  RETURN NULL;
+EXCEPTION WHEN others THEN
+  RAISE WARNING 'shop.apply_line(%) failed: %', oid, SQLERRM;  -- the line is kept; tidy rows catch up next time
+  RETURN NULL;
+END $$;
+CREATE OR REPLACE TRIGGER report_lines_apply AFTER INSERT OR UPDATE ON shop.report_lines
+    FOR EACH ROW EXECUTE FUNCTION shop.apply_line();
+
+CREATE OR REPLACE FUNCTION shop.bridge(p_id text) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE o record; r record; d jsonb;
+BEGIN
+  SELECT * INTO o FROM snapstl.order_records WHERE order_id = p_id;
+  IF NOT FOUND THEN RETURN; END IF;
+  SELECT * INTO r FROM snapstl.report_rows WHERE order_id = p_id;
+  d := jsonb_build_object('Order ID', o.order_id, 'Clubbed Order ID', o.clubbed_id,
+         'Order Creation Date', o.order_date, 'Order Status', o.source_status, 'SKU Code', o.sku,
+         'Quantity', o.quantity::text, 'Customer Name', o.customer_name, 'Mobile', o.phone,
+         'Address', coalesce(r.address_line, o.address),
+         'Customisation Applied', CASE WHEN coalesce(o.raw_name, '') <> '' THEN 'true' END,
+         'Product Customisation', nullif(concat_ws(E'\n',
+             CASE WHEN coalesce(o.raw_name, '') <> '' THEN 'Enter Your First Name: ' || o.raw_name END,
+             CASE WHEN coalesce(o.raw_color, '') <> '' THEN 'Color: ' || o.raw_color END,
+             CASE WHEN coalesce(o.special_request, '') <> '' THEN 'Special Requests: ' || o.special_request END), ''));
+  IF r.order_id IS NOT NULL THEN
+    d := d || jsonb_build_object('Channel', r.channel::text, 'Product Code', r.product_code::text, 'City', r.city::text, 'State', r.delivery_state::text, 'Pincode', r.pincode::text, 'Payment Method', r.payment_method::text, 'Product Amount (Incl. Tax)', r.product_amount_incl_tax::text, 'Product Tax (%)', r.product_tax_pct::text, 'Product Tax Amount', r.product_tax_amount::text, 'Product Amount (Excl. Tax)', r.product_amount_excl_tax::text, 'COD Charges (Incl. Tax)', r.cod_charges_incl_tax::text, 'COD Charges Tax (%)', r.cod_charges_tax_pct::text, 'COD Charges Tax Amount', r.cod_charges_tax_amount::text, 'COD Charges (Excl. Tax)', r.cod_charges_excl_tax::text, 'Prepaid Discount', r.prepaid_discount::text, 'Delivery Fees (Incl. Tax)', r.delivery_fees_incl_tax::text, 'Delivery Fees Tax (%)', r.delivery_fees_tax_pct::text, 'Delivery Fees Tax Amount', r.delivery_fees_tax_amount::text, 'Delivery Fees (Excl. Tax)', r.delivery_fees_excl_tax::text, 'Total Amount (Excl. Tax)', r.total_amount_excl_tax::text, 'Total Tax Amount', r.total_tax_amount::text, 'Invoice Total (Incl. Tax)', r.invoice_total_incl_tax::text, 'Shopdeck Service Fees', r.shopdeck_service_fees::text, 'Cancellation/RTO Revenue', r.cancellation_rto_revenue::text, 'Weight (kg)', r.weight_kg::text, 'Dimensions (cm)', r.dimensions_cm::text) || jsonb_build_object('Initial Weight Slab', r.initial_weight_slab::text, 'Final Weight Slab', r.final_weight_slab::text, 'Shipping Partner', r.shipping_partner::text, 'AWB', r.awb::text, 'Pickup Address', r.pickup_address::text, 'Pickup Date', r.pickup_date::text, 'Delivered Date', r.delivered_date::text, 'RTO Initiated Date', r.rto_initiated_date::text, 'RTO Delivered Date', r.rto_delivered_date::text, 'Return Created Date', r.return_created_date::text, 'Return Delivered Date', r.return_delivered_date::text, 'COD Remittance Status', r.cod_remittance_status::text, 'COD Remittance Date', r.cod_remittance_date::text, 'COD Payable Amount', r.cod_payable_amount::text, 'Remittance ID', r.remittance_id::text, 'Customer Invoice ID', r.customer_invoice_id::text, 'Initial Shipping Charge', r.initial_shipping_charge::text, 'Weight Delta', r.weight_delta::text, 'RTO Delta', r.rto_delta::text, 'Clubbing Delta', r.clubbing_delta::text, 'Final Shipping Charge', r.final_shipping_charge::text, 'Billing Invoice ID', r.billing_invoice_id::text, 'Coupon Code', r.coupon_code::text, 'Coupon Type', r.coupon_type::text, 'Coupon Discount', r.coupon_discount::text, 'Customisation Applied', r.customisation_applied::text, 'Return Condition', r.return_condition::text);
+  END IF;
+  PERFORM shop.put_line(p_id, d, greatest(coalesce(o.status_at, ''), coalesce(r.status_at, '')),
+                       coalesce(r.report_file, 'shared records'), o.updated_by);
+END $$;
+CREATE OR REPLACE FUNCTION shop.bridge_trigger() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM shop.bridge(NEW.order_id);
+  RETURN NULL;
+EXCEPTION WHEN others THEN
+  RAISE WARNING 'shop.bridge(%) failed: %', NEW.order_id, SQLERRM;  -- never block SnapSTL
+  RETURN NULL;
+END $$;
+CREATE OR REPLACE TRIGGER shop_bridge AFTER INSERT OR UPDATE ON snapstl.order_records
+    FOR EACH ROW EXECUTE FUNCTION shop.bridge_trigger();
+CREATE OR REPLACE TRIGGER shop_bridge AFTER INSERT OR UPDATE ON snapstl.report_rows
+    FOR EACH ROW EXECUTE FUNCTION shop.bridge_trigger();
+
+-- --- SnapSTL's own records, live ---
+CREATE OR REPLACE VIEW shop.production WITH (security_invoker = true) AS
+  SELECT o.order_id, o.tab, o.ready_type, o.review_reason, o.name AS name_to_print, o.raw_name, o.color AS colour,
+         o.special_request, o.state AS making_state, o.computer_name AS made_on, o.batch_label,
+         to_timestamp(o.bundled_at) AS bundled_at, to_timestamp(o.printed_at) AS printed_at,
+         to_timestamp(o.made_at) AS ready_to_ship_at, o.source_status, o.clubbed_id, o.sku, o.quantity, o.updated_at
+    FROM snapstl.order_records o;
+COMMENT ON VIEW shop.production IS 'SnapSTL''s Magicians_35 orders exactly as the app shows them: Orders page tab, ready_type, review_reason, name to print, colour, which computer is making it, batch, bundled / printed / ready-to-ship times.';
+CREATE OR REPLACE VIEW shop.batches WITH (security_invoker = true) AS
+  SELECT uid, computer_name, label, status, to_timestamp(created_at) AS created_at, to_timestamp(finished_at) AS finished_at,
+         orders, plates, folder FROM snapstl.batch_records;
+COMMENT ON VIEW shop.batches IS 'Every SnapSTL batch on every computer.';
+CREATE OR REPLACE VIEW shop.uploads WITH (security_invoker = true) AS
+  SELECT filename, computer_name, uploaded_at, as_of, report_date, rows_total, magicians_rows, new_orders, updated_orders
+    FROM snapstl.report_uploads;
+COMMENT ON VIEW shop.uploads IS 'Every report uploaded on any computer: when, by which, and how recent the file was (as_of).';
+
+-- --- ready-made answers ---
+CREATE OR REPLACE VIEW shop.daily_sales WITH (security_invoker = true) AS
+  SELECT o.order_date, o.sku, count(*) AS orders, sum(o.quantity) AS units, sum(f.invoice_total) AS revenue,
+         count(*) FILTER (WHERE o.is_cod) AS cod_orders, count(*) FILTER (WHERE o.status_group = 'cancelled') AS cancelled,
+         count(*) FILTER (WHERE o.status_group = 'rto') AS rto
+    FROM shop.orders o LEFT JOIN shop.order_finance f USING (order_id) GROUP BY 1, 2;
+COMMENT ON VIEW shop.daily_sales IS 'Per order date and SKU: orders, units, revenue (invoice total, ₹), COD orders, cancelled, RTO.';
+CREATE OR REPLACE VIEW shop.production_queue WITH (security_invoker = true) AS
+  SELECT tab, ready_type, count(*) AS orders FROM snapstl.order_records GROUP BY 1, 2;
+COMMENT ON VIEW shop.production_queue IS 'How many Magicians_35 orders are in each SnapSTL Orders page tab right now.';
+CREATE OR REPLACE VIEW shop.cod_outstanding WITH (security_invoker = true) AS
+  SELECT o.order_id, o.order_date, o.sku, o.status, f.cod_payable_amount, f.cod_remittance_status, s.delivered_at
+    FROM shop.orders o JOIN shop.order_finance f USING (order_id) LEFT JOIN shop.shipments s USING (order_id)
+   WHERE o.is_cod AND o.status = 'delivered' AND coalesce(f.cod_remittance_status, 'pending') <> 'remitted';
+COMMENT ON VIEW shop.cod_outstanding IS 'Delivered COD orders whose money hasn''t been paid out yet.';
+CREATE OR REPLACE VIEW shop.courier_performance WITH (security_invoker = true) AS
+  SELECT s.courier, s.mode, count(*) AS shipments, count(*) FILTER (WHERE o.status = 'delivered') AS delivered,
+         count(*) FILTER (WHERE o.status_group = 'rto') AS rto,
+         round(100.0 * count(*) FILTER (WHERE o.status_group = 'rto') / nullif(count(*), 0), 1) AS rto_pct,
+         round(avg(s.days_to_deliver), 1) AS avg_days_to_deliver
+    FROM shop.shipments s JOIN shop.orders o USING (order_id) WHERE s.courier IS NOT NULL GROUP BY 1, 2;
+COMMENT ON VIEW shop.courier_performance IS 'Per courier and mode: shipments, delivered, RTO count and %, average days from order to delivery.';
+CREATE OR REPLACE VIEW shop.rto_by_state WITH (security_invoker = true) AS
+  SELECT c.state, count(*) AS orders, count(*) FILTER (WHERE o.status_group = 'rto') AS rto,
+         round(100.0 * count(*) FILTER (WHERE o.status_group = 'rto') / nullif(count(*), 0), 1) AS rto_pct
+    FROM shop.orders o JOIN shop.customers c USING (customer_id) GROUP BY 1;
+COMMENT ON VIEW shop.rto_by_state IS 'Per delivery state: orders, RTO count and %.';
+
+-- --- lock-down: only SnapSTL (the owner) and whoever has the database password ---
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['report_lines', 'products', 'customers', 'orders', 'order_finance', 'shipments',
+                           'status_history', 'glossary'] LOOP
+    EXECUTE format('ALTER TABLE shop.%I ENABLE ROW LEVEL SECURITY', t);
+  END LOOP;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE ALL ON SCHEMA shop FROM anon, authenticated;
+    REVOKE ALL ON ALL TABLES IN SCHEMA shop FROM anon, authenticated;
+  END IF;
+END $$;
 INSERT INTO snapstl.meta(key, value) VALUES ('schema_version', '1')
     ON CONFLICT (key) DO NOTHING;
