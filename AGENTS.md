@@ -56,12 +56,15 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - Installers must **never run a second Bambuddy or stop one they didn't install**: detect an existing
   Bambuddy (service, data folder, launchd job, or the port answering) and use it; stop only processes
   started from SnapSTL's own Bambuddy folder; never delete Bambuddy data.
-- Bambuddy runs in Docker on **one Bambuddy computer** on the owner's network for all SnapSTL computers
-  (`scripts/windows/bambuddy-server.ps1`, `scripts/bambuddy-server.sh`, compose file
-  `scripts/bambuddy-docker/docker-compose.yml`): port 8000 published to the LAN (firewall: local subnet
-  only), slicer sidecars only inside Docker / on 127.0.0.1. SnapSTL installers no longer install
-  Bambuddy unless asked (`SNAPSTL_BAMBUDDY=docker|native`); an older native install keeps being
-  updated. Images pinned to `scripts/bambuddy-version.txt` (`bambuddy:X`, `*-api:bambuddy-X`); bump it
+- **One Bambuddy computer** on the owner's network serves all SnapSTL computers: Bambuddy runs
+  **natively** (Windows: Bambuddy's own installer, a Windows service — so printer discovery works) and
+  **only the slicer sidecars run in Docker** (owner decision; never put Bambuddy itself back in Docker).
+  `scripts/windows/bambuddy-server.ps1` / `scripts/bambuddy-server.sh`, compose file
+  `scripts/bambuddy-docker/docker-compose.yml` (sidecars only, 127.0.0.1:3001/3003). Firewall: TCP 8000
+  + UDP 2021 for the local subnet only. Re-running the scripts applies settings only (setup.json);
+  downloads/installs happen only when missing or with `BAMBUDDY_UPGRADE=1`. SnapSTL installers no
+  longer install Bambuddy unless asked (`SNAPSTL_BAMBUDDY=server|native`); an older native install
+  keeps being updated. Images pinned to `scripts/bambuddy-version.txt` (`bambuddy:X`, `*-api:bambuddy-X`); bump it
   only after checking `farm.py`'s calls against that release. The setup scripts must keep running
   under `irm … | iex` (Windows PowerShell 5.1, ASCII only, no `exit`). Slicing on this computer is gone for good (#43).
 - Database: add columns **only** via `MIGRATIONS` in `db.py`; never drop/rename columns or tables.

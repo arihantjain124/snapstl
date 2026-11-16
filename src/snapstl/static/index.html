@@ -453,7 +453,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <label>Bambuddy address</label><input id="bburl" placeholder="http://192.168.1.50:8000 (the Bambuddy computer)">
         <label>API key <span class="hint">— only if Bambuddy's login is on (Bambuddy → Settings → API Keys)</span></label><input id="bbkey" type="password" autocomplete="off" placeholder="leave empty: SnapSTL makes its own">
         <div class="toolbar" style="margin-top:10px"><button id="bbconnect">Connect</button><span class="hint grow" id="bbmsg"></span></div>
-        <p class="hint">Bambuddy and its slicer service run in Docker on one computer for all SnapSTL computers — set it up there with <code>scripts\windows\bambuddy-server.ps1</code> (Mac / Linux: <code>scripts/bambuddy-server.sh</code>); at the end it prints the address to enter here. On the Bambuddy computer itself, the sidebar's <b>IP address</b> line shows (and copies) that address. Add printers in Bambuddy; SnapSTL reads them and their filament.</p>
+        <p class="hint">Bambuddy runs on one computer for all SnapSTL computers (Windows: as a service, with its slicer service in Docker) — set it up there with <code>scripts\windows\bambuddy-server.ps1</code> (Mac / Linux: <code>scripts/bambuddy-server.sh</code>); at the end it prints the address to enter here. On the Bambuddy computer itself, the sidebar's <b>IP address</b> line shows (and copies) that address. Add printers in Bambuddy; SnapSTL reads them and their filament.</p>
       </div>
       <div class="card" id="sharedcard">
         <h2>Shared order records <span class="hint">(optional)</span></h2>
@@ -601,7 +601,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 
   <div class="card" id="h-printers">
     <h2>Print (print farm)</h2>
-    <p><b>Bambuddy</b>, the open-source print-farm manager, runs with its slicer service in Docker on one computer, for every SnapSTL computer (set up with <code>bambuddy-server.ps1</code> on Windows, <code>bambuddy-server.sh</code> on a Mac / Linux). Each SnapSTL connects to it in <b>Settings → Connections</b> with that computer's address, e.g. <code>http://192.168.1.50:8000</code> — the sidebar's <b>IP address</b> line on the Bambuddy computer shows and copies it. Bambuddy is connected to your Bambu printers and keeps a queue per printer.</p>
+    <p><b>Bambuddy</b>, the open-source print-farm manager, runs on one computer (on Windows as a service, with only its slicer service in Docker), for every SnapSTL computer (set up with <code>bambuddy-server.ps1</code> on Windows, <code>bambuddy-server.sh</code> on a Mac / Linux). Each SnapSTL connects to it in <b>Settings → Connections</b> with that computer's address, e.g. <code>http://192.168.1.50:8000</code> — the sidebar's <b>IP address</b> line on the Bambuddy computer shows and copies it. Bambuddy is connected to your Bambu printers and keeps a queue per printer.</p>
     <ol>
       <li><b>On each printer:</b> Settings → Network → <b>LAN Only Mode</b> on, then <b>Developer Mode</b> on. Developer Mode disconnects the printer from Bambu Cloud and the Handy app.</li>
       <li><b>In Bambuddy</b> (Printers → <b>Open Bambuddy</b>): add each printer. Any printer can print bases or names — it only needs the right filament loaded.</li>
