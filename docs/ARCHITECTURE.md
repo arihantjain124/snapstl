@@ -584,6 +584,7 @@ snapstl.server:app --port 8320`.
 | 42 | **Ad-hoc orders** (0.20.0): orders typed in by hand (name to print, mobile, colour; optional qty and note) live in the same `orders` table with `sku='Adhoc'`, an `AH-…` ID and today's date/time; missing report columns stay empty. They go straight to Ready (sub-tab **Ad-hoc**) and use the normal batch → plates → Print → Printed flow and shared records | owner takes ad-hoc requests outside the webstore and wants them made in the same workflow without a report |
 | 43 | **Only Bambuddy's slicer** (0.21.0): OrcaSlicer / Bambu Studio on this computer (`slicer.py`, decisions #37–#38), Test slice, preset import (to SnapSTL or into Bambuddy), the slicer switch and hand-made sliced files in the batch folder are removed; the installers no longer install OrcaSlicer. The Slicing tab offers every profile Bambuddy lists (local, Orca cloud, Bambu cloud, standard) per printer model and stores only references; old local-slicer settings, SnapSTL's preset folder and unfinished local slices are dropped at start | owner runs Bambuddy's slicer sidecar in Docker on another system and wants no slicing settings created, built or kept by SnapSTL |
 | 44 | **One Bambuddy computer in Docker** (0.22.0): `bambuddy-server.ps1` (Windows: WSL 2 + Docker Desktop installed by the script) / `bambuddy-server.sh` run Bambuddy and its Bambu Studio + OrcaSlicer slicer sidecars from one compose file pinned to the tested release, publish port 8000 to the LAN and switch on *Use Slicer API*; SnapSTL installers stop installing Bambuddy by default (`SNAPSTL_BAMBUDDY=docker` sets the Docker one up on that computer, `SNAPSTL_BAMBUDDY_URL` connects to it, older native installs keep updating). The sidebar shows this computer's network address (`/api/health` → `network`) and copies Bambuddy's address for other computers when it runs here. Supersedes the 127.0.0.1-only part of #27 | owner runs Bambuddy + slicer sidecar in Docker on a separate computer shared by every SnapSTL; Docker Desktop has no host networking, so bridge mode with printers added by IP |
+| 45 | **Batched orders always name their batch's owner** (0.22.1): opening the local database copies a batch's `uid` and computer onto its orders that lack them and queues them for the shared records; `_WIN` lets a push take an `in_batch` record that has no owner | batches made before 0.8.0 were sent to Supabase without `computer_id`, so the owner's own *Bundled* was refused and `merge(force=True)` pulled the orders out of their batch |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -719,8 +720,8 @@ in `APP_DIR/shared-records.json` (mode 600, never returned in full). Without it 
   - Writes made by the sync itself run inside `db.quiet()` and are not queued again.
 - **Push:** outbox orders are upserted with rules in SQL (`_WIN`):
   - A state change applies only if it is at least as new (`state_at`), and only if one of these
-    holds: the record is `released`; the writer owns it; it marks printed or unprinted; or it sends a
-    made order back (`released`).
+    holds: the record is `released`; the writer owns it; it is `in_batch` with no owner (sent by an
+    older SnapSTL, see #45); it marks printed or unprinted; or it sends a made order back (`released`).
   - The webstore status applies only if `status_at` is higher.
   - The first-written order fields are kept.
   - `RETURNING *` shows when a change was refused; the stored row is then merged locally

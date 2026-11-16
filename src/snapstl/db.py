@@ -200,6 +200,15 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     con.execute("UPDATE downloads SET computer_id=? WHERE computer_id IS NULL", (computer.ID,))
     con.execute("UPDATE batches SET uid=lower(hex(randomblob(16))) WHERE uid IS NULL")
     con.execute("UPDATE orders SET state_at=COALESCE(updated_at, first_seen) WHERE state_at IS NULL")
+    # orders batched before they recorded their batch (uid / computer): fill it in from the batch and send
+    # them again, or the shared records hold them without an owner (and refuse the owner's Bundled)
+    legacy = ("FROM orders WHERE batch_id IS NOT NULL AND batch_uid IS NULL "
+              "AND state IN ('in_batch','bundled','printed')")
+    con.execute(f"INSERT OR REPLACE INTO sync_outbox(order_id, queued_at) SELECT order_id, {_NOW} {legacy}")
+    con.execute("UPDATE orders SET batch_uid=b.uid, batch_computer=COALESCE(orders.batch_computer, b.computer_name), "
+                "batch_computer_id=COALESCE(orders.batch_computer_id, b.computer_id) FROM batches b "
+                "WHERE b.id=orders.batch_id AND orders.batch_uid IS NULL "
+                "AND orders.state IN ('in_batch','bundled','printed')")
     con.commit()
     return con
 
