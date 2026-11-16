@@ -577,6 +577,8 @@ def test_shop_schema_holds_the_whole_report(two):
             assert q("SELECT orders FROM shop.production_queue WHERE tab='needs_review'")[0]["orders"] == 1
             assert q("SELECT * FROM shop.cod_outstanding")[0]["order_id"] == "W2"
             assert q("SELECT term FROM shop.glossary WHERE term='partial_cod'")
+            assert q("SELECT shop.status_group('handover') AS g")[0]["g"] == "in_transit"
+            assert q("SELECT term FROM shop.glossary WHERE term='handover'")
         # a newer file: W3 comes back (RTO delivered), AWB added; an older file changes nothing
         ingest.ingest(_full_report([rows[2] | {"Order Status": "RTO_DELIVERED", "AWB": "AWB3"}], end="16/11/2026"), "new.csv")
         ingest.ingest(_full_report([rows[2] | {"Order Status": "IN-TRANSIT"}], end="10/11/2026"), "old.csv")
