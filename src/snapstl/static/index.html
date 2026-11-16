@@ -59,6 +59,7 @@ table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:6px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top}
 th{color:var(--muted);font-weight:500;font-size:12px;white-space:nowrap}
 body.offline main section:not(#t-settings):not(#t-help) :is(button,input,select,textarea,label.btn,a.btn){pointer-events:none;opacity:.45}
+.slsearch{display:flex;gap:8px;align-items:center;margin-bottom:4px}.slsearch input{flex:1}.slsearch .hint{white-space:nowrap}
 .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--muted);white-space:nowrap}
 .pill.ok{background:var(--okbg);color:var(--ok)}.pill.warn{background:var(--warnbg);color:var(--warn)}.pill.err{background:var(--errbg);color:var(--err)}.pill.info{background:var(--infobg);color:var(--accent)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
@@ -280,9 +281,9 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <div class="chips" id="slp_models" style="margin:8px 0 4px"></div>
       <p class="hint under" id="slp_modelhint"></p>
       <div id="slp_presetrows">
-        <label>Printer profile <span class="hint">— machine, nozzle, bed</span></label><select id="slp_printer"></select>
-        <label>Process profile <span class="hint">— layer height, walls, infill, speeds</span></label><select id="slp_process"></select>
-        <label>Filament profile <span class="hint">— temperatures, cooling, flow</span></label><select id="slp_filament"></select>
+        <label>Printer profile <span class="hint">— machine, nozzle, bed</span></label><div class="slsearch"><input type="search" id="slq_printer" autocomplete="off" spellcheck="false" placeholder="Search — e.g. A1 0.4, P1S, X1C 0.6" title="Every word must appear in the profile's name or where it comes from (yours, Orca Cloud, Bambu Cloud, standard). Enter picks the first match."><span class="hint" id="slc_printer"></span></div><select id="slp_printer"></select>
+        <label>Process profile <span class="hint">— layer height, walls, infill, speeds</span></label><div class="slsearch"><input type="search" id="slq_process" autocomplete="off" spellcheck="false" placeholder="Search — e.g. 0.20mm, 0.24 strength, organizer" title="Every word must appear in the profile's name or where it comes from (yours, Orca Cloud, Bambu Cloud, standard). Enter picks the first match."><span class="hint" id="slc_process"></span></div><select id="slp_process"></select>
+        <label>Filament profile <span class="hint">— temperatures, cooling, flow</span></label><div class="slsearch"><input type="search" id="slq_filament" autocomplete="off" spellcheck="false" placeholder="Search — e.g. PLA basic, matte, silk, PETG" title="Every word must appear in the profile's name or where it comes from (yours, Orca Cloud, Bambu Cloud, standard). Enter picks the first match."><span class="hint" id="slc_filament"></span></div><select id="slp_filament"></select>
         <p class="hint under" id="slp_listmsg"></p>
         <div class="toolbar" style="margin-top:10px"><button id="slp_save" class="primary">Save</button><button id="slp_clear" hidden>Remove</button><span class="grow"></span><button id="slp_reload" class="small" title="Read Bambuddy's profiles again (also its Bambu / Orca cloud lists)">Reload from Bambuddy</button></div>
         <p class="hint" id="slp_msg"></p>
@@ -637,7 +638,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <h2>Slicing</h2>
     <p>Every plate is sliced by <b>Bambuddy's slicer</b> (its slicer service, e.g. in Docker on another computer) for the printer it goes to, with the <b>Bambuddy profiles picked for that printer</b> (printers with the same profiles share one slice). SnapSTL has no slicer and keeps no slicing settings: only which Bambuddy profile each printer uses. A printer without picked profiles isn't sliced or printed, and Print says so. (Profiles picked per model before 0.22.7 still apply to its printers until you pick their own.)</p>
     <ul>
-      <li><b>Bambuddy profiles per printer</b> — pick the printer by name, then its printer, process (layer height, walls, infill, speeds) and filament profile. Every profile Bambuddy has is listed: yours in Bambuddy, Orca Cloud, Bambu Cloud and the slicer's standard ones. <b>Reload from Bambuddy</b> reads them again.</li>
+      <li><b>Bambuddy profiles per printer</b> — pick the printer by name, then its printer, process (layer height, walls, infill, speeds) and filament profile. Every profile Bambuddy has is listed: yours in Bambuddy, Orca Cloud, Bambu Cloud and the slicer's standard ones. <b>Reload from Bambuddy</b> reads them again. Each list has a <b>search box</b>: type any words from the profile's name or where it comes from (e.g. <i>a1 0.4</i>, <i>0.20 strength</i>, <i>pla matte</i>, <i>bambu cloud</i>) — Enter picks the first match.</li>
       <li><b>Adding profiles</b> — in Bambuddy, never in SnapSTL: export from Bambu Studio (<b>File → Export → Export Preset Bundle</b>) and import in Bambuddy under <b>Profiles → Local Profiles → Import Profiles</b>; or sign in to Bambu Cloud / Orca Cloud in Bambuddy (the API key needs <b>Allow cloud access</b> for Bambu Cloud presets).</li>
       <li><b>Bambuddy's slicer service</b> — Bambuddy → Settings → Slicer: <b>Use Slicer API</b> on, with the sidecar URL. Its <b>Preferred Slicer</b> decides Bambu Studio or OrcaSlicer.</li>
       <li><b>Print defaults per printer</b> — speed, bed levelling, flow calibration and timelapse each printer uses at Start print (changeable per plate in Print). The <b>speed</b> is set on the printer once it really prints (after heating and calibration), checked against what the printer reports and sent again if it didn't take; if the printer still won't change, the print says so.</li>
@@ -1044,12 +1045,26 @@ async function loadPresets(refresh){$('slp_msg').textContent=refresh?'Reading Ba
   $('slp_presetrows').hidden=!p.printers.length;fillPresetSelects();
   $('slp_save').textContent=`Save for ${slName(SLPR)}`;$('slp_clear').hidden=!p.set_for[SLPR];
   renderDefaults(p);slicingBox(p.activity)}
-function fillPresetSelects(){const p=SLP;if(!p)return;const gone=[];
-  for(const slot of SLOTS){const el=$('slp_'+slot),cur=p.chosen[slot]||'',all=p.available[slot]||[],groups={};
-    for(const x of all)(groups[x.source]=groups[x.source]||[]).push(x);
-    const missing=cur&&!all.some(x=>x.key===cur);if(missing)gone.push(`${slot}: ${p.names[slot]}`);
-    el.innerHTML='<option value="">— choose —</option>'+(missing?`<option value="${esc(cur)}" selected>${esc(p.names[slot])} (no longer in Bambuddy)</option>`:'')
-      +Object.entries(groups).map(([g,xs])=>`<optgroup label="${esc(SRC_LABEL[g]||g)}">${xs.map(x=>`<option value="${esc(x.key)}" ${x.key===cur?'selected':''}>${esc(x.name)}</option>`).join('')}</optgroup>`).join('')}
+let SLSEL={};  // what's picked in each list right now (saved or not)
+const slWords=q=>(q||'').toLowerCase().replace(/[@_,;]+/g,' ').split(/\s+/).filter(Boolean);
+const slHay=x=>`${x.name} ${SRC_LABEL[x.source]||x.source} ${x.source} ${x.key}`.toLowerCase().replace(/[@_]+/g,' ');
+function fillSlot(slot){const p=SLP;if(!p)return;const el=$('slp_'+slot),all=p.available[slot]||[],cur=SLSEL[slot]||'',words=slWords($('slq_'+slot).value);
+  const hits=all.filter(x=>{const h=slHay(x);return words.every(w=>h.includes(w))}),groups={};
+  for(const x of hits)(groups[x.source]=groups[x.source]||[]).push(x);
+  const curItem=all.find(x=>x.key===cur),missing=cur&&!curItem,hidden=curItem&&!hits.includes(curItem);
+  el.innerHTML='<option value="">— choose —</option>'
+    +(missing?`<option value="${esc(cur)}" selected>${esc(p.names[slot]||cur)} (no longer in Bambuddy)</option>`:'')
+    +(hidden?`<option value="${esc(cur)}" selected>${esc(curItem.name)} (picked — not in this search)</option>`:'')
+    +Object.entries(groups).map(([g,xs])=>`<optgroup label="${esc(SRC_LABEL[g]||g)}">${xs.map(x=>`<option value="${esc(x.key)}" ${x.key===cur?'selected':''}>${esc(x.name)}</option>`).join('')}</optgroup>`).join('');
+  $('slc_'+slot).textContent=words.length?`${hits.length} of ${all.length}`:`${all.length} profiles`;
+  return missing}
+for(const slot of ['printer','process','filament']){
+  $('slq_'+slot).addEventListener('input',()=>fillSlot(slot));
+  $('slq_'+slot).addEventListener('keydown',e=>{if(e.key!=='Enter')return;e.preventDefault();fillSlot(slot);const el=$('slp_'+slot);
+    const first=[...el.options].find(o=>o.value&&!/\((picked|no longer)/.test(o.textContent));if(first){SLSEL[slot]=first.value;fillSlot(slot)}});
+  $('slp_'+slot).addEventListener('change',e=>{SLSEL[slot]=e.target.value})}
+function fillPresetSelects(){const p=SLP;if(!p)return;const gone=[];SLSEL={...p.chosen};
+  for(const slot of SLOTS)if(fillSlot(slot))gone.push(`${slot}: ${p.names[slot]}`);
   const st=p.status||{},why=[['Bambu Cloud',st.cloud_status],['Orca Cloud',st.orca_cloud_status]].filter(([,v])=>v&&v!=='ok').map(([k,v])=>`${k}: ${CLOUD_WHY[v]||v}`);
   $('slp_listmsg').innerHTML=(gone.length?`<span style="color:var(--err)">Picked profile${gone.length>1?'s':''} no longer in Bambuddy — ${gone.map(esc).join(' · ')}. Pick another and Save.</span> `:'')
     +(why.length?`<span class="hint">Cloud profiles not listed (${why.map(esc).join(' · ')}).</span>`:'')}

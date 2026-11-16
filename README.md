@@ -290,7 +290,9 @@ Bambuddy**). SnapSTL only reads them.
      per model before 0.22.7 keep applying to that model's printers until you pick their own. Every
      profile Bambuddy has is listed: yours in Bambuddy, Orca Cloud, Bambu Cloud and the slicer's
      standard ones. Layer height, walls, infill and speeds are part of the **process** profile.
-     **Reload from Bambuddy** reads the lists again.
+     **Reload from Bambuddy** reads the lists again. Each list has a **search box**: type any words
+     from the profile's name or source (e.g. `a1 0.4`, `0.20 strength`, `pla matte`, `bambu cloud`);
+     Enter picks the first match.
    - **Adding profiles** happens in Bambuddy, never in SnapSTL: export them from Bambu Studio
      (**File → Export → Export Preset Bundle**, .bbscfg / .bbsflmt, or a preset's .json) and import
      them in Bambuddy under **Profiles → Local Profiles → Import Profiles**. Or sign in to Bambu Cloud
