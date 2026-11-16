@@ -52,7 +52,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - The app accepts extension calls **only** on `/api/helper/*` from 127.0.0.1. Don't widen that.
 - The helper must keep checking, before every name, that its working tab is on the configured model
   page (designId); the app must never hand out work when `on_page` is false.
-- The full app is localhost only. Optional Windows logistics listener on port 8002 requires `lan_access` + password and permits only authenticated order reads. Never expose editing, helper, settings, batches or printer controls there.
+- The full app is localhost only. Optional Mac/Windows logistics listener on port 8002 requires `lan_access` + password and permits only authenticated order reads. Never expose editing, helper, settings, batches or printer controls there.
 - Installers must **never run a second Bambuddy or stop one they didn't install**: detect an existing
   Bambuddy (service, data folder, launchd job, or the port answering) and use it; stop only processes
   started from SnapSTL's own Bambuddy folder; never delete Bambuddy data.
@@ -200,3 +200,5 @@ git switch main && git merge --no-ff change/<short-name> && git branch -d change
   (§12), decision log (§16) when a decision changes.
 - `README.md` and the in-app **Help** page — when the owner's steps or the output change.
 - `AGENTS.md` — when rules or workflow change.
+
+Orders pagination includes a Page selector to jump directly to any page. Logistics uses the same control. Logistics hosting is available on both Mac and Windows; Settings reports whether port 8002 is actually listening. Allow incoming connections in the host firewall for LAN access. The UTF-8 interface is decoded explicitly on Windows.

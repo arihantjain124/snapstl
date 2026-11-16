@@ -446,7 +446,7 @@ When the computers are connected to the shared order records:
   delete them too. Only **Clear shared records** (typed confirmation, copy saved first) empties them.
 - **Settings stay on each computer.** License password, folders and connection are never shared.
 
-To browse orders from another computer, enable **Settings → Connections → Logistics access** on the Windows host and set a password. Restart safely, then open `http://HOST-IP:8002`. This gives read-only logistics access.
+To browse orders from another computer, enable **Settings → Connections → Logistics access** on the host, set a password and press Save, then open `http://HOST-IP:8002`. This gives read-only logistics access.
 
 ## Updates
 
@@ -572,8 +572,12 @@ SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn snapstl.server:ap
   records; `uv run snapstl-db export` saves a copy of them in the backups folder.
 
 
-### Read-only logistics (Windows host)
+### Read-only logistics (Mac or Windows host)
 
-The full app now listens only on localhost on Mac and Windows. In Windows Settings → Connections → Logistics access, enable hosting and set a password, then restart SnapSTL when no download or build is active. Employees open `http://HOST-IP:8002` and sign in. Permit TCP 8002 for the local subnet in Windows Firewall if needed. This supersedes the former remote-control portal.
+The full app now listens only on localhost on Mac and Windows. On Mac or Windows, open Settings → Connections → Logistics access, enable hosting, set a password and press Save. Save starts or stops the listener immediately without restarting the app. Employees open `http://HOST-IP:8002` and sign in. Permit TCP 8002 for the local subnet in Windows Firewall if needed. This supersedes the former remote-control portal.
 
 `logistics.py` hosts an explicit allowlist: login, orders, facets and CSV export. No edit, upload, batch, helper, printer or settings route is exposed. The shared orders table supports copying, filters, categories, pagination and browser-local saved column views. Refresh orders reloads the host’s local synchronized records, also refreshed every minute; it never pushes changes or runs cleanup. Main Orders has no Supabase refresh button; use Settings → Database → Sync or Clean up.
+
+Orders pagination includes a Page selector to jump directly to any page. Logistics uses the same control. Logistics hosting is available on both Mac and Windows; Settings reports whether port 8002 is actually listening. Allow incoming connections in the host firewall for LAN access. The UTF-8 interface is decoded explicitly on Windows.
+
+Settings → Connections → Logistics access shows the current host LAN IP addresses as clickable links with Copy address buttons (port 8002). Use a numeric IP link from another computer on the same network.
