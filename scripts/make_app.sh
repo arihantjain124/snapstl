@@ -65,28 +65,9 @@ exec "$UV" run --no-dev --quiet snapstl >> "$LOG" 2>&1
 LAUNCH
 chmod +x "$APP/Contents/MacOS/SnapSTL"
 
-# ---- Bambuddy (print farm). Like scripts/windows/common.ps1 Install-Bambuddy:
-#   SNAPSTL_BAMBUDDY=server → this Mac is the Bambuddy computer: Bambuddy next to SnapSTL (bambuddy-mac.sh)
-#                             + its slicer service in Docker (bambuddy-server.sh)
-#   SNAPSTL_BAMBUDDY=native → the older install next to SnapSTL (bambuddy-mac.sh, no slicer service)
-#   otherwise nothing: Bambuddy runs on its own computer; one installed by an older SnapSTL keeps being updated
-#   SNAPSTL_BAMBUDDY_URL=http://<Bambuddy computer>:8000 → connect SnapSTL to it
-BAMBUDDY="not installed here — it runs on your Bambuddy computer (Settings → Connections)"
-if [ "${SNAPSTL_NO_BAMBUDDY:-0}" = 1 ]; then
-  BAMBUDDY="not installed (SNAPSTL_NO_BAMBUDDY=1)"
-elif [ "${SNAPSTL_BAMBUDDY:-}" = server ]; then
-  if zsh "$PROJECT/scripts/bambuddy-mac.sh" && bash "$PROJECT/scripts/bambuddy-server.sh"; then
-    BAMBUDDY="http://127.0.0.1:${BAMBUDDY_PORT:-8000} with its slicer service in Docker"
-  else
-    BAMBUDDY="couldn't be set up — SnapSTL works without it; run: bash $PROJECT/scripts/bambuddy-server.sh"
-  fi
-elif [ "${SNAPSTL_BAMBUDDY:-}" = native ] || [ -d "$HOME/SnapSTL-Bambuddy/.git" ]; then
-  if zsh "$PROJECT/scripts/bambuddy-mac.sh"; then
-    BAMBUDDY="http://127.0.0.1:${BAMBUDDY_PORT:-8000} — printers and their queues (SnapSTL → Printers)"
-  else
-    BAMBUDDY="couldn't be installed — SnapSTL works without it; run: zsh $PROJECT/scripts/bambuddy-mac.sh"
-  fi
-fi
+# ---- Bambuddy (print farm): runs on the Windows Bambuddy computer (scripts/windows/bambuddy-server.ps1),
+#      never on a Mac. SNAPSTL_BAMBUDDY_URL=http://<Bambuddy computer>:8000 → connect SnapSTL to it.
+BAMBUDDY="on your Windows Bambuddy computer — enter its address in Settings → Connections"
 if [ -n "${SNAPSTL_BAMBUDDY_URL:-}" ]; then
   for _ in $(seq 1 45); do curl -fs -o /dev/null --max-time 2 http://127.0.0.1:8317/api/auth-check && break; sleep 2; done
   if curl -fs -o /dev/null --max-time 30 -X POST -H 'Content-Type: application/json' \
@@ -103,4 +84,3 @@ echo "  • Background service — starts at login; web portal: http://127.0.0.1
 echo "  • $APP — opens the SnapSTL window (drag it to the Dock)"
 echo "  • Bambuddy (print farm) — $BAMBUDDY"
 echo "To uninstall the service: launchctl bootout gui/\$(id -u)/$LABEL && rm $PLIST"
-echo "To uninstall Bambuddy:    launchctl bootout gui/\$(id -u)/local.snapmagicians.bambuddy && rm ~/Library/LaunchAgents/local.snapmagicians.bambuddy.plist"

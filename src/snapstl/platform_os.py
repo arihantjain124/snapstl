@@ -114,25 +114,22 @@ def running_as_service() -> bool:
 
 
 def bambuddy_dir() -> Path:
-    """Where the installers put Bambuddy (the print-farm manager, scripts/bambuddy-mac.sh / bambuddy.ps1)."""
+    """Where the installers put Bambuddy (older installs, Windows: scripts/windows/bambuddy.ps1)."""
     return Path(os.environ.get("BAMBUDDY_DIR") or Path.home() / "SnapSTL-Bambuddy")
 
 
 def update_bambuddy(root: Path) -> bool:
     """After an in-app update: bring Bambuddy to the version this SnapSTL was tested with, in the
-    background (it survives SnapSTL restarting). Only where the installer put Bambuddy."""
-    if os.environ.get("SNAPSTL_NO_BAMBUDDY") == "1" or not (bambuddy_dir() / ".git").is_dir():
+    background (it survives SnapSTL restarting). Only on Windows, where an older SnapSTL installer put
+    Bambuddy next to SnapSTL; Bambuddy scripts are Windows only (a Mac's old copy is left as it is)."""
+    if not WINDOWS or os.environ.get("SNAPSTL_NO_BAMBUDDY") == "1" or not (bambuddy_dir() / ".git").is_dir():
         return False
     log = app_dir() / "bambuddy-update.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     with open(log, "a") as out:
-        if WINDOWS:
-            subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                              str(root / "scripts" / "windows" / "bambuddy.ps1")], stdout=out, stderr=out,
-                             creationflags=NO_WINDOW | 0x00000008 | 0x00000200)  # DETACHED, NEW_PROCESS_GROUP
-        else:
-            subprocess.Popen(["/bin/zsh", str(root / "scripts" / "bambuddy-mac.sh")], stdout=out, stderr=out,
-                             start_new_session=True)
+        subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                          str(root / "scripts" / "windows" / "bambuddy.ps1")], stdout=out, stderr=out,
+                         creationflags=NO_WINDOW | 0x00000008 | 0x00000200)  # DETACHED, NEW_PROCESS_GROUP
     return True
 
 
