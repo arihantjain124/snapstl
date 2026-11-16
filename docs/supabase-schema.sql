@@ -365,7 +365,8 @@ END $$;
 CREATE OR REPLACE FUNCTION shop.code(t text) RETURNS text LANGUAGE sql IMMUTABLE AS
   $$ SELECT nullif(lower(regexp_replace(btrim(coalesce(t, '')), '[[:space:]-]+', '_', 'g')), '') $$;
 CREATE OR REPLACE FUNCTION shop.status_group(c text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
-  SELECT CASE WHEN c IS NULL THEN NULL WHEN c IN ('print', 'pack') THEN 'processing' WHEN c = 'in_transit' THEN 'in_transit'
+  SELECT CASE WHEN c IS NULL THEN NULL WHEN c IN ('print', 'pack') THEN 'processing'
+              WHEN c IN ('in_transit', 'handover', 'picked_up', 'shipped', 'dispatched', 'out_for_delivery') THEN 'in_transit'
               WHEN c = 'delivered' THEN 'delivered' WHEN c LIKE 'cancel%' THEN 'cancelled' WHEN c LIKE 'rto%' THEN 'rto'
               ELSE 'other' END $$;
 CREATE OR REPLACE FUNCTION shop.customisation(t text) RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
@@ -434,7 +435,7 @@ CREATE INDEX IF NOT EXISTS shop_orders_sku ON shop.orders (sku);
 CREATE INDEX IF NOT EXISTS shop_orders_status ON shop.orders (status_group, status);
 CREATE INDEX IF NOT EXISTS shop_orders_customer ON shop.orders (customer_id);
 COMMENT ON TABLE shop.orders IS 'Every webstore order of every product (one row per order_id), from the newest report. Join customers (customer_id), order_finance and shipments (order_id), products (sku); SnapSTL''s making state is in shop.production.';
-COMMENT ON COLUMN shop.orders.status IS 'Webstore status, tidied: print | pack | in_transit | delivered | cancelled_initiated | rto_initiated | rto_acknowledged | rto_delivered | awb_expired … (see shop.glossary).';
+COMMENT ON COLUMN shop.orders.status IS 'Webstore status, tidied: print | pack | handover | in_transit | delivered | cancelled_initiated | rto_initiated | rto_acknowledged | rto_delivered | awb_expired … (see shop.glossary).';
 COMMENT ON COLUMN shop.orders.status_group IS 'processing | in_transit | delivered | cancelled | rto | other.';
 COMMENT ON COLUMN shop.orders.payment_method IS 'online | cod | partial_cod | prepaid.';
 COMMENT ON COLUMN shop.orders.customisation IS 'What the customer typed, by field (e.g. "enter your first name", "color", "number of compartments", "special requests").';
@@ -510,6 +511,7 @@ COMMENT ON TABLE shop.glossary IS 'What every code in shop and snapstl means (st
 INSERT INTO shop.glossary(term, kind, meaning) VALUES
   ('print', 'status', 'Order placed and waiting to be made / packed (webstore status PRINT)'),
   ('pack', 'status', 'Being packed (PACK)'),
+  ('handover', 'status', 'Handed over to the courier, not yet moving (HANDOVER) — grouped as in_transit'),
   ('in_transit', 'status', 'Handed to the courier, on its way (IN-TRANSIT)'),
   ('delivered', 'status', 'Delivered to the customer (DELIVERED)'),
   ('cancelled_initiated', 'status', 'Cancellation started (CANCELLED INITIATED)'),
@@ -518,7 +520,7 @@ INSERT INTO shop.glossary(term, kind, meaning) VALUES
   ('rto_delivered', 'status', 'Parcel came back to us (RTO_DELIVERED)'),
   ('awb_expired', 'status', 'The courier label expired before pickup (AWB EXPIRED)'),
   ('processing', 'status_group', 'print or pack: not shipped yet'),
-  ('in_transit', 'status_group', 'With the courier'),
+  ('in_transit', 'status_group', 'With the courier: handover, in_transit (also picked_up, shipped, out_for_delivery)'),
   ('delivered', 'status_group', 'Delivered'),
   ('cancelled', 'status_group', 'Cancelled'),
   ('rto', 'status_group', 'Returned to origin, or on its way back'),
@@ -653,6 +655,9 @@ EXCEPTION WHEN others THEN
   RAISE WARNING 'shop.apply_line(%) failed: %', oid, SQLERRM;  -- the line is kept; tidy rows catch up next time
   RETURN NULL;
 END $$;
+-- rows tidied before a grouping rule changed follow it (cheap: only rows whose group differs)
+UPDATE shop.orders SET status_group = shop.status_group(status) WHERE status_group IS DISTINCT FROM shop.status_group(status);
+UPDATE shop.status_history SET status_group = shop.status_group(status) WHERE status_group IS DISTINCT FROM shop.status_group(status);
 CREATE OR REPLACE TRIGGER report_lines_apply AFTER INSERT OR UPDATE ON shop.report_lines
     FOR EACH ROW EXECUTE FUNCTION shop.apply_line();
 
