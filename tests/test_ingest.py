@@ -84,3 +84,31 @@ def test_clean_name():
     n, why = clean_name("A.J.")
     assert n == "AJ" and "Removed" in why
     assert clean_name("")[1] == "No name in the order"
+
+
+def test_newest_entry_in_the_file_dates_its_statuses(tmp_path):
+    """No Date Range line: the newest date/time in the file says how recent its statuses are, so an older
+    file uploaded later doesn't undo a newer status, and a newer one replaces it."""
+    p = tmp_path / "t.db"
+
+    def plain(rows):  # (order_id, created, status)
+        f = io.StringIO()
+        w = csv.writer(f)
+        w.writerow(HEAD)
+        for oid, created, status in rows:
+            w.writerow([oid, "", created, status, "Magicians_35", 1, "Private Person",
+                        "Enter Your First Name: Asha\nColor: Pink\n"])
+        return f.getvalue().encode()
+
+    new = ingest(plain([("T1", "01-11-2026 09:00:00", "DELIVERED"), ("T2", "15-11-2026 13:22:05", "PRINT")]), "new.csv", p)
+    assert new.as_of == "2026-11-15~13:22:05" and new.report_date == ""
+    old = ingest(plain([("T1", "01-11-2026 09:00:00", "PRINT"), ("T3", "14-11-2026 18:00:00", "PRINT")]), "old.csv", p)
+    assert old.as_of == "2026-11-14~18:00:00" and old.kept_newer_status == 1
+    with db.tx(p) as con:
+        assert con.execute("SELECT source_status FROM orders WHERE order_id='T1'").fetchone()[0] == "DELIVERED"
+    newer = ingest(plain([("T1", "01-11-2026 09:00:00", "RTO"), ("T4", "16-11-2026 08:00", "PRINT")]), "newer.csv", p)
+    assert newer.as_of == "2026-11-16~08:00:00" and newer.kept_newer_status == 0
+    with db.tx(p) as con:
+        assert con.execute("SELECT source_status FROM orders WHERE order_id='T1'").fetchone()[0] == "RTO"
+    # a stamp from before 0.22.8 (day only) ranks below the same day with a time
+    assert "2026-11-15|2026-11-15~10:00:00|x" > "2026-11-15|2026-11-15|y"

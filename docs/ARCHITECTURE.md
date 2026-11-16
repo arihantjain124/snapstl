@@ -169,7 +169,7 @@ columns — the owner's order history lives here.
 | `batch_id`, `last_error` | this computer's batch (NULL when made on another computer); last download error |
 | `first_file`, `last_file`, `first_seen`, `updated_at` | provenance |
 | `state_at` | when `state` last changed (trigger) |
-| `status_at` | how recent `source_status` is: `event date|report date|upload time` (`ingest.status_stamp`) |
+| `status_at` | how recent `source_status` is: `event date|newest entry in the file|upload time` (`ingest.status_stamp`) |
 | `in_remote`, `batch_uid`, `batch_label`, `batch_computer`, `batch_computer_id`, `bundled_at`, `printed_at` | shared order records: its batch (also on other computers), when bundled / printed |
 | `made_at` | base and name both printed in Print (`makeit.update_made`) → tab **Ready to ship** (`state='bundled' AND made_at IS NOT NULL`; **Bundled** = not made yet). Local only |
 
@@ -591,6 +591,7 @@ snapstl.server:app --port 8320`.
 | 48 | **Every uploaded order is shared** (0.22.5): orders the records don't have are offered as `released` (`sync._OFFER`: inserts, or only takes a newer status and missing details — never changes a stored state; a stored batched/bundled/printed state is merged back here). Orders first seen through a pull get the report's review rules (`sync._review`); a name/colour fixed on one computer reaches the others while nobody makes the order. Upload syncs before and after ingesting; Orders → **Refresh from Supabase** runs Sync now. Pushes are pipelined (`executemany`, 1000 per round). Supersedes the "only batched orders" part of #22 | owner wanted a report uploaded on any computer to update Supabase and every computer, and a refresh on the Orders page |
 | 49 | **Reset can also clear Supabase** (0.22.6): Maintenance → *also clear Supabase* + typed RESET ALL → `maintenance.reset(shared=True)`: local backup, then `sync.clear` (copy of every record) and the local database emptied under `sync._lock`, so the background sync can't send this computer's orders back in between; the unsynced-changes guard doesn't apply (everything is emptied) | owner wanted one action to reset both this computer and the shared records |
 | 50 | **Slicing profiles per printer; a spool can print as another colour** (0.22.7): `presets_by_printer` keyed by Bambuddy printer id replaces `presets_by_model` (kept as the fallback for printers with no pick of their own; *Remove* on one printer hands the model's pick to its other printers first). The slice key still hashes the profiles, so printers with the same profiles share a slice. Printers page: each spool has *prints as …* (`color_overrides`, keyed by slot + hex so it lapses with the spool); it changes only how SnapSTL reads the spool, nothing is sent to Bambuddy. Supersedes #36 | owner's printers of the same model need different profiles, and Bambuddy's filament names don't always match the order colours |
+| 51 | **Daily handling: Sync, Clean up, Reset; Supabase required** (0.22.8): a report's statuses are dated by the newest entry in the file (`ingest.file_as_of`), not the upload time. Settings → Database: **Sync** (`/api/sync`) and **Clean up** (`sync.match`, `/api/maintenance/match`) run without confirmation — Clean up syncs, backs up, re-reads every shared record with `merge(force=True)`, removes local orders the records no longer have (except this computer's own batched / bundled / printed ones, which are sent again) and tidies 30-day history without deleting orders. Only Reset asks (RESET / RESET ALL). With `sync.REQUIRED` (default; `SNAPSTL_REQUIRE_SHARED=0` in tests) every non-GET `/api` call except `server.WITHOUT_SHARED` (connection, settings, sync, helper, updates, sign-in, backup) answers 503 while `sync.online()` is false; the UI shows a red bar and greys out every page but Settings and Help | owner wanted simple daily handling where every computer matches Supabase, and no computer working without it |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -759,8 +760,11 @@ in `APP_DIR/shared-records.json` (mode 600, never returned in full). Without it 
   `ingest.status_stamp(event, report, upload)` builds a sortable `status_at` from three parts:
   - the latest of the row's event dates (Pickup / Delivered / RTO Initiated / RTO Delivered /
     Return Created / Return Delivered);
-  - the "Date Range … to DD/MM/YYYY" end above the header;
-  - the upload time.
+  - how recent the whole file is (`ingest.file_as_of`, since 0.22.8): the later of the "Date Range … to
+    DD/MM/YYYY" end above the header and the newest date / date-time in any of its date columns
+    (order created, pickup, delivered, RTO, return …). With a time it's written `YYYY-MM-DD~HH:MM:SS`;
+    `~` sorts after the `|` of older day-only stamps, so they stay comparable;
+  - the upload time (only breaks ties).
 
   An existing order's status changes only if the new stamp is at least as high (`kept_newer_status`
   counts the others), both locally and in the records.
