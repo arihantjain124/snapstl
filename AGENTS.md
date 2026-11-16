@@ -63,7 +63,9 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - Shared-records schema changes go in `sync._SETUP_SQL`; regenerate `docs/supabase-schema.sql`
   (`uv run snapstl-db schema > docs/supabase-schema.sql`) — a test checks they match.
 - Shared order records (`sync.py`, Supabase): **never delete** there — no DELETE/TRUNCATE in code, keep
-  the `refuse_delete` triggers. Settings never go there. Conflict rules live in the SQL (`_WIN`,
+  the `refuse_delete` triggers. The only exception is `sync.clear` (owner-requested, 0.19.1): a person
+  types CLEAR, every record is saved to a JSON file in the backups folder first, then the schema is
+  dropped and created again empty. Never call it from anywhere else. Settings never go there. Conflict rules live in the SQL (`_WIN`,
   `_CLAIM`); keep a batch's claim before its local creation, and refuse to create a batch when the
   records can't be reached. Local changes reach the outbox only through the triggers in
   `db.POST_SCHEMA`; writes coming from the records go inside `db.quiet()`. Run the tests with a

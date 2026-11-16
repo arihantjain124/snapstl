@@ -456,8 +456,18 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <label>This computer's name <span class="hint">— shown on its batches</span></label>
         <input id="pcnamein" maxlength="60" placeholder="e.g. Packing PC">
         <div class="toolbar" style="margin-top:10px"><button id="sharedsave" class="primary">Connect / save</button><button id="shareddisc" hidden>Disconnect</button></div>
-        <p class="hint">The connection string holds your database password: it's kept only on this computer (readable by you only), never shown again in full and never sent anywhere else.</p>
         <p class="hint" id="sharedmsg"></p>
+        <p class="hint">The connection string holds your database password: it's kept only on this computer (readable by you only), never shown again in full and never sent anywhere else.</p>
+        <div id="sharedlive" hidden>
+          <h3>Sync</h3>
+          <p class="hint" id="syncinfo"></p>
+          <div class="toolbar"><button id="syncnow" class="primary" title="Send this computer's changes to the shared order records and load everyone's">Sync now</button><button id="sharedcheck">Show what's there</button></div>
+          <div id="sharedholds"></div>
+          <div class="callout"><b>What is shared:</b> only orders taken into a batch — <i>In a batch</i>, <i>Bundled</i>, <i>Printed</i>, and orders released back to Ready — with their newest webstore status, plus each computer's batches. Orders that are only <i>Ready</i> or <i>Needs review</i> stay on the computer that uploaded the report: upload the report on every computer. In Supabase they're in <b>Table Editor → schema <code>snapstl</code></b> (not <code>public</code>): <code>order_records</code> and <code>batch_records</code>. Syncs every minute and right after changes.</div>
+          <h3>Clear shared records</h3>
+          <p class="hint under">Empties the shared records of <b>every</b> computer (e.g. after testing). A copy of every record is saved first in this computer's backups folder. Orders this computer is still making are sent again at the next sync; to start completely fresh, also reset each computer's database (Maintenance).</p>
+          <div class="toolbar" style="margin-top:6px"><button id="sharedclear" style="color:var(--err)">Clear shared records…</button><span class="hint grow" id="sharedclearmsg"></span></div>
+        </div>
       </div>
       <div class="card" id="portalcard">
         <h2>Other computers (web portal)</h2>
@@ -487,8 +497,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <label>Clean up records older than (days)</label>
         <div class="row2" style="grid-template-columns:1fr auto"><input id="cleandays" type="number" min="0" value="30"><button id="cleanup">Clean up</button></div>
         <p class="hint under">Removes old <i>Not needed</i> orders, finished batches, download history and upload records. Orders already made are kept, so a later report can't bring them back. A backup is saved first.</p>
-        <div class="toolbar" style="margin-top:10px"><button id="syncnow" class="primary" title="Send this computer's changes to the shared order records and load everyone's">Sync now</button><button id="backupnow">Back up now</button><span class="grow"></span><button id="resetdb" style="color:var(--err)" title="Empties this computer's database only — never the shared order records">Reset this computer's database…</button></div>
-        <p class="hint" id="syncinfo"></p>
+        <div class="toolbar" style="margin-top:10px"><button id="backupnow">Back up now</button><span class="grow"></span><button id="resetdb" style="color:var(--err)" title="Empties this computer's database only — never the shared order records">Reset this computer's database…</button></div>
         <p class="hint" id="dbmsg"></p>
       </div>
     </div>
@@ -667,7 +676,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <h2>Using SnapSTL from other computers</h2>
     <p>SnapSTL is a small web server running on this computer (the <b>main computer</b>). The main computer keeps the service running and has the <b>SnapSTL Helper</b> in its Chrome with the MakerWorld model page open — downloads always happen there.</p>
     <ol>
-      <li>On the main computer: <b>Settings → Other computers</b> → tick <b>Allow other computers on this network</b>, set a portal password (10+ characters) → <b>Save</b>. SnapSTL restarts; if macOS or Windows asks to allow incoming connections, click <b>Allow</b>.</li>
+      <li>On the main computer: <b>Settings → Connections → Other computers</b> → tick <b>Allow other computers on this network</b>, set a portal password (10+ characters) → <b>Save</b>. SnapSTL restarts; if macOS or Windows asks to allow incoming connections, click <b>Allow</b>.</li>
       <li>The card then shows the address, e.g. <code>http://snapstl-mac.local:8317</code> or <code>http://192.168.1.20:8317</code>.</li>
       <li>On another computer on the same network: open that address in any browser and sign in with the portal password.</li>
     </ol>
@@ -678,7 +687,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <h2>Your data</h2>
     <p>Settings and backups are on this computer (Mac: <code>~/Library/Application Support/SnapSTL</code>, Windows: <code>%LOCALAPPDATA%\SnapSTL</code>). Downloaded models: your Downloads folder. Plates: your output folder. SnapSTL never deletes downloaded models or batch folders — you clean them up yourself. Orders (with customer names, phones and addresses) are in this computer's own database, and — when connected in Settings → Shared order records — batched, bundled and printed orders also in your shared order records in Supabase (Settings → Database says which). SnapSTL runs in the background (it starts at login); the window is just a view — you can also open <code>http://127.0.0.1:8317</code> in a browser.</p>
     <h3>Several computers (shared order records)</h3>
-    <p>With the shared order records set up (<b>Settings → Shared order records</b>), every computer works in its own database, and every order taken into a batch, bundled or printed is recorded in Supabase. Creating a batch claims its orders there first: an order another computer already has is left out and shows <i>in Batch N · computer</i>. Bundled, printed and released orders and newer webstore statuses are sent right away and every minute; <b>Settings → Database → Sync now</b> sends and loads everything at once. The records are never deleted, and <b>Reset this computer's database</b> doesn't touch them — Sync loads them back. Mark orders printed in the <b>Bundled</b> tab (tick them → <b>Mark printed</b>); they move to <b>Printed</b> and keep their batch.</p>
+    <p>With the shared order records set up (<b>Settings → Connections → Shared order records</b>), every computer works in its own database, and every order taken into a batch, bundled or printed is recorded in Supabase. Creating a batch claims its orders there first: an order another computer already has is left out and shows <i>in Batch N · computer</i>. Bundled, printed and released orders and newer webstore statuses are sent right away and every minute; <b>Settings → Connections → Sync now</b> sends and loads everything at once. The records are never deleted one by one, and <b>Reset this computer's database</b> doesn't touch them — Sync loads them back. Mark orders printed in the <b>Bundled</b> tab (tick them → <b>Mark printed</b>); they move to <b>Printed</b> and keep their batch. Only orders taken into a batch are shared — <i>Ready</i> orders stay on the computer that uploaded the report. <b>Show what's there</b> lists what Supabase holds (in Supabase: Table Editor → schema <code>snapstl</code>). <b>Clear shared records…</b> (type CLEAR) empties them for every computer, after saving a copy in this computer's backups folder.</p>
     <p class="hint" id="helpversion"></p>
   </div>
 </section>
@@ -1163,9 +1172,22 @@ async function loadShared(){if(!META.local)return;let r;try{r=await api('/api/sh
   $('pcnamein').value=r.computer_name;$('shareddisc').hidden=!r.configured;$('sharedurl').value='';
   $('sharedurl').placeholder=r.configured?'Saved (paste a new one to change)':'postgresql://postgres.xxxx:password@aws-0-ap-south-1.pooler.supabase.com:5432/postgres';
   const st=r.status||{};
-  $('sharedinfo').innerHTML=r.configured?`<b>Connected</b> to <code>${esc(r.where)}</code> as <b>${esc(r.computer_name)}</b>`+(st.error?`<div class="reason">${esc(st.error)}</div>`:''):'<b>Not connected</b> — this computer works on its own.'}
+  $('sharedinfo').innerHTML=r.configured?`<b style="color:${st.error?'var(--err)':'var(--ok)'}">${st.error?'Connected, but sync fails':'Connected'}</b> to <code>${esc(r.where)}</code> as <b>${esc(r.computer_name)}</b>`+(st.error?`<div class="reason">${esc(st.error)}</div>`:''):'<b>Not connected</b> — this computer works on its own.';
+  $('sharedlive').hidden=!r.configured;if(r.configured)showSync(st);showHolds(r)}
+const RSTATE={in_batch:'in a batch',bundled:'bundled',printed:'printed',released:'released (back to Ready)'};
+function showHolds(r){if(r.holds_error){$('sharedholds').innerHTML=`<div class="msgs"><div class="e">${esc(r.holds_error)}</div></div>`;return}
+  const h=r.holds;if(!h){$('sharedholds').innerHTML='';return}
+  const o=Object.entries(h.orders||{}),b=Object.entries(h.batches||{}),n=o.reduce((a,[,v])=>a+v,0);
+  $('sharedholds').innerHTML=`<div class="hint" style="margin-top:6px"><b>In the shared records now:</b> ${n?`${n} order${n===1?'':'s'} (${o.map(([k,v])=>`${v} ${RSTATE[k]||k}`).join(', ')})`:'no orders yet'}${b.length?` · batches: ${b.map(([k,v])=>`${esc(k)} ${v}`).join(', ')}`:''}.</div>`}
+$('sharedcheck').onclick=async()=>{$('sharedholds').innerHTML='<div class="hint">Reading…</div>';try{showHolds(await api('/api/shared-records?check=1'))}catch(e){$('sharedholds').innerHTML=`<div class="reason">${esc(e.message)}</div>`}};
+$('sharedclear').onclick=async()=>{let r;try{r=await api('/api/shared-records?check=1')}catch(e){alert(e.message);return}
+  const n=Object.values((r.holds||{}).orders||{}).reduce((a,v)=>a+v,0);
+  const t=prompt(`This empties the shared order records of EVERY computer: ${n} order record(s) and their batches in Supabase. A copy is saved first in this computer's backups folder. Orders this computer is still making are sent again at the next sync.\n\nType CLEAR to continue.`);
+  if(t!=='CLEAR')return;$('sharedclearmsg').textContent='Clearing…';
+  try{const x=await post('/api/shared-records/clear',{confirm:'CLEAR'});$('sharedclearmsg').textContent=`Cleared ${x.cleared.orders} order record(s) and ${x.cleared.batches} batch record(s). Copy saved: ${x.backup}`;loadShared();refreshAll()}
+  catch(e){$('sharedclearmsg').textContent=e.message;$('sharedclearmsg').style.color='var(--err)'}};
 $('sharedsave').onclick=async()=>{const url=$('sharedurl').value.trim();$('sharedsave').disabled=true;$('sharedmsg').textContent=url?'Connecting and checking…':'Saving…';$('sharedmsg').style.color='';
-  try{await post('/api/shared-records',{url,computer_name:$('pcnamein').value});$('sharedmsg').textContent=url?'Connected. This computer\'s batched, bundled and printed orders were sent, and everyone\'s were loaded.':'Saved.';
+  try{const r=await post('/api/shared-records',{url,computer_name:$('pcnamein').value});$('sharedmsg').textContent=url?`Connected and synced: sent ${r.status.pushed}, loaded ${r.status.pulled}.`:'Saved.';$('sharedmsg').style.color=url?'var(--ok)':'';
     META=await api('/api/meta');$('pcname').textContent=META.computer.name+(META.shared_records?' · shared records':'');loadShared();loadSetup();loadDb();refreshAll()}
   catch(e){$('sharedmsg').textContent=e.message;$('sharedmsg').style.color='var(--err)'}finally{$('sharedsave').disabled=false}};
 $('shareddisc').onclick=async()=>{if(!confirm('Disconnect this computer from the shared order records? Nothing is deleted there; this computer just stops syncing (and can create batches without checking other computers).'))return;
@@ -1193,12 +1215,12 @@ $('updgo').onclick=async()=>{$('updgo').disabled=true;$('updinfo').textContent='
 const fmtMB=b=>(b/1048576).toFixed(1)+' MB';
 async function loadDb(){const m=await api('/api/maintenance');const o=m.orders,sum=x=>Object.values(x).reduce((a,b)=>a+b,0);
   loadSync();
-  $('dbkind').innerHTML=META.shared_records?`<b>Shared order records</b> (Supabase, connected in <i>Shared order records</i> above): every order taken into a batch, bundled or printed — on any computer — is recorded there, with the latest webstore status. They are only ever added to and updated; resetting this computer's database doesn't touch them, and <b>Sync now</b> loads them back. This computer is <b>${esc(META.computer.name)}</b>.`:`<b>This computer only.</b> To share orders with other computers, set up the shared order records (Settings → Shared order records).`;
+  $('dbkind').innerHTML=META.shared_records?`<b>Shared order records</b> (Supabase, connected in <i>Settings → Connections</i>): every order taken into a batch, bundled or printed — on any computer — is recorded there, with the latest webstore status. They are only ever added to and updated; resetting this computer's database doesn't touch them, and <b>Sync now</b> loads them back. This computer is <b>${esc(META.computer.name)}</b>.`:`<b>This computer only.</b> To share orders with other computers, set up the shared order records (Settings → Shared order records).`;
   $('dbinfo').textContent=`${sum(o)} orders (${o.ready||0} ready, ${o.needs_review||0} to review, ${o.in_batch||0} in a batch, ${o.bundled||0} bundled, ${o.printed||0} printed, ${o.not_needed||0} not needed) · ${sum(m.batches)} batches · ${m.reports_uploaded} report uploads · database ${fmtMB(m.db_bytes)} · downloaded models ${m.cache_models} (${fmtMB(m.cache_bytes)}) · ${m.backups} backups${m.last_backup?` (latest ${m.last_backup})`:''}`}
 $('cleanup').onclick=async()=>{const d=parseInt($('cleandays').value,10);if(isNaN(d)||d<0){$('dbmsg').textContent='Enter a number of days';return}
   if(!confirm(`Remove records older than ${d} days? Orders already made are kept. A backup is saved first.`))return;
   try{const r=await post('/api/maintenance/cleanup',{older_than_days:d});$('dbmsg').textContent=`Removed ${r.orders_removed} orders, ${r.batches_removed} batches, ${r.downloads_removed} downloads, ${r.reports_removed} upload records. Backup: ${r.backup}`;loadDb();refreshAll()}catch(e){$('dbmsg').textContent=e.message}};
-async function loadSync(){if(!META.shared_records){$('syncnow').hidden=true;$('syncinfo').textContent='';return}
+async function loadSync(){$('syncnow').hidden=!META.shared_records;if(!META.shared_records){$('syncinfo').textContent='';return}
   let s;try{s=await api('/api/sync')}catch{return}showSync(s)}
 function showSync(s){const t=s.last_ok?new Date(s.last_ok*1000).toLocaleTimeString():'never';
   $('syncinfo').innerHTML=(s.running?'Syncing… ':'')+`Last synced: <b>${t}</b>`+(s.pending?` · <b>${s.pending}</b> change(s) waiting to be sent`:' · nothing waiting')+(s.error?`<div class="reason">${esc(s.error)}</div>`:'')}

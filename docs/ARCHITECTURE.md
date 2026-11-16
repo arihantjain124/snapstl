@@ -470,7 +470,7 @@ filament are not stored by SnapSTL — they're read from Bambuddy.
   anywhere, never in git. License passwords live only in `settings.json` (mode 600); `info.json` in
   model folders never contains them.
 
-## 14. Maintenance (`maintenance.py`, Settings → Database)
+## 14. Maintenance (`maintenance.py`, Settings → Maintenance → Database)
 
 **Back up now** (SQLite online backup → `backups/`, newest 20 kept). **Clean up** records older than
 N days (not-needed orders, finished batches, download history, upload records, finished print jobs) — **bundled orders
@@ -567,6 +567,7 @@ snapstl.server:app --port 8320`.
 | 38 | **Slicing tab** (its own sidebar page); slicer = OrcaSlicer **or Bambu Studio** on this computer (Bambu Studio's CLI is refused on macOS only; on Windows it gets user presets that `inherits` the Bambu system preset, which its compatibility check needs) or Bambuddy's; **Test slicer** slices a 20 mm cube. **Presets per printer** (`orca_presets_by_printer` / `presets_by_printer`, then per model, then default); a plate is sliced for the printer it goes to: slices are keyed by slicer + presets (`farm.target`), so printers with the same presets share a slice; automatic slicing slices for the pre-selected printer only. Preset bundles add all their presets | owner: each printer its own settings, slice for the selected printer, Bambu Studio as an option on Windows |
 | 39 | **Installers never run a second Bambuddy and only stop their own**: an existing Bambuddy (its own installer's Windows service / `C:\ProgramData\Bambuddy`, Mac launchd `com.bambuddy.app`, or anything answering on the port) is used as is; if SnapSTL's copy was already put next to it, the installer stands SnapSTL's copy down and starts the other again (nothing deleted). `Stop-Bambuddy` matches SnapSTL's own folder, never "whatever listens on 8000" | 0.10–0.17 installed a second, empty Bambuddy and on Windows stopped the existing one on port 8000 — it looked as if Bambuddy had lost its printers |
 | 40 | **UI 0.19**: sidebar Orders · Batches · Print · Printers · Slicing · Settings · Help. Downloads merged into Batches (download queue + folder), Printer status into Printers (with Clear plate), Make It renamed Print (Bases · Names · Completed · Removed; slicing state inline per plate). Settings split into Setup · Product · Plates · Folders · Connections · Maintenance; a sidebar status (Helper · Bambuddy · Slicer · Printers, `/api/health`). **No default slicing presets**: presets only per printer model (all printers of a model share them; the per-printer presets of 0.18 are gone); a model without its presets isn't sliced or printed and the UI says so. **Print defaults per printer** (Slicing) with a per-plate override in Print. "Printed" keeps its name; bed size stays in Settings (256 mm on A1 and P1S) | owner: good quality comes from the owner's own tuned Bambu Studio presets, never guessed ones; clearer grouping of pages and settings |
+| 41 | **Clear shared records** (0.19.1): typed CLEAR, copy of every record saved locally first, schema dropped and recreated; sync status, Sync now and "what's in Supabase" sit with the connection (Settings → Connections), with what is and isn't shared spelled out | owner asked for a way to empty Supabase when needed and couldn't tell whether sync worked (only batched orders are shared; tables are in schema `snapstl`) |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -675,8 +676,8 @@ free and for "Clear plate" (a person).
 ## Shared order records (Supabase) and computers (0.8.0)
 
 Each computer works in its **own local SQLite** database (`db.py`). `sync.py` keeps the **shared
-order records** in Supabase in step. The connection string is entered in **Settings → Shared order
-records** (`/api/shared-records`: format check, connection test and table creation before saving) and kept
+order records** in Supabase in step. The connection string is entered in **Settings → Connections →
+Shared order records** (`/api/shared-records`: format check, connection test and table creation before saving) and kept
 in `APP_DIR/shared-records.json` (mode 600, never returned in full). Without it there is no sync.
 `SNAPSTL_DATABASE_URL` overrides it for tests and development.
 
@@ -687,6 +688,11 @@ in `APP_DIR/shared-records.json` (mode 600, never returned in full). Without it 
   Settings are never shared.
 - **Never deleted:** the app has no DELETE on these tables, and `BEFORE DELETE` / `BEFORE TRUNCATE`
   triggers (`refuse_delete`) reject deletes from anyone. Local reset and clean-up only touch SQLite.
+  The one way to empty them is **Clear shared records** (`sync.clear`, `POST /api/shared-records/clear`
+  `{confirm:"CLEAR"}`, this computer only): every row is first saved to
+  `backups/shared-records-<stamp>.json` (mode 600), then `DROP SCHEMA snapstl CASCADE` and the setup
+  runs again; this computer marks its orders and batches unsent and forgets its pull point, so the
+  next sync sends what it's still making.
   Reset refuses while `sync_outbox` isn't empty.
 - **Claim:** `batches.create_batch` → `sync.claim`. `INSERT … ON CONFLICT DO UPDATE … WHERE
   state='released'` (or this computer's own claim whose batch uid no longer exists locally)
@@ -713,7 +719,9 @@ in `APP_DIR/shared-records.json` (mode 600, never returned in full). Without it 
   change keeps it until the push has run.
 - **When it runs:** `sync.LOOP` runs every 60 s and is woken right after batches finish, orders are
   marked printed, reset or skipped, and after a report upload. An upload syncs before ingesting too.
-  **Settings → Database → Sync now** runs `/api/sync`. `snapstl-db check | sync` does the same from a
+  **Settings → Connections → Sync now** runs `/api/sync`. `GET /api/shared-records?check=1` adds
+  what the records hold (orders per state, batches per computer: **Show what's there**). Connecting
+  runs a first sync and reports its error instead of "connected" when it fails. `snapstl-db check | sync` does the same from a
   terminal.
 - **Report timestamps:** the webstore report has no "generated at" time, so
   `ingest.status_stamp(event, report, upload)` builds a sortable `status_at` from three parts:
