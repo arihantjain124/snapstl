@@ -119,12 +119,13 @@ def test_make_it_slices_with_orca_then_prints_through_bambuddy(orca, client, bb)
     from .test_farm import built_batch, makeit_row, tray, wait_for
 
     client.get("/api/farm")
-    p = client.get("/api/makeit/presets?printer_id=2").json()  # Names A (an A1)
-    assert p["engine"] == "orca" and p["orca"] == str(orca) and p["chosen"]["process"] == "0.20mm Standard @BBL A1"
+    p = client.get("/api/makeit/presets").json()  # all three printers are A1s; nothing set yet (no defaults)
+    assert p["engine"] == "orca" and p["orca"] == str(orca) and p["model"] == "A1" and p["chosen"] == {}
     assert [x["name"] for x in p["printers"]] == ["Base 1", "Names A", "Names B"]
-    assert client.put("/api/makeit/presets", json={"printer_id": 2, **p["chosen"], "process": "Organizer fast"}).status_code == 200
-    assert client.put("/api/makeit/presets", json={"printer_id": 2, **p["chosen"], "process": "Nope"}).status_code == 400
-    assert client.get("/api/makeit/presets?printer_id=3").json()["chosen"]["process"] == "0.20mm Standard @BBL A1"  # its own
+    std = {"printer": "Bambu Lab A1 0.4 nozzle", "process": "0.20mm Standard @BBL A1", "filament": "Bambu PLA Basic @BBL A1"}
+    assert client.put("/api/makeit/presets", json={"model": "A1", **std, "process": "Organizer fast"}).status_code == 200
+    assert client.put("/api/makeit/presets", json={"model": "A1", **std, "process": "Nope"}).status_code == 400
+    assert client.get("/api/makeit/presets?model=A1").json()["chosen"]["process"] == "Organizer fast"
 
     bid, folder = built_batch(client, "PO")
     pink = "Names/pink/{Ayra,pink}.3mf"
@@ -145,9 +146,8 @@ def test_make_it_slices_with_orca_then_prints_through_bambuddy(orca, client, bb)
     wait_for(lambda: bb.queue and bb.queue[1].get("manual_start") is False)
     sent = bb.files[bb.queue[1]["library_file_id"]]
     assert sent["filename"].endswith("{Ayra,pink}.gcode.3mf") and b"Organizer fast" in sent["data"]
-    # another printer with its own presets: Start print there slices again with *its* presets
-    client.put("/api/makeit/presets", json={"printer_id": 3, "printer": "Bambu Lab A1 0.4 nozzle",
-                                            "process": "0.20mm Standard @BBL A1", "filament": "Bambu PLA Basic @BBL A1"})
+    # the A1 presets change: Start print slices again with the new ones
+    client.put("/api/makeit/presets", json={"model": "A1", **std})
     blue = "Names/blue/{Riya,blue}.3mf"
     bb.status[3]["ams"][0]["tray"].append(tray(1, "0A2989"))  # Names B gets blue loaded
     farm._status_cache.clear()
@@ -208,10 +208,11 @@ def test_printer_bundle_brings_all_its_presets(orca):
 
 def test_test_slice_endpoint(orca, client, bb):  # noqa: F811
     client.get("/api/farm")
-    client.put("/api/makeit/presets", json={"printer_id": 2, "printer": "Bambu Lab P1S 0.4 nozzle",
+    client.put("/api/makeit/presets", json={"model": "P1S", "printer": "Bambu Lab P1S 0.4 nozzle",
                                             "process": "0.20mm Standard @BBL X1C", "filament": "Bambu PLA Basic @BBL P1S 0.4 nozzle"})
-    r = client.post("/api/makeit/test-slice", json={"printer_id": 2}).json()  # with that printer's own presets
+    r = client.post("/api/makeit/test-slice", json={"model": "P1S"}).json()  # with that model's presets
     assert r["engine"] == "OrcaSlicer" and r["printer_model"] == "Bambu Lab P1S" and r["seconds"] >= 0
-    assert client.post("/api/makeit/test-slice", json={}).json()["printer_model"] == "Bambu Lab A1"  # the default
+    r = client.post("/api/makeit/test-slice", json={"model": "A1"})  # none set for A1: said so, nothing guessed
+    assert r.status_code == 400 and "presets for A1" in r.json()["detail"]
     client.put("/api/makeit/settings", json={"slicer": "bambuddy"})
-    assert client.post("/api/makeit/test-slice", json={}).status_code == 400
+    assert client.post("/api/makeit/test-slice", json={"model": "P1S"}).status_code == 400

@@ -652,6 +652,7 @@ def setup_status():
         "updates": {"git": u.get("git", False) and not u.get("error"), "error": u.get("error", "")},
         "helper_folder": str(config.ROOT / "helper"),
         "farm": _farm_setup(),
+        "slicing": {k: v for k, v in health().items() if k in ("slicer", "presets_missing", "printers")},
     }
 
 
@@ -944,8 +945,10 @@ def makeit_board():
             prs = farm.printers(cfg)
         except farm.FarmError as e:
             st["error"] = str(e)
+    for p in prs:  # Print: a plate's options start from its printer's print defaults (Slicing)
+        p["defaults"] = farm.print_defaults(p["id"], cfg)
     return {"status": st, "printers": prs, **makeit.board(prs),
-            "options": {k: list(v) for k, v in farm.OPTIONS.items()}, "presets": farm.chosen_presets(cfg),
+            "options": {k: list(v) for k, v in farm.OPTIONS.items()},
             "speeds": list(farm.SPEEDS_SET), "auto_slice": bool(cfg.get("auto_slice", True)),
             "worker": {"log": farm.WORKER.log[-20:]}}
 
@@ -969,9 +972,9 @@ async def makeit_start(req: Request):
 
 
 @app.get("/api/makeit/presets")
-def makeit_presets(printer_id: int | None = None):
-    """Slicing: the slicer, its presets, the ones a printer slices with (its own, else the default set),
-    the farm's printers and automatic slicing."""
+def makeit_presets(model: str = ""):
+    """Slicing: the slicer, all presets (yours and Bambu's), the presets set per printer model, the
+    farm's printers (with their print defaults) and automatic slicing."""
     from . import slicer
 
     cfg = farm.load_config()
@@ -980,45 +983,59 @@ def makeit_presets(printer_id: int | None = None):
         prs = farm.printers(with_status=False)
     except farm.FarmError:
         prs = []
-    model = next((p.get("model") or "" for p in prs if p["id"] == printer_id), "")
-    own_key = "orca_presets_by_printer" if eng in farm.LOCAL else "presets_by_printer"
-    own = sorted(int(k) for k in (cfg.get(own_key) or {}).keys() if str(k).isdigit())
+    models = farm.printer_models(prs)
+    if model == "" and models:
+        model = models[0]
+    set_for = {m: bool(all(farm.presets_for_model(m, cfg).get(sl) for sl in farm.PRESET_SLOTS)) for m in models}
     base = {"engine": eng, "orca": str(slicer.exe_path("orca") or ""), "bambu": str(slicer.exe_path("bambu") or ""),
-            "bambu_works_here": slicer.works_here("bambu"), "printer_id": printer_id,
-            "printers": [{"id": p["id"], "name": p["name"], "model": p.get("model") or "", "own": p["id"] in own}
-                         for p in prs],
-            "auto_slice": bool(cfg.get("auto_slice", True)), "slicer_setting": cfg.get("slicer") or ""}
+            "bambu_works_here": slicer.works_here("bambu"), "model": model, "models": models, "set_for": set_for,
+            "printers": [{"id": p["id"], "name": p["name"], "model": p.get("model") or "",
+                          "defaults": farm.print_defaults(p["id"], cfg)} for p in prs],
+            "auto_slice": bool(cfg.get("auto_slice", True)), "slicer_setting": cfg.get("slicer") or "",
+            "speeds": list(farm.SPEEDS_SET), "options": {k: list(v) for k, v in farm.OPTIONS.items()},
+            "activity": makeit.slicing_summary()}
     if eng in farm.LOCAL:
-        avail = slicer.list_presets()
-        names = farm.orca_presets_for(model, cfg, printer_id)
-        return base | {"available": avail, "chosen": names, "names": names, "bambuddy_listed": True}
+        names = farm.orca_presets_for(model, cfg)
+        return base | {"available": slicer.list_presets(), "chosen": names, "names": names, "bambuddy_listed": True,
+                       "folders": [{"label": l, "path": str(p)} for l, p in slicer.preset_roots()]}
     try:
         avail = farm.bambuddy_presets()
     except farm.FarmError as e:
         raise _farm_err(e) from e
-    chosen = farm.chosen_presets(cfg, avail, model, printer_id)
-    for slot, v in chosen.items():  # a default Bambuddy doesn't list (its slicer isn't running) is still offered
-        key = f"{v['source']}:{v['id']}"
-        if not any(p["key"] == key for p in avail[slot]):
-            avail[slot].insert(0, {"key": key, "name": v["name"], "source": v["source"]})
+    chosen = farm.chosen_presets(cfg, avail, model)
     return base | {"available": avail, "chosen": {k: f"{v['source']}:{v['id']}" for k, v in chosen.items()},
-                   "names": {k: v["name"] for k, v in chosen.items()}, "bambuddy_listed": sum(map(len, avail.values())) > 3}
+                   "names": {k: v["name"] for k, v in chosen.items()}, "bambuddy_listed": sum(map(len, avail.values())) > 0,
+                   "folders": []}
 
 
 @app.put("/api/makeit/presets")
 async def makeit_presets_save(req: Request):
-    """{printer_id: none (default) | Bambuddy printer id, printer, process, filament} or {printer_id, clear}."""
+    """{model, printer, process, filament} or {model, clear: true} — every printer of that model slices with them."""
     b = await req.json()
-    pid = int(b["printer_id"]) if b.get("printer_id") else None
     model, clear = str(b.get("model") or ""), bool(b.get("clear"))
+    if not model:
+        raise HTTPException(400, "Choose the printer model these presets are for")
+    _health_stale()
     try:
         if farm.engine() in farm.LOCAL:
-            names = await run_in_threadpool(farm.set_orca_presets, b, model, clear, pid)
+            names = await run_in_threadpool(farm.set_orca_presets, b, model, clear)
             return {"names": names}
-        chosen = await run_in_threadpool(farm.set_presets, b, model, clear, pid)
+        chosen = await run_in_threadpool(farm.set_presets, b, model, clear)
     except farm.FarmError as e:
         raise _farm_err(e) from e
     return {"names": {k: v["name"] for k, v in chosen.items()}}
+
+
+@app.put("/api/makeit/print-defaults")
+async def makeit_print_defaults(req: Request):
+    """Slicing → Print defaults: {printer_id, speed, bed_levelling, flow_cali, timelapse} ("" = Bambuddy's)."""
+    b = await req.json()
+    if not b.get("printer_id"):
+        raise HTTPException(400, "Choose a printer")
+    try:
+        return farm.set_print_defaults(int(b["printer_id"]), b)
+    except farm.FarmError as e:
+        raise _farm_err(e) from e
 
 
 @app.post("/api/makeit/presets/import")
@@ -1047,12 +1064,14 @@ async def makeit_test_slice(req: Request):
     from . import slicer
 
     b = await req.json()
-    pid = int(b["printer_id"]) if b.get("printer_id") else None
+    model = str(b.get("model") or "")
     eng = farm.engine()
     if eng not in farm.LOCAL:
         raise HTTPException(400, "The test runs a slicer on this computer — choose OrcaSlicer or Bambu Studio")
     try:
-        presets = farm.target(pid)[1]
+        presets = farm.presets_for_model(model)
+        if not all(presets.get(sl) for sl in farm.PRESET_SLOTS):
+            raise HTTPException(400, f"Set the printer, process and filament presets for {model or 'this model'} first")
         r = await run_in_threadpool(slicer.test_slice, eng, presets)
     except slicer.SlicerError as e:
         raise HTTPException(400, str(e)) from e
@@ -1071,6 +1090,7 @@ async def makeit_settings(req: Request):
             raise HTTPException(400, "Slicer is orca, bambu or bambuddy")
         changes["slicer"] = b["slicer"]
     cfg = farm.update_config(**changes)
+    _health_stale()
     farm.WORKER.kick()
     return {"auto_slice": cfg["auto_slice"], "slicer": cfg["slicer"], "engine": farm.engine(cfg)}
 
@@ -1120,11 +1140,52 @@ async def makeit_reprint(req: Request):
         raise _farm_err(e) from e
 
 
+_health: tuple[float, dict] = (0.0, {})
+
+
+def _health_stale() -> None:
+    global _health
+    _health = (0.0, {})
+
+
+@app.get("/api/health")
+def health():
+    """The sidebar status bar: helper, Bambuddy, slicer, printers online, models without presets (≤10 s old)."""
+    global _health
+    from . import slicer
+
+    if time.time() - _health[0] < 10 and _health[1]:
+        return _health[1] | {"helper": DOWNLOADER.snapshot()["online"]}
+    cfg = farm.load_config()
+    st = farm.status(cfg)
+    eng = farm.engine(cfg)
+    online = total = 0
+    missing: list[str] = []
+    if st["connected"]:
+        try:
+            prs = farm.printers(cfg)
+            total = len(prs)
+            online = sum(1 for p in prs if (p.get("status") or {}).get("connected"))
+            missing = [m for m in farm.printer_models(prs) if farm.missing_presets(
+                next(p["id"] for p in prs if p.get("model") == m), cfg)]
+        except farm.FarmError:
+            pass
+    found = eng == "bambuddy" or bool(slicer.exe_path(eng))
+    out = {"bambuddy": {"connected": st["connected"], "error": st["error"]},
+           "slicer": {"engine": eng, "name": slicer.NAMES.get(eng, "Bambuddy's slicer"), "found": found},
+           "printers": {"online": online, "total": total}, "presets_missing": missing}
+    _health = (time.time(), out)
+    return out | {"helper": DOWNLOADER.snapshot()["online"]}
+
+
 @app.get("/api/printer-status")
 def printer_status_all(download: int = 0):
     """Printer status tab: everything Bambuddy reports about every printer (read only, no secrets).
     ?download=1 → the same as a JSON file."""
     data = farm.everything()
+    st = farm.status()
+    data["bambuddy"] = {"url": st["url"], "reachable": st["reachable"], "connected": st["connected"], "error": st["error"]}
+    data["log"] = farm.WORKER.log[-40:]
     data["slicing"] = makeit.slicing_summary()
     if download:
         name = time.strftime("bambuddy-printers-%Y-%m-%d-%H%M.json")
@@ -1136,6 +1197,7 @@ def printer_status_all(download: int = 0):
 @app.post("/api/farm/connect")
 async def farm_connect(req: Request):
     body = await req.json()
+    _health_stale()
     try:
         return await run_in_threadpool(farm.connect, str(body.get("url") or "") or None,
                                        str(body.get("api_key") or "") or None)
