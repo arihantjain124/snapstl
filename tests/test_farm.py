@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from starlette.requests import Request
 
-from snapstl import farm
+from snapstl import db, farm
 
 from .test_flow import build_and_wait, client, helper_work, wait_for  # noqa: F401  (client is a fixture)
 from .test_ingest import report
@@ -73,6 +73,7 @@ class FakeBambuddy:
         self.short_filament = False
         self.slicer = "unreachable"  # Bambuddy's slicer sidecar: "ok" | "unreachable" | "hang"
         self.slice_jobs, self.slice_bodies, self.imports, self.speeds = {}, [], [], []
+        self.speed_ignored = False  # a printer that doesn't take the speed command
         self.presets = {"standard": {
             "printer": [{"id": "Bambu Lab A1 0.4 nozzle", "name": "Bambu Lab A1 0.4 nozzle", "source": "standard"}],
             "process": [{"id": "0.20mm Standard @BBL A1", "name": "0.20mm Standard @BBL A1", "source": "standard"}],
@@ -123,6 +124,8 @@ class FakeBambuddy:
         m = re.fullmatch(r"/api/v1/printers/(\d+)/print-speed\?mode=(\d)", path)
         if m and method == "POST":
             self.speeds.append((int(m.group(1)), int(m.group(2))))
+            if not self.speed_ignored:  # Bambuddy answers "sent"; the printer reports the new level later
+                self.status.setdefault(int(m.group(1)), {})["speed_level"] = int(m.group(2))
             return 200, b'{"success": true}'
         if method == "GET" and path.split("?")[0] == "/api/v1/slicer/presets":
             self.preset_reads.append(path)
@@ -631,11 +634,29 @@ def test_presets_per_printer_auto_slice_import_and_speed(client, bb):
     src = next(fid for fid, b in bb.slice_bodies if b["printer_preset"]["id"] == "11" and "Names pink" in bb.files[fid]["filename"])
     assert sent["filename"] == bb.files[src]["filename"].replace(".3mf", ".gcode.3mf")
     assert bb.speeds == []
-    bb.queue[1]["status"] = "printing"
+    bb.queue[1]["status"] = "printing"  # Bambuddy's queue says printing while the printer still prepares …
+    bb.status[4] |= {"state": "PREPARE", "layer_num": 0, "speed_level": 2}
+    farm.WORKER.refresh()
+    assert bb.speeds == []  # … a speed sent now would be lost when the print begins
+    bb.status[4] |= {"state": "RUNNING", "layer_num": 1}
+    farm.WORKER.refresh()
+    assert bb.speeds == [(4, 3)] and bb.status[4]["speed_level"] == 3
+    farm.WORKER.refresh()  # the printer reports Sport: done, never sent again
     farm.WORKER.refresh()
     assert bb.speeds == [(4, 3)]
-    farm.WORKER.refresh()
-    assert bb.speeds == [(4, 3)]  # once
+    with db.tx() as con:
+        j = dict(con.execute("SELECT * FROM print_jobs WHERE printer_id=4").fetchone())
+    assert j["speed_set"] == 1 and j["speed_tries"] == 1 and not j["error"]
+    # a printer that doesn't take it: sent again each round, then the job says so
+    with db.tx() as con:
+        con.execute("UPDATE print_jobs SET speed=4, speed_set=0, speed_tries=0 WHERE id=?", (j["id"],))
+    bb.speed_ignored = True
+    for _ in range(farm.SPEED_TRIES + 2):
+        farm.WORKER.refresh()
+    assert bb.speeds[1:] == [(4, 4)] * farm.SPEED_TRIES
+    with db.tx() as con:
+        j = dict(con.execute("SELECT * FROM print_jobs WHERE id=?", (j["id"],)).fetchone())
+    assert j["speed_set"] == 1 and "stayed at Sport" in j["error"] and "Ludicrous" in j["error"]
     assert client.post("/api/makeit/start", json={"batch_id": bid, "file": base, "printer_id": 1,
                                                   "speed": "warp"}).status_code == 400
 

@@ -73,6 +73,7 @@ DEFAULTS = {
 }
 PRESET_SLOTS = ("printer", "process", "filament")
 SPEEDS_SET = {"silent": 1, "standard": 2, "sport": 3, "ludicrous": 4}  # print speed per job (Make It)
+SPEED_TRIES = 5  # speed commands sent per print until the printer reports that speed
 SLICE_TIMEOUT_S = 20 * 60  # a slice with no progress for this long is given up (it never blocks printing)
 
 
@@ -1169,6 +1170,34 @@ class Worker:
         if n:
             self._log(f"Slicing {n} plate(s) automatically for their pre-selected printers")
 
+    @staticmethod
+    def _apply_speed(j: dict, cfg: dict) -> dict:
+        """The speed chosen in Print, applied once the printer really prints (state RUNNING, first layer
+        on): Bambuddy's queue says "printing" while the printer is still heating and calibrating, and a
+        speed sent then is lost when the print begins. The printer's own speed level is checked every
+        round; the command is sent again until it matches (SPEED_TRIES at most), then the job says so."""
+        want = int(j["speed"])
+        s = printer_status(j["printer_id"], cfg, max_age=0)
+        if s.get("speed_level") == want:
+            out = {"speed_set": 1}
+            if str(j.get("error") or "").startswith("Print speed"):
+                out["error"] = None
+            return out
+        running = str(s.get("state") or "").upper() == "RUNNING"
+        layer = s.get("layer_num")
+        if not running or (isinstance(layer, int) and layer < 1):
+            return {}  # still preparing: wait
+        tries = int(j.get("speed_tries") or 0)
+        name = SPEEDS.get(want, str(want))
+        if tries >= SPEED_TRIES:
+            return {"speed_set": 1, "error": f"Print speed not applied: the printer stayed at "
+                    f"{SPEEDS.get(s.get('speed_level'), 'its speed')} after {tries} tries — set {name} in Bambuddy"}
+        try:
+            api("POST", f"/printers/{j['printer_id']}/print-speed?mode={want}", cfg=cfg)
+            return {"speed_tries": tries + 1}
+        except FarmError as e:
+            return {"speed_tries": tries + 1, "error": f"Print speed not set: {e}"}
+
     def refresh(self) -> None:
         """Follow jobs sent to Bambuddy: waiting → printing → printed (or failed / cancelled there)."""
         self.last_refresh = time.time()
@@ -1196,11 +1225,7 @@ class Worker:
                 if new == "done":
                     changes["progress"] = 100.0
             if new == "printing" and j.get("speed") and not j.get("speed_set"):
-                try:  # the speed chosen in Make It, once the print has started
-                    api("POST", f"/printers/{j['printer_id']}/print-speed?mode={int(j['speed'])}", cfg=cfg)
-                    changes["speed_set"] = 1
-                except FarmError as e:
-                    changes["error"] = f"Print speed not set: {e}"
+                changes |= self._apply_speed(j, cfg)
             if new == "printing":
                 s = printer_status(j["printer_id"], cfg, max_age=10)
                 if s.get("progress") is not None:

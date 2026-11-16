@@ -150,7 +150,8 @@ MIGRATIONS = [
     ("orders", "made_at", "REAL"),          # base and name both printed (Make It) → Ready to ship
     ("slices", "model", "TEXT"),             # printer model it was sliced for ("" = before 0.16)
     ("print_jobs", "speed", "INTEGER"),     # print speed chosen in Make It (1 silent … 4 ludicrous)
-    ("print_jobs", "speed_set", "INTEGER"),  # 1 = speed applied once the print started
+    ("print_jobs", "speed_set", "INTEGER"),  # 1 = the printer reports the chosen speed (or SnapSTL gave up)
+    ("print_jobs", "speed_tries", "INTEGER"),  # speed commands sent so far (farm.SPEED_TRIES at most)
     ("slices", "engine", "TEXT"),           # "orca" (OrcaSlicer on this computer) | "bambuddy"
     ("slices", "sliced_path", "TEXT"),      # OrcaSlicer's sliced file (batch folder / Sliced/<model>/…)
 ]
