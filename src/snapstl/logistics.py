@@ -50,6 +50,7 @@ app.add_api_route('/api/orders/facets', server.order_facets, methods=['GET'])
 app.add_api_route('/api/orders.csv', server.export_orders, methods=['GET'])
 
 
+PORT = 8002
 _LOCK = threading.Lock()
 _LISTENER = None
 _THREAD = None
@@ -84,14 +85,14 @@ def start():
         _ERROR = ""
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            sock.bind(('0.0.0.0', 8002))
+            sock.bind(('0.0.0.0', PORT))
             sock.listen(128)
             sock.setblocking(False)
         except OSError:
             sock.close()
             _ERROR = "Cannot open logistics port 8002. Another program may be using it, or Windows may be blocking it."
             return None
-        listener = uvicorn.Server(uvicorn.Config(app, host='0.0.0.0', port=8002,
+        listener = uvicorn.Server(uvicorn.Config(app, host='0.0.0.0', port=PORT,
                                                  log_level='warning', access_log=False))
         def run():
             global _ERROR
