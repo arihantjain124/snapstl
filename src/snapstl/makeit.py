@@ -24,7 +24,6 @@ yet marked printed / ready), plus any plate with a print on its way.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from . import computer, db, farm
 
@@ -121,7 +120,6 @@ def board(prs: list[dict] | None = None) -> dict:
             orders = _batch_orders(con, b)
             state_of = {o["order_id"]: o["state"] for o in orders}
             on = plate_order_ids(plates, orders)
-            out_dir = Path(b["out_dir"]) if b.get("out_dir") else None
             for p in plates:
                 j = latest.get((b["id"], p["file"]))
                 ids = on.get(p["file"], [])
@@ -135,11 +133,10 @@ def board(prs: list[dict] | None = None) -> dict:
                 done = bool(j and j["state"] == "done")
                 if not (open_orders or active or done):
                     continue  # its orders were marked printed / made again elsewhere
-                sliced = farm.find_sliced(out_dir, p["file"]) if out_dir else None
                 rows.append({
                     "batch_id": b["id"], "batch": summ.get("label") or f"Batch #{b['id']}", "file": p["file"],
                     "kind": p["kind"], "names": p.get("names", []), "colors": p.get("colors", []),
-                    "order_ids": ids, "sliced": bool(sliced), "by_file": bool(sliced), "slice": None,
+                    "order_ids": ids, "sliced": False, "slice": None,
                     "job": _job(j), "job_active": active, "done": done,
                     "need": farm.needed_color(p),
                 })
@@ -159,16 +156,13 @@ def board(prs: list[dict] | None = None) -> dict:
         if pid not in keys:
             keys[pid] = farm.target(pid)[0]
         r["slice_for"] = pid
-        missing = farm.missing_presets(pid) if pid and not r["by_file"] else None
+        missing = farm.missing_presets(pid) if pid else None
         if missing:
             r["slice"] = {"state": "needs_presets", "model": missing}
-            r["sliced"] = False
-        elif not r["by_file"]:
+        else:
             x = farm.slice_for(slices, r["batch_id"], r["file"], keys[pid])
             r["slice"] = {"state": x["state"], "progress": x["progress"], "error": x["error"]} if x else None
             r["sliced"] = bool(x and x["state"] == "done")
-        else:
-            r["slice"] = {"state": "done", "by": "file"}
     done = sorted([r for r in rows if r["done"]], key=lambda r: -(r["job"] or {}).get("updated_at", 0))[:300]
     return {"bases": [r for r in pending if r["kind"] == "bases"],
             "names": [r for r in pending if r["kind"] == "names"],
@@ -232,10 +226,9 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
     why = farm.eligible(plate, printer)
     if why:
         raise farm.FarmError(f"{printer['name']} {why}")
-    b_out = Path(b["out_dir"]) if b.get("out_dir") else None
     missing = farm.missing_presets(printer["id"])
-    if missing and not (b_out and farm.find_sliced(b_out, file)):
-        raise farm.FarmError(f"Set the slicing presets for {missing} printers in Slicing first")
+    if missing:
+        raise farm.FarmError(f"Pick the slicing profiles for {missing} printers in Slicing first")
     j = _latest(batch_id, file)
     if j and j["state"] == "sent" and j.get("held"):
         if j["printer_id"] != printer["id"] or opts:
@@ -309,8 +302,7 @@ def slicing_summary() -> dict:
     count = lambda st: sum(1 for i in items if i["state"] == st)  # noqa: E731
     cfg = farm.load_config()
     by_model = {m: ({k: (v["name"] if isinstance(v, dict) else v) for k, v in p.items()})
-                for m, p in ((cfg.get("orca_presets_by_model") if farm.engine(cfg) in farm.LOCAL
-                              else cfg.get("presets_by_model")) or {}).items()}
+                for m, p in (cfg.get("presets_by_model") or {}).items()}
     return {"presets_by_model": by_model, "items": items,
             "counts": {st: count(st) for st in ("queued", "uploading", "slicing", "done", "failed")}}
 

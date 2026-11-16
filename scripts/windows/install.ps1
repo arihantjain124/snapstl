@@ -47,7 +47,6 @@ foreach ($Dir in @([Environment]::GetFolderPath("Programs"), [Environment]::GetF
 
 Write-Host "Installing Bambuddy (print farm: SnapSTL's Push to queue sends plates there)..."
 Install-Bambuddy
-Install-Orca
 
 if (Wait-SnapSTL 90) {
   Write-Host "SnapSTL is running: open it from the Start menu (or http://127.0.0.1:8317)."
