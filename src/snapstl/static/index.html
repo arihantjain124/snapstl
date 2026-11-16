@@ -258,60 +258,51 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
  <div class="sec">
   <div class="card">
     <h2>Slicing</h2>
-    <p class="hint" style="max-width:900px">Before a plate prints it's sliced into G-code for the printer it goes to, with the <b>presets you set for that printer model</b>. SnapSTL has no presets of its own: you bring the presets you already print with from Bambu Studio, so farm prints come out like the ones you slice by hand. Slicing runs in the background, one plate at a time; printing always waits for <b>Start print</b>.</p>
+    <p class="hint" style="max-width:900px">Before a plate prints it's sliced into G-code by <b>Bambuddy's slicer</b> (its slicer service, e.g. in Docker next to Bambuddy), with the <b>profiles stored in Bambuddy</b> that you pick here for each printer model. SnapSTL keeps no slicing settings of its own — only which Bambuddy profile each model uses — and the sliced file stays in Bambuddy's library. Slicing runs in the background, one plate at a time; printing always waits for <b>Start print</b>.</p>
     <ul class="checklist" id="slp_steps"></ul>
   </div>
   <div class="grid2">
    <div class="sec">
     <div class="card">
-      <h2>Slicer</h2>
-      <label>Slices with</label>
-      <select id="slp_engine"><option value="orca">OrcaSlicer on this computer</option><option value="bambu">Bambu Studio on this computer</option><option value="bambuddy">Bambuddy's slicer</option></select>
-      <p class="hint under" id="slp_enginemsg"></p>
+      <h2>Bambuddy's slicer</h2>
+      <p class="hint under" id="slp_bbmsg"></p>
       <label class="check"><input type="checkbox" id="slp_auto"> <b>Slice new plates automatically</b></label>
       <p class="hint under">Each new plate is sliced for the printer pre-selected for it in Print, so it's ready when you press Start print. Off: a plate is sliced when you press Slice or Start print.</p>
     </div>
     <div class="card" id="slp_presetcard">
-      <h2>Presets per printer model</h2>
-      <p class="hint under">Every printer of a model slices with the same three presets. Pick the model, then its presets:</p>
+      <h2>Bambuddy profiles per printer model</h2>
+      <p class="hint under">Every printer of a model slices with the same three Bambuddy profiles. Pick the model, then its profiles — every profile Bambuddy has is listed:</p>
       <div class="chips" id="slp_models" style="margin:8px 0 4px"></div>
       <p class="hint under" id="slp_modelhint"></p>
       <div id="slp_presetrows">
-        <label>Printer preset <span class="hint">— machine, nozzle, bed</span></label><select id="slp_printer"></select>
-        <label>Process preset <span class="hint">— layer height, walls, infill, speeds</span></label><select id="slp_process"></select>
-        <label>Filament preset <span class="hint">— temperatures, cooling, flow</span></label><select id="slp_filament"></select>
-        <label class="check"><input type="checkbox" id="slp_sys"> Show Bambu Lab system presets too</label>
-        <p class="hint under" id="slp_sysmsg"></p>
-        <div class="toolbar" style="margin-top:10px"><button id="slp_save" class="primary">Save presets</button><button id="slp_test" title="Slices a 20 mm test cube with these presets — a quick check on a new computer">Test slice</button><button id="slp_clear" hidden>Remove</button><span class="grow"></span><button id="slp_reload" class="small" title="Read the presets again (after saving new ones in Bambu Studio)">Reload lists</button></div>
+        <label>Printer profile <span class="hint">— machine, nozzle, bed</span></label><select id="slp_printer"></select>
+        <label>Process profile <span class="hint">— layer height, walls, infill, speeds</span></label><select id="slp_process"></select>
+        <label>Filament profile <span class="hint">— temperatures, cooling, flow</span></label><select id="slp_filament"></select>
+        <p class="hint under" id="slp_listmsg"></p>
+        <div class="toolbar" style="margin-top:10px"><button id="slp_save" class="primary">Save</button><button id="slp_clear" hidden>Remove</button><span class="grow"></span><button id="slp_reload" class="small" title="Read Bambuddy's profiles again (also its Bambu / Orca cloud lists)">Reload from Bambuddy</button></div>
         <p class="hint" id="slp_msg"></p>
-        <p class="hint" id="slp_testmsg"></p>
       </div>
     </div>
    </div>
-   <div class="card" id="slp_impcard">
-      <h2>How to bring your presets from Bambu Studio</h2>
-      <h3>Presets saved in Bambu Studio on this computer</h3>
+   <div class="card">
+      <h2>Where the profiles come from</h2>
+      <p class="hint">Profiles are added and changed in Bambuddy, never in SnapSTL. Then press <b>Reload from Bambuddy</b> here.</p>
+      <h3>Your own profiles</h3>
       <ol class="steps">
-        <li>Open <b>Bambu Studio</b> and pick the printer (e.g. <i>Bambu Lab A1 0.4 nozzle</i>), the filament and the process you print organizers with. Change what you need (walls, infill, speeds…).</li>
-        <li>Save each changed preset: the <b>save icon</b> next to its list → give it a clear name, e.g. <i>Organizer A1 0.20</i>.</li>
-        <li>Here press <b>Reload lists</b>. Your presets appear under <i>yours (Bambu Studio)</i> — choose them for the model and <b>Save presets</b>.</li>
+        <li>In Bambu Studio (or OrcaSlicer) save the printer, process and filament presets you print organizers with, then export them: <b>File → Export → Export Preset Bundle</b> (.bbscfg / .bbsflmt) or a preset's .json.</li>
+        <li>In Bambuddy: <b>Profiles → Local Profiles → Import Profiles</b>, and drop the files there. They're listed here under <i>Yours in Bambuddy</i>.</li>
       </ol>
-      <div class="callout">Bambu Studio keeps them in <code>%APPDATA%\BambuStudio\user\&lt;account id&gt;\</code> on Windows (<code>~/Library/Application Support/BambuStudio/user/</code> on a Mac), in the folders <code>machine</code>, <code>process</code> and <code>filament</code>. Signed in with your Bambu account? Presets saved on another computer arrive here once Bambu Studio is opened and signed in on this one.</div>
-      <h3>Presets from another computer</h3>
-      <ol class="steps">
-        <li>On that computer, in Bambu Studio: <b>File → Export → Export Preset Bundle</b>.</li>
-        <li>Choose <b>Printer preset bundle</b> (.bbscfg — the printer with its process and filament presets) or <b>Filament preset bundle</b> (.bbsflmt). A single preset: its <code>.json</code> from the user folder above.</li>
-        <li>Copy the file to this computer and add it — a bundle adds all of its presets at once:</li>
-      </ol>
-      <div class="toolbar"><label class="btn primary" style="margin:0;color:#fff">Add preset files…<input type="file" id="slp_import" multiple accept=".json,.zip,.bbscfg,.bbsflmt,.orca_filament" hidden></label><span class="hint grow" id="slp_impmsg"></span></div>
-      <p class="hint" id="slp_imphint"></p>
+      <h3>Cloud profiles</h3>
+      <p class="hint">Sign in to Bambu Cloud (or connect Orca Cloud) in Bambuddy; your cloud presets are then listed here too. For the Bambu Cloud list, the API key SnapSTL uses needs <b>Allow cloud access</b> (Bambuddy → Settings → API keys).</p>
+      <h3>Bambuddy's slicer service</h3>
+      <p class="hint">In Bambuddy: <b>Settings → Slicer</b> — turn on <b>Use Slicer API</b> and set the sidecar URL (or the <code>SLICER_API_URL</code> / <code>BAMBU_STUDIO_API_URL</code> settings of its Docker setup). Its <b>Preferred Slicer</b> decides whether Bambu Studio or OrcaSlicer slices.</p>
       <h3>Good to know</h3>
       <ul class="hint" style="padding-left:18px;margin:4px 0">
-        <li>The process preset must be made for that printer (Bambu Studio's <i>compatible printers</i>); otherwise slicing fails and says so.</li>
-        <li>Name plates are sliced in their colour, bases in white — one filament preset per model is enough.</li>
-        <li>Changing a model's presets slices its plates again (automatically or at Start print); plates already printed aren't touched.</li>
+        <li>The process profile must be made for that printer profile; otherwise Bambuddy's slicer fails and the plate says why.</li>
+        <li>Name plates are sliced in their colour, bases in white — one filament profile per model is enough.</li>
+        <li>Picking other profiles slices that model's plates again (automatically or at Start print); plates already printed aren't touched.</li>
+        <li>A profile deleted in Bambuddy makes slicing fail for that model until you pick another here.</li>
       </ul>
-      <details class="kvd" style="margin-top:6px"><summary class="hint">Folders SnapSTL reads presets from</summary><ul class="hint" id="slp_folders" style="padding-left:18px;margin:4px 0;word-break:break-all"></ul></details>
    </div>
   </div>
   <div class="card">
@@ -355,7 +346,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <tr><td class="k">Batches</td><td>Download models from MakerWorld and build plates; the download queue.</td></tr>
         <tr><td class="k">Print</td><td>Send each plate to a printer and start it (Bases / Names / Completed / Removed).</td></tr>
         <tr><td class="k">Printers</td><td>What every printer is doing and the filament loaded, live from Bambuddy.</td></tr>
-        <tr><td class="k">Slicing</td><td>The slicer, presets per printer model and print defaults per printer.</td></tr>
+        <tr><td class="k">Slicing</td><td>Bambuddy profiles per printer model, automatic slicing and print defaults per printer.</td></tr>
         <tr><td class="k">Settings</td><td>This page: the product, plates, folders, connections and maintenance.</td></tr>
       </table>
     </div>
@@ -613,10 +604,10 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>On each printer:</b> Settings → Network → <b>LAN Only Mode</b> on, then <b>Developer Mode</b> on. Developer Mode disconnects the printer from Bambu Cloud and the Handy app.</li>
       <li><b>In Bambuddy</b> (Printers → <b>Open Bambuddy</b>): add each printer. Any printer can print bases or names — it only needs the right filament loaded.</li>
       <li><b>Filament</b> is read from Bambuddy: every AMS slot and external spool with Bambu's colour name (<i>Hot Pink</i>, <i>Jade White</i>). Nothing to type in SnapSTL — load the spool and it shows up.</li>
-      <li><b>Slicing</b>: set the presets for each printer model (see Slicing below).</li>
+      <li><b>Slicing</b>: pick the Bambuddy profiles for each printer model (see Slicing below).</li>
     </ol>
     <p><b>Print</b> (sidebar) has four lists. <b>Bases</b>: every base plate still to print, with the next <b>available</b> printer that has white loaded and the most filament left already chosen. <b>Names</b>: every name plate with its colour — only printers with that colour loaded can be chosen; one is pre-selected when available. <b>Completed</b>: printed plates, with <b>Reprint</b> only for a failed print. <b>Removed</b>: plates taken off the lists (e.g. printed by hand), with <b>Put back</b>.</p>
-    <p>Each plate shows whether it's <b>sliced</b> for its printer's model (<i>Sliced</i>, <i>Slicing</i>, <i>Slicing failed</i> with the reason, or <i>No presets for A1</i> → Slicing). <b>Options</b> start from the printer's print defaults (Slicing → Print defaults); change speed, bed levelling, flow calibration or timelapse for that plate only.</p>
+    <p>Each plate shows whether it's <b>sliced</b> for its printer's model (<i>Sliced</i>, <i>Slicing</i>, <i>Slicing failed</i> with the reason, or <i>No profiles for A1</i> → Slicing). <b>Options</b> start from the printer's print defaults (Slicing → Print defaults); change speed, bed levelling, flow calibration or timelapse for that plate only.</p>
     <p><b>Nothing prints until you click Start print</b> on a plate: that click slices it if needed, sends it to the chosen printer and starts it. Bambuddy prints it as soon as the printer is free and its bed has been cleared (<b>Clear plate</b> on the Printers page, or in Bambuddy). If Bambuddy warns (e.g. too little filament), SnapSTL asks before starting anyway. A printed plate moves to <b>Completed</b>; once an order's base and name are both printed it shows in <b>Orders → Ready to ship</b>.</p>
   </div>
 
@@ -626,11 +617,11 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
   <div class="card" id="h-slicing">
     <h2>Slicing</h2>
-    <p>Every plate is sliced for the printer it goes to, with the <b>presets set for that printer model</b> (all A1s share one set, all P1Ss another). SnapSTL has <b>no built-in presets</b>: a model without its presets isn't sliced or printed, and Print says so — so farm prints always use the settings you tuned.</p>
+    <p>Every plate is sliced by <b>Bambuddy's slicer</b> (its slicer service, e.g. in Docker on another computer) for the printer it goes to, with the <b>Bambuddy profiles picked for that printer model</b> (all A1s share one set, all P1Ss another). SnapSTL has no slicer and keeps no slicing settings: only which Bambuddy profile each model uses. A model without picked profiles isn't sliced or printed, and Print says so.</p>
     <ul>
-      <li><b>Slicer</b> — <b>OrcaSlicer</b> or <b>Bambu Studio</b> on this computer (same engine, same Bambu presets; on a Mac only OrcaSlicer — Bambu Studio's command line crashes there), or Bambuddy's slicer. <b>Test slice</b> slices a 20 mm cube with a model's presets — do it once on a new computer.</li>
-      <li><b>Presets per printer model</b> — choose the printer, process (layer height, walls, infill, speeds) and filament preset for each model. Your own presets are listed first; tick <b>Show Bambu Lab system presets</b> to choose from Bambu's.</li>
-      <li><b>Bringing presets from Bambu Studio</b> — presets saved in Bambu Studio on this computer are read directly (<code>%APPDATA%\BambuStudio\user\…</code> on Windows): save them there, then <b>Reload lists</b>. From another computer: <b>File → Export → Export Preset Bundle</b> (.bbscfg / .bbsflmt) and <b>Add preset files…</b>.</li>
+      <li><b>Bambuddy profiles per printer model</b> — choose the printer, process (layer height, walls, infill, speeds) and filament profile for each model. Every profile Bambuddy has is listed: yours in Bambuddy, Orca Cloud, Bambu Cloud and the slicer's standard ones. <b>Reload from Bambuddy</b> reads them again.</li>
+      <li><b>Adding profiles</b> — in Bambuddy, never in SnapSTL: export from Bambu Studio (<b>File → Export → Export Preset Bundle</b>) and import in Bambuddy under <b>Profiles → Local Profiles → Import Profiles</b>; or sign in to Bambu Cloud / Orca Cloud in Bambuddy (the API key needs <b>Allow cloud access</b> for Bambu Cloud presets).</li>
+      <li><b>Bambuddy's slicer service</b> — Bambuddy → Settings → Slicer: <b>Use Slicer API</b> on, with the sidecar URL. Its <b>Preferred Slicer</b> decides Bambu Studio or OrcaSlicer.</li>
       <li><b>Print defaults per printer</b> — speed, bed levelling, flow calibration and timelapse each printer uses at Start print (changeable per plate in Print).</li>
       <li><b>Slice new plates automatically</b> — each new plate is sliced for its pre-selected printer. A slice with no progress for 20 minutes is stopped with a message; a failed automatic slice isn't retried by itself (<b>Slice</b> again in Print).</li>
     </ul>
@@ -664,7 +655,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Connections</b> — the Chrome helper, Bambuddy, the shared order records (several computers) and the web portal (browsers on your network).</li>
       <li><b>Maintenance</b> — updates, and the database: back up, clean up old records (orders already made are always kept), or reset. None of these delete files.</li>
     </ul>
-    <p class="hint">Slicer, presets and print defaults are on the <b>Slicing</b> page.</p>
+    <p class="hint">Slicing profiles and print defaults are on the <b>Slicing</b> page.</p>
   </div>
 
   <div class="card" id="h-trouble">
@@ -680,8 +671,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <tr><td>"watermark still on the base" / "didn't confirm the license password"</td><td>Check the license password in Settings, reload the SnapSTL Helper (2.2.1) in <code>chrome://extensions</code>, then <b>Retry failed</b> in the Download queue.</td></tr>
       <tr><td>Queue download says "Add the license password"</td><td>Settings → Product → License password → Save settings.</td></tr>
       <tr><td>Bambuddy isn't answering</td><td>Run the SnapSTL install command again (it starts Bambuddy, and never replaces one you already had). Log: <code>~/Library/Logs/Bambuddy</code> (Mac), <code>%LOCALAPPDATA%\SnapSTL</code> (Windows).</td></tr>
-      <tr><td>No presets for A1 (or P1S)</td><td>Slicing → <b>Presets per printer model</b>: choose that model's printer, process and filament preset → <b>Save presets</b>.</td></tr>
-      <tr><td>Slicing failed</td><td>"OrcaSlicer / Bambu Studio isn't installed" → install it (the SnapSTL installer installs OrcaSlicer) or choose the other in Slicing. "isn't made for the printer preset" → pick a process preset made for that printer in Slicing. Then <b>Slice</b> again in Print. <b>Test slice</b> in Slicing checks the setup.</td></tr>
+      <tr><td>No profiles for A1 (or P1S)</td><td>Slicing → <b>Bambuddy profiles per printer model</b>: choose that model's printer, process and filament profile → <b>Save</b>.</td></tr>
+      <tr><td>Slicing failed</td><td>"Bambuddy's slicer isn't running" → in Bambuddy: Settings → Slicer → <b>Use Slicer API</b> on, and its slicer container running. "isn't made for the printer preset" → pick a process profile made for that printer profile in Slicing. "no longer in Bambuddy" → the profile was deleted there: pick another. Then <b>Slice</b> again in Print.</td></tr>
       <tr><td>A started plate stays "Started · in queue"</td><td>Its printer is busy or waiting for the bed to be cleared: Printers → <b>Clear plate</b>.</td></tr>
       <tr><td>Can't copy text in the window</td><td>Quit and reopen SnapSTL.app.</td></tr>
       <tr><td>Portal doesn't open</td><td>Terminal: <code>launchctl kickstart -k gui/$(id -u)/local.snapmagicians.snapstl</code>; log: <code>~/Library/Logs/SnapSTL.log</code>.</td></tr>
@@ -923,8 +914,8 @@ function mkChips(){if(!MK)return;const n={bases:MK.bases.length,names:MK.names.l
 const mkKey=r=>r.batch_id+'|'+r.file;
 function sliceCell(r,sel){const sl=r.slice,k=esc(mkKey(r));
   const other=r.slice_for&&sel&&sel.printer&&String(r.slice_for)!==sel.printer?`<div class="hint">for ${esc(mkPrinter(r.slice_for).name||'')} — Start print slices it for your choice if needed</div>`:'';
-  if(sl&&sl.state==='needs_presets')return `<span class="pill warn">No presets for ${esc(sl.model)}</span><div class="hint"><a href="#" data-go="slicing">Set them in Slicing</a></div>`;
-  if(r.sliced)return `<span class="pill ok">Sliced</span>${sl&&sl.by==='file'?' <span class="hint">(sliced file)</span>':` <button class="small" data-mkslice="${k}" data-again="1" title="Slice it again with the current presets">↻</button>`}${other}`;
+  if(sl&&sl.state==='needs_presets')return `<span class="pill warn">No profiles for ${esc(sl.model)}</span><div class="hint"><a href="#" data-go="slicing">Pick them in Slicing</a></div>`;
+  if(r.sliced)return `<span class="pill ok">Sliced</span> <button class="small" data-mkslice="${k}" data-again="1" title="Slice it again in Bambuddy with the current profiles">↻</button>${other}`;
   if(sl&&['queued','uploading','slicing'].includes(sl.state))return `<span class="pill info">${sl.state==='queued'?'Waiting to slice':sl.state==='uploading'?'Sending to slicer':'Slicing'+(sl.progress?' '+Math.round(sl.progress)+'%':'')}</span>${other}`;
   const btn=`<button class="small" data-mkslice="${k}" title="Slice it now for the chosen printer">Slice</button>`;
   if(sl&&sl.state==='failed')return `<span class="pill err">Slicing failed</span> ${btn}<div class="reason">${esc(sl.error||'')}</div>`;
@@ -955,7 +946,7 @@ function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(
   const all=[...MK.bases,...MK.names,...MK.completed,...MK.removed],find=k=>all.find(r=>mkKey(r)===k);
   document.querySelectorAll('[data-mkslice]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkslice);x.disabled=true;
     const sel=MKSEL[x.dataset.mkslice];const pid=(sel&&sel.printer)||r.suggested||null;
-    if(!pid){alert('Choose a printer first — the plate is sliced with the presets of its printer model');x.disabled=false;return}
+    if(!pid){alert('Choose a printer first — the plate is sliced with the Bambuddy profiles of its printer model');x.disabled=false;return}
     try{await post('/api/makeit/slice',{plates:[{batch_id:r.batch_id,file:r.file,printer_id:+pid}],again:!!x.dataset.again})}catch(e){alert(e.message)}loadMakeIt()});
   document.querySelectorAll('[data-mkrm]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkrm);
     if(!confirm('Take this plate off '+(r.kind==='bases'?'Bases':'Names')+'? (e.g. printed by hand) Nothing is deleted — Put back is in Removed.'))return;
@@ -986,7 +977,7 @@ async function loadMakeIt(){let r;try{r=await api('/api/makeit')}catch(e){$('mkm
   const failed=rows.filter(x=>x.slice&&x.slice.state==='failed');
   $('mkmsgs').innerHTML=farmMsgs(st)
     +(st.connected&&!r.printers.length?'<div class="w">No printers in Bambuddy yet — add them in Bambuddy (<b>Open Bambuddy</b>).</div>':'')
-    +(need.length?`<div class="w">No slicing presets for <b>${need.map(esc).join(', ')}</b> printers yet — <a href="#" data-go="slicing">set them in Slicing</a>. Their plates can't be sliced or printed until then.</div>`:'')
+    +(need.length?`<div class="w">No slicing profiles picked for <b>${need.map(esc).join(', ')}</b> printers yet — <a href="#" data-go="slicing">pick them in Slicing</a>. Their plates can't be sliced or printed until then.</div>`:'')
     +(failed.length?`<div class="e">${failed.length} plate${failed.length>1?'s':''} failed to slice: ${esc(failed[0].slice.error||'')}</div>`:'');
   const busy=r.printers.filter(p=>p.status&&['RUNNING','PREPARE','PAUSE'].includes((p.status.state||'').toUpperCase())).length;
   const clear=r.printers.filter(p=>p.status&&p.status.awaiting_plate_clear).length;
@@ -998,62 +989,49 @@ $('slp_all').onclick=async()=>{if(!MK)return;const todo=[...MK.bases,...MK.names
   try{const r=await post('/api/makeit/slice',{plates:todo.map(x=>{const sel=MKSEL[mkKey(x)];const pid=(sel&&sel.printer)||x.suggested||null;return {batch_id:x.batch_id,file:x.file,printer_id:pid?+pid:null}})});$('slp_allmsg').textContent=`${r.queued} plate(s) queued for slicing.`}catch(e){$('slp_allmsg').textContent=e.message}loadMakeIt()};
 
 // ---------- Slicing ----------
-let SLMODEL='',SLP=null,SLSYS=false;try{SLSYS=localStorage.getItem('slsys')==='1';SLMODEL=localStorage.getItem('slmodel')||''}catch{}
-const SYS_SRC=['Bambu Lab','standard'],SLOTS=['printer','process','filament'];
-const ENGINE_NAME={orca:'OrcaSlicer',bambu:'Bambu Studio',bambuddy:"Bambuddy's slicer"};
-const srcLabel=s=>s==='standard'||s==='Bambu Lab'?'Bambu Lab system presets':s==='local'?'Added to Bambuddy':s==='cloud'?'Your Bambu cloud presets':s;
+let SLMODEL='',SLP=null;try{SLMODEL=localStorage.getItem('slmodel')||''}catch{}
+const SLOTS=['printer','process','filament'];
+const SRC_LABEL={local:'Yours in Bambuddy',orca_cloud:'Orca Cloud',cloud:'Bambu Cloud',standard:"Slicer's standard profiles"};
+const CLOUD_WHY={not_authenticated:'not signed in in Bambuddy',expired:'sign-in expired in Bambuddy',unreachable:"couldn't be reached"};
 const putJSON=(path,b)=>api(path,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
-async function loadPresets(){$('slp_msg').textContent='Loading presets…';$('slp_msg').style.color='';let p;
-  try{p=await api('/api/makeit/presets'+(SLMODEL?'?model='+encodeURIComponent(SLMODEL):''))}catch(e){$('slp_msg').textContent=e.message;return}
-  if(SLMODEL&&p.models.length&&!p.models.includes(SLMODEL)){SLMODEL='';return loadPresets()}
-  SLP=p;SLMODEL=p.model||'';$('slp_msg').textContent='';
-  $('slp_auto').checked=p.auto_slice;$('slp_engine').value=p.engine;$('slp_engine').querySelector('[value=bambu]').disabled=!p.bambu_works_here;
-  const exe=p.engine==='orca'?p.orca:p.engine==='bambu'?p.bambu:'',found=p.engine==='bambuddy'||!!exe;
-  $('slp_enginemsg').innerHTML=(p.engine==='bambuddy'?`Bambuddy slices with the presets stored in Bambuddy; its slicer must be running (Bambuddy → Settings → Slicer → <b>Use Slicer API</b>). A slicer on this computer is faster and reads your Bambu Studio presets directly.`
-    :found?`<span style="color:var(--ok)">✓ ${ENGINE_NAME[p.engine]} found</span> · <code>${esc(exe)}</code>`
-    :`<span style="color:var(--err)">${ENGINE_NAME[p.engine]} isn't installed on this computer.</span> ${p.engine==='orca'?'Re-run the SnapSTL installer (it installs OrcaSlicer), or install it from orcaslicer.com.':'Install Bambu Studio from bambulab.com, or choose OrcaSlicer.'}`)
-    +(p.engine!=='bambuddy'?' OrcaSlicer and Bambu Studio use the same Bambu presets.':'')+(!p.bambu_works_here?' <span class="hint">Bambu Studio can\'t slice for SnapSTL on a Mac (its command line crashes there) — use OrcaSlicer.</span>':'');
+async function loadPresets(refresh){$('slp_msg').textContent=refresh?'Reading Bambuddy\'s profiles…':'Loading…';$('slp_msg').style.color='';let p;
+  const q=new URLSearchParams();if(SLMODEL)q.set('model',SLMODEL);if(refresh)q.set('refresh','1');
+  try{p=await api('/api/makeit/presets?'+q)}catch(e){$('slp_msg').textContent=e.message;return}
+  if(SLMODEL&&p.models.length&&!p.models.includes(SLMODEL)){SLMODEL='';return loadPresets(refresh)}
+  SLP=p;SLMODEL=p.model||'';$('slp_msg').textContent=refresh&&!p.error?'Profiles read again from Bambuddy.':'';
+  $('slp_auto').checked=p.auto_slice;
+  const n=SLOTS.reduce((a,sl)=>a+(p.available[sl]||[]).length,0),ok=!p.error;
+  $('slp_bbmsg').innerHTML=ok?`<span style="color:var(--ok)">✓ Connected to Bambuddy</span>${p.bambuddy_url?` · <a href="${esc(p.bambuddy_url)}" target="_blank" rel="noopener">${esc(p.bambuddy_url)}</a>`:''} · ${n} profiles listed. Bambuddy's slicer service must be running (Bambuddy → Settings → Slicer → <b>Use Slicer API</b>); a plate that can't be sliced says why in Print.`
+    :`<span style="color:var(--err)">Can't read Bambuddy's profiles:</span> ${esc(p.error)} — connect Bambuddy in <a href="#" data-go="settings:connections">Settings → Connections</a>.`;
   const allSet=p.models.length&&p.models.every(m=>p.set_for[m]);
-  const step=(ok,t,d,opt)=>`<li class="${ok?'ok':opt?'opt':'todo'}"><span class="mark">${ok?'✓':opt?'–':'!'}</span><div><b>${t}</b><div class="hint">${d}</div></div></li>`;
-  $('slp_steps').innerHTML=step(found,'Slicer',found?`${ENGINE_NAME[p.engine]} slices your plates.`:'Install it, or choose another slicer below.')
-    +step(allSet,'Presets for every printer model',p.models.length?p.models.map(m=>`${esc(m)}: ${p.set_for[m]?'set':'<b>not set</b>'}`).join(' · '):'Add your printers in Bambuddy first — their models show up here.')
-    +step(false,'Test slice','Optional: <b>Test slice</b> checks the slicer and a model\'s presets on this computer in a few seconds.',true);
+  const step=(good,t,d,opt)=>`<li class="${good?'ok':opt?'opt':'todo'}"><span class="mark">${good?'✓':opt?'–':'!'}</span><div><b>${t}</b><div class="hint">${d}</div></div></li>`;
+  $('slp_steps').innerHTML=step(ok,'Bambuddy connected',ok?'Its slicer slices your plates.':'Settings → Connections → Bambuddy.')
+    +step(ok&&n>0,'Profiles in Bambuddy',n?`${n} printer, process and filament profiles.`:'None yet — import yours in Bambuddy (see <b>Where the profiles come from</b>).')
+    +step(allSet,'Profiles picked for every printer model',p.models.length?p.models.map(m=>`${esc(m)}: ${p.set_for[m]?'set':'<b>not set</b>'}`).join(' · '):'Add your printers in Bambuddy first — their models show up here.');
   $('slp_models').innerHTML=p.models.map(m=>`<button data-slm="${esc(m)}" class="${m===SLMODEL?'on':''}">${esc(m)} <span class="pill ${p.set_for[m]?'ok':'warn'}" style="margin-left:4px">${p.set_for[m]?'set':'not set'}</span></button>`).join('');
   document.querySelectorAll('[data-slm]').forEach(b=>b.onclick=()=>{SLMODEL=b.dataset.slm;try{localStorage.setItem('slmodel',SLMODEL)}catch{}loadPresets()});
   const prs=p.printers.filter(x=>(x.model||'')===SLMODEL);
   $('slp_modelhint').innerHTML=!p.models.length?'<span style="color:var(--warn)">No printers yet.</span> Add them in Bambuddy (Printers → Open Bambuddy).'
-    :`<b>${esc(SLMODEL)}</b>: ${prs.map(x=>esc(x.name)).join(', ')}. ${p.set_for[SLMODEL]?'Plates for these printers are sliced with the presets below.':'<b style="color:var(--warn)">No presets yet</b> — plates for these printers aren\'t sliced or printed until you save them.'}`;
-  $('slp_presetrows').hidden=!p.models.length;$('slp_sys').checked=SLSYS;fillPresetSelects();
-  $('slp_save').textContent=`Save presets for ${SLMODEL||'this model'}`;$('slp_clear').hidden=!p.set_for[SLMODEL];
-  $('slp_test').disabled=p.engine==='bambuddy'||!p.set_for[SLMODEL];
-  $('slp_test').title=p.engine==='bambuddy'?'The test runs a slicer on this computer':!p.set_for[SLMODEL]?'Save the presets first':'Slices a 20 mm test cube with these presets';
-  $('slp_imphint').innerHTML=p.engine==='bambuddy'?'With Bambuddy\'s slicer, added presets go into Bambuddy.':'Added presets are kept by SnapSTL for slicing (listed as <i>added in SnapSTL</i>).';
-  $('slp_folders').innerHTML=(p.folders||[]).map(f=>`<li>${esc(f.label)}: <code>${esc(f.path)}</code></li>`).join('');
+    :`<b>${esc(SLMODEL)}</b>: ${prs.map(x=>esc(x.name)).join(', ')}. ${p.set_for[SLMODEL]?'Plates for these printers are sliced with the profiles below.':'<b style="color:var(--warn)">No profiles picked yet</b> — plates for these printers aren\'t sliced or printed until you save them.'}`;
+  $('slp_presetrows').hidden=!p.models.length;fillPresetSelects();
+  $('slp_save').textContent=`Save for ${SLMODEL||'this model'}`;$('slp_clear').hidden=!p.set_for[SLMODEL];
   renderDefaults(p);slicingBox(p.activity)}
-function fillPresetSelects(){const p=SLP;if(!p)return;let own=0;const none=[];
-  for(const slot of SLOTS){const el=$('slp_'+slot),cur=p.chosen[slot]||'',all=p.available[slot]||[];const mine=all.filter(x=>!SYS_SRC.includes(x.source)).length;own+=mine;if(!mine)none.push(slot);
-    const list=all.filter(x=>SLSYS||!SYS_SRC.includes(x.source)||x.key===cur),groups={};
-    for(const x of list)(groups[x.source]=groups[x.source]||[]).push(x);
-    el.innerHTML='<option value="">— choose —</option>'+Object.entries(groups).map(([g,xs])=>`<optgroup label="${esc(srcLabel(g))}">${xs.map(x=>`<option value="${esc(x.key)}" ${x.key===cur?'selected':''}>${esc(x.name)}</option>`).join('')}</optgroup>`).join('')}
-  $('slp_sysmsg').innerHTML=!own?'<span style="color:var(--warn)">No presets of your own found yet.</span> Bring them from Bambu Studio (see <b>How to bring your presets</b>), or tick the box to choose from Bambu Lab\'s system presets.'
-    :none.length&&!SLSYS?`No ${none.join(' or ')} preset of your own — tick the box to choose Bambu Lab's (for the printer preset that's usually right).`:''}
-$('slp_sys').onchange=()=>{SLSYS=$('slp_sys').checked;try{localStorage.setItem('slsys',SLSYS?'1':'0')}catch{}fillPresetSelects()};
-$('slp_reload').onclick=()=>loadPresets();
-$('slp_engine').onchange=async()=>{try{await putJSON('/api/makeit/settings',{slicer:$('slp_engine').value});loadPresets();loadHealth()}catch(e){$('slp_msg').textContent=e.message}};
+function fillPresetSelects(){const p=SLP;if(!p)return;const gone=[];
+  for(const slot of SLOTS){const el=$('slp_'+slot),cur=p.chosen[slot]||'',all=p.available[slot]||[],groups={};
+    for(const x of all)(groups[x.source]=groups[x.source]||[]).push(x);
+    const missing=cur&&!all.some(x=>x.key===cur);if(missing)gone.push(`${slot}: ${p.names[slot]}`);
+    el.innerHTML='<option value="">— choose —</option>'+(missing?`<option value="${esc(cur)}" selected>${esc(p.names[slot])} (no longer in Bambuddy)</option>`:'')
+      +Object.entries(groups).map(([g,xs])=>`<optgroup label="${esc(SRC_LABEL[g]||g)}">${xs.map(x=>`<option value="${esc(x.key)}" ${x.key===cur?'selected':''}>${esc(x.name)}</option>`).join('')}</optgroup>`).join('')}
+  const st=p.status||{},why=[['Bambu Cloud',st.cloud_status],['Orca Cloud',st.orca_cloud_status]].filter(([,v])=>v&&v!=='ok').map(([k,v])=>`${k}: ${CLOUD_WHY[v]||v}`);
+  $('slp_listmsg').innerHTML=(gone.length?`<span style="color:var(--err)">Picked profile${gone.length>1?'s':''} no longer in Bambuddy — ${gone.map(esc).join(' · ')}. Pick another and Save.</span> `:'')
+    +(why.length?`<span class="hint">Cloud profiles not listed (${why.map(esc).join(' · ')}).</span>`:'')}
+$('slp_reload').onclick=()=>loadPresets(true);
 $('slp_auto').onchange=async()=>{try{const r=await putJSON('/api/makeit/settings',{auto_slice:$('slp_auto').checked});$('slp_msg').textContent=r.auto_slice?'New plates are sliced automatically.':'Automatic slicing off — plates are sliced with Slice or at Start print.'}catch(e){$('slp_msg').textContent=e.message}};
 $('slp_save').onclick=async()=>{const body={model:SLMODEL};for(const sl of SLOTS)body[sl]=$('slp_'+sl).value;
-  if(SLOTS.some(sl=>!body[sl])){$('slp_msg').textContent='Choose all three: printer, process and filament.';$('slp_msg').style.color='var(--err)';return}
+  if(SLOTS.some(sl=>!body[sl])){$('slp_msg').textContent='Choose all three: printer, process and filament profile.';$('slp_msg').style.color='var(--err)';return}
   try{const r=await putJSON('/api/makeit/presets',body);await loadPresets();$('slp_msg').innerHTML=`Saved for <b>${esc(SLMODEL)}</b>: ${Object.values(r.names).map(esc).join(' · ')}. Its plates are sliced with these from now on.`;$('slp_msg').style.color='var(--ok)';loadHealth()}catch(e){$('slp_msg').textContent=e.message;$('slp_msg').style.color='var(--err)'}};
-$('slp_clear').onclick=async()=>{if(!confirm(`Remove the slicing presets for ${SLMODEL}? Its plates aren't sliced or printed until you set new ones.`))return;
+$('slp_clear').onclick=async()=>{if(!confirm(`Remove the profiles picked for ${SLMODEL}? Its plates aren't sliced or printed until you pick new ones. Nothing changes in Bambuddy.`))return;
   try{await putJSON('/api/makeit/presets',{model:SLMODEL,clear:true});loadPresets();loadHealth()}catch(e){$('slp_msg').textContent=e.message}};
-$('slp_import').onchange=async()=>{const files=[...$('slp_import').files];if(!files.length)return;const out=[];
-  for(const f of files){$('slp_impmsg').textContent=`Adding ${f.name}…`;const fd=new FormData();fd.append('file',f);fd.append('kind','');
-    try{const r=await api('/api/makeit/presets/import',{method:'POST',body:fd});out.push(`${f.name}: ${r.imported} added${r.names&&r.names.length?' ('+r.names.join(', ')+')':''}${r.skipped?`, ${r.skipped} skipped`:''}${r.errors.length?' — '+r.errors.join('; '):''}`)}
-    catch(e){out.push(`${f.name}: ${e.message}`)}}
-  $('slp_impmsg').textContent=out.join(' · ');$('slp_import').value='';loadPresets()};
-$('slp_test').onclick=async()=>{$('slp_testmsg').textContent='Slicing a test cube…';$('slp_testmsg').style.color='';
-  try{const r=await post('/api/makeit/test-slice',{model:SLMODEL});$('slp_testmsg').textContent=`✓ ${r.engine} sliced the test cube in ${r.seconds} s for ${r.printer_model||SLMODEL} (${r.presets.printer} · ${r.presets.process} · ${r.presets.filament}).`;$('slp_testmsg').style.color='var(--ok)'}
-  catch(e){$('slp_testmsg').textContent=e.message;$('slp_testmsg').style.color='var(--err)'}};
 function renderDefaults(p){const sel=(id,k,vals,cur)=>`<select data-pd="${id}" data-k="${k}"><option value="">Bambuddy's default</option>${vals.map(v=>`<option value="${v}" ${setVal(cur)&&String(cur)===String(v)?'selected':''}>${k==='speed'?cap(v):optVal(v)}</option>`).join('')}</select>`;
   $('slp_defaults').innerHTML=p.printers.length?p.printers.map(x=>{const d=x.defaults||{};return `<tr><td><b>${esc(x.name)}</b></td><td class="hint">${esc(x.model)}</td><td>${sel(x.id,'speed',p.speeds,d.speed)}</td>${Object.entries(p.options).map(([k,v])=>`<td>${sel(x.id,k,v,d[k])}</td>`).join('')}<td style="white-space:nowrap"><button class="small" data-pdsave="${x.id}">Save</button> <span class="hint" data-pdmsg="${x.id}"></span></td></tr>`}).join(''):'<tr><td colspan="7" class="empty">No printers in Bambuddy yet</td></tr>';
   document.querySelectorAll('[data-pdsave]').forEach(b=>b.onclick=async()=>{const id=b.dataset.pdsave,body={printer_id:+id},m=document.querySelector(`[data-pdmsg="${id}"]`);
@@ -1062,7 +1040,7 @@ function renderDefaults(p){const sel=(id,k,vals,cur)=>`<select data-pd="${id}" d
 const SLST={queued:['Waiting','info'],uploading:['Sending','info'],slicing:['Slicing','info'],done:['Sliced','ok'],failed:['Failed','err']};
 function slicingBox(sl){if(!sl)return;const c=sl.counts||{},items=sl.items||[];
   $('slp_actsum').textContent=`${c.slicing||0} slicing · ${(c.queued||0)+(c.uploading||0)} waiting · ${c.done||0} sliced · ${c.failed||0} failed`;
-  $('slp_activity').innerHTML=items.length?`<table><thead><tr><th>State</th><th>Plate</th><th>Batch</th><th>Presets</th><th>Updated</th></tr></thead><tbody>${items.map(i=>{const st=SLST[i.state]||[i.state,''];const pr=i.presets||{};
+  $('slp_activity').innerHTML=items.length?`<table><thead><tr><th>State</th><th>Plate</th><th>Batch</th><th>Profiles</th><th>Updated</th></tr></thead><tbody>${items.map(i=>{const st=SLST[i.state]||[i.state,''];const pr=i.presets||{};
     return `<tr><td><span class="pill ${st[1]}">${st[0]}${i.state==='slicing'&&i.progress?' '+Math.round(i.progress)+'%':''}</span></td><td><div>${i.kind==='bases'?'<b>Bases</b>':`<b>Names</b> ${sw(i.color||'')}`}</div><div class="fn" style="font-size:12px">${esc(i.plate.split('/').pop())}</div>${i.error?`<div class="reason">${esc(i.error)}</div>`:''}</td><td class="hint">${esc(i.batch)}</td><td class="hint">${esc([pr.printer,pr.process,pr.filament].filter(Boolean).join(' · '))}</td><td class="hint" style="white-space:nowrap">${i.updated_at?new Date(i.updated_at*1000).toLocaleString():''}</td></tr>`}).join('')}</tbody></table>`:'<div class="empty">Nothing sliced yet</div>'}
 $('slp_actref').onclick=async()=>{try{const p=await api('/api/makeit/presets'+(SLMODEL?'?model='+encodeURIComponent(SLMODEL):''));slicingBox(p.activity)}catch(e){$('slp_actsum').textContent=e.message}};
 
@@ -1124,7 +1102,7 @@ let HEALTH=null;
 async function loadHealth(){try{HEALTH=await api('/api/health')}catch{return}const h=HEALTH;
   const miss=h.presets_missing||[],pr=h.printers||{};
   const rows=[['Bambuddy',h.bambuddy.connected?['ok','connected']:['err','not connected'],'settings:connections',h.bambuddy.error||''],
-    ['Slicer',!h.slicer.found?['err','not installed']:miss.length?['warn','no presets: '+miss.join(', ')]:['ok',h.slicer.name],'slicing',h.slicer.name],
+    ['Slicer',!h.slicer.found?['err','Bambuddy not connected']:miss.length?['warn','no profiles: '+miss.join(', ')]:['ok','Bambuddy'],'slicing',h.slicer.name],
     ['Printers',pr.total?[pr.online===pr.total?'ok':pr.online?'warn':'err',`${pr.online}/${pr.total} online`]:['',h.bambuddy.connected?'none yet':'—'],'printers','']];
   $('hrows').innerHTML=rows.map(([l,[c,t],go,tip])=>`<a href="#" data-go="${go}" title="${esc(tip||t)}"><span class="d ${c}"></span>${l}<small>${esc(t)}</small></a>`).join('')}
 document.addEventListener('click',e=>{const a=e.target.closest('[data-go]');if(!a)return;e.preventDefault();const [t,sec]=a.dataset.go.split(':');show(t);if(sec)setSec(sec)});
@@ -1188,7 +1166,7 @@ async function loadSetup(){if(!META.local){$('setupcard').hidden=true;$('sharedc
     step(true,'Output and downloads folders',`Plates: ${esc(s.folders.output)} · Models: ${esc(s.folders.downloads)}`,'o_dir'),
     step(s.shared_records.configured&&s.shared_records.ok,'Shared order records',s.shared_records.configured?(s.shared_records.error?esc(s.shared_records.error):(s.shared_records.ok?'Connected.':'Connecting…')):'Optional — only for several SnapSTL computers.','sharedcard',!s.shared_records.configured),
     step(s.farm.connected&&s.farm.printers>0,'Print farm (Bambuddy)',s.farm.connected?(s.farm.printers?`${s.farm.printers} printer${s.farm.printers>1?'s':''} in Bambuddy.`:'Connected — add your printers in Bambuddy (Print → Open Bambuddy).'):(esc(s.farm.error)||'Bambuddy is not running.')+' Optional — only to send plates to your printers from SnapSTL.','farmsetcard',!s.farm.connected),
-    step(slr.found&&s.farm.printers>0&&!miss.length,'Slicing presets for every printer model',!slr.found?`${esc(slr.name||'The slicer')} isn't installed on this computer.`:!s.farm.printers?'After adding printers: choose the presets for each printer model.':miss.length?`No presets yet for <b>${esc(miss.join(', '))}</b> — bring yours from Bambu Studio.`:`${esc(slr.name)} · presets set for every printer model.`,'tab:slicing',!s.farm.connected),
+    step(slr.found&&s.farm.printers>0&&!miss.length,'Slicing profiles for every printer model',!slr.found?'Connect Bambuddy first — its slicer slices the plates.':!s.farm.printers?'After adding printers: pick the Bambuddy profiles for each printer model.':miss.length?`No profiles picked yet for <b>${esc(miss.join(', '))}</b>.`:`Bambuddy's slicer · profiles picked for every printer model.`,'tab:slicing',!s.farm.connected),
     step(s.updates.git,'Updates',s.updates.git?'Automatic: SnapSTL shows "Update available" when there is one.':esc(s.updates.error||'Not available'),'updcard'),
   ].join('');
   document.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>jump(b.dataset.jump))}

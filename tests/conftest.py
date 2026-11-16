@@ -11,10 +11,6 @@ os.environ["SNAPSTL_COMPUTER_NAME"] = "Test computer"
 # Never a real Bambuddy on this computer (it could get an API key or print jobs); tests/test_farm.py fakes it.
 os.environ["SNAPSTL_BAMBUDDY_URL"] = "http://127.0.0.1:9"
 os.environ["SNAPSTL_NO_BAMBUDDY"] = "1"  # never update a real Bambuddy install from tests
-# Never the real OrcaSlicer or the real slicer presets of this computer; tests/test_slicer.py sets its own.
-os.environ["SNAPSTL_ORCA"] = ""
-os.environ["SNAPSTL_BAMBU_STUDIO"] = ""
-os.environ["SNAPSTL_SLICER_HOME"] = tempfile.mkdtemp(prefix="snapstl-slicer-")
 
 import numpy as np
 import pytest

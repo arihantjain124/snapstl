@@ -113,53 +113,6 @@ def running_as_service() -> bool:
     return os.environ.get("XPC_SERVICE_NAME") == SERVICE_LABEL
 
 
-def orca_candidates() -> list[Path]:
-    """Where OrcaSlicer's program may be (SNAPSTL_ORCA overrides: tests, unusual installs)."""
-    if os.environ.get("SNAPSTL_ORCA") is not None:
-        return [Path(os.environ["SNAPSTL_ORCA"])] if os.environ["SNAPSTL_ORCA"] else []
-    if WINDOWS:
-        pf = [os.environ.get("ProgramFiles", r"C:\Program Files"), os.environ.get("LOCALAPPDATA", "")]
-        return [Path(p) / "OrcaSlicer" / "orca-slicer.exe" for p in pf if p] + \
-               [Path(p) / "Programs" / "OrcaSlicer" / "orca-slicer.exe" for p in pf[1:] if p]
-    return [Path("/Applications/OrcaSlicer.app/Contents/MacOS/OrcaSlicer"),
-            Path.home() / "Applications" / "OrcaSlicer.app" / "Contents" / "MacOS" / "OrcaSlicer"]
-
-
-def bambu_candidates() -> list[Path]:
-    """Where Bambu Studio's program may be (SNAPSTL_BAMBU_STUDIO overrides: tests, unusual installs)."""
-    if os.environ.get("SNAPSTL_BAMBU_STUDIO") is not None:
-        return [Path(os.environ["SNAPSTL_BAMBU_STUDIO"])] if os.environ["SNAPSTL_BAMBU_STUDIO"] else []
-    if WINDOWS:
-        out = [Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Bambu Studio" / "bambu-studio.exe"]
-        if os.environ.get("LOCALAPPDATA"):
-            out.append(Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Bambu Studio" / "bambu-studio.exe")
-        return out
-    return [Path("/Applications/BambuStudio.app/Contents/MacOS/BambuStudio"),
-            Path.home() / "Applications" / "BambuStudio.app" / "Contents" / "MacOS" / "BambuStudio"]
-
-
-def slicer_data_dir(app: str) -> Path | None:
-    """A slicer app's settings folder ("OrcaSlicer" / "BambuStudio"): its system/ and user/ presets.
-    SNAPSTL_SLICER_HOME replaces the base folder (tests)."""
-    base = os.environ.get("SNAPSTL_SLICER_HOME")
-    if base is not None:
-        return Path(base) / app if base else None
-    if WINDOWS:
-        return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / app
-    return Path.home() / "Library" / "Application Support" / app
-
-
-def slicer_resource_dirs() -> list[Path]:
-    """Preset folders inside the installed slicer apps (Bambu Studio keeps them as plain files)."""
-    if os.environ.get("SNAPSTL_SLICER_HOME") is not None:
-        return []
-    if WINDOWS:
-        pf = os.environ.get("ProgramFiles", r"C:\Program Files")
-        return [Path(pf) / "Bambu Studio" / "resources" / "profiles"]
-    return [Path("/Applications/BambuStudio.app/Contents/Resources/profiles"),
-            Path.home() / "Applications" / "BambuStudio.app" / "Contents" / "Resources" / "profiles"]
-
-
 def bambuddy_dir() -> Path:
     """Where the installers put Bambuddy (the print-farm manager, scripts/bambuddy-mac.sh / bambuddy.ps1)."""
     return Path(os.environ.get("BAMBUDDY_DIR") or Path.home() / "SnapSTL-Bambuddy")

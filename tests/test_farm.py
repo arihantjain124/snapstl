@@ -79,6 +79,7 @@ class FakeBambuddy:
             "filament": [{"id": "Bambu PLA Basic @BBL A1", "name": "Bambu PLA Basic @BBL A1", "source": "standard"}]},
             "local": {"process": [{"id": "7", "name": "Organizer 0.24mm", "source": "local"}]}}
         self.calls = []
+        self.preset_reads = []
 
     def __call__(self, method, url, headers, body, timeout):
         path = url.split("://", 1)[1].split("/", 1)[1]
@@ -121,7 +122,8 @@ class FakeBambuddy:
         if m and method == "POST":
             self.speeds.append((int(m.group(1)), int(m.group(2))))
             return 200, b'{"success": true}'
-        if method == "GET" and path == "/api/v1/slicer/presets":
+        if method == "GET" and path.split("?")[0] == "/api/v1/slicer/presets":
+            self.preset_reads.append(path)
             return 200, json.dumps(self.presets).encode()
         m = re.fullmatch(r"/api/v1/library/files/(\d+)/slice", path)
         if m and method == "POST":
@@ -289,16 +291,17 @@ def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     j = wait_for(lambda: (lambda j: j if j["state"] == "failed" else None)(job_of(client, bid, base_plate)))
     assert "Slicing failed" in j["error"] and "Use Slicer API" in j["error"]
 
-    # sliced by hand in Bambu Studio → Sliced/<same path>.gcode.3mf → Try again → in Bambuddy's queue
+    # only Bambuddy's slicer slices: a sliced file put in the batch folder by hand is never used
     hand = folder / "Sliced" / "Bases" / "{Ayra,pink},{Riya,blue}.gcode.3mf"
     hand.parent.mkdir(parents=True)
     hand.write_bytes(sliced_bytes("by hand"))
-    assert client.get(f"/api/batches/{bid}/plates").json()["plates"][0]["sliced"]
+    assert not client.get(f"/api/batches/{bid}/plates").json()["plates"][0]["sliced"]
+    bb.slicer = "ok"  # Bambuddy's slicer running → Try again → sliced there → in Bambuddy's queue
     assert client.post(f"/api/print-jobs/{j['id']}/retry").status_code == 200
     j = wait_for(lambda: (lambda j: j if j["state"] == "sent" else None)(job_of(client, bid, base_plate)))
     sent = bb.files[bb.queue[1]["library_file_id"]]
     assert sent["filename"] == f"{folder.name} - Bases - {{Ayra,pink}},{{Riya,blue}}.gcode.3mf"
-    assert b"by hand" in sent["data"] and bb.queue[1]["printer_id"] == 1
+    assert b"by hand" not in sent["data"] and bb.queue[1]["printer_id"] == 1
     assert bb.queue[1]["manual_start"] is True and j["held"]  # never starts by itself
     assert not any("add-to-queue" in u for _, u in bb.calls)
     # pushing the same plate again is skipped while it's on its way
@@ -332,7 +335,7 @@ def test_print_button_moves_reprints_and_sets_options(client, bb):
     client.get("/api/farm")
     bid, folder = built_batch(client, "PB")
     pink = "Names/pink/{Ayra,pink}.3mf"
-    (folder / "Names" / "pink" / "{Ayra,pink}.gcode.3mf").write_bytes(sliced_bytes())  # sliced, next to the plate
+    bb.slicer = "ok"  # Bambuddy's slicer slices it when pushed
     client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": pink, "printer_id": 2}]})
     j = wait_for(lambda: (lambda j: j if j["state"] == "sent" else None)(job_of(client, bid, pink)))
 
@@ -365,7 +368,7 @@ def test_prints_start_only_when_start_is_pressed(client, bb):
     client.get("/api/farm")
     bid, folder = built_batch(client, "PS")
     plate = "Bases/{Ayra,pink},{Riya,blue}.3mf"
-    (folder / "Bases" / "{Ayra,pink},{Riya,blue}.gcode.3mf").write_bytes(sliced_bytes())
+    bb.slicer = "ok"
     client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": plate, "printer_id": 1}]})
     j = wait_for(lambda: (lambda j: j if j["state"] == "sent" else None)(job_of(client, bid, plate)))
     farm.WORKER.refresh()
@@ -393,7 +396,7 @@ def test_cancel_and_login_on_bambuddy(client, bb):
     assert r.status_code == 200 and r.json()["connected"]
     bid, folder = built_batch(client, "PC")
     plate = "Bases/{Ayra,pink},{Riya,blue}.3mf"
-    (folder / "Bases" / "{Ayra,pink},{Riya,blue}.gcode.3mf").write_bytes(sliced_bytes())  # next to the plate works too
+    bb.slicer = "ok"
     client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": plate, "printer_id": 1}]})
     j = wait_for(lambda: (lambda j: j if j["state"] == "sent" else None)(job_of(client, bid, plate)))
     assert client.post(f"/api/print-jobs/{j['id']}/cancel").status_code == 200
@@ -448,8 +451,7 @@ def test_make_it_bases_names_start_completed_ready_to_ship(client, bb):
     client.get("/api/farm")
     bid, folder = built_batch(client, "PM")
     base, pink, blue = "Bases/{Ayra,pink},{Riya,blue}.3mf", "Names/pink/{Ayra,pink}.3mf", "Names/blue/{Riya,blue}.3mf"
-    for f in (base, pink, blue):
-        (folder / (f[:-4] + ".gcode.3mf")).write_bytes(sliced_bytes(f))
+    bb.slicer = "ok"  # sliced by Bambuddy when started
 
     m = client.get("/api/makeit").json()
     assert [r["file"] for r in m["bases"]] == [base] and {r["file"] for r in m["names"]} == {pink, blue}
@@ -575,7 +577,7 @@ def test_no_built_in_presets_a_model_needs_its_own(client, bb):
     assert p["model"] == "A1" and p["set_for"] == {"A1": False} and p["chosen"] == {}
     assert makeit_row(client, "names", pink)["slice"] == {"state": "needs_presets", "model": "A1"}
     r = client.post("/api/makeit/start", json={"batch_id": bid, "file": pink, "printer_id": 2})
-    assert r.status_code == 400 and "slicing presets for A1" in r.json()["detail"]
+    assert r.status_code == 400 and "slicing profiles for A1" in r.json()["detail"]
     assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink, "printer_id": 2}]}).json()["queued"] == 0
     h = client.get("/api/health").json()
     assert h["presets_missing"] == ["A1"] and h["bambuddy"]["connected"] and h["printers"]["total"] == 3
@@ -641,10 +643,45 @@ def test_presets_per_printer_auto_slice_import_and_speed(client, bb):
     farm.WORKER.slice_next()
     assert bases_sliced() == n
 
-    # preset files go to Bambuddy, one kind at a time
+    # SnapSTL never adds profiles (to Bambuddy or itself), and has no slicer of its own to test or switch to
     r = client.post("/api/makeit/presets/import", data={"kind": "filament"},
                     files={"file": ("Silk PLA.bbsflmt", b"PK\x03\x04 bundle", "application/octet-stream")})
-    assert r.status_code == 200 and r.json() == {"imported": 2, "skipped": 0, "errors": [], "kind": "filament"}
-    assert bb.imports == ["Silk PLA.bbsflmt"]
-    bad = client.post("/api/makeit/presets/import", files={"file": ("notes.txt", b"x", "text/plain")})
-    assert bad.status_code == 400
+    assert r.status_code in (404, 405) and bb.imports == []
+    assert client.post("/api/makeit/test-slice", json={"model": "A1"}).status_code in (404, 405)
+    assert "slicer" not in client.put("/api/makeit/settings", json={"slicer": "orca"}).json()
+
+
+def test_any_bambuddy_profile_and_nothing_kept_by_snapstl(client, bb):
+    from snapstl.platform_os import app_dir
+
+    # left behind by the slicers on this computer before 0.21: dropped when the worker starts
+    raw = {**farm.load_config(), "slicer": "orca", "orca_presets_by_model": {"A1": {"printer": "x"}}}
+    farm.CONFIG_PATH.write_text(json.dumps(raw))
+    (app_dir() / "slicer-presets" / "process").mkdir(parents=True, exist_ok=True)
+    (app_dir() / "slicer-presets" / "process" / "mine.json").write_text("{}")
+    farm.forget_local_slicing()
+    kept = json.loads(farm.CONFIG_PATH.read_text())
+    assert "slicer" not in kept and "orca_presets_by_model" not in kept and not (app_dir() / "slicer-presets").exists()
+
+    # every tier Bambuddy lists can be picked: yours, Orca cloud, Bambu cloud, standard
+    bb.presets["cloud"] = {"filament": [{"id": "PFUS1", "name": "My Silk PLA", "source": "cloud"}]}
+    bb.presets["orca_cloud"] = {"process": [{"id": "oc9", "name": "Orca fine", "source": "orca_cloud"}]}
+    bb.presets["cloud_status"] = "ok"
+    bb.presets["orca_cloud_status"] = "not_authenticated"
+    client.get("/api/farm")
+    p = client.get("/api/makeit/presets?model=A1&refresh=1").json()
+    assert bb.preset_reads[-1].endswith("?refresh=true") and p["error"] == ""
+    assert {x["source"] for sl in p["available"].values() for x in sl} == {"local", "orca_cloud", "cloud", "standard"}
+    assert p["status"] == {"cloud_status": "ok", "orca_cloud_status": "not_authenticated"}
+    keys = {"model": "A1", "printer": "standard:Bambu Lab A1 0.4 nozzle", "process": "orca_cloud:oc9", "filament": "cloud:PFUS1"}
+    assert client.put("/api/makeit/presets", json=keys).json()["names"] == {
+        "printer": "Bambu Lab A1 0.4 nozzle", "process": "Orca fine", "filament": "My Silk PLA"}
+    # only references to Bambuddy's profiles are kept — never their content
+    assert farm.load_config()["presets_by_model"]["A1"]["filament"] == {"source": "cloud", "id": "PFUS1", "name": "My Silk PLA"}
+    # a profile that isn't in Bambuddy can't be picked
+    bad = client.put("/api/makeit/presets", json={**keys, "process": "local:999"})
+    assert bad.status_code == 400 and "from Bambuddy's list" in bad.json()["detail"]
+    # Bambuddy can't list them: the page still opens and says why
+    bb.presets = ["not", "a", "profile list"]  # not the shape Bambuddy answers with
+    p = client.get("/api/makeit/presets").json()
+    assert p["error"] and p["available"] == {"printer": [], "process": [], "filament": []}
