@@ -19,6 +19,27 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 UV="$(command -v uv || echo "$HOME/.local/bin/uv")"
 changed=0
 
+# Never a second Bambuddy next to one installed another way (Bambuddy's own installer: launchd
+# com.bambuddy.app, ~/bambuddy): SnapSTL uses that one. Only SnapSTL's own copy is ever stopped.
+other=""
+launchctl print "gui/$(id -u)/com.bambuddy.app" >/dev/null 2>&1 && other="launchd com.bambuddy.app"
+[ -z "$other" ] && [ -f "$HOME/Library/LaunchAgents/com.bambuddy.app.plist" ] && other="com.bambuddy.app"
+if [ -n "$other" ]; then
+  if [ -d "$DIR/.git" ] || [ -f "$PLIST" ]; then
+    echo "Found your own Bambuddy ($other) — SnapSTL's extra copy is stopped and yours is started again (nothing deleted)."
+    launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+    rm -f "$PLIST"   # SnapSTL's own service file only; its Bambuddy folder and data stay
+    launchctl kickstart -k "gui/$(id -u)/com.bambuddy.app" 2>/dev/null || true
+  else
+    echo "Found Bambuddy already installed ($other) — SnapSTL uses it (nothing installed or changed)."
+  fi
+  exit 0
+fi
+if [ ! -d "$DIR/.git" ] && curl -fs -m 3 "http://127.0.0.1:$PORT/api/v1/auth/status" >/dev/null 2>&1; then
+  echo "A Bambuddy is already answering on port $PORT — SnapSTL uses it (nothing installed)."
+  exit 0
+fi
+
 if [ -d "$DIR/.git" ]; then
   current="$(git -C "$DIR" describe --tags --exact-match 2>/dev/null || echo none)"
   if [ "$current" != "$VERSION" ]; then

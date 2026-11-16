@@ -969,49 +969,53 @@ async def makeit_start(req: Request):
 
 
 @app.get("/api/makeit/presets")
-def makeit_presets(model: str = ""):
-    """Make It → Slice: the slicer (OrcaSlicer on this computer or Bambuddy's), its presets, the ones chosen
-    (for a printer model, or the default), the farm's printer models and automatic slicing."""
+def makeit_presets(printer_id: int | None = None):
+    """Slicing: the slicer, its presets, the ones a printer slices with (its own, else the default set),
+    the farm's printers and automatic slicing."""
     from . import slicer
 
     cfg = farm.load_config()
     eng = farm.engine(cfg)
     try:
-        models = farm.printer_models(farm.printers(with_status=False))
+        prs = farm.printers(with_status=False)
     except farm.FarmError:
-        models = []
-    base = {"engine": eng, "orca": str(slicer.orca_path() or ""), "model": model, "models": models,
+        prs = []
+    model = next((p.get("model") or "" for p in prs if p["id"] == printer_id), "")
+    own_key = "orca_presets_by_printer" if eng in farm.LOCAL else "presets_by_printer"
+    own = sorted(int(k) for k in (cfg.get(own_key) or {}).keys() if str(k).isdigit())
+    base = {"engine": eng, "orca": str(slicer.exe_path("orca") or ""), "bambu": str(slicer.exe_path("bambu") or ""),
+            "bambu_works_here": slicer.works_here("bambu"), "printer_id": printer_id,
+            "printers": [{"id": p["id"], "name": p["name"], "model": p.get("model") or "", "own": p["id"] in own}
+                         for p in prs],
             "auto_slice": bool(cfg.get("auto_slice", True)), "slicer_setting": cfg.get("slicer") or ""}
-    if eng == "orca":
+    if eng in farm.LOCAL:
         avail = slicer.list_presets()
-        names = farm.orca_presets_for(model, cfg)
-        own = sorted((cfg.get("orca_presets_by_model") or {}).keys())
-        return base | {"available": avail, "chosen": names, "names": names, "own": own,
-                       "bambuddy_listed": True, "preset_folders": [f"{l}: {p}" for l, p in slicer.preset_roots()]}
+        names = farm.orca_presets_for(model, cfg, printer_id)
+        return base | {"available": avail, "chosen": names, "names": names, "bambuddy_listed": True}
     try:
         avail = farm.bambuddy_presets()
     except farm.FarmError as e:
         raise _farm_err(e) from e
-    chosen = farm.chosen_presets(cfg, avail, model)
+    chosen = farm.chosen_presets(cfg, avail, model, printer_id)
     for slot, v in chosen.items():  # a default Bambuddy doesn't list (its slicer isn't running) is still offered
         key = f"{v['source']}:{v['id']}"
         if not any(p["key"] == key for p in avail[slot]):
             avail[slot].insert(0, {"key": key, "name": v["name"], "source": v["source"]})
     return base | {"available": avail, "chosen": {k: f"{v['source']}:{v['id']}" for k, v in chosen.items()},
-                   "names": {k: v["name"] for k, v in chosen.items()}, "bambuddy_listed": sum(map(len, avail.values())) > 3,
-                   "own": sorted((cfg.get("presets_by_model") or {}).keys())}
+                   "names": {k: v["name"] for k, v in chosen.items()}, "bambuddy_listed": sum(map(len, avail.values())) > 3}
 
 
 @app.put("/api/makeit/presets")
 async def makeit_presets_save(req: Request):
-    """{model: "" (default) | "A1" …, printer, process, filament} or {model, clear: true} — for the slicer in use."""
+    """{printer_id: none (default) | Bambuddy printer id, printer, process, filament} or {printer_id, clear}."""
     b = await req.json()
+    pid = int(b["printer_id"]) if b.get("printer_id") else None
     model, clear = str(b.get("model") or ""), bool(b.get("clear"))
     try:
-        if farm.engine() == "orca":
-            names = await run_in_threadpool(farm.set_orca_presets, b, model, clear)
+        if farm.engine() in farm.LOCAL:
+            names = await run_in_threadpool(farm.set_orca_presets, b, model, clear, pid)
             return {"names": names}
-        chosen = await run_in_threadpool(farm.set_presets, b, model, clear)
+        chosen = await run_in_threadpool(farm.set_presets, b, model, clear, pid)
     except farm.FarmError as e:
         raise _farm_err(e) from e
     return {"names": {k: v["name"] for k, v in chosen.items()}}
@@ -1028,13 +1032,31 @@ async def makeit_presets_import(file: UploadFile = File(...), kind: str = Form("
         raise HTTPException(413, "File too large")
     name = Path(file.filename or "preset.json").name
     try:
-        if farm.engine() == "orca":
+        if farm.engine() in farm.LOCAL:
             r = await run_in_threadpool(slicer.import_preset, name, data, kind)
         else:
             r = await run_in_threadpool(farm.import_presets, name, data)
     except (farm.FarmError, slicer.SlicerError) as e:
         raise HTTPException(400, str(e)) from e
     return r | {"kind": kind}
+
+
+@app.post("/api/makeit/test-slice")
+async def makeit_test_slice(req: Request):
+    """Slicing → Test slicer: slice a small test plate with the chosen slicer and a model's presets."""
+    from . import slicer
+
+    b = await req.json()
+    pid = int(b["printer_id"]) if b.get("printer_id") else None
+    eng = farm.engine()
+    if eng not in farm.LOCAL:
+        raise HTTPException(400, "The test runs a slicer on this computer — choose OrcaSlicer or Bambu Studio")
+    try:
+        presets = farm.target(pid)[1]
+        r = await run_in_threadpool(slicer.test_slice, eng, presets)
+    except slicer.SlicerError as e:
+        raise HTTPException(400, str(e)) from e
+    return r | {"engine": slicer.NAMES[eng], "presets": presets}
 
 
 @app.put("/api/makeit/settings")
@@ -1045,8 +1067,8 @@ async def makeit_settings(req: Request):
     if "auto_slice" in b:
         changes["auto_slice"] = bool(b["auto_slice"])
     if "slicer" in b:
-        if b["slicer"] not in ("", "orca", "bambuddy"):
-            raise HTTPException(400, "Slicer is orca or bambuddy")
+        if b["slicer"] not in ("", "orca", "bambu", "bambuddy"):
+            raise HTTPException(400, "Slicer is orca, bambu or bambuddy")
         changes["slicer"] = b["slicer"]
     cfg = farm.update_config(**changes)
     farm.WORKER.kick()
@@ -1055,9 +1077,10 @@ async def makeit_settings(req: Request):
 
 @app.post("/api/makeit/slice")
 async def makeit_slice(req: Request):
-    """Slice plates with Bambuddy's slicer: {plates: [{batch_id, file}], again}. Runs in the background."""
+    """Slice plates: {plates: [{batch_id, file, printer_id}], again} — each with the presets of the printer
+    chosen for it (none = the default presets). Runs in the background."""
     b = await req.json()
-    todo = []
+    todo, pids = [], []
     for p in [p for p in b.get("plates", []) if isinstance(p, dict)][:500]:
         bid, file = int(p.get("batch_id") or 0), str(p.get("file", ""))
         _own_batch(bid)
@@ -1066,13 +1089,13 @@ async def makeit_slice(req: Request):
         except farm.FarmError as e:
             raise _farm_err(e) from e
         todo.append((bid, file, plate["kind"], (plate.get("colors") or [""])[0]))
+        pids.append(int(p["printer_id"]) if p.get("printer_id") else None)
     if not todo:
         raise HTTPException(400, "Choose the plates to slice")
-    try:
-        models = farm.printer_models(await run_in_threadpool(farm.printers, None, False)) or [""]
-    except farm.FarmError as e:
-        raise _farm_err(e) from e
-    return {"queued": farm.request_slices(todo, again=bool(b.get("again")), models=models)}
+    n = 0
+    for t, pid in zip(todo, pids):
+        n += await run_in_threadpool(farm.request_slices, [t], [pid], bool(b.get("again")))
+    return {"queued": n}
 
 
 @app.post("/api/makeit/remove")

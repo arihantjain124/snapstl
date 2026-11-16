@@ -26,7 +26,8 @@ FAKE_ORCA = textwrap.dedent('''\
     out = pathlib.Path(opt("--outputdir"))
     machine, process = [json.load(open(p)) for p in opt("--load-settings").split(";")]
     filament = json.load(open(opt("--load-filaments")))
-    if machine["name"] not in process.get("compatible_printers", [machine["name"]]):
+    mname = machine["inherits"] if machine.get("from") == "User" else machine["name"]  # Bambu Studio checks by system preset
+    if mname not in process.get("compatible_printers", [mname]):
         (out / "00001.log").write_text("[error] run 3010: process not compatible with printer.\\n")
         print("run found error, exit"); sys.exit(243)
     with zipfile.ZipFile(out / opt("--export-3mf"), "w") as z:
@@ -115,31 +116,44 @@ def test_import_preset_files(orca):
 
 
 def test_make_it_slices_with_orca_then_prints_through_bambuddy(orca, client, bb):  # noqa: F811
-    from .test_farm import built_batch, makeit_row, wait_for
+    from .test_farm import built_batch, makeit_row, tray, wait_for
 
     client.get("/api/farm")
-    p = client.get("/api/makeit/presets?model=A1").json()
+    p = client.get("/api/makeit/presets?printer_id=2").json()  # Names A (an A1)
     assert p["engine"] == "orca" and p["orca"] == str(orca) and p["chosen"]["process"] == "0.20mm Standard @BBL A1"
-    assert client.put("/api/makeit/presets", json={"model": "A1", **p["chosen"], "process": "Organizer fast"}).status_code == 200
-    assert client.put("/api/makeit/presets", json={"model": "A1", **p["chosen"], "process": "Nope"}).status_code == 400
+    assert [x["name"] for x in p["printers"]] == ["Base 1", "Names A", "Names B"]
+    assert client.put("/api/makeit/presets", json={"printer_id": 2, **p["chosen"], "process": "Organizer fast"}).status_code == 200
+    assert client.put("/api/makeit/presets", json={"printer_id": 2, **p["chosen"], "process": "Nope"}).status_code == 400
+    assert client.get("/api/makeit/presets?printer_id=3").json()["chosen"]["process"] == "0.20mm Standard @BBL A1"  # its own
 
     bid, folder = built_batch(client, "PO")
     pink = "Names/pink/{Ayra,pink}.3mf"
-    assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink}]}).json()["queued"] == 1
+    # pre-selected for pink: Names A → sliced with Names A's presets
+    assert makeit_row(client, "names", pink)["suggested"] == 2
+    assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink, "printer_id": 2}]}).json()["queued"] == 1
     wait_for(lambda: makeit_row(client, "names", pink)["sliced"])
-    out = folder / "Sliced" / "A1" / "Names" / "pink" / "{Ayra,pink}.gcode.3mf"
+    out = next(folder.glob("Sliced/*/Names/pink/{Ayra,pink}.gcode.3mf"))
     g = zipfile.ZipFile(out).read("Metadata/plate_1.gcode").decode()
     assert "process = Organizer fast" in g and "#F4A7C0" in g and bb.slice_bodies == []  # Orca, not Bambuddy
     base = "Bases/{Ayra,pink},{Riya,blue}.3mf"
-    client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": base}]})
+    client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": base, "printer_id": 1}]})
     wait_for(lambda: makeit_row(client, "bases", base)["sliced"])
-    gb = zipfile.ZipFile(folder / "Sliced" / "A1" / "Bases" / "{Ayra,pink},{Riya,blue}.gcode.3mf").read("Metadata/plate_1.gcode")
+    gb = zipfile.ZipFile(next(folder.glob("Sliced/*/Bases/{Ayra,pink},{Riya,blue}.gcode.3mf"))).read("Metadata/plate_1.gcode")
     assert b"#FFFFFF" in gb  # bases are sliced white, whatever names are on them
 
     client.post("/api/makeit/start", json={"batch_id": bid, "file": pink, "printer_id": 2})
     wait_for(lambda: bb.queue and bb.queue[1].get("manual_start") is False)
     sent = bb.files[bb.queue[1]["library_file_id"]]
     assert sent["filename"].endswith("{Ayra,pink}.gcode.3mf") and b"Organizer fast" in sent["data"]
+    # another printer with its own presets: Start print there slices again with *its* presets
+    client.put("/api/makeit/presets", json={"printer_id": 3, "printer": "Bambu Lab A1 0.4 nozzle",
+                                            "process": "0.20mm Standard @BBL A1", "filament": "Bambu PLA Basic @BBL A1"})
+    blue = "Names/blue/{Riya,blue}.3mf"
+    bb.status[3]["ams"][0]["tray"].append(tray(1, "0A2989"))  # Names B gets blue loaded
+    farm._status_cache.clear()
+    client.post("/api/makeit/start", json={"batch_id": bid, "file": blue, "printer_id": 3})
+    wait_for(lambda: len(bb.queue) == 2 and bb.queue[2].get("manual_start") is False)
+    assert b"process = 0.20mm Standard @BBL A1" in bb.files[bb.queue[2]["library_file_id"]]["data"]
 
     # switching to Bambuddy's slicer is one setting
     r = client.put("/api/makeit/settings", json={"slicer": "bambuddy"}).json()
@@ -147,3 +161,57 @@ def test_make_it_slices_with_orca_then_prints_through_bambuddy(orca, client, bb)
 
 
 from .test_farm import bb, client  # noqa: E402,F401  (fixtures)
+
+
+def test_bambu_studio_slicer_on_windows(orca, monkeypatch, tmp_path):
+    from snapstl import platform_os
+
+    monkeypatch.setenv("SNAPSTL_BAMBU_STUDIO", str(orca))  # same stand-in, called as Bambu Studio
+    src = tmp_path / "plate.3mf"
+    src.write_bytes(b"plain")
+    monkeypatch.setattr(platform_os, "MAC", True)
+    with pytest.raises(slicer.SlicerError, match="can't slice on macOS"):
+        slicer.slice_plate(src, tmp_path / "o.gcode.3mf", slicer.defaults_for("A1"), engine="bambu")
+    monkeypatch.setattr(platform_os, "MAC", False)
+    seen = {}
+    real = slicer.subprocess.run
+
+    def spy(cmd, **kw):  # look at what Bambu Studio is given
+        args = cmd[1:]
+        seen["printer"] = json.load(open(args[args.index("--load-settings") + 1].split(";")[0]))
+        seen["process"] = json.load(open(args[args.index("--load-settings") + 1].split(";")[1]))
+        return real(cmd, **kw)
+
+    monkeypatch.setattr(slicer.subprocess, "run", spy)
+    presets = slicer.defaults_for("A1") | {"process": "Organizer fast"}
+    slicer.slice_plate(src, tmp_path / "o.gcode.3mf", presets, engine="bambu")
+    # Bambu Studio gets user presets that inherit the Bambu system preset (its compatibility check needs that)
+    assert seen["printer"]["inherits"] == "Bambu Lab A1 0.4 nozzle" and seen["printer"]["from"] == "User"
+    assert seen["process"]["inherits"] == "0.20mm Standard @BBL A1" and seen["process"]["outer_wall_speed"] == ["300"]
+    assert seen["process"]["name"] == "SnapSTL Organizer fast" and "_system" not in seen["process"]
+    r = slicer.test_slice("bambu", slicer.defaults_for("P1S"))
+    assert r["printer_model"] == "Bambu Lab P1S"
+
+
+def test_printer_bundle_brings_all_its_presets(orca):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:  # Bambu Studio → File → Export → Export Preset Bundle (printer bundle)
+        z.writestr("printer/Farm A1.json", json.dumps({"type": "machine", "name": "Farm A1",
+                                                         "inherits": "Bambu Lab A1 0.4 nozzle"}))
+        z.writestr("process/Farm 0.24.json", json.dumps({"type": "process", "name": "Farm 0.24",
+                                                          "inherits": "0.20mm Standard @BBL A1", "layer_height": "0.24"}))
+        z.writestr("filament/Farm PLA.json", json.dumps({"type": "filament", "name": "Farm PLA",
+                                                          "inherits": "Bambu PLA Basic @BBL A1"}))
+    r = slicer.import_preset("farm.bbscfg", buf.getvalue(), "printer")
+    assert r["imported"] == 3 and r["errors"] == [] and sorted(r["names"]) == ["Farm 0.24", "Farm A1", "Farm PLA"]
+
+
+def test_test_slice_endpoint(orca, client, bb):  # noqa: F811
+    client.get("/api/farm")
+    client.put("/api/makeit/presets", json={"printer_id": 2, "printer": "Bambu Lab P1S 0.4 nozzle",
+                                            "process": "0.20mm Standard @BBL X1C", "filament": "Bambu PLA Basic @BBL P1S 0.4 nozzle"})
+    r = client.post("/api/makeit/test-slice", json={"printer_id": 2}).json()  # with that printer's own presets
+    assert r["engine"] == "OrcaSlicer" and r["printer_model"] == "Bambu Lab P1S" and r["seconds"] >= 0
+    assert client.post("/api/makeit/test-slice", json={}).json()["printer_model"] == "Bambu Lab A1"  # the default
+    client.put("/api/makeit/settings", json={"slicer": "bambuddy"})
+    assert client.post("/api/makeit/test-slice", json={}).status_code == 400
