@@ -166,6 +166,7 @@ _NOW = "(julianday('now') - 2440587.5) * 86400.0"
 POST_SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS sync_outbox (order_id TEXT PRIMARY KEY, queued_at REAL);
 CREATE TABLE IF NOT EXISTS report_rows (order_id TEXT PRIMARY KEY, data TEXT, status_at TEXT, file TEXT, sent INTEGER);
+CREATE TABLE IF NOT EXISTS shop_lines (order_id TEXT PRIMARY KEY, data TEXT, status_at TEXT, file TEXT, sent INTEGER);
 CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS sync_flags (quiet INTEGER NOT NULL);
 CREATE TRIGGER IF NOT EXISTS orders_state_at AFTER UPDATE OF state ON orders

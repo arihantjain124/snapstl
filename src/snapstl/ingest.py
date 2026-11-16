@@ -19,7 +19,7 @@ from pathlib import Path
 
 from datetime import datetime, timezone
 
-from . import db, report
+from . import db, report, shop
 
 SKU = "magicians_35"
 PRINT_STATUSES = {"PRINT"}
@@ -223,6 +223,11 @@ def ingest(data: bytes, filename: str, db_path: Path | None = None) -> IngestSum
         if con.execute("SELECT 1 FROM files WHERE sha256=?", (sha,)).fetchone():
             s.already_seen_file = True
         for r in body:
+            any_id = get(r, "Order ID")
+            if any_id:  # every product's row goes to Supabase's shop schema (shop.py); the app keeps Magicians_35
+                shop.store_line(con, any_id, {h: (r[i] if i < len(r) else "") for h, i in ix.items()},
+                                status_stamp(max((_date(get(r, c)) for c in EVENT_COLUMNS), default=""),
+                                             s.as_of, uploaded), filename)
             if get(r, "SKU Code").lower() != SKU:
                 continue
             s.sku_rows += 1

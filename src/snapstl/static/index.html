@@ -471,9 +471,14 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <p class="hint" id="sharedmsg"></p>
         <p class="hint">The connection string holds your database password: it's kept only on this computer (readable by you only), never shown again in full and never sent anywhere else.</p>
         <div id="sharedlive" hidden>
-          <h3>Sync</h3>
+          <h3>Sync and Clean up</h3>
           <p class="hint" id="syncinfo"></p>
-          <div class="toolbar"><button id="syncnow" class="primary" title="Send this computer's changes to the shared order records and load everyone's">Sync now</button><button id="sharedcheck">Show what's there</button></div>
+          <ul class="hint" style="margin:4px 0 8px 18px;padding:0">
+            <li><b>Clean up</b> — makes this computer <b>match Supabase</b>: orders, batches and their rows Supabase doesn't have are removed here, everything else takes Supabase's state (a backup first; nothing is deleted in Supabase, no files on disk).</li>
+            <li><b>Sync now</b> — <b>pushes this computer's new changes to Supabase</b> (uploads, batches, bundled / printed, name fixes) and loads every computer's. It also runs by itself every minute.</li>
+          </ul>
+          <div class="toolbar"><button id="connmatch" title="Make this computer match Supabase exactly (backup first)">Clean up</button><button id="syncnow" class="primary" title="Push this computer's new changes to Supabase and load everyone's">Sync now</button><button id="sharedcheck">Show what's there</button></div>
+          <p class="hint" id="connmatchmsg"></p>
           <div id="sharedholds"></div>
           <div class="callout"><b>What is shared:</b> every order — uploading a report on any computer sends its orders to Supabase, and the other computers get them at their next sync (or <b>Refresh from Supabase</b> on the Orders page) — with who is making it (<i>In a batch</i>, <i>Bundled</i>, <i>Printed</i>), the newest webstore status and name fixes, plus each computer's batches. In Supabase they're in <b>Table Editor → schema <code>snapstl</code></b> (not <code>public</code>): <code>order_records</code> and <code>batch_records</code>. Syncs every minute and right after changes.</div>
           <h3>Clear shared records</h3>
@@ -511,8 +516,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
           <div class="callout" style="margin-top:8px"><b>Daily handling</b>
             <ul style="margin:6px 0 0 18px;padding:0">
               <li><b>Upload the report on any computer</b> (Orders → Upload report). Its orders go to Supabase straight away and reach every other computer. For an order already in SnapSTL, the <b>newest date or time in that file</b> (its date range, or the latest order / pickup / delivery / RTO / return date in it) says how recent its status is: a newer file updates the order everywhere, an older file never undoes a newer status.</li>
-              <li><b>Sync</b> — runs at once, no questions: sends this computer's changes to Supabase and loads every computer's. It also runs by itself every minute, after every upload, and with <b>Refresh from Supabase</b> on the Orders page.</li>
-              <li><b>Clean up</b> — runs at once, no questions: syncs, then makes this computer <b>match Supabase exactly</b> (who is making each order, its status and name). Orders and batches Supabase doesn't have are removed here, with their download and print rows; batch folders and models on disk are never touched. Old history (30 days) is tidied too. A backup of this computer's database is saved first; nothing is deleted in Supabase. Use it when a computer looks different from the others.</li>
+              <li><b>Sync</b> — runs at once, no questions: <b>pushes this computer's new changes to Supabase</b> and loads every computer's. It also runs by itself every minute, after every upload, and with <b>Refresh from Supabase</b> on the Orders page.</li>
+              <li><b>Clean up</b> (also in Settings → Connections) — runs at once, no questions: syncs, then makes this computer <b>match Supabase exactly</b> (who is making each order, its status and name). Orders and batches Supabase doesn't have are removed here, with their download and print rows; batch folders and models on disk are never touched. Old history (30 days) is tidied too. A backup of this computer's database is saved first; nothing is deleted in Supabase. Use it when a computer looks different from the others.</li>
               <li><b>Reset this computer's database…</b> — empties this computer only (type RESET); Sync loads the shared orders back. Tick <b>also clear Supabase</b> to empty the shared records for <b>every</b> computer too (type RESET ALL); copies of both are saved first. Every other computer notices at its next sync (within a minute) and empties itself to match — with a backup first — so nothing comes back.</li>
               <li><b>SnapSTL works only with Supabase connected.</b> Without a working connection (the Session pooler address in Settings → Connections) nothing can be changed on any computer — orders, batches, printing stay disabled and a red bar says why — until the connection is back. Downloads already running finish.</li>
             </ul></div>
@@ -1278,10 +1283,12 @@ async function loadDb(){const m=await api('/api/maintenance');const o=m.orders,s
 $('dbsync').onclick=async()=>{const b=$('dbsync');b.disabled=true;$('dbsyncmsg').textContent='Syncing…';
   try{const s=await post('/api/sync');$('dbsyncmsg').textContent=s.error?s.error:`Synced ${new Date(s.last_ok*1000).toLocaleTimeString()} · sent ${s.pushed}, loaded ${s.pulled}`;loadDb();refreshAll()}
   catch(e){$('dbsyncmsg').textContent=e.message}finally{b.disabled=false}};
-$('dbmatch').onclick=async()=>{const b=$('dbmatch');b.disabled=true;$('dbsyncmsg').textContent='Cleaning up — matching Supabase…';
+async function runMatch(b,msg){b.disabled=true;msg.textContent='Cleaning up — matching Supabase…';
   try{const r=await post('/api/maintenance/match');const t=r.tidied||{};
-    $('dbsyncmsg').textContent=`Matches Supabase: ${r.orders} orders (${r.added} added, ${r.updated} corrected, ${r.removed} removed), ${r.batches_removed} batch(es) removed; tidied ${t.batches_removed||0} old batches, ${t.downloads_removed||0} downloads, ${t.reports_removed||0} upload records. Backup: ${r.backup}`;SEL.clear();loadDb();refreshAll()}
-  catch(e){$('dbsyncmsg').textContent=e.message}finally{b.disabled=false}};
+    msg.textContent=`Matches Supabase: ${r.orders} orders (${r.added} added, ${r.updated} corrected, ${r.removed} removed), ${r.batches_removed} batch(es) removed; tidied ${t.batches_removed||0} old batches, ${t.downloads_removed||0} downloads, ${t.reports_removed||0} upload records. Backup: ${r.backup}`;SEL.clear();loadDb();refreshAll()}
+  catch(e){msg.textContent=e.message}finally{b.disabled=false}}
+$('dbmatch').onclick=()=>runMatch($('dbmatch'),$('dbsyncmsg'));
+$('connmatch').onclick=()=>runMatch($('connmatch'),$('connmatchmsg'));
 $('cleanup').onclick=async()=>{const d=parseInt($('cleandays').value,10);if(isNaN(d)||d<0){$('dbmsg').textContent='Enter a number of days';return}
   if(!confirm(`Remove records older than ${d} days? Orders already made are kept. A backup is saved first.`))return;
   try{const r=await post('/api/maintenance/cleanup',{older_than_days:d});$('dbmsg').textContent=`Removed ${r.orders_removed} orders, ${r.batches_removed} batches, ${r.downloads_removed} downloads, ${r.reports_removed} upload records. Backup: ${r.backup}`;loadDb();refreshAll()}catch(e){$('dbmsg').textContent=e.message}};

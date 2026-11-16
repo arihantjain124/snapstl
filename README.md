@@ -258,18 +258,28 @@ status, on any computer.
 Without it a red bar says why and nothing can be changed — orders, batches, printing — until it's
 back; Settings still works so you can fix it. Downloads already running finish.
 
-**Reading the orders from another tool or agent.** In Supabase, `snapstl.order_records` has one row
-per order. `tab` says which Orders page tab it's in (`ready`, `needs_review`, `in_batch`, `bundled`,
-`ready_to_ship`, `printed`, `skipped`, `delivered`, `rto`, `in_transit`, `cancelled`, `others`) and,
-for Ready orders, `ready_type` says `single`, `clubbed` or `adhoc`; `review_reason` says why an order
-needs review. Every other report column of each Magicians_35 order (channel, payment method,
-amounts, COD remittance, shipping partner, AWB, weight, pickup / delivery / RTO dates, coupon …) is in
-`snapstl.report_rows`, typed, from the newest uploaded report; `snapstl.orders_full` joins both, and
-`snapstl.report_uploads` lists every upload (which computer, how recent the file was). Every column
-has a description (Table Editor → schema `snapstl`). Read only — SnapSTL writes them. Examples:
-`select tab, ready_type, count(*) from snapstl.order_records group by 1, 2;`
-`select delivery_state, payment_method, count(*), sum(invoice_total_incl_tax) from snapstl.orders_full where tab = 'delivered' group by 1, 2;`
-After updating to 0.22.16, upload the latest report once so `report_rows` is filled.
+**Reading the orders from another tool or agent (e.g. the Supabase MCP).** Use the **`shop`** schema —
+built for questions, holding **every product's** orders from the uploaded reports, not only what
+SnapSTL makes. Start with `shop.glossary` (what every code means) and `shop.orders`:
+
+| | |
+|---|---|
+| `shop.orders` | every order: date, channel, SKU, quantity, status and status group, payment method, COD, customisation, customer |
+| `shop.customers` | one per mobile number: name, address, city, state, pincode, first order |
+| `shop.order_finance` | money per order (₹): amounts, tax, discounts, coupon, invoice total, Shopdeck fee, COD remittance |
+| `shop.shipments` | courier and mode, AWB, weight and size, pickup / delivery / RTO / return times, days to deliver, shipping charges |
+| `shop.status_history` | every status an order was seen with, in order |
+| `shop.products` | every SKU; `made_by_snapstl` marks Magicians_35 |
+| `shop.production`, `shop.batches`, `shop.uploads` | SnapSTL's own records, live: Orders page tab, review reason, who's making it … |
+| `daily_sales`, `production_queue`, `cod_outstanding`, `courier_performance`, `rto_by_state` | ready-made answers |
+
+The report is tidied inside Supabase (dates and ₹ typed, statuses like `in_transit`, couriers split into
+courier + mode); a newer file wins, an older one or a blank never erases. Online / refund transaction
+IDs stay only in the xlsx. Every table and column has a description. Read only — SnapSTL writes it.
+Example: `select courier, mode, rto_pct, avg_days_to_deliver from shop.courier_performance;`
+(SnapSTL's own tables, `snapstl.*`, keep working as before; `snapstl.orders_full` still joins its
+orders with their report columns.) After updating to 0.22.17, upload the latest report once so
+`shop` gets every product.
 
 **Copies and privacy:** once a day each computer saves a copy of all shared records in its backups
 folder (`shared-records-daily-<date>.json`, the last 30 days kept); the card shows when. `uv run

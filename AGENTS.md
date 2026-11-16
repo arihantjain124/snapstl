@@ -148,6 +148,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Backups / clean-up / reset | `maintenance.py` |
 | Install / service / window | Mac `scripts/make_app.sh`; Windows `scripts/windows/*.ps1`; `src/snapstl/__init__.py` |
 | Mac vs Windows (folders, Finder/Explorer, keep awake, restart, LAN name) | `platform_os.py` |
+| Supabase `shop` schema for questions (every product: orders, customers, finance, shipments, views, glossary) | `shop.py` (SQL: tidy rules in `apply_line`, views, glossary — keep `COMMENT`s true); `shop.store_line` in ingest; `sync._push_lines`. shop triggers must never raise into SnapSTL's writes |
 | Report columns kept for other agents (Supabase `report_rows`, `report_uploads`, `orders_full`) | `report.py` (`COLUMNS`: add a report column there, with its type and description); `ingest.ingest` stores rows; `sync._push_reports` |
 | Shared order records (Supabase): connection in Settings, sync, claims | `sync.py`, `config.py`, `computer.py`, `server.shared_records_*`, `server.setup_status`, `dbtool.py` (`snapstl-db`), triggers in `db.POST_SCHEMA` |
 | Print farm: Bambuddy connection, printers, Push to queue, slicing | `farm.py` (+ `/api/farm*`, `/api/batches/{id}/plates` and `/push`, `/api/print-jobs` in `server.py`); Printers page + Push to queue panel in `index.html`; `tests/test_farm.py` |
