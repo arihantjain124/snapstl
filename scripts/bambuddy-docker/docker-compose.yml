@@ -1,7 +1,7 @@
-# Bambuddy's slicer service in Docker — set up by scripts/windows/bambuddy-server.ps1 (Windows) or
-# scripts/bambuddy-server.sh (Mac / Linux) on the Bambuddy computer.
+# Bambuddy's slicer service in Docker — set up by scripts/windows/bambuddy-server.ps1 on the Windows
+# Bambuddy computer.
 #
-# Bambuddy itself runs natively on that computer (on Windows: Bambuddy's own installer, a Windows service),
+# Bambuddy itself runs natively on that computer (Bambuddy's own Windows installer, a Windows service),
 # so it sees the printers on the network directly (discovery). Only the slicer runs here, from Bambuddy's
 # slicer-api/docker-compose.yml (github.com/maziggy/bambuddy):
 #   * bambu-studio-api → 127.0.0.1:3001 (Bambu Studio CLI — recommended by Bambuddy)

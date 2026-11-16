@@ -59,12 +59,13 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - **One Bambuddy computer** on the owner's network serves all SnapSTL computers: Bambuddy runs
   **natively** (Windows: Bambuddy's own installer, a Windows service — so printer discovery works) and
   **only the slicer sidecars run in Docker** (owner decision; never put Bambuddy itself back in Docker).
-  `scripts/windows/bambuddy-server.ps1` / `scripts/bambuddy-server.sh`, compose file
+  Bambuddy scripts are **Windows only** (owner decision): `scripts/windows/bambuddy-server.ps1`, compose file
   `scripts/bambuddy-docker/docker-compose.yml` (sidecars only, 127.0.0.1:3001/3003). Firewall: TCP 8000
   + UDP 2021 for the local subnet only. Re-running the scripts applies settings only (setup.json);
   downloads/installs happen only when missing or with `BAMBUDDY_UPGRADE=1`. SnapSTL installers no
-  longer install Bambuddy unless asked (`SNAPSTL_BAMBUDDY=server|native`); an older native install
-  keeps being updated. Images pinned to `scripts/bambuddy-version.txt` (`bambuddy:X`, `*-api:bambuddy-X`); bump it
+  longer install Bambuddy unless asked (Windows: `SNAPSTL_BAMBUDDY=server|native`); an older native
+  install keeps being updated on Windows. SnapSTL itself stays Mac + Windows; a Mac only connects
+  (`SNAPSTL_BAMBUDDY_URL` / Settings → Connections). Images pinned to `scripts/bambuddy-version.txt` (`bambuddy:X`, `*-api:bambuddy-X`); bump it
   only after checking `farm.py`'s calls against that release. The setup scripts must keep running
   under `irm … | iex` (Windows PowerShell 5.1, ASCII only, no `exit`). Slicing on this computer is gone for good (#43).
 - Database: add columns **only** via `MIGRATIONS` in `db.py`; never drop/rename columns or tables.
@@ -138,8 +139,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Slicing tab (Bambuddy profiles per printer model, print defaults per printer) | `farm.py` (`bambuddy_presets`, `chosen_presets`, `set_presets`, `missing_presets`, `target`, `print_defaults`, `forget_local_slicing`), `/api/makeit/presets` `/print-defaults`; `<section id="t-slicing">`; `tests/test_farm.py` |
 | Printers page, sidebar status | `farm.everything` / `summarize`, `/api/printer-status`, `/api/health`; `<section id="t-printers">`, `loadHealth` in `index.html` |
 | Settings sections (Setup · Product · Plates · Folders · Connections · Maintenance) | `data-sec` blocks + `setSec` in `index.html`; checklist from `/api/setup` |
-| Bambuddy computer (Docker: Bambuddy + slicer sidecars) | `scripts/windows/bambuddy-server.ps1`, `scripts/bambuddy-server.sh`, `scripts/bambuddy-docker/docker-compose.yml`, `scripts/bambuddy-version.txt` |
-| SnapSTL installers and Bambuddy (`SNAPSTL_BAMBUDDY`, `SNAPSTL_BAMBUDDY_URL`) | `scripts/windows/common.ps1` (`Install-Bambuddy`, `Connect-Bambuddy`), `scripts/make_app.sh`; older native install: `scripts/bambuddy-mac.sh`, `scripts/windows/bambuddy.ps1`, `platform_os.update_bambuddy` |
+| Bambuddy computer (Docker: Bambuddy + slicer sidecars) | `scripts/windows/bambuddy-server.ps1`, `scripts/bambuddy-docker/docker-compose.yml`, `scripts/bambuddy-version.txt` |
+| SnapSTL installers and Bambuddy (`SNAPSTL_BAMBUDDY`, `SNAPSTL_BAMBUDDY_URL`) | `scripts/windows/common.ps1` (`Install-Bambuddy`, `Connect-Bambuddy`), `scripts/make_app.sh` (Mac: connect only); older native install (Windows): `scripts/windows/bambuddy.ps1`, `platform_os.update_bambuddy` |
 | Sidebar "This computer" address | `server._network` (in `/api/health`), `platform_os.lan_ips`, `#hip` in `index.html` |
 | Printed tab / report status timestamps | `ingest.set_printed`, `ingest.status_stamp`, `server.TABS`, `index.html` (`SELKIND`) |
 

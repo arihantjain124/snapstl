@@ -1,7 +1,7 @@
-"""Print farm: finished plates go to Bambuddy, the open-source print-farm manager on this computer.
+"""Print farm: finished plates go to Bambuddy, the open-source print-farm manager.
 
-SnapSTL never talks to a printer itself. Bambuddy (installed next to SnapSTL by the installers,
-http://127.0.0.1:8000 — scripts/bambuddy-mac.sh, scripts/windows/bambuddy.ps1) holds the printer
+SnapSTL never talks to a printer itself. Bambuddy (on the Windows Bambuddy computer, set up by
+scripts/windows/bambuddy-server.ps1 — its address in Settings → Connections) holds the printer
 connections (LAN Only + Developer Mode on each printer), the print queue and "Clear plate & start next".
 SnapSTL:
 

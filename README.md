@@ -30,7 +30,7 @@ in the app.
 
 ## 0. The Bambuddy computer (print farm + slicing)
 
-One computer of your network runs **Bambuddy** for every SnapSTL computer (it can also be a SnapSTL
+One **Windows** computer of your network runs **Bambuddy** for every SnapSTL computer (it can also be a SnapSTL
 computer):
 
 - **Bambuddy** itself is installed with its own Windows installer, as a **Windows service**: it starts
@@ -40,7 +40,8 @@ computer):
 It needs a 64-bit Intel/AMD Windows 10/11 PC with virtualization on (standard on modern PCs) and about
 5 GB free disk.
 
-### Windows
+The Bambuddy computer is always a Windows PC (there are no Bambuddy scripts for a Mac); SnapSTL itself
+runs on Mac and Windows computers alike and connects to it over the network.
 
 1. Start menu → type **PowerShell** → right-click **Windows PowerShell** → **Run as administrator**.
 2. Paste this line and press Enter:
@@ -93,18 +94,6 @@ Windows service; add the printers again there.
 The slicer service runs while someone is signed in to that PC (Docker Desktop); Bambuddy itself runs
 from boot.
 
-### Mac or Linux
-
-Install Bambuddy natively (Mac: `SNAPSTL_BAMBUDDY=server` with the SnapSTL installer; Linux: Bambuddy's
-own install script, wiki.bambuddy.cool), then add the slicer service in Docker:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/arihantjain124/snapstl/main/scripts/bambuddy-server.sh | bash
-```
-
-Needs Docker Desktop (Mac — installed for you with Homebrew) or Docker Engine (Linux). On Apple-silicon
-Macs the slicer runs emulated and is slower; a Windows/Intel PC is the better Bambuddy computer.
-
 ## 1. Install
 
 ### Mac
@@ -146,11 +135,11 @@ On both systems:
   ([step 0](#0-the-bambuddy-computer-print-farm--slicing)). With `SNAPSTL_BAMBUDDY_URL` set (Mac:
   `SNAPSTL_BAMBUDDY_URL=http://192.168.1.50:8000 curl …`) the installer connects SnapSTL to it;
   otherwise enter the address in **Settings → Connections → Bambuddy address**.
-  - To make this same computer the Bambuddy computer, put `SNAPSTL_BAMBUDDY=server` first instead
-    (Windows: `$env:SNAPSTL_BAMBUDDY="server"`): the installer then runs step 0's setup here
-    (Windows asks for administrator rights).
+  - Windows only: to make this same PC the Bambuddy computer, run `$env:SNAPSTL_BAMBUDDY="server"`
+    first: the installer then runs step 0's setup here (it asks for administrator rights).
   - A Bambuddy installed next to SnapSTL by an older version (folder **SnapSTL-Bambuddy**) keeps
-    working and being updated. `SNAPSTL_NO_BAMBUDDY=1` leaves Bambuddy out entirely.
+    working; on Windows it's still updated, on a Mac it's left as it is (remove it with the command in
+    [Uninstall](#uninstall) once the Windows Bambuddy computer is set up).
 - The sidebar's bottom line **IP address** shows this computer's address on the network; click it
   to copy. On the Bambuddy computer it copies Bambuddy's address (`http://<ip>:8000`) to paste into the
   other SnapSTL computers.
@@ -492,7 +481,7 @@ Your data folders and the shared records stay in place.
 
 - **Mac** (Terminal):
   `launchctl bootout gui/$(id -u)/local.snapmagicians.snapstl && rm ~/Library/LaunchAgents/local.snapmagicians.snapstl.plist && rm -r ~/Applications/SnapSTL.app`
-  - Bambuddy: `launchctl bootout gui/$(id -u)/local.snapmagicians.bambuddy && rm ~/Library/LaunchAgents/local.snapmagicians.bambuddy.plist`
+  - A Bambuddy an older SnapSTL installed on this Mac: `launchctl bootout gui/$(id -u)/local.snapmagicians.bambuddy && rm ~/Library/LaunchAgents/local.snapmagicians.bambuddy.plist`
 - **Windows** (PowerShell):
   `powershell -ExecutionPolicy Bypass -File $HOME\SnapSTL-app\scripts\windows\uninstall.ps1`
   (removes Bambuddy's task too)
