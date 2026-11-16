@@ -234,7 +234,7 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
         if j["printer_id"] != printer["id"] or opts:
             farm.print_job(j["id"], printer["id"], opts, prs)  # move / options while still held
         if spd:
-            farm._set(j["id"], speed=spd, speed_set=0)
+            farm._set(j["id"], speed=spd, speed_set=0, speed_tries=0)
         farm.start_job(j["id"], force=force)
         return {"job_id": j["id"], "started": True}
     if j and j["state"] in farm.ACTIVE:
