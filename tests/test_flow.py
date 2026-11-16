@@ -520,3 +520,37 @@ def test_shared_records_are_set_in_settings(client, monkeypatch):
     assert config.database_url() == ""
     s = client.get("/api/setup").json()
     assert s["shared_records"]["configured"] is False and s["helper_folder"].endswith("helper")
+
+
+def test_adhoc_orders_are_added_by_hand_and_batched_like_any_order(client):
+    bad = [{"name": "", "phone": "9876543210", "color": "pink"},
+           {"name": "Kiara", "phone": "12ab", "color": "pink"},
+           {"name": "Kiara", "phone": "9876543210", "color": " "}]
+    for b in bad:
+        assert client.post("/api/orders/adhoc", json=b).status_code == 400
+    r = client.post("/api/orders/adhoc", json={"name": " Kiara ", "phone": "+91 98765 43210", "color": "Lavender",
+                                               "quantity": 2, "note": "for the school fair"})
+    assert r.status_code == 200, r.text
+    o = r.json()
+    assert o["order_id"].startswith("AH-") and o["adhoc"] and o["state"] == "ready"
+    assert (o["name"], o["color"], o["quantity"], o["phone"]) == ("Kiara", "lavender", 2, "+91 98765 43210")
+    assert o["order_date"] == time.strftime("%Y-%m-%d") and o["added_at"] and o["special_request"] == "for the school fair"
+
+    client.post("/api/ingest", files={"file": ("r.csv", report([("J1", "PRINT", "Magicians_35", "Ishita", "Orange", 1)]), "text/csv")})
+    tabs = client.get("/api/orders/facets?tab=ready").json()["tabs"]
+    assert (tabs["ready"], tabs["ready_adhoc"], tabs["ready_single"]) == (2, 1, 1)
+    assert [x["order_id"] for x in client.get("/api/orders?tab=ready_adhoc").json()["orders"]] == [o["order_id"]]
+    assert "Adhoc" in client.get("/api/orders.csv?tab=all").text
+
+    bid = client.post("/api/batches", json={"order_ids": [o["order_id"], "J1"]}).json()["batch_id"]
+    assert client.post(f"/api/batches/{bid}/download").json()["downloads_queued"] == 2
+    helper_work(client)
+    b = build_and_wait(client, bid)
+    assert b["status"] == "done", b["summary"].get("errors")
+    assert "Names/lavender/{Kiara,lavender},{Kiara,lavender}.3mf" in [p["file"] for p in b["summary"]["plates"]]
+    st = {x["order_id"]: x["state"] for x in client.get("/api/orders?tab=all&limit=1000").json()["orders"]}
+    assert (st[o["order_id"]], st["J1"]) == ("bundled", "bundled")
+    # its plates are on Print like any other batch's; printed by hand here, so take them off the board
+    for p in b["summary"]["plates"]:
+        r = client.post("/api/makeit/remove", json={"batch_id": bid, "file": p["file"]})
+        assert r.status_code == 200, r.text

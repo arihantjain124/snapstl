@@ -252,8 +252,11 @@ The bottom of the sidebar shows at a glance whether the **Helper**, **Bambuddy**
    - A newer report updates the status of orders already known, including orders batched on other
      computers.
    - An older report never undoes a newer status.
+   - **Ad-hoc request?** Click **Add ad-hoc order** and type the name to print, mobile and colour
+     (quantity and a note are optional). It goes straight to **Ready → Ad-hoc** with today's date and
+     time and an `AH-…` order ID, and from there is batched and printed like any other order.
 2. **Check the tabs:**
-   - **Ready** (with sub-tabs **Single** and **Clubbed**), **Needs review**, **In a batch**,
+   - **Ready** (with sub-tabs **Single**, **Clubbed** and **Ad-hoc**), **Needs review**, **In a batch**,
      **Bundled** (made into plates, not printed yet), **Ready to ship** (base and name both printed
      in Print), **Printed**, **Skipped**.
    - **Delivered**, **RTO**, **In Transit**, **Cancelled**, **Others**, **All**.

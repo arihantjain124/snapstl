@@ -119,7 +119,7 @@ Snapstl/
 │   ├── server.py             FastAPI app: every HTTP endpoint (§11), access control (§13), tab/filter SQL
 │   ├── settings.py           dataclasses + defaults (§12); APP_DIR, CACHE_DIR, output path, MakerWorld URL
 │   ├── db.py                 local SQLite schema + MIGRATIONS + sync triggers, tx(), quiet(), batch helpers
-│   ├── ingest.py             report parsing (XLSX/CSV), name cleaning, upsert by Order ID, review edits
+│   ├── ingest.py             report parsing (XLSX/CSV), name cleaning, upsert by Order ID, review edits, ad-hoc orders
 │   ├── batches.py            batch lifecycle, download queue, helper claim/result/fail, builder thread
 │   ├── cache.py              downloaded models in the visible Downloads folder (readable names, never auto-deleted);
 │   │                         key = name + options + compartments + license hash; one-time move from old cache
@@ -209,6 +209,14 @@ shared records); Clean up removes finished ones, Reset empties it.
 * **Upsert by Order ID**: re-uploads never duplicate; later reports refresh status, quantity, clubbed
   ID and customer fields. A `bundled` or `skipped` order is never moved back by a report.
 * Quantity N → N organizers in a batch.
+* **Ad-hoc orders** (`add_adhoc`, `POST /api/orders/adhoc`, Orders → **Add ad-hoc order**): typed in
+  by hand with only the name to print, mobile and colour (plus optional quantity and note). Stored in
+  the same `orders` table with `order_id = AH-YYYYMMDD-HHMMSS-xxxx`, `sku = 'Adhoc'`,
+  `source_status = 'PRINT'`, `order_date` = today, `first_seen` = when added, `customer_name` = the
+  name typed, note → `special_request`; address, clubbed ID and report file stay empty. They go
+  straight to `ready` (the person typed the name, so no review) and from there are batched, printed,
+  marked printed and shared exactly like report orders. No report ever touches them (their IDs can't
+  match a webstore Order ID).
 
 Name cleaning (`clean_name`): emoji/symbols dropped silently; other non-letters removed → review;
 spaces → review; non-Latin letters → review; more than 15 letters → review. A missing name/colour
@@ -216,14 +224,15 @@ or a special request → review.
 
 | State | Set when | UI tab |
 |---|---|---|
-| `ready` | report `PRINT`, clean | **Ready** → sub-tabs **Single** / **Clubbed** |
+| `ready` | report `PRINT`, clean; or added by hand | **Ready** → sub-tabs **Single** / **Clubbed** / **Ad-hoc** |
 | `needs_review` | `PRINT` with a review reason | Needs review (edit + Approve) |
 | `in_batch` | selected into an unfinished batch | In a batch |
 | `bundled` | in a finished batch | Bundled (Remake → back to ready) |
 | `skipped` | user pressed Skip | Skipped (Make anyway) |
 | `not_needed` | report status isn't `PRINT` | **Delivered** / **RTO** (`RTO…`) / **In Transit** / **Cancelled** (`CANCEL…`) / **Others** |
 
-*Single* = the order's clubbed ID has only this line; *Clubbed* = one clubbed ID with several lines.
+*Single* = the order's clubbed ID has only this line (ad-hoc orders excluded); *Clubbed* = one clubbed ID with
+several lines; *Ad-hoc* = `sku = 'Adhoc'`.
 Tab SQL lives in `server.TABS`; column filters in `server.FILTERS` (text = contains; status, colour,
 qty = exact; combined with AND; also used by *Select all matching* and *Export CSV*).
 
@@ -407,7 +416,7 @@ the files. Clashing file names get ` (2)`; names over 200 characters are shorten
 | Pages | `GET /`, `GET /login` |
 | Auth (optional) | `POST /api/login`, `POST /api/logout`, `GET /api/auth-check` |
 | State | `GET /api/meta`, `GET /api/state` (counts, downloader, queue, builder log) |
-| Orders | `POST /api/ingest` (multipart `file`), `GET /api/orders`, `GET /api/orders/ids`, `GET /api/orders/facets`, `GET /api/orders.csv`, `POST /api/orders/{id}/name` `{name,color}`, `POST /api/orders/{id}/reset`, `POST /api/orders/{id}/skip` |
+| Orders | `POST /api/ingest` (multipart `file`), `GET /api/orders`, `GET /api/orders/ids`, `GET /api/orders/facets`, `GET /api/orders.csv`, `POST /api/orders/adhoc` `{name,phone,color,quantity?,note?}`, `POST /api/orders/{id}/name` `{name,color}`, `POST /api/orders/{id}/reset`, `POST /api/orders/{id}/skip` |
 | Batches | `POST /api/batches` `{order_ids}`, `POST /api/batches/{id}/download` (`{force:true}` = Re-download), `POST /api/batches/{id}/build` (also Rebuild), `POST /api/batches/{id}/cancel`, `GET /api/batches`, `GET /api/batches/{id}`, `GET /api/batches/{id}/file?path=`, `POST /api/batches/{id}/reveal` (local only), `GET /api/batches/{id}/zip` |
 | Downloads | `GET /api/downloads` (queue + Downloads folder stats), `POST /api/downloads/retry`, `POST /api/downloads/reveal` (local only), `POST /api/downloader/pause`, `POST /api/downloader/resume` |
 | Helper | `GET /api/helper/config`, `GET /api/helper/next`, `POST /api/helper/ping`, `POST /api/helper/jobs/{id}/result`, `…/fail`, `…/release`, `GET /api/helper.zip` |
@@ -568,6 +577,7 @@ snapstl.server:app --port 8320`.
 | 39 | **Installers never run a second Bambuddy and only stop their own**: an existing Bambuddy (its own installer's Windows service / `C:\ProgramData\Bambuddy`, Mac launchd `com.bambuddy.app`, or anything answering on the port) is used as is; if SnapSTL's copy was already put next to it, the installer stands SnapSTL's copy down and starts the other again (nothing deleted). `Stop-Bambuddy` matches SnapSTL's own folder, never "whatever listens on 8000" | 0.10–0.17 installed a second, empty Bambuddy and on Windows stopped the existing one on port 8000 — it looked as if Bambuddy had lost its printers |
 | 40 | **UI 0.19**: sidebar Orders · Batches · Print · Printers · Slicing · Settings · Help. Downloads merged into Batches (download queue + folder), Printer status into Printers (with Clear plate), Make It renamed Print (Bases · Names · Completed · Removed; slicing state inline per plate). Settings split into Setup · Product · Plates · Folders · Connections · Maintenance; a sidebar status (Helper · Bambuddy · Slicer · Printers, `/api/health`). **No default slicing presets**: presets only per printer model (all printers of a model share them; the per-printer presets of 0.18 are gone); a model without its presets isn't sliced or printed and the UI says so. **Print defaults per printer** (Slicing) with a per-plate override in Print. "Printed" keeps its name; bed size stays in Settings (256 mm on A1 and P1S) | owner: good quality comes from the owner's own tuned Bambu Studio presets, never guessed ones; clearer grouping of pages and settings |
 | 41 | **Clear shared records** (0.19.1): typed CLEAR, copy of every record saved locally first, schema dropped and recreated; sync status, Sync now and "what's in Supabase" sit with the connection (Settings → Connections), with what is and isn't shared spelled out | owner asked for a way to empty Supabase when needed and couldn't tell whether sync worked (only batched orders are shared; tables are in schema `snapstl`) |
+| 42 | **Ad-hoc orders** (0.20.0): orders typed in by hand (name to print, mobile, colour; optional qty and note) live in the same `orders` table with `sku='Adhoc'`, an `AH-…` ID and today's date/time; missing report columns stay empty. They go straight to Ready (sub-tab **Ad-hoc**) and use the normal batch → plates → Print → Printed flow and shared records | owner takes ad-hoc requests outside the webstore and wants them made in the same workflow without a report |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
