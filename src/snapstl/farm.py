@@ -69,10 +69,14 @@ DEFAULTS = {
     # {"<slot>|<hex>": colour}; it lapses by itself when another spool is loaded in that slot
     "color_overrides": {},
     "auto_slice": True,           # slice new plates by themselves (printing still needs Start print)
-    "print_defaults": {},         # Bambuddy printer id (str) → {speed, bed_levelling, flow_cali, timelapse}
+    "print_defaults": {},         # Bambuddy printer id (str) → {speed, bed_levelling, flow_cali, timelapse, plate_type}
 }
 PRESET_SLOTS = ("printer", "process", "filament")
 SPEEDS_SET = {"silent": 1, "standard": 2, "sport": 3, "ludicrous": 4}  # print speed per job (Make It)
+# Build plates a printer can slice for (Bambuddy's `bed_type`: BambuStudio / OrcaSlicer `curr_bed_type`;
+# Textured Cool Plate is OrcaSlicer only). "" = what the process profile says (often Cool Plate).
+PLATE_TYPES = ("Textured PEI Plate", "Cool Plate", "Engineering Plate", "High Temp Plate", "Supertack Plate",
+               "Textured Cool Plate")
 SPEED_TRIES = 5  # speed commands sent per print until the printer reports that speed
 SLICE_TIMEOUT_S = 20 * 60  # a slice with no progress for this long is given up (it never blocks printing)
 
@@ -608,19 +612,24 @@ def missing_presets(printer_id: int | None, cfg: dict | None = None) -> str | No
 
 
 def target(printer_id: int | None, cfg: dict | None = None) -> tuple[str, dict]:
-    """What a plate is sliced with for a printer: (key, profiles) — the profiles picked for that printer.
-    The key names those profiles, so printers with the same profiles share one slice, and picking other
-    profiles means a new slice."""
+    """What a plate is sliced with for a printer: (key, profiles) — the profiles picked for that printer, plus
+    its plate type (`"plate"`, when one is picked in Print defaults). The key names those, so printers with the
+    same profiles and plate share one slice, and picking other profiles or another plate means a new slice."""
     import hashlib
 
+    cfg = cfg or load_config()
     presets = chosen_presets(printer_id, cfg)
-    refs = {k: [v.get("source"), v.get("id")] for k, v in presets.items()}
+    plate = print_defaults(printer_id, cfg).get("plate_type") or ""
+    if plate and all(presets.get(s) for s in PRESET_SLOTS):  # the plate type is sliced in, so it's part of the key
+        presets["plate"] = {"name": plate}
+    refs = {k: [v.get("source"), v.get("id")] if k != "plate" else v["name"] for k, v in presets.items()}
     key = "bambuddy:" + hashlib.sha1(json.dumps(refs, sort_keys=True).encode()).hexdigest()[:12]
     return key, presets
 
 
 def print_defaults(printer_id: int | None, cfg: dict | None = None) -> dict:
-    """A printer's print defaults (Slicing): {speed, bed_levelling, flow_cali, timelapse}; "" = Bambuddy's."""
+    """A printer's print defaults (Slicing): {speed, bed_levelling, flow_cali, timelapse, plate_type}; "" =
+    Bambuddy's (plate_type "" = the process profile's plate)."""
     cfg = cfg or load_config()
     return dict((cfg.get("print_defaults") or {}).get(str(printer_id)) or {}) if printer_id else {}
 
@@ -629,7 +638,12 @@ def set_print_defaults(printer_id: int, values: dict) -> dict:
     speed = str(values.get("speed") or "")
     if speed and speed not in SPEEDS_SET:
         raise FarmError("Speed is silent, standard, sport or ludicrous")
+    plate = str(values.get("plate_type") or "")
+    if plate and plate not in PLATE_TYPES:
+        raise FarmError(f"Plate type: choose {', '.join(PLATE_TYPES)}")
     out = {"speed": speed, **clean_options(values)}
+    if plate:
+        out["plate_type"] = plate
     cfg = load_config()
     cfg.setdefault("print_defaults", {})[str(printer_id)] = out
     save_config(cfg)
@@ -655,6 +669,8 @@ def slice_request(presets: dict, color: str | None) -> dict:
             "export_3mf": True, "plate": 1}
     if color in COLOR_HEX:
         body["filament_colours"] = [COLOR_HEX[color]]
+    if (presets.get("plate") or {}).get("name"):
+        body["bed_type"] = presets["plate"]["name"]  # else the process profile's plate (usually Cool Plate)
     return body
 
 

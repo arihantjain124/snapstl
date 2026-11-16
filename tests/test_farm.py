@@ -557,6 +557,16 @@ def test_make_it_slice_with_bambuddy_and_remove(client, bb, monkeypatch):
     r = client.put("/api/makeit/print-defaults", json={"printer_id": 1, "bed_levelling": "off", "timelapse": True})
     assert r.json() == {"speed": "", "bed_levelling": "off", "timelapse": True}
     assert client.put("/api/makeit/print-defaults", json={"printer_id": 1, "speed": "warp"}).status_code == 400
+    # plate type: sliced in as Bambuddy's bed_type, part of the slice key (another plate = a new slice)
+    assert client.put("/api/makeit/print-defaults", json={"printer_id": 1, "plate_type": "Glass"}).status_code == 400
+    key0 = farm.target(1)[0]
+    r = client.put("/api/makeit/print-defaults", json={"printer_id": 1, "bed_levelling": "off", "timelapse": True,
+                                                       "plate_type": "Textured PEI Plate"})
+    assert r.json()["plate_type"] == "Textured PEI Plate" and farm.target(1)[0] != key0
+    assert farm.slice_request(farm.target(1)[1], "white")["bed_type"] == "Textured PEI Plate"
+    assert "Textured PEI Plate" in client.get("/api/makeit/presets?printer=1").json()["plates"]
+    r = client.put("/api/makeit/print-defaults", json={"printer_id": 1, "bed_levelling": "off", "timelapse": True})
+    assert farm.target(1)[0] == key0 and "bed_type" not in farm.slice_request(farm.target(1)[1], None)
     client.post("/api/makeit/start", json={"batch_id": bid, "file": base, "printer_id": 1, "options": {"timelapse": False}})
     wait_for(lambda: bb.queue and bb.queue[1].get("manual_start") is False)
     assert bb.queue[1]["bed_levelling"] == "off" and bb.queue[1]["timelapse"] is False
