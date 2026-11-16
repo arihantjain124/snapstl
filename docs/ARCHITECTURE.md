@@ -112,7 +112,7 @@ Snapstl/
 │   │                         slicing with Bambuddy's slicer only, print jobs + background worker
 │   ├── makeit.py             Print tab: Bases / Names queues across batches, printer pre-selection,
 │   │                         Start print, Completed + Reprint, Ready to ship (orders.made_at)
-│   ├── dbtool.py             `snapstl-db check | sync`
+│   ├── dbtool.py             `snapstl-db check | sync | export | schema`
 │   ├── updater.py            Settings → Updates (git fetch / pull --ff-only / uv sync)
 │   ├── watermark.py, render.py   watermark detection; plate / object pictures
 │   ├── server.py             FastAPI app: every HTTP endpoint (§11), access control (§13), tab/filter SQL
@@ -583,7 +583,8 @@ snapstl.server:app --port 8320`.
 | 43 | **Only Bambuddy's slicer** (0.21.0): OrcaSlicer / Bambu Studio on this computer (`slicer.py`, decisions #37–#38), Test slice, preset import (to SnapSTL or into Bambuddy), the slicer switch and hand-made sliced files in the batch folder are removed; the installers no longer install OrcaSlicer. The Slicing tab offers every profile Bambuddy lists (local, Orca cloud, Bambu cloud, standard) per printer model and stores only references; old local-slicer settings, SnapSTL's preset folder and unfinished local slices are dropped at start | owner runs Bambuddy's slicer sidecar in Docker on another system and wants no slicing settings created, built or kept by SnapSTL |
 | 44 | **One Bambuddy computer: Bambuddy native, only the slicer in Docker** (0.22.2): `bambuddy-server.ps1` installs Bambuddy's own Windows installer (a service; printer discovery works) and runs the Bambu Studio + OrcaSlicer sidecars from a sidecar-only compose file pinned to the tested release; re-runs only apply settings (`setup.json`), upgrades only with `BAMBUDDY_UPGRADE=1`. SnapSTL installers stop installing Bambuddy by default (`SNAPSTL_BAMBUDDY=server` makes that computer the Bambuddy computer, `SNAPSTL_BAMBUDDY_URL` connects to it, older native installs keep updating). The sidebar shows this computer's network address (`/api/health` → `network`) and copies Bambuddy's address for other computers when it runs here. Supersedes the 127.0.0.1-only part of #27. 0.22.0 briefly ran Bambuddy itself in Docker: Docker Desktop can't pass SSDP multicast (its host networking is layer 4 only and needs a Docker sign-in), so printers weren't found | owner runs one Bambuddy computer for all SnapSTL computers and chose: only the slicer in Docker |
 | 45 | **Bambuddy scripts are Windows only** (0.22.3): `bambuddy-server.sh` and `bambuddy-mac.sh` removed; the Mac installer / updater only connect SnapSTL to the Windows Bambuddy computer (`SNAPSTL_BAMBUDDY_URL`), `update_bambuddy` runs on Windows only. SnapSTL itself stays on Mac + Windows | owner: the Bambuddy computer is a Windows PC; no Bambuddy or slicer scripts needed for a Mac |
-| 45 | **Batched orders always name their batch's owner** (0.22.1): opening the local database copies a batch's `uid` and computer onto its orders that lack them and queues them for the shared records; `_WIN` lets a push take an `in_batch` record that has no owner | batches made before 0.8.0 were sent to Supabase without `computer_id`, so the owner's own *Bundled* was refused and `merge(force=True)` pulled the orders out of their batch |
+| 46 | **Batched orders always name their batch's owner** (0.22.1): opening the local database copies a batch's `uid` and computer onto its orders that lack them and queues them for the shared records; `_WIN` lets a push take an `in_batch` record that has no owner | batches made before 0.8.0 were sent to Supabase without `computer_id`, so the owner's own *Bundled* was refused and `merge(force=True)` pulled the orders out of their batch |
+| 47 | **Only SnapSTL reaches the shared records; a daily copy on every computer** (0.22.4): the setup SQL turns on row level security (no policies) on the `snapstl` tables and revokes `anon` / `authenticated` (Supabase's API roles) from the schema on every start; SnapSTL connects as the owner, which bypasses RLS. After a good sync, once a day, each computer saves every record to `backups/shared-records-daily-<date>.json` (mode 600, newest 30 kept); `snapstl-db export` saves one on demand | the records hold customer names, phones and addresses; Supabase's free plan keeps no backups the owner can download |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -707,6 +708,13 @@ in `APP_DIR/shared-records.json` (mode 600, never returned in full). Without it 
   runs again; this computer marks its orders and batches unsent and forgets its pull point, so the
   next sync sends what it's still making.
   Reset refuses while `sync_outbox` isn't empty.
+- **Who can read them:** row level security is on (no policies) and Supabase's API roles (`anon`,
+  `authenticated`) have no rights on schema `snapstl`; the setup SQL re-applies both on every start.
+  SnapSTL connects as the table owner, which bypasses RLS.
+- **Daily copy:** `sync.daily_copy` (after a good sync in `sync.LOOP`, once per day) saves every record
+  to `backups/shared-records-daily-<YYYY-MM-DD>.json` (mode 600, newest `KEEP_DAILY` = 30 kept) on each
+  computer; `snapstl-db export` saves a timestamped one. The sync status carries `last_copy` and
+  `copy_error`.
 - **Claim:** `batches.create_batch` → `sync.claim`. `INSERT … ON CONFLICT DO UPDATE … WHERE
   state='released'` (or this computer's own claim whose batch uid no longer exists locally)
   `RETURNING order_id`. Orders not returned were taken elsewhere: they're merged locally and left out.
@@ -720,7 +728,7 @@ in `APP_DIR/shared-records.json` (mode 600, never returned in full). Without it 
 - **Push:** outbox orders are upserted with rules in SQL (`_WIN`):
   - A state change applies only if it is at least as new (`state_at`), and only if one of these
     holds: the record is `released`; the writer owns it; it is `in_batch` with no owner (sent by an
-    older SnapSTL, see #45); it marks printed or unprinted; or it sends a made order back (`released`).
+    older SnapSTL, see #46); it marks printed or unprinted; or it sends a made order back (`released`).
   - The webstore status applies only if `status_at` is higher.
   - The first-written order fields are kept.
   - `RETURNING *` shows when a change was refused; the stored row is then merged locally

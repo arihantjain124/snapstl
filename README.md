@@ -238,6 +238,11 @@ this computer's backups folder (`shared-records-<date>.json`). Orders this compu
 are sent again at the next sync. To start completely fresh, also reset each computer's database
 (**Settings → Maintenance → Database**).
 
+**Copies and privacy:** once a day each computer saves a copy of all shared records in its backups
+folder (`shared-records-daily-<date>.json`, the last 30 days kept); the card shows when. `uv run
+snapstl-db export` saves one now. Only SnapSTL can read the records: row level security is on and
+Supabase's public API (anon / authenticated keys) has no access to schema `snapstl`.
+
 The connection string contains the database password. It's kept only on that computer and never
 shown again in full. Give it only to computers that run SnapSTL.
 
@@ -514,4 +519,4 @@ SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn snapstl.server:ap
   development, the `SNAPSTL_DATABASE_URL` and `SNAPSTL_COMPUTER_NAME` environment variables override
   the Settings values.
 - **From a terminal:** `uv run snapstl-db check` and `uv run snapstl-db sync` test and run the shared
-  records.
+  records; `uv run snapstl-db export` saves a copy of them in the backups folder.

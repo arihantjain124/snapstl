@@ -39,6 +39,7 @@ from . import computer, config, db
 
 SCHEMA = "snapstl"
 SYNC_EVERY = 60
+KEEP_DAILY = 30  # daily copies of the shared records kept in this computer's backups folder
 PULL_OVERLAP_S = 120  # re-read rows changed shortly before the last pull (commits can land out of order)
 
 REMOTE_STATES = ("in_batch", "bundled", "printed", "released")
@@ -106,6 +107,23 @@ CREATE OR REPLACE TRIGGER batch_records_no_delete BEFORE DELETE ON {SCHEMA}.batc
     FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.refuse_delete();
 CREATE OR REPLACE TRIGGER batch_records_no_truncate BEFORE TRUNCATE ON {SCHEMA}.batch_records
     FOR EACH STATEMENT EXECUTE FUNCTION {SCHEMA}.refuse_delete();
+-- Only SnapSTL (the database owner, through the connection string) reads or writes these tables.
+-- Row level security with no policies refuses everyone else, and Supabase's API roles get no access
+-- even if the schema is ever exposed in the Data API settings. The owner bypasses RLS.
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['order_records', 'batch_records', 'meta'] LOOP
+    IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = format('{SCHEMA}.%I', t)::regclass) THEN
+      EXECUTE format('ALTER TABLE {SCHEMA}.%I ENABLE ROW LEVEL SECURITY', t);
+    END IF;
+  END LOOP;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')
+     AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE ALL ON SCHEMA {SCHEMA} FROM anon, authenticated;
+    REVOKE ALL ON ALL TABLES IN SCHEMA {SCHEMA} FROM anon, authenticated;
+  END IF;
+END $$;
 """
 SCHEMA_VERSION = 1  # of the shared records; a newer one makes older apps stop syncing (update them)
 
@@ -435,13 +453,14 @@ class Status:
         self.pushed = 0
         self.pulled = 0
         self.running = False
+        self.copy_error = ""
 
     def snapshot(self) -> dict:
         with db.tx() as con:
             pending = con.execute("SELECT COUNT(*) FROM sync_outbox").fetchone()[0]
         return {"enabled": enabled(), "last_ok": self.last_ok, "last_try": self.last_try, "error": self.error,
                 "pending": pending, "pushed": self.pushed, "pulled": self.pulled, "running": self.running,
-                "computer": computer.NAME}
+                "computer": computer.NAME, "last_copy": last_copy(), "copy_error": self.copy_error}
 
 
 STATUS = Status()
@@ -496,6 +515,7 @@ class _Loop:
     def _run(self) -> None:
         while True:
             sync_now()
+            daily_copy()
             self._ev.wait(SYNC_EVERY)
             self._ev.clear()
             time.sleep(1.0)  # let a burst of changes settle
@@ -529,17 +549,9 @@ def clear(confirm: str) -> dict:
         raise SyncError("Type CLEAR to confirm")
     global _setup_done
     with _lock:
-        with _remote() as rc:
-            orders = rc.execute(f"SELECT * FROM {SCHEMA}.order_records ORDER BY order_id").fetchall()
-            batches = rc.execute(f"SELECT * FROM {SCHEMA}.batch_records ORDER BY uid").fetchall()
-        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         dest = BACKUP_DIR / time.strftime("shared-records-%Y%m%d-%H%M%S.json")
-        dest.write_text(json.dumps({"saved_at": time.time(), "by": computer.NAME, "order_records": orders,
-                                    "batch_records": batches}, default=str, indent=1))
-        try:
-            os.chmod(dest, 0o600)  # customer names, phones and addresses
-        except OSError:
-            pass
+        with _remote() as rc:
+            saved = _save_copy(rc, dest)
         import psycopg
 
         try:
@@ -555,4 +567,62 @@ def clear(confirm: str) -> dict:
             con.execute("DELETE FROM sync_state WHERE key='pulled_until'")
         with _remote():
             pass  # create the empty tables again
-    return {"cleared": {"orders": len(orders), "batches": len(batches)}, "backup": str(dest)}
+    return {"cleared": saved, "backup": str(dest)}
+
+
+# ---------------- copies on this computer ----------------
+def _save_copy(rc, dest) -> dict:
+    """Every shared record, as JSON, in `dest` (readable by this user only: names, phones, addresses)."""
+    orders = rc.execute(f"SELECT * FROM {SCHEMA}.order_records ORDER BY order_id").fetchall()
+    batches = rc.execute(f"SELECT * FROM {SCHEMA}.batch_records ORDER BY uid").fetchall()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"saved_at": time.time(), "by": computer.NAME, "order_records": orders,
+                   "batch_records": batches}, f, default=str, indent=1)
+    os.replace(tmp, dest)
+    return {"orders": len(orders), "batches": len(batches)}
+
+
+def _daily_path():
+    from .maintenance import BACKUP_DIR
+
+    return BACKUP_DIR / time.strftime("shared-records-daily-%Y-%m-%d.json")
+
+
+def export(daily: bool = False) -> dict:
+    """Save a copy of every shared record in this computer's backups folder. Daily copies are one file
+    per day (the newest KEEP_DAILY kept); others are timestamped and kept (`snapstl-db export`)."""
+    from .maintenance import BACKUP_DIR
+
+    dest = _daily_path() if daily else BACKUP_DIR / time.strftime("shared-records-%Y%m%d-%H%M%S.json")
+    with _lock, _remote() as rc:
+        saved = _save_copy(rc, dest)
+    if daily:
+        for old in sorted(BACKUP_DIR.glob("shared-records-daily-*.json"))[:-KEEP_DAILY]:
+            old.unlink(missing_ok=True)
+    return {"file": str(dest), **saved}
+
+
+def last_copy() -> dict:
+    """The newest copy of the shared records on this computer (Settings → Connections)."""
+    from .maintenance import BACKUP_DIR
+
+    files = list(BACKUP_DIR.glob("shared-records-*.json")) if BACKUP_DIR.is_dir() else []
+    if not files:
+        return {}
+    f = max(files, key=lambda p: p.stat().st_mtime)
+    return {"file": f.name, "at": f.stat().st_mtime}
+
+
+def daily_copy() -> None:
+    """Once a day, after a good sync: a copy of the shared records (Supabase's free plan keeps no
+    backups you can download). Failures are shown in the sync status and tried again next round."""
+    if STATUS.error or _daily_path().exists():
+        return
+    try:
+        export(daily=True)
+        STATUS.copy_error = ""
+    except (SyncError, OSError) as e:
+        STATUS.copy_error = f"Daily copy failed: {_short(e)}"
