@@ -39,6 +39,18 @@ def _edited() -> list[str]:
     return [line[3:] for line in out.splitlines() if line.strip()]
 
 
+def head() -> str:
+    """The commit the folder is on now ("" outside git)."""
+    if not is_git():
+        return ""
+    return _git("rev-parse", "HEAD").stdout.strip()
+
+
+# The commit this SnapSTL started from: after a `git pull` by hand the folder moves on, but the running
+# app keeps the old code until it restarts — check() then says so instead of "up to date".
+STARTED_AT = head()
+
+
 def check(fetch: bool = True) -> dict:
     """What's waiting on the server: {git, branch, behind, changes[], edited[], error}."""
     if not is_git():
@@ -58,6 +70,10 @@ def check(fetch: bool = True) -> dict:
     res["behind"] = int(behind.stdout.strip() or 0) if behind.returncode == 0 else 0
     res["changes"] = _git("log", "--format=%s", "-n", "15", "HEAD..@{u}").stdout.splitlines() if res["behind"] else []
     res["edited"] = _edited()
+    now = head()
+    res["restart_needed"] = bool(STARTED_AT and now and now != STARTED_AT)
+    if res["restart_needed"]:
+        res["running"] = _git("log", "-1", "--format=%h %s", STARTED_AT).stdout.strip()
     return res
 
 

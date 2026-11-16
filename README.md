@@ -301,9 +301,12 @@ Bambuddy**). SnapSTL only reads them.
      them in Bambuddy under **Profiles → Local Profiles → Import Profiles**. Or sign in to Bambu Cloud
      / Orca Cloud in Bambuddy; for Bambu Cloud presets the API key SnapSTL uses needs **Allow cloud
      access** (Bambuddy → Settings → API keys).
-   - **Print defaults per printer**: speed (Silent / Standard / Sport / Ludicrous), bed levelling,
-     flow calibration and timelapse each printer uses at Start print. *Bambuddy's default* leaves it
-     to Bambuddy.
+   - **Print defaults per printer**: the **plate type** on that printer (Textured PEI, Cool,
+     Engineering, High Temp, Supertack, Textured Cool — its plates are sliced for it, so the bed
+     temperature is right and Bambuddy shows that plate; *Profile's plate* = what the process profile
+     says, often Cool Plate), speed (Silent / Standard / Sport / Ludicrous), bed levelling, flow
+     calibration and timelapse each printer uses at Start print. *Bambuddy's default* leaves it to
+     Bambuddy.
    - **Slice new plates automatically** (on by default) slices each new plate for the printer
      pre-selected for it. **Slicing activity** lists what was sliced, what's waiting and what failed.
 
@@ -538,6 +541,7 @@ SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn snapstl.server:ap
 
 - **Publishing an update:** merge into `main` and push. Every installed SnapSTL then shows **Update
   available**.
+- **Updated with `git pull` by hand?** The running SnapSTL keeps the old code until it restarts; **Settings → Updates** then shows **Restart SnapSTL**. (Versions before 0.22.13 don't have that button: restart once by hand — Mac: `launchctl kickstart -k gui/$(id -u)/local.snapmagicians.snapstl`; Windows PowerShell: `Stop-ScheduledTask SnapSTL; Start-ScheduledTask SnapSTL`, or sign out and in.)
 - **Never commit secrets.** The repository is public: the license passwords, the Supabase connection
   string and the portal password are entered in the app and stay on each computer. For tests and
   development, the `SNAPSTL_DATABASE_URL` and `SNAPSTL_COMPUTER_NAME` environment variables override

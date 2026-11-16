@@ -313,8 +313,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
   <div class="card">
     <h2>Print defaults per printer</h2>
-    <p class="hint">What each printer does when a plate starts. In <b>Print</b> you can change them for one plate (the <b>Options</b> column). <i>Bambuddy's default</i> leaves it to Bambuddy and the printer.</p>
-    <div class="tw"><table class="pdtable"><thead><tr><th>Printer</th><th>Model</th><th>Speed</th><th>Bed levelling</th><th>Flow calibration</th><th>Timelapse</th><th></th></tr></thead><tbody id="slp_defaults"></tbody></table></div>
+    <p class="hint">What each printer does when a plate starts. In <b>Print</b> you can change them for one plate (the <b>Options</b> column). <i>Bambuddy's default</i> leaves it to Bambuddy and the printer. <b>Plate type</b> is the build plate the printer has on — plates are sliced for it (bed temperature, and the plate Bambuddy and the printer show); <i>Profile's plate</i> uses what the process profile says (often Cool Plate). Changing it slices that printer's plates again.</p>
+    <div class="tw"><table class="pdtable"><thead><tr><th>Printer</th><th>Model</th><th>Plate type</th><th>Speed</th><th>Bed levelling</th><th>Flow calibration</th><th>Timelapse</th><th></th></tr></thead><tbody id="slp_defaults"></tbody></table></div>
   </div>
   <div class="card">
     <div class="toolbar"><h2 style="margin:0">Slicing activity</h2><span class="grow hint" id="slp_actsum"></span><button class="small" id="slp_actref">Refresh</button></div>
@@ -499,7 +499,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <h2>Updates</h2>
         <p class="hint" id="updinfo">…</p>
         <ul class="hint" id="updlist" style="padding-left:18px;margin:4px 0"></ul>
-        <div class="toolbar" style="margin-top:8px"><button id="updcheck">Check for updates</button><button id="updgo" class="primary" hidden>Update now</button></div>
+        <div class="toolbar" style="margin-top:8px"><button id="updcheck">Check for updates</button><button id="updgo" class="primary" hidden>Update now</button><button id="updrestart" class="primary" hidden>Restart SnapSTL</button></div>
         <p class="hint">Updating fetches the latest SnapSTL, installs it and restarts it (a few seconds); Bambuddy is brought to the tested version too. The Chrome helper reloads itself. Orders, batches, settings and downloaded models are kept.</p>
       </div>
       <div class="card">
@@ -641,6 +641,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Bambuddy profiles per printer</b> — pick the printer by name, then its printer, process (layer height, walls, infill, speeds) and filament profile. Every profile Bambuddy has is listed: yours in Bambuddy, Orca Cloud, Bambu Cloud and the slicer's standard ones. <b>Reload from Bambuddy</b> reads them again. Each list has a <b>search box</b>: type any words from the profile's name or where it comes from (e.g. <i>a1 0.4</i>, <i>0.20 strength</i>, <i>pla matte</i>, <i>bambu cloud</i>) — Enter picks the first match.</li>
       <li><b>Adding profiles</b> — in Bambuddy, never in SnapSTL: export from Bambu Studio (<b>File → Export → Export Preset Bundle</b>) and import in Bambuddy under <b>Profiles → Local Profiles → Import Profiles</b>; or sign in to Bambu Cloud / Orca Cloud in Bambuddy (the API key needs <b>Allow cloud access</b> for Bambu Cloud presets).</li>
       <li><b>Bambuddy's slicer service</b> — Bambuddy → Settings → Slicer: <b>Use Slicer API</b> on, with the sidecar URL. Its <b>Preferred Slicer</b> decides Bambu Studio or OrcaSlicer.</li>
+      <li><b>Plate type per printer</b> (Print defaults) — the build plate on that printer (Textured PEI, Cool, Engineering, High Temp, Supertack, Textured Cool). Its plates are sliced for that plate, so the bed temperature is right and Bambuddy and the printer show the right plate. <i>Profile's plate</i> = what the process profile says (often Cool Plate). Changing it slices that printer's plates again.</li>
       <li><b>Print defaults per printer</b> — speed, bed levelling, flow calibration and timelapse each printer uses at Start print (changeable per plate in Print). The <b>speed</b> is set on the printer once it really prints (after heating and calibration), checked against what the printer reports and sent again if it didn't take; if the printer still won't change, the print says so.</li>
       <li><b>Slice new plates automatically</b> — each new plate is sliced for its pre-selected printer. A slice with no progress for 20 minutes is stopped with a message; a failed automatic slice isn't retried by itself (<b>Slice</b> again in Print).</li>
     </ul>
@@ -934,7 +935,7 @@ const mkPrinter=id=>(MK&&MK.printers.find(p=>String(p.id)===String(id)))||{};
 function optSummary(o,speed,dflt){dflt=dflt||{};const eff={};
   for(const [k,v] of Object.entries(dflt))if(k!=='speed'&&setVal(v))eff[k]=v;
   for(const [k,v] of Object.entries(o||{}))if(setVal(v))eff[k]=v;
-  const sp=speed||dflt.speed||'';const on=(sp?[`Speed ${cap(sp)}`]:[]).concat(Object.entries(eff).map(([k,v])=>`${OPTLBL[k]||k} ${optVal(v)}`));
+  const sp=speed||dflt.speed||'';const on=(sp?[`Speed ${cap(sp)}`]:[]).concat(Object.entries(eff).map(([k,v])=>k==='plate_type'?String(v):`${OPTLBL[k]||k} ${optVal(v)}`));
   const own=!!speed||Object.values(o||{}).some(setVal);
   return (on.length?on.join(' · '):'Bambuddy defaults')+(own?' · changed for this plate':'')}
 function mkShow(t){MKTAB=t;try{localStorage.setItem('mktab',t)}catch{}for(const k of MKPANES)$('mk-'+k).hidden=k!==t;mkChips()}
@@ -1076,8 +1077,8 @@ $('slp_save').onclick=async()=>{const body={printer_id:SLPR};for(const sl of SLO
   try{const r=await putJSON('/api/makeit/presets',body);await loadPresets();$('slp_msg').innerHTML=`Saved for <b>${esc(slName(SLPR))}</b>: ${Object.values(r.names).map(esc).join(' · ')}. Its plates are sliced with these from now on.`;$('slp_msg').style.color='var(--ok)';loadHealth()}catch(e){$('slp_msg').textContent=e.message;$('slp_msg').style.color='var(--err)'}};
 $('slp_clear').onclick=async()=>{if(!confirm(`Remove the profiles picked for ${slName(SLPR)}? Its plates aren't sliced or printed until you pick new ones. Nothing changes in Bambuddy.`))return;
   try{await putJSON('/api/makeit/presets',{printer_id:SLPR,clear:true});loadPresets();loadHealth()}catch(e){$('slp_msg').textContent=e.message}};
-function renderDefaults(p){const sel=(id,k,vals,cur)=>`<select data-pd="${id}" data-k="${k}"><option value="">Bambuddy's default</option>${vals.map(v=>`<option value="${v}" ${setVal(cur)&&String(cur)===String(v)?'selected':''}>${k==='speed'?cap(v):optVal(v)}</option>`).join('')}</select>`;
-  $('slp_defaults').innerHTML=p.printers.length?p.printers.map(x=>{const d=x.defaults||{};return `<tr><td><b>${esc(x.name)}</b></td><td class="hint">${esc(x.model)}</td><td>${sel(x.id,'speed',p.speeds,d.speed)}</td>${Object.entries(p.options).map(([k,v])=>`<td>${sel(x.id,k,v,d[k])}</td>`).join('')}<td style="white-space:nowrap"><button class="small" data-pdsave="${x.id}">Save</button> <span class="hint" data-pdmsg="${x.id}"></span></td></tr>`}).join(''):'<tr><td colspan="7" class="empty">No printers in Bambuddy yet</td></tr>';
+function renderDefaults(p){const sel=(id,k,vals,cur)=>`<select data-pd="${id}" data-k="${k}"><option value="">${k==='plate_type'?"Profile's plate":"Bambuddy's default"}</option>${vals.map(v=>`<option value="${esc(v)}" ${setVal(cur)&&String(cur)===String(v)?'selected':''}>${k==='speed'?cap(v):esc(optVal(v))}</option>`).join('')}</select>`;
+  $('slp_defaults').innerHTML=p.printers.length?p.printers.map(x=>{const d=x.defaults||{};return `<tr><td><b>${esc(x.name)}</b></td><td class="hint">${esc(x.model)}</td><td>${sel(x.id,'plate_type',p.plates||[],d.plate_type)}</td><td>${sel(x.id,'speed',p.speeds,d.speed)}</td>${Object.entries(p.options).map(([k,v])=>`<td>${sel(x.id,k,v,d[k])}</td>`).join('')}<td style="white-space:nowrap"><button class="small" data-pdsave="${x.id}">Save</button> <span class="hint" data-pdmsg="${x.id}"></span></td></tr>`}).join(''):'<tr><td colspan="8" class="empty">No printers in Bambuddy yet</td></tr>';
   document.querySelectorAll('[data-pdsave]').forEach(b=>b.onclick=async()=>{const id=b.dataset.pdsave,body={printer_id:+id},m=document.querySelector(`[data-pdmsg="${id}"]`);
     document.querySelectorAll(`[data-pd="${id}"]`).forEach(x=>{const v=x.value;body[x.dataset.k]=v==='true'?true:v==='false'?false:v});
     try{await putJSON('/api/makeit/print-defaults',body);m.textContent='Saved';m.style.color='var(--ok)'}catch(e){m.textContent=e.message;m.style.color='var(--err)'}})}
@@ -1251,12 +1252,15 @@ $('shareddisc').onclick=async()=>{if(!confirm('Disconnect this computer from the
 async function loadUpdates(fetch=1){if(!META.local){$('updcard').hidden=true;return}
   $('updinfo').textContent='Checking…';
   let u;try{u=await api('/api/update?fetch='+fetch)}catch(e){$('updinfo').textContent=e.message;return}
-  $('updbadge').hidden=!(u.behind>0);$('updgo').hidden=!(u.behind>0);
+  $('updbadge').hidden=!(u.behind>0||u.restart_needed);$('updgo').hidden=!(u.behind>0);$('updrestart').hidden=!u.restart_needed;
   $('updlist').innerHTML=(u.changes||[]).map(c=>`<li>${esc(c)}</li>`).join('');
   const ver='SnapSTL '+(u.version||'')+(u.current?` (${esc(u.current.split(' ')[0])})`:'');
   $('updinfo').innerHTML=!u.git?esc(u.error):u.error?`${ver}. ${esc(u.error)}`:u.behind?`${ver}. <b>${u.behind} update${u.behind>1?'s':''} waiting:</b>`:`${ver} — up to date.`;
+  if(u.restart_needed)$('updinfo').innerHTML+=` <b style="color:var(--warn)">The files were updated (e.g. by git pull), but SnapSTL is still running the old version${u.running?` (${esc(u.running.split(' ')[0])})`:''} — press Restart SnapSTL to use the new one.</b>`;
   if(u.edited&&u.edited.length)$('updinfo').innerHTML+=` <span style="color:var(--err)">Files were changed by hand (${esc(u.edited.slice(0,3).join(', '))}), so updating is blocked.</span>`}
 $('updcheck').onclick=()=>loadUpdates(1);
+$('updrestart').onclick=async()=>{$('updrestart').disabled=true;$('updinfo').textContent='Restarting SnapSTL…';
+  try{await post('/api/update/restart');setTimeout(()=>location.reload(),6000)}catch(e){$('updinfo').textContent=e.message;$('updrestart').disabled=false}};
 $('updbadge').onclick=()=>show('settings');
 $('updgo').onclick=async()=>{$('updgo').disabled=true;$('updinfo').textContent='Updating…';
   try{const r=await post('/api/update');
