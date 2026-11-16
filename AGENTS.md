@@ -148,6 +148,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Backups / clean-up / reset | `maintenance.py` |
 | Install / service / window | Mac `scripts/make_app.sh`; Windows `scripts/windows/*.ps1`; `src/snapstl/__init__.py` |
 | Mac vs Windows (folders, Finder/Explorer, keep awake, restart, LAN name) | `platform_os.py` |
+| Report columns kept for other agents (Supabase `report_rows`, `report_uploads`, `orders_full`) | `report.py` (`COLUMNS`: add a report column there, with its type and description); `ingest.ingest` stores rows; `sync._push_reports` |
 | Shared order records (Supabase): connection in Settings, sync, claims | `sync.py`, `config.py`, `computer.py`, `server.shared_records_*`, `server.setup_status`, `dbtool.py` (`snapstl-db`), triggers in `db.POST_SCHEMA` |
 | Print farm: Bambuddy connection, printers, Push to queue, slicing | `farm.py` (+ `/api/farm*`, `/api/batches/{id}/plates` and `/push`, `/api/print-jobs` in `server.py`); Printers page + Push to queue panel in `index.html`; `tests/test_farm.py` |
 | Print tab (Bases / Names / Completed / Removed), Ready to ship | `makeit.py`, `/api/makeit*` in `server.py`, `server.TABS` (`ready_to_ship`), `<section id="t-makeit">` in `index.html`; `tests/test_farm.py` |

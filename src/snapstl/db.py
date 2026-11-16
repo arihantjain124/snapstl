@@ -154,6 +154,7 @@ MIGRATIONS = [
     ("print_jobs", "speed_tries", "INTEGER"),  # speed commands sent so far (farm.SPEED_TRIES at most)
     ("slices", "engine", "TEXT"),           # "orca" (OrcaSlicer on this computer) | "bambuddy"
     ("slices", "sliced_path", "TEXT"),      # OrcaSlicer's sliced file (batch folder / Sliced/<model>/…)
+    ("files", "sent", "INTEGER"),           # 1 = in the shared records' report_uploads
 ]
 
 # Bookkeeping for the shared records, kept by triggers so no code path can forget it:
@@ -164,6 +165,7 @@ MIGRATIONS = [
 _NOW = "(julianday('now') - 2440587.5) * 86400.0"
 POST_SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS sync_outbox (order_id TEXT PRIMARY KEY, queued_at REAL);
+CREATE TABLE IF NOT EXISTS report_rows (order_id TEXT PRIMARY KEY, data TEXT, status_at TEXT, file TEXT, sent INTEGER);
 CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS sync_flags (quiet INTEGER NOT NULL);
 CREATE TRIGGER IF NOT EXISTS orders_state_at AFTER UPDATE OF state ON orders

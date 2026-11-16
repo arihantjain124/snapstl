@@ -246,7 +246,7 @@ def test_only_snapstl_reaches_the_records(two):
         with psycopg.connect(url, autocommit=True) as c:
             rls = dict(c.execute("SELECT relname, relrowsecurity FROM pg_class WHERE relnamespace = "
                                  "'snapstl'::regnamespace AND relkind = 'r'").fetchall())
-            assert rls == {"order_records": True, "batch_records": True, "meta": True}
+            assert rls == {"order_records": True, "batch_records": True, "meta": True, "report_rows": True, "report_uploads": True}
             c.execute("SET ROLE anon")
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 c.execute("SELECT * FROM snapstl.order_records")
@@ -465,3 +465,50 @@ def test_shared_records_carry_the_orders_page_tab(two):
     with two("B"):  # another computer reads the same tabs
         ok(sync.sync_now())
         assert order("T4")["name"] == "Anu" and tab("T4") == ("ready", "single")
+
+
+def test_report_columns_reach_the_shared_records(two):
+    """Every other report column of a Magicians_35 order is kept, typed, in snapstl.report_rows (and
+    orders_full); a newer file wins column by column, an older one or a blank never erases; uploads listed."""
+    def rep(rows, end):
+        f = io.StringIO()
+        w = csv.writer(f)
+        w.writerow(["Order Reconciliation Report"])
+        w.writerow([f"Date Range: 30/10/2026 to {end}"])
+        w.writerow(["Order ID", "Clubbed Order ID", "Order Creation Date", "Order Status", "SKU Code", "Quantity",
+                    "Customer Name", "City", "Payment Method", "Invoice Total (Incl. Tax)", "AWB", "Shipping Partner",
+                    "Delivered Date", "Online Transaction ID", "Product Customisation"])
+        for oid, sku, status, city, pay, total, awb, delivered in rows:
+            w.writerow([oid, "", "01-11-2026", status, sku, 1, "Private Person", city, pay, total, awb, "Delhivery",
+                        delivered, "TXN-SECRET", "Enter Your First Name: Asha\nColor: Pink\n"])
+        return f.getvalue().encode()
+
+    with two("A"):
+        ingest.ingest(rep([("R1", "Magicians_35", "PRINT", "Pune", "COD", "₹1,299.00", "AWB1", ""),
+                           ("R9", "Other_SKU", "PRINT", "Goa", "COD", "500", "AWB9", "")], "14/11/2026"), "old.csv")
+        ok(sync.sync_now())
+        with sync._remote() as rc:
+            r = rc.execute("SELECT * FROM snapstl.report_rows WHERE order_id='R1'").fetchone()
+            assert r["city"] == "Pune" and r["payment_method"] == "COD" and float(r["invoice_total_incl_tax"]) == 1299.0
+            assert r["awb"] == "AWB1" and "TXN-SECRET" not in str(r)  # transaction IDs aren't kept
+            assert rc.execute("SELECT 1 FROM snapstl.report_rows WHERE order_id='R9'").fetchone() is None  # Magicians_35 only
+            f = rc.execute("SELECT * FROM snapstl.orders_full WHERE order_id='R1'").fetchone()
+            assert f["tab"] == "ready" and f["city"] == "Pune"
+        # a newer file: delivered, AWB blank (kept), city changed
+        ingest.ingest(rep([("R1", "Magicians_35", "DELIVERED", "Mumbai", "COD", "1299", "", "16/11/2026")],
+                          "16/11/2026"), "new.csv")
+        # an older file afterwards changes nothing
+        ingest.ingest(rep([("R1", "Magicians_35", "PRINT", "Nagpur", "Prepaid", "999", "AWB0", "")], "10/11/2026"),
+                      "older.csv")
+        ok(sync.sync_now())
+        with sync._remote() as rc:
+            r = rc.execute("SELECT * FROM snapstl.report_rows WHERE order_id='R1'").fetchone()
+            assert r["city"] == "Mumbai" and r["awb"] == "AWB1" and r["payment_method"] == "COD"
+            assert str(r["delivered_date"]).startswith("2026-11-16") and r["report_file"] == "new.csv"
+            ups = rc.execute("SELECT filename, magicians_rows, computer_name FROM snapstl.report_uploads "
+                             "ORDER BY uploaded_at").fetchall()
+            assert [u["filename"] for u in ups] == ["old.csv", "new.csv", "older.csv"] and ups[0]["computer_name"] == "PC A"
+            assert rc.execute("SELECT tab FROM snapstl.orders_full WHERE order_id='R1'").fetchone()["tab"] == "delivered"
+        with pytest.raises(sync.SyncError, match="never deleted"):
+            with sync._remote() as rc:
+                rc.execute("DELETE FROM snapstl.report_rows")
