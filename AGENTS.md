@@ -52,9 +52,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - The app accepts extension calls **only** on `/api/helper/*` from 127.0.0.1. Don't widen that.
 - The helper must keep checking, before every name, that its working tab is on the configured model
   page (designId); the app must never hand out work when `on_page` is false.
-- Other computers: off by default; only with `lan_access` + portal password; they must sign in and can
-  never use Mac-only actions (`MAC_ONLY_PREFIXES`, `…/reveal`, folder / model link / password changes,
-  `/api/farm/*`).
+- The full app is localhost only. Optional Windows logistics listener on port 8002 requires `lan_access` + password and permits only authenticated order reads. Never expose editing, helper, settings, batches or printer controls there.
 - Installers must **never run a second Bambuddy or stop one they didn't install**: detect an existing
   Bambuddy (service, data folder, launchd job, or the port answering) and use it; stop only processes
   started from SnapSTL's own Bambuddy folder; never delete Bambuddy data.

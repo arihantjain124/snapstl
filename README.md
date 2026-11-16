@@ -227,7 +227,7 @@ why instead of "connected". The sidebar then shows "*name* · shared records".
 
 **What is shared, and how to check it.** Every order. Uploading a report on any computer sends its
 orders to Supabase straight away (the upload says "Shared with the other computers"); the other
-computers get them at their next sync, or at once with **Refresh from Supabase** on the Orders page.
+computers get them at their next sync, or at once with **Settings → Database → Sync**.
 Shared with each order: who is making it (*In a batch*, *Bundled*, *Printed*), the newest webstore
 status and name fixes; plus every computer's batches. A report never undoes an order another
 computer is already making. The same card shows the last sync,
@@ -446,8 +446,7 @@ When the computers are connected to the shared order records:
   delete them too. Only **Clear shared records** (typed confirmation, copy saved first) empties them.
 - **Settings stay on each computer.** License password, folders and connection are never shared.
 
-To use one SnapSTL computer from a browser on another computer, turn on **Settings → Connections →
-Other computers** and set a portal password.
+To browse orders from another computer, enable **Settings → Connections → Logistics access** on the Windows host and set a password. Restart safely, then open `http://HOST-IP:8002`. This gives read-only logistics access.
 
 ## Updates
 
@@ -497,7 +496,7 @@ next to SnapSTL keeps running until you remove it.
 | "Can't reach the shared records … no batch was created" | Check the internet, then try again |
 | Connect / save says the password or address is wrong | Copy the **Session pooler** string again; put the password in place of `[YOUR-PASSWORD]` with no brackets |
 | Settings → Connections shows changes waiting | They're sent on the next sync; **Sync now** shows any problem |
-| Shared records: Supabase looks empty / another computer doesn't see orders | Press **Refresh from Supabase** on the Orders page on both computers; an upload that couldn't reach Supabase says so and is sent automatically later. In Supabase look in **Table Editor → schema `snapstl`**, not `public`. **Settings → Connections → Show what's there** shows what's stored |
+| Shared records: Supabase looks empty / another computer doesn't see orders | Press **Settings → Database → Sync** on both computers; an upload that couldn't reach Supabase says so and is sent automatically later. In Supabase look in **Table Editor → schema `snapstl`**, not `public`. **Settings → Connections → Show what's there** shows what's stored |
 | "Connected, but sync fails" | Read the message under it. Usually the password or the address: copy the **Session pooler** string again (the direct `db.….supabase.co` one needs IPv6), then **Connect / save** |
 | Bambuddy lost its printers after installing SnapSTL (0.17 or older) | SnapSTL's installer had started a second, empty Bambuddy next to yours. Run the SnapSTL install command again: it now stops SnapSTL's copy and starts yours again; your printers and data were never deleted |
 | **Bambuddy isn't answering** | On the Bambuddy computer: is it on? Services → **Bambuddy** running? Run the step-0 command again (it starts it and re-applies the firewall rules). Logs: `C:\ProgramData\Bambuddy\logs`. From a SnapSTL computer, open `http://<Bambuddy computer>:8000` in a browser: if it doesn't load, check both are on the same network and the firewall rule *SnapSTL Bambuddy (TCP 8000)* exists |
@@ -571,3 +570,10 @@ SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn snapstl.server:ap
   the Settings values.
 - **From a terminal:** `uv run snapstl-db check` and `uv run snapstl-db sync` test and run the shared
   records; `uv run snapstl-db export` saves a copy of them in the backups folder.
+
+
+### Read-only logistics (Windows host)
+
+The full app now listens only on localhost on Mac and Windows. In Windows Settings → Connections → Logistics access, enable hosting and set a password, then restart SnapSTL when no download or build is active. Employees open `http://HOST-IP:8002` and sign in. Permit TCP 8002 for the local subnet in Windows Firewall if needed. This supersedes the former remote-control portal.
+
+`logistics.py` hosts an explicit allowlist: login, orders, facets and CSV export. No edit, upload, batch, helper, printer or settings route is exposed. The shared orders table supports copying, filters, categories, pagination and browser-local saved column views. Refresh orders reloads the host’s local synchronized records, also refreshed every minute; it never pushes changes or runs cleanup. Main Orders has no Supabase refresh button; use Settings → Database → Sync or Clean up.

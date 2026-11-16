@@ -32,7 +32,7 @@ Webstore "Order Reconciliation Report" (.xlsx)
 
 | Piece | What / where |
 |---|---|
-| **Service** | `snapstl-serve` → FastAPI/uvicorn on **http://127.0.0.1:8317** (`SNAPSTL_PORT` to change); on `0.0.0.0:8317` only when Settings → *Other computers* is on (see §13). Started at login by launchd: `~/Library/LaunchAgents/local.snapmagicians.snapstl.plist` (`RunAtLoad`, `KeepAlive`). Hosts the portal, the helper API, the download queue and the batch builder thread. Runs `caffeinate -i` while alive. |
+| **Service** | `snapstl-serve` → FastAPI/uvicorn on **http://127.0.0.1:8317** (`SNAPSTL_PORT` to change); always localhost; optional Windows logistics uses `0.0.0.0:8002` (see §13). Started at login by launchd: `~/Library/LaunchAgents/local.snapmagicians.snapstl.plist` (`RunAtLoad`, `KeepAlive`). Hosts the portal, the helper API, the download queue and the batch builder thread. Runs `caffeinate -i` while alive. |
 | **App window** | `~/Applications/SnapSTL.app` → `snapstl` → pywebview window on the same URL (adds native folder picker; text selection on). UI = side navigation: Orders · Batches · Downloads · Make It · Slicing · Printer status · Settings · Help. If the service isn't up it kickstarts it. Closing the window doesn't stop the service. |
 | **SnapSTL Helper** | Chrome extension (`helper/`, *Load unpacked*) in the user's **normal** Chrome, on the MakerWorld model-maker tab. Generates each queued name on the real page and uploads the files. |
 | **Data** | `~/Library/Application Support/SnapSTL/` (`APP_DIR`, override with `SNAPSTL_HOME`): `snapstl.db`, `settings.json`, `backups/`, `auth.json` (only if a portal password is set). |
@@ -117,6 +117,7 @@ Snapstl/
 │   ├── dbtool.py             `snapstl-db check | sync | export | schema`
 │   ├── updater.py            Settings → Updates (git fetch / pull --ff-only / uv sync)
 │   ├── watermark.py, render.py   watermark detection; plate / object pictures
+│   ├── logistics.py          optional Windows port-8002 read-only orders listener
 │   ├── server.py             FastAPI app: every HTTP endpoint (§11), access control (§13), tab/filter SQL
 │   ├── settings.py           dataclasses + defaults (§12); APP_DIR, CACHE_DIR, output path, MakerWorld URL
 │   ├── db.py                 local SQLite schema + MIGRATIONS + sync triggers, tx(), quiet(), batch helpers
@@ -471,13 +472,11 @@ filament are not stored by SnapSTL — they're read from Bambuddy.
   (DNS-rebinding guard).
 * **Other websites** in any browser: rejected — a request's `Origin` must match its host.
   `chrome-extension://` origins are accepted **only** on `/api/helper/*` and only from this Mac.
-* **Other computers** (opt-in): only when Settings → *Other computers* is on (`lan_access`) **and** a
-  portal password is set. The service then listens on `0.0.0.0:8317` (`serve()` picks the address at
-  start; toggling restarts it via `launchctl kickstart -k`). They must sign in (scrypt hash + signed
-  30-day cookie, `auth.json`; cookie `Secure` only over https). Never allowed from other computers:
-  `/api/helper/*`, Finder (`…/reveal`), `/api/portal`, `/api/maintenance/reset`, `/api/farm/*`
-  (Bambuddy connection, clear plate), and changing folders, the model
-  link or license passwords. They may see the Printers page and use Push to queue.
+* **Other computers:** the full app refuses every remote request. Optional Windows logistics
+  hosting uses a separate listener on port 8002, password sign-in and an explicit order-read route
+  allowlist (`logistics.py`). `lan_access` retains its stored name but now enables logistics only.
+  Start/stop hosting takes effect after a person restarts the service. No worker runs in the
+  logistics listener; the host's normal shared-records sync supplies its local read data.
 * Bambuddy listens on the owner's local network (port 8000; the Windows firewall rule allows the local
   subnet only). Its login is off by default — anyone on that network can use it; the README recommends
   turning it on and giving each SnapSTL an API key. The slicer sidecars have no login and are never
@@ -590,7 +589,7 @@ snapstl.server:app --port 8320`.
 | 45 | **Bambuddy scripts are Windows only** (0.22.3): `bambuddy-server.sh` and `bambuddy-mac.sh` removed; the Mac installer / updater only connect SnapSTL to the Windows Bambuddy computer (`SNAPSTL_BAMBUDDY_URL`), `update_bambuddy` runs on Windows only. SnapSTL itself stays on Mac + Windows | owner: the Bambuddy computer is a Windows PC; no Bambuddy or slicer scripts needed for a Mac |
 | 46 | **Batched orders always name their batch's owner** (0.22.1): opening the local database copies a batch's `uid` and computer onto its orders that lack them and queues them for the shared records; `_WIN` lets a push take an `in_batch` record that has no owner | batches made before 0.8.0 were sent to Supabase without `computer_id`, so the owner's own *Bundled* was refused and `merge(force=True)` pulled the orders out of their batch |
 | 47 | **Only SnapSTL reaches the shared records; a daily copy on every computer** (0.22.4): the setup SQL turns on row level security (no policies) on the `snapstl` tables and revokes `anon` / `authenticated` (Supabase's API roles) from the schema on every start; SnapSTL connects as the owner, which bypasses RLS. After a good sync, once a day, each computer saves every record to `backups/shared-records-daily-<date>.json` (mode 600, newest 30 kept); `snapstl-db export` saves one on demand | the records hold customer names, phones and addresses; Supabase's free plan keeps no backups the owner can download |
-| 48 | **Every uploaded order is shared** (0.22.5): orders the records don't have are offered as `released` (`sync._OFFER`: inserts, or only takes a newer status and missing details — never changes a stored state; a stored batched/bundled/printed state is merged back here). Orders first seen through a pull get the report's review rules (`sync._review`); a name/colour fixed on one computer reaches the others while nobody makes the order. Upload syncs before and after ingesting; Orders → **Refresh from Supabase** runs Sync now. Pushes are pipelined (`executemany`, 1000 per round). Supersedes the "only batched orders" part of #22 | owner wanted a report uploaded on any computer to update Supabase and every computer, and a refresh on the Orders page |
+| 48 | **Every uploaded order is shared** (0.22.5): orders the records don't have are offered as `released` (`sync._OFFER`: inserts, or only takes a newer status and missing details — never changes a stored state; a stored batched/bundled/printed state is merged back here). Orders first seen through a pull get the report's review rules (`sync._review`); a name/colour fixed on one computer reaches the others while nobody makes the order. Upload syncs before and after ingesting; Settings → Database → Sync runs Sync now. Pushes are pipelined (`executemany`, 1000 per round). Supersedes the "only batched orders" part of #22 | owner wanted a report uploaded on any computer to update Supabase and every computer, and a refresh on the Orders page |
 | 49 | **Reset can also clear Supabase** (0.22.6): Maintenance → *also clear Supabase* + typed RESET ALL → `maintenance.reset(shared=True)`: local backup, then `sync.clear` (copy of every record) and the local database emptied under `sync._lock`, so the background sync can't send this computer's orders back in between; the unsynced-changes guard doesn't apply (everything is emptied) | owner wanted one action to reset both this computer and the shared records |
 | 50 | **Slicing profiles per printer; a spool can print as another colour** (0.22.7): `presets_by_printer` keyed by Bambuddy printer id replaces `presets_by_model` (kept as the fallback for printers with no pick of their own; *Remove* on one printer hands the model's pick to its other printers first). The slice key still hashes the profiles, so printers with the same profiles share a slice. Printers page: each spool has *prints as …* (`color_overrides`, keyed by slot + hex so it lapses with the spool); it changes only how SnapSTL reads the spool, nothing is sent to Bambuddy. Supersedes #36 | owner's printers of the same model need different profiles, and Bambuddy's filament names don't always match the order colours |
 | 51 | **Daily handling: Sync, Clean up, Reset; Supabase required** (0.22.8): a report's statuses are dated by the newest entry in the file (`ingest.file_as_of`), not the upload time. Settings → Database: **Sync** (`/api/sync`) and **Clean up** (`sync.match`, `/api/maintenance/match`) run without confirmation — Clean up syncs, backs up, re-reads every shared record with `merge(force=True)`, removes local orders the records no longer have (except this computer's own batched / bundled / printed ones, which are sent again) and tidies 30-day history without deleting orders. Only Reset asks (RESET / RESET ALL). With `sync.REQUIRED` (default; `SNAPSTL_REQUIRE_SHARED=0` in tests) every non-GET `/api` call except `server.WITHOUT_SHARED` (connection, settings, sync, helper, updates, sign-in, backup) answers 503 while `sync.online()` is false; the UI shows a red bar and greys out every page but Settings and Help | owner wanted simple daily handling where every computer matches Supabase, and no computer working without it |
@@ -803,3 +802,10 @@ restart. `scripts/windows/install.ps1` installs uv and runs `uv sync`. It regist
 code 3 and the loop starts it again. In-app updates on Windows only `git pull`: the loop's `uv run`
 installs the new packages before starting, since Windows can't replace files Python has open.
 `.gitattributes` keeps `.sh` files LF and `.ps1` files CRLF.
+
+
+### Read-only logistics (Windows host)
+
+The full app now listens only on localhost on Mac and Windows. In Windows Settings → Connections → Logistics access, enable hosting and set a password, then restart SnapSTL when no download or build is active. Employees open `http://HOST-IP:8002` and sign in. Permit TCP 8002 for the local subnet in Windows Firewall if needed. This supersedes the former remote-control portal.
+
+`logistics.py` hosts an explicit allowlist: login, orders, facets and CSV export. No edit, upload, batch, helper, printer or settings route is exposed. The shared orders table supports copying, filters, categories, pagination and browser-local saved column views. Refresh orders reloads the host’s local synchronized records, also refreshed every minute; it never pushes changes or runs cleanup. Main Orders has no Supabase refresh button; use Settings → Database → Sync or Clean up.
