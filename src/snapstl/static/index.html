@@ -299,7 +299,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <li>In Bambuddy: <b>Profiles → Local Profiles → Import Profiles</b>, and drop the files there. They're listed here under <i>Yours in Bambuddy</i>.</li>
       </ol>
       <h3>Cloud profiles</h3>
-      <p class="hint">Sign in to Bambu Cloud (or connect Orca Cloud) in Bambuddy; your cloud presets are then listed here too. For the Bambu Cloud list, the API key SnapSTL uses needs <b>Allow cloud access</b> (Bambuddy → Settings → API keys).</p>
+      <p class="hint">Sign in to Bambu Cloud (or connect Orca Cloud) in Bambuddy; your cloud presets are then listed here too. Everything in the lists comes from Bambuddy — SnapSTL has no profiles of its own. With Bambuddy's <b>login off</b>, Bambuddy's own Bambu Cloud sign-in is used. With the <b>login on</b>, Bambu Cloud sign-ins are per Bambuddy user: create SnapSTL's key (Bambuddy → Settings → API keys) <b>while signed in as the user who is signed in to Bambu Cloud</b>, with <b>Allow cloud access</b> ticked, and paste it in Settings → Connections. If the cloud list is missing, the line under the lists says exactly why.</p>
       <h3>Bambuddy's slicer service</h3>
       <p class="hint">In Bambuddy: <b>Settings → Slicer</b> — turn on <b>Use Slicer API</b> and set the sidecar URL (or the <code>SLICER_API_URL</code> / <code>BAMBU_STUDIO_API_URL</code> settings of its Docker setup). Its <b>Preferred Slicer</b> decides whether Bambu Studio or OrcaSlicer slices.</p>
       <h3>Good to know</h3>
@@ -1065,8 +1065,9 @@ for(const slot of ['printer','process','filament']){
   $('slp_'+slot).addEventListener('change',e=>{SLSEL[slot]=e.target.value})}
 function fillPresetSelects(){const p=SLP;if(!p)return;const gone=[];SLSEL={...p.chosen};
   for(const slot of SLOTS)if(fillSlot(slot))gone.push(`${slot}: ${p.names[slot]}`);
-  const st=p.status||{},why=[['Bambu Cloud',st.cloud_status],['Orca Cloud',st.orca_cloud_status]].filter(([,v])=>v&&v!=='ok').map(([k,v])=>`${k}: ${CLOUD_WHY[v]||v}`);
+  const st=p.status||{},why=[['Orca Cloud',st.orca_cloud_status]].filter(([,v])=>v&&v!=='ok').map(([k,v])=>`${k}: ${CLOUD_WHY[v]||v}`);
   $('slp_listmsg').innerHTML=(gone.length?`<span style="color:var(--err)">Picked profile${gone.length>1?'s':''} no longer in Bambuddy — ${gone.map(esc).join(' · ')}. Pick another and Save.</span> `:'')
+    +(p.cloud_problem?`<div class="reason" style="margin-top:4px"><b>Bambu Cloud profiles not listed:</b> ${esc(p.cloud_problem)}.</div>`:'')
     +(why.length?`<span class="hint">Cloud profiles not listed (${why.map(esc).join(' · ')}).</span>`:'')}
 $('slp_reload').onclick=()=>loadPresets(true);
 $('slp_auto').onchange=async()=>{try{const r=await putJSON('/api/makeit/settings',{auto_slice:$('slp_auto').checked});$('slp_msg').textContent=r.auto_slice?'New plates are sliced automatically.':'Automatic slicing off — plates are sliced with Slice or at Start print.'}catch(e){$('slp_msg').textContent=e.message}};

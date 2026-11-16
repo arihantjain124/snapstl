@@ -226,11 +226,14 @@ def connect(url: str | None = None, api_key: str | None = None) -> dict:
     elif not cfg["api_key"] or url:
         if st["auth_enabled"]:
             raise FarmError("Bambuddy's login is on: in Bambuddy open Settings → API Keys, create a key "
-                            "(Queue, Read status, Library, Control printer) and paste it here")
+                            "(Queue, Read status, Library, Control printer and Allow cloud access — for "
+                            "your Bambu Cloud profiles) while signed in as the user who is signed in to "
+                            "Bambu Cloud, and paste it here")
+        # Login off: Bambuddy refuses can_access_cloud on such a key ("requires authentication") — and
+        # doesn't need it: its own Bambu Cloud sign-in serves every caller, SnapSTL included.
         made = api("POST", "/api-keys/", cfg=cfg, key="", json_body={
             "name": f"SnapSTL ({computer.NAME})"[:100], "can_queue": True, "can_read_status": True,
-            "can_manage_library": True, "can_control_printer": True,
-            "can_access_cloud": True})  # Bambu Cloud slicer profiles (Slicing) need it
+            "can_manage_library": True, "can_control_printer": True})
         cfg["api_key"] = (made or {}).get("key", "")
         if not cfg["api_key"]:
             raise FarmError("Bambuddy didn't hand out an API key")
@@ -503,6 +506,40 @@ def bambuddy_presets(cfg: dict | None = None, refresh: bool = False, status: dic
     if status is not None:
         status.update({k: r.get(k) for k in ("cloud_status", "orca_cloud_status") if r.get(k)})
     return out
+
+
+def cloud_problem(cloud_status: str, cfg: dict | None = None) -> str:
+    """Why Bambuddy lists no Bambu Cloud profiles for SnapSTL, in plain words ("" = it does).
+
+    Bambuddy hands cloud profiles only to a caller with a Bambu Cloud sign-in: login off → Bambuddy's own
+    sign-in; login on → the API key needs "Allow cloud access" and an owner, and that owner must be the
+    Bambuddy user signed in to Bambu Cloud (sign-ins are per user)."""
+    if not cloud_status or cloud_status == "ok":
+        return ""
+    if cloud_status == "expired":
+        return "Bambuddy's Bambu Cloud sign-in has expired — sign in again in Bambuddy (Settings → Bambu Cloud)"
+    if cloud_status == "unreachable":
+        return "Bambuddy couldn't reach Bambu Cloud just now — press Reload from Bambuddy in a minute"
+    cfg = cfg or load_config()
+    auth = status(cfg).get("auth_enabled")
+    if not auth:
+        return "Bambuddy isn't signed in to Bambu Cloud — sign in in Bambuddy (Settings → Bambu Cloud), then Reload"
+    try:
+        st = api("GET", "/cloud/status", cfg=cfg, timeout=10) or {}
+    except FarmError as e:
+        if "refused" in str(e):
+            return ("SnapSTL's Bambuddy API key may not use Bambu Cloud. In Bambuddy, signed in as the user who is "
+                    "signed in to Bambu Cloud: Settings → API Keys → create a key with Queue, Read status, Library, "
+                    "Control printer and Allow cloud access, and paste it in SnapSTL (Settings → Connections → "
+                    "Bambuddy). A key without an owner (made before Bambuddy's login was on) can't get it — make a new one")
+        return f"Couldn't ask Bambuddy about Bambu Cloud: {e}"
+    if st.get("sign_in_expired"):
+        return "The Bambu Cloud sign-in of the Bambuddy user who owns SnapSTL's key has expired — sign in again in Bambuddy"
+    if not st.get("is_authenticated"):
+        return ("The Bambuddy user who owns SnapSTL's API key isn't signed in to Bambu Cloud (sign-ins are per user in "
+                "Bambuddy). Sign in to Bambu Cloud as that user, or create the key as the user who is signed in, "
+                "with Allow cloud access, and paste it in Settings → Connections")
+    return ""
 
 
 def chosen_presets(printer_id: int | None, cfg: dict | None = None) -> dict:

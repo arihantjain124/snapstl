@@ -74,6 +74,7 @@ class FakeBambuddy:
         self.slicer = "unreachable"  # Bambuddy's slicer sidecar: "ok" | "unreachable" | "hang"
         self.slice_jobs, self.slice_bodies, self.imports, self.speeds = {}, [], [], []
         self.speed_ignored = False  # a printer that doesn't take the speed command
+        self.cloud_keys, self.cloud_signed_in = [], True  # keys with "Allow cloud access"; the owner's sign-in
         self.presets = {"standard": {
             "printer": [{"id": "Bambu Lab A1 0.4 nozzle", "name": "Bambu Lab A1 0.4 nozzle", "source": "standard"}],
             "process": [{"id": "0.20mm Standard @BBL A1", "name": "0.20mm Standard @BBL A1", "source": "standard"}],
@@ -93,9 +94,15 @@ class FakeBambuddy:
         if not key_ok:
             return 401, b'{"detail":"Not authenticated"}'
         if method == "POST" and path == "/api/v1/api-keys/":
+            if json.loads(body).get("can_access_cloud") and not self.auth_enabled:  # as Bambuddy 1.3.1
+                return 400, b'{"detail":"can_access_cloud requires authentication to be enabled (per-user cloud tokens)"}'
             self.key_requests.append(json.loads(body))
             self.keys.append("bb_secret_key")
             return 200, json.dumps({"id": 1, "key": "bb_secret_key"}).encode()
+        if method == "GET" and path == "/api/v1/cloud/status":
+            if self.auth_enabled and headers.get("X-API-Key") not in self.cloud_keys:
+                return 403, b'{"detail":"API key does not have cloud access"}'
+            return 200, json.dumps({"is_authenticated": self.cloud_signed_in, "sign_in_expired": False}).encode()
         if method == "GET" and path == "/api/v1/inventory/colors/map":
             return 200, json.dumps(self.colors).encode()
         if method == "GET" and path == "/api/v1/printers/":
@@ -719,12 +726,12 @@ def test_bambuddy_on_another_computer_and_this_computers_address(client, bb, mon
 
     monkeypatch.setattr(platform_os, "lan_ips", lambda: ["192.168.1.20"])
     monkeypatch.setattr(platform_os, "lan_name", lambda: "farm-pc")
-    # SnapSTL connects to a Bambuddy on another computer by its address and makes its own key (cloud profiles too)
+    # SnapSTL connects to a Bambuddy on another computer by its address and makes its own key
     farm.update_config(api_key="")
     r = client.post("/api/farm/connect", json={"url": "http://192.168.1.50:8000/"})
     assert r.status_code == 200 and r.json()["connected"]
     assert farm.load_config()["bambuddy_url"] == "http://192.168.1.50:8000"
-    assert bb.key_requests[-1]["can_access_cloud"] is True
+    assert "can_access_cloud" not in bb.key_requests[-1]  # login off: Bambuddy refuses it (and serves cloud anyway)
     server._health_stale()
     n = client.get("/api/health").json()["network"]
     assert n == {"ip": "192.168.1.20", "name": "farm-pc", "portal": "http://192.168.1.20:8317",
@@ -767,3 +774,29 @@ def test_a_spool_can_print_as_another_colour(client, bb):
     client.put("/api/farm/printers/4/color", json={"key": sp["key"], "color": ""})  # back to Bambuddy's name
     farm._status_cache.clear()
     assert p4()["colors"] == ["pink"]
+
+
+def test_why_bambu_cloud_profiles_are_missing(client, bb):
+    """Slicing lists only what Bambuddy has; when Bambu Cloud's are missing it says exactly why."""
+    farm.update_config(api_key="")
+    assert client.post("/api/farm/connect", json={}).status_code == 200  # login off: SnapSTL makes its key …
+    assert "can_access_cloud" not in bb.key_requests[-1]  # … without the flag Bambuddy would refuse
+    bb.presets["cloud_status"] = "ok"
+    assert client.get("/api/makeit/presets").json()["cloud_problem"] == ""
+    bb.presets["cloud_status"] = "not_authenticated"  # login off, Bambuddy not signed in
+    assert "isn't signed in to Bambu Cloud" in client.get("/api/makeit/presets").json()["cloud_problem"]
+    bb.presets["cloud_status"] = "expired"
+    assert "expired" in client.get("/api/makeit/presets").json()["cloud_problem"]
+
+    bb.auth_enabled = True  # login on, a key pasted without "Allow cloud access"
+    bb.keys.append("bb_no_cloud")
+    assert client.post("/api/farm/connect", json={"api_key": "bb_no_cloud"}).status_code == 200
+    bb.presets["cloud_status"] = "not_authenticated"
+    why = client.get("/api/makeit/presets").json()["cloud_problem"]
+    assert "Allow cloud access" in why and "API Keys" in why
+    bb.cloud_keys.append("bb_no_cloud")  # cloud access on, but its owner isn't signed in to Bambu Cloud
+    bb.cloud_signed_in = False
+    assert "owns SnapSTL's API key isn't signed in" in client.get("/api/makeit/presets").json()["cloud_problem"]
+    bb.cloud_signed_in = True
+    bb.presets["cloud_status"] = "ok"
+    assert client.get("/api/makeit/presets").json()["cloud_problem"] == ""
