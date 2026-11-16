@@ -80,6 +80,7 @@ class FakeBambuddy:
             "local": {"process": [{"id": "7", "name": "Organizer 0.24mm", "source": "local"}]}}
         self.calls = []
         self.preset_reads = []
+        self.key_requests = []
 
     def __call__(self, method, url, headers, body, timeout):
         path = url.split("://", 1)[1].split("/", 1)[1]
@@ -91,6 +92,7 @@ class FakeBambuddy:
         if not key_ok:
             return 401, b'{"detail":"Not authenticated"}'
         if method == "POST" and path == "/api/v1/api-keys/":
+            self.key_requests.append(json.loads(body))
             self.keys.append("bb_secret_key")
             return 200, json.dumps({"id": 1, "key": "bb_secret_key"}).encode()
         if method == "GET" and path == "/api/v1/inventory/colors/map":
@@ -685,3 +687,26 @@ def test_any_bambuddy_profile_and_nothing_kept_by_snapstl(client, bb):
     bb.presets = ["not", "a", "profile list"]  # not the shape Bambuddy answers with
     p = client.get("/api/makeit/presets").json()
     assert p["error"] and p["available"] == {"printer": [], "process": [], "filament": []}
+
+
+def test_bambuddy_on_another_computer_and_this_computers_address(client, bb, monkeypatch):
+    from snapstl import platform_os, server
+
+    monkeypatch.setattr(platform_os, "lan_ips", lambda: ["192.168.1.20"])
+    monkeypatch.setattr(platform_os, "lan_name", lambda: "farm-pc")
+    # SnapSTL connects to a Bambuddy on another computer by its address and makes its own key (cloud profiles too)
+    farm.update_config(api_key="")
+    r = client.post("/api/farm/connect", json={"url": "http://192.168.1.50:8000/"})
+    assert r.status_code == 200 and r.json()["connected"]
+    assert farm.load_config()["bambuddy_url"] == "http://192.168.1.50:8000"
+    assert bb.key_requests[-1]["can_access_cloud"] is True
+    server._health_stale()
+    n = client.get("/api/health").json()["network"]
+    assert n == {"ip": "192.168.1.20", "name": "farm-pc", "portal": "http://192.168.1.20:8317",
+                 "bambuddy_url": "http://192.168.1.50:8000", "bambuddy_here": False,
+                 "bambuddy_share": "http://192.168.1.50:8000"}
+    # Bambuddy on this computer: the sidebar offers its address for the other SnapSTL computers
+    farm.update_config(bambuddy_url="http://127.0.0.1:8000")
+    server._health_stale()
+    n = client.get("/api/health").json()["network"]
+    assert n["bambuddy_here"] and n["bambuddy_share"] == "http://192.168.1.20:8000"

@@ -1154,9 +1154,24 @@ def health():
     # Bambuddy's slicer runs with Bambuddy (its sidecar); a slicer that's down shows on the plates it fails
     out = {"bambuddy": {"connected": st["connected"], "error": st["error"]},
            "slicer": {"name": "Bambuddy's slicer", "found": st["connected"]},
-           "printers": {"online": online, "total": total}, "presets_missing": missing}
+           "printers": {"online": online, "total": total}, "presets_missing": missing,
+           "network": _network(st["url"])}
     _health = (time.time(), out)
     return out | {"helper": DOWNLOADER.snapshot()["online"]}
+
+
+def _network(bambuddy_url: str) -> dict:
+    """The sidebar's "This computer" line: its address on the network, for connecting other computers —
+    to this SnapSTL's web portal, and to Bambuddy when Bambuddy runs here."""
+    from urllib.parse import urlparse
+
+    ips = platform_os.lan_ips()
+    ip = ips[0] if ips else ""
+    u = urlparse(bambuddy_url or "")
+    here = (u.hostname or "") in ("127.0.0.1", "localhost", "::1", ip) and bool(u.hostname)
+    share = f"{u.scheme or 'http'}://{ip}:{u.port or 8000}" if here and ip else (bambuddy_url or "")
+    return {"ip": ip, "name": platform_os.lan_name(), "portal": f"http://{ip}:{_port()}" if ip else "",
+            "bambuddy_url": bambuddy_url or "", "bambuddy_here": here, "bambuddy_share": share}
 
 
 @app.get("/api/printer-status")

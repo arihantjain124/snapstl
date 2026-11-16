@@ -4,12 +4,13 @@ SnapSTL turns Snap Magicians webstore orders for the **Custom Name Desk Organize
 `Magicians_35`) into print-ready Bambu Lab plate files (**.3mf**). It generates each name on
 MakerWorld, scales it to the agreed rules, puts 3 per plate and saves dated batch folders. With
 **Print** it sends the finished plates to your Bambu printers through **Bambuddy**, the
-open-source print-farm manager installed with it.
+open-source print-farm manager, which slices them with its slicer service. Bambuddy runs in Docker on one
+computer of your network, for every SnapSTL computer.
 
 It runs on **macOS** and **Windows**. You install it with one command, and everything else is set up
 in the app.
 
-**Contents:** [1. Install](#1-install) · [2. Add the helper to Chrome](#2-add-the-snapstl-helper-to-chrome) ·
+**Contents:** [0. The Bambuddy computer](#0-the-bambuddy-computer-print-farm--slicing) · [1. Install](#1-install) · [2. Add the helper to Chrome](#2-add-the-snapstl-helper-to-chrome) ·
 [3. Finish setup in the app](#3-finish-setup-in-the-app) · [4. Your printers](#4-your-printers-print-farm) · [Daily use](#daily-use) ·
 [Several computers](#several-computers) · [Updates](#updates) · [Troubleshooting](#troubleshooting) ·
 [Uninstall](#uninstall) · [For developers](#for-developers)
@@ -26,6 +27,64 @@ in the app.
   each with **LAN Only Mode** and **Developer Mode** turned on.
 - The model's **license password** from MakerWorld. SnapSTL won't download without it, so models
   never carry MakerWorld's watermark.
+
+## 0. The Bambuddy computer (print farm + slicing)
+
+Bambuddy and its slicer service run in **Docker** on **one** computer of your network (it can also be a
+SnapSTL computer). Every SnapSTL computer connects to it. Set it up once, before or after installing
+SnapSTL. It needs a 64-bit Intel/AMD PC with virtualization on (standard on modern PCs), about 5 GB free
+disk, and it must stay on and signed in while you print.
+
+### Windows (recommended)
+
+1. Start menu → type **PowerShell** → right-click **Windows PowerShell** → **Run as administrator**.
+2. Paste this line and press Enter:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/arihantjain124/snapstl/main/scripts/windows/bambuddy-server.ps1 | iex"
+   ```
+
+3. **First time only:**
+   - If WSL 2 isn't on the PC yet, the script turns it on and asks you to **restart**. Restart, then
+     run step 1–2 again.
+   - It downloads and installs **Docker Desktop** (about 600 MB) and accepts Docker's license for
+     you (free for personal use and small businesses; see docker.com/pricing). If it then says
+     *Docker isn't running yet*: open **Docker Desktop**, click through its first screens (signing in
+     is optional) until it says **Engine running** — or sign out and back in once — then run step
+     1–2 again.
+4. It then downloads **Bambuddy** and the **slicer service** (Bambu Studio + OrcaSlicer, about 1 GB the
+   first time), starts them, turns on Bambuddy's **Use Slicer API** (Bambu Studio), opens port **8000**
+   in Windows Firewall for your local network only, and ends with:
+
+   ```
+   In SnapSTL on every computer: Settings -> Connections -> Bambuddy address:
+       http://192.168.1.50:8000
+   ```
+
+   Note that address. Docker Desktop starts when you sign in, and Bambuddy starts with it.
+5. Open that address in a browser on any computer:
+   - **Printers → Add printer** for each printer, **by IP address** (IP, serial number, access code —
+     automatic discovery doesn't work through Docker Desktop).
+   - **Profiles → Local Profiles → Import Profiles**: your slicing presets exported from Bambu Studio
+     (**File → Export → Export Preset Bundle**).
+   - Optional, recommended when others share your network: turn on Bambuddy's login (**Settings →
+     Authentication**) and give each SnapSTL an API key (**Settings → API keys**: Queue, Read status,
+     Library, Control printer, Allow cloud access).
+
+Everything lives in `C:\ProgramData\SnapSTL-Bambuddy` (`docker-compose.yml`, `.env` with the pinned
+versions) and Docker volumes. To **update** Bambuddy to the version a newer SnapSTL was tested with,
+run the same command again; your printers, profiles and history are kept. Already running a Bambuddy
+installed another way on that PC? The script leaves it alone and only adds the slicer service; it
+then tells you what to set in your Bambuddy.
+
+### Mac or Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arihantjain124/snapstl/main/scripts/bambuddy-server.sh | bash
+```
+
+Needs Docker Desktop (Mac — installed for you if you have Homebrew) or Docker Engine (Linux). On
+Apple-silicon Macs the slicer runs emulated and is slower; a Windows/Intel PC is the better choice.
 
 ## 1. Install
 
@@ -44,9 +103,12 @@ curl -fsSL https://raw.githubusercontent.com/arihantjain124/snapstl/main/scripts
 
 ### Windows
 
-Open **PowerShell** (Start menu → type *PowerShell*), paste this line and press Return:
+Open **PowerShell** (Start menu → type *PowerShell*), paste these two lines and press Return — the first
+one tells the installer your Bambuddy computer's address from [step 0](#0-the-bambuddy-computer-print-farm--slicing)
+(leave it out to set it later in the app):
 
 ```powershell
+$env:SNAPSTL_BAMBUDDY_URL="http://192.168.1.50:8000"
 powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/arihantjain124/snapstl/main/scripts/windows/install-windows.ps1 | iex"
 ```
 
@@ -61,12 +123,18 @@ On both systems:
 - SnapSTL starts by itself when you log in, and keeps running in the background.
 - Its web page is at **http://127.0.0.1:8317**.
 - It lives in the **SnapSTL-app** folder in your home folder. Keep it there.
-- The installer also sets up **Bambuddy** (the print-farm manager) in the **SnapSTL-Bambuddy** folder.
-  It starts at login too, at **http://127.0.0.1:8000** (this computer only), and SnapSTL connects
-  to it by itself. **Already running Bambuddy?** The installer uses yours: it never installs a second
-  one, never stops or replaces yours and never touches its printers or data. To leave Bambuddy out,
-  put `SNAPSTL_NO_BAMBUDDY=1` before the install command (Mac: `SNAPSTL_NO_BAMBUDDY=1 curl …`;
-  Windows: run `$env:SNAPSTL_NO_BAMBUDDY="1"` first).
+- **Bambuddy** isn't installed with SnapSTL: it runs on your Bambuddy computer
+  ([step 0](#0-the-bambuddy-computer-print-farm--slicing)). With `SNAPSTL_BAMBUDDY_URL` set (Mac:
+  `SNAPSTL_BAMBUDDY_URL=http://192.168.1.50:8000 curl …`) the installer connects SnapSTL to it;
+  otherwise enter the address in **Settings → Connections → Bambuddy address**.
+  - To run Bambuddy on this same computer, put `SNAPSTL_BAMBUDDY=docker` first instead (Windows:
+    `$env:SNAPSTL_BAMBUDDY="docker"`): the installer then runs step 0's setup here (Windows asks
+    for administrator rights).
+  - A Bambuddy installed next to SnapSTL by an older version (folder **SnapSTL-Bambuddy**) keeps
+    working and being updated. `SNAPSTL_NO_BAMBUDDY=1` leaves Bambuddy out entirely.
+- The sidebar's bottom line **IP address** shows this computer's address on the network; click it
+  to copy. On the Bambuddy computer it copies Bambuddy's address (`http://<ip>:8000`) to paste into the
+  other SnapSTL computers.
 - No slicer is installed: plates are sliced by Bambuddy's slicer service. After installing, pick
   the Bambuddy profiles per printer model in the **Slicing** tab (step 4 of
   [4. Your printers](#4-your-printers-print-farm)). SnapSTL has no slicing settings of its own.
@@ -167,8 +235,8 @@ shown again in full. Give it only to computers that run SnapSTL.
 
 ## 4. Your printers (print farm)
 
-SnapSTL sends plates to your printers through **Bambuddy**, which the installer put on this computer.
-Already had Bambuddy? The installer uses yours and never replaces it, stops it or touches its printers.
+SnapSTL sends plates to your printers through **Bambuddy** on your Bambuddy computer
+([step 0](#0-the-bambuddy-computer-print-farm--slicing)), connected in **Settings → Connections**.
 Printers, filament and printer settings are all managed **in Bambuddy** (Printers → **Open
 Bambuddy**). SnapSTL only reads them.
 
@@ -326,8 +394,14 @@ Click it, then **Update now**. SnapSTL installs the update and restarts in a few
 helper in Chrome reloads itself. Orders, batches, settings and downloads are kept.
 
 Running the install command again also updates SnapSTL.
-Bambuddy moves to the version this SnapSTL was tested with (`scripts/bambuddy-version.txt`) at the same
-time, only where SnapSTL's installer put it; a Bambuddy you installed yourself is never changed.
+Bambuddy on the Bambuddy computer is updated by running its [step-0](#0-the-bambuddy-computer-print-farm--slicing)
+command there again (to the version this SnapSTL was tested with, `scripts/bambuddy-version.txt`). A
+Bambuddy an older SnapSTL installed next to itself is still updated with SnapSTL.
+
+**Updating to 0.22 from an older version:** SnapSTL no longer installs Bambuddy with itself. Set up the
+Bambuddy computer (step 0), then on each SnapSTL computer enter its address in **Settings →
+Connections → Bambuddy address**. Printers and profiles are added in that new Bambuddy (by IP); an older
+Bambuddy next to SnapSTL keeps running until you remove it.
 
 **Updating to 0.21 from an older version:**
 
@@ -364,7 +438,8 @@ time, only where SnapSTL's installer put it; a Bambuddy you installed yourself i
 | Shared records: Supabase looks empty / another computer doesn't see orders | Only orders taken into a batch are shared — upload the report on each computer. In Supabase look in **Table Editor → schema `snapstl`**, not `public`. **Settings → Connections → Show what's there** shows what's stored |
 | "Connected, but sync fails" | Read the message under it. Usually the password or the address: copy the **Session pooler** string again (the direct `db.….supabase.co` one needs IPv6), then **Connect / save** |
 | Bambuddy lost its printers after installing SnapSTL (0.17 or older) | SnapSTL's installer had started a second, empty Bambuddy next to yours. Run the SnapSTL install command again: it now stops SnapSTL's copy and starts yours again; your printers and data were never deleted |
-| **Bambuddy isn't answering** | Run the install command again (it repairs Bambuddy); log: `~/Library/Logs/Bambuddy` (Windows: `%LOCALAPPDATA%\Bambuddy\logs`) |
+| **Bambuddy isn't answering** | On the Bambuddy computer: is it on, signed in, and Docker Desktop running? Run the step-0 command again (it restarts and repairs). Logs: `docker compose -f C:\ProgramData\SnapSTL-Bambuddy\docker-compose.yml logs bambuddy`. From a SnapSTL computer, open `http://<Bambuddy computer>:8000` in a browser: if it doesn't load, check both are on the same network and Windows Firewall allows port 8000 (the script adds the rule *SnapSTL Bambuddy*) |
+| Its address changed (e.g. `192.168.1.50` → `.51`) | Give the Bambuddy computer a fixed address in your router (DHCP reservation), then enter it again in **Settings → Connections** on each SnapSTL computer |
 | Adding a printer in Bambuddy fails | Check the IP, serial and access code, and that LAN Only Mode **and** Developer Mode are on |
 | A plate shows **Slicing failed** | Read the message. "Bambuddy's slicer isn't running" → in Bambuddy: Settings → Slicer → **Use Slicer API** on, and the slicer container running and reachable from Bambuddy. "isn't made for the printer preset" → pick a process profile made for that printer profile in **Slicing**. Then click **Slice** again |
 | A plate shows **No profiles for A1** (or P1S) | **Slicing → Bambuddy profiles per printer model**: choose that model's printer, process and filament profiles → **Save** |
@@ -400,6 +475,8 @@ Your data folders and the shared records stay in place.
 - **Windows** (PowerShell):
   `powershell -ExecutionPolicy Bypass -File $HOME\SnapSTL-app\scripts\windows\uninstall.ps1`
   (removes Bambuddy's task too)
+- **The Bambuddy computer** (Docker): `docker compose -f C:\ProgramData\SnapSTL-Bambuddy\docker-compose.yml down`
+  stops it (add `-v` to also delete its data: printers, profiles, history).
 
 Then remove the helper in `chrome://extensions`.
 

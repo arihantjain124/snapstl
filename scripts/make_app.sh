@@ -65,13 +65,34 @@ exec "$UV" run --no-dev --quiet snapstl >> "$LOG" 2>&1
 LAUNCH
 chmod +x "$APP/Contents/MacOS/SnapSTL"
 
-# ---- Bambuddy (print farm: SnapSTL's Push to queue sends plates there) ----
-BAMBUDDY="not installed (SNAPSTL_NO_BAMBUDDY=1)"
-if [ "${SNAPSTL_NO_BAMBUDDY:-0}" != 1 ]; then
+# ---- Bambuddy (print farm). Like scripts/windows/common.ps1 Install-Bambuddy:
+#   SNAPSTL_BAMBUDDY=docker → Bambuddy + its slicer service in Docker on this Mac (bambuddy-server.sh)
+#   SNAPSTL_BAMBUDDY=native → the older install next to SnapSTL (bambuddy-mac.sh, no slicer service)
+#   otherwise nothing: Bambuddy runs on its own computer; one installed by an older SnapSTL keeps being updated
+#   SNAPSTL_BAMBUDDY_URL=http://<Bambuddy computer>:8000 → connect SnapSTL to it
+BAMBUDDY="not installed here — it runs on your Bambuddy computer (Settings → Connections)"
+if [ "${SNAPSTL_NO_BAMBUDDY:-0}" = 1 ]; then
+  BAMBUDDY="not installed (SNAPSTL_NO_BAMBUDDY=1)"
+elif [ "${SNAPSTL_BAMBUDDY:-}" = docker ]; then
+  if bash "$PROJECT/scripts/bambuddy-server.sh"; then
+    BAMBUDDY="in Docker with its slicer service — http://127.0.0.1:${BAMBUDDY_PORT:-8000}"
+  else
+    BAMBUDDY="couldn't be set up — SnapSTL works without it; run: bash $PROJECT/scripts/bambuddy-server.sh"
+  fi
+elif [ "${SNAPSTL_BAMBUDDY:-}" = native ] || [ -d "$HOME/SnapSTL-Bambuddy/.git" ]; then
   if zsh "$PROJECT/scripts/bambuddy-mac.sh"; then
     BAMBUDDY="http://127.0.0.1:${BAMBUDDY_PORT:-8000} — printers and their queues (SnapSTL → Printers)"
   else
     BAMBUDDY="couldn't be installed — SnapSTL works without it; run: zsh $PROJECT/scripts/bambuddy-mac.sh"
+  fi
+fi
+if [ -n "${SNAPSTL_BAMBUDDY_URL:-}" ]; then
+  for _ in $(seq 1 45); do curl -fs -o /dev/null --max-time 2 http://127.0.0.1:8317/api/auth-check && break; sleep 2; done
+  if curl -fs -o /dev/null --max-time 30 -X POST -H 'Content-Type: application/json' \
+       -d "{\"url\": \"$SNAPSTL_BAMBUDDY_URL\"}" http://127.0.0.1:8317/api/farm/connect; then
+    BAMBUDDY="connected to $SNAPSTL_BAMBUDDY_URL"
+  else
+    BAMBUDDY="couldn't connect to $SNAPSTL_BAMBUDDY_URL yet — set it in SnapSTL: Settings → Connections"
   fi
 fi
 

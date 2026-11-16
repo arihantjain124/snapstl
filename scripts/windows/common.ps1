@@ -25,11 +25,38 @@ function Get-OtherBambuddy {
   return $null
 }
 
-# Install / update Bambuddy unless SNAPSTL_NO_BAMBUDDY=1; never fails the SnapSTL install.
+# Bambuddy, by what you asked for; never fails the SnapSTL install:
+#   SNAPSTL_BAMBUDDY=docker  Bambuddy + its slicer service in Docker on this PC (bambuddy-server.ps1, as administrator)
+#   SNAPSTL_BAMBUDDY=native  the older install next to SnapSTL (bambuddy.ps1, no slicer service)
+#   otherwise                nothing: Bambuddy runs on its own computer (bambuddy-server.ps1 there); a
+#                            Bambuddy installed here by an older SnapSTL keeps being updated
+#   SNAPSTL_NO_BAMBUDDY=1    nothing at all
 function Install-Bambuddy {
   if ($env:SNAPSTL_NO_BAMBUDDY -eq "1") { return }
-  powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "bambuddy.ps1")
-  if ($LASTEXITCODE -ne 0) { Write-Host "Bambuddy couldn't be installed - SnapSTL works without it. Try again: scripts\windows\bambuddy.ps1" }
+  if ($env:SNAPSTL_BAMBUDDY -eq "docker") {
+    $Server = Join-Path $PSScriptRoot "bambuddy-server.ps1"
+    Write-Host "Setting up Bambuddy and its slicer service in Docker (a window asks for administrator rights)..."
+    $p = Start-Process powershell -Verb RunAs -Wait -PassThru -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-NoExit", "-File", "`"$Server`""
+    return
+  }
+  if ($env:SNAPSTL_BAMBUDDY -eq "native" -or (Test-Path (Join-Path $BambuddyDir ".git"))) {
+    powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "bambuddy.ps1")
+    if ($LASTEXITCODE -ne 0) { Write-Host "Bambuddy couldn't be installed - SnapSTL works without it. Try again: scripts\windows\bambuddy.ps1" }
+    return
+  }
+  Write-Host "Bambuddy isn't installed on this PC: it runs on your Bambuddy computer (scripts\windows\bambuddy-server.ps1)."
+}
+
+# SNAPSTL_BAMBUDDY_URL=http://<Bambuddy computer>:8000 -> connect this SnapSTL to it (once SnapSTL runs).
+function Connect-Bambuddy {
+  if (-not $env:SNAPSTL_BAMBUDDY_URL) { return }
+  try {
+    $Body = @{ url = $env:SNAPSTL_BAMBUDDY_URL } | ConvertTo-Json
+    Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$Port/api/farm/connect" -ContentType "application/json" -Body $Body -TimeoutSec 30 | Out-Null
+    Write-Host "Connected to Bambuddy at $($env:SNAPSTL_BAMBUDDY_URL)."
+  } catch {
+    Write-Host "Couldn't connect to Bambuddy at $($env:SNAPSTL_BAMBUDDY_URL) yet - set it in SnapSTL: Settings -> Connections. ($($_.Exception.Message))"
+  }
 }
 
 function Find-Uv {
