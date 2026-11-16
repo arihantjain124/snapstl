@@ -31,6 +31,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -59,9 +60,14 @@ COLOR_HEX = {"pink": "#F4A7C0", "hot pink": "#FF4FA0", "baby pink": "#F9C9D9", "
 DEFAULTS = {
     "bambuddy_url": DEFAULT_URL,
     "api_key": "",
-    # Which Bambuddy profiles each printer model slices with (Slicing) — references only, never their content:
-    # printer model (as in Bambuddy, e.g. "A1") → {"printer"|"process"|"filament": {source, id, name}}
+    # Which Bambuddy profiles each printer slices with (Slicing) — references only, never their content:
+    # Bambuddy printer id (str) → {"printer"|"process"|"filament": {source, id, name}}
+    "presets_by_printer": {},
+    # before 0.22.7, per printer model (e.g. "A1"): still used for a printer with no profiles of its own
     "presets_by_model": {},
+    # the SnapSTL colour a loaded spool counts as, set by a person (Printers): printer id (str) →
+    # {"<slot>|<hex>": colour}; it lapses by itself when another spool is loaded in that slot
+    "color_overrides": {},
     "auto_slice": True,           # slice new plates by themselves (printing still needs Start print)
     "print_defaults": {},         # Bambuddy printer id (str) → {speed, bed_levelling, flow_cali, timelapse}
 }
@@ -300,8 +306,34 @@ def _nearest_palette(h: str) -> str:
     return _norm(best) if dist < 60 ** 2 else ""
 
 
-def spools(s: dict, cmap: dict) -> list[dict]:
-    """Filament loaded in a printer, from Bambuddy's live status: AMS slots + external spool(s)."""
+def overrides_for(printer_id: int, cfg: dict | None = None) -> dict:
+    cfg = cfg or load_config()
+    return dict((cfg.get("color_overrides") or {}).get(str(printer_id)) or {})
+
+
+def set_color_override(printer_id: int, key: str, color: str) -> dict:
+    """Printers: the SnapSTL colour the spool `key` ("<slot>|<hex>", from `spools`) counts as, e.g. when
+    Bambuddy names it differently from the orders; "" goes back to Bambuddy's name. Only SnapSTL's reading
+    of the spool changes — nothing is sent to Bambuddy or the printer."""
+    color = _norm(color)
+    if color and not re.fullmatch(r"[a-z][a-z ]{0,29}", color):
+        raise FarmError("A colour is letters only, e.g. pink or baby blue")
+    if "|" not in key:
+        raise FarmError("Choose a spool")
+    cfg = load_config()
+    mine = cfg.setdefault("color_overrides", {}).setdefault(str(printer_id), {})
+    if color:
+        mine[key] = color
+    else:
+        mine.pop(key, None)
+    save_config(cfg)
+    return mine
+
+
+def spools(s: dict, cmap: dict, overrides: dict | None = None) -> list[dict]:
+    """Filament loaded in a printer, from Bambuddy's live status: AMS slots + external spool(s). `color` is
+    the SnapSTL colour it counts as: the one a person set for this spool (`overrides`, by slot + hex), else
+    Bambuddy's colour name, else the nearest SnapSTL colour."""
     out = []
     trays = [(u, t) for u in (s.get("ams") or []) for t in (u.get("tray") or [])]
     trays += [(None, t) for t in (s.get("vt_tray") or [])]
@@ -313,8 +345,11 @@ def spools(s: dict, cmap: dict) -> list[dict]:
         name = (cmap.get("by_material", {}).get(f"{material.lower()}|{h}") or cmap.get("colors", {}).get(h) or "")
         slot = (f"AMS {int(unit.get('id', 0)) + 1} · {int(t.get('id', 0)) % 4 + 1}" if unit is not None
                 else "External")
+        auto = _norm(name or _nearest_palette(h))
+        key = f"{slot}|{h}"
+        mapped = _norm((overrides or {}).get(key) or "")
         out.append({"slot": slot, "hex": f"#{h.upper()}" if h else "", "name": name, "material": material,
-                    "color": _norm(name or _nearest_palette(h)),
+                    "color": mapped or auto, "auto": auto, "mapped": bool(mapped), "key": key,
                     "remain": t.get("remain") if isinstance(t.get("remain"), int) and t.get("remain") >= 0 else None,
                     "approx": "" if name else _nearest_palette(h)})
     return out
@@ -334,8 +369,8 @@ def printers(cfg: dict | None = None, with_status: bool = True) -> list[dict]:
         if with_status:
             s = printer_status(pid, cfg)
             temps = s.get("temperatures") or {}
-            item["spools"] = spools(s, cmap)
-            item["colors"] = sorted({_norm(x["name"] or x["approx"]) for x in item["spools"] if x["name"] or x["approx"]})
+            item["spools"] = spools(s, cmap, overrides_for(pid, cfg))
+            item["colors"] = sorted({x["color"] for x in item["spools"] if x["color"]})
             item["status"] = {
                 "connected": bool(s.get("connected")), "state": s.get("state") or "",
                 "progress": s.get("progress"), "remaining_time": s.get("remaining_time"),
@@ -389,7 +424,7 @@ def everything(cfg: dict | None = None) -> dict:
         _status_cache[pid] = (time.time(), status if "error" not in status else {"connected": False, **status})
         queue = get(f"/queue/?printer_id={pid}")
         out["printers"].append({"id": pid, "name": p.get("name") or f"Printer {pid}",
-                                "summary": summarize(p, status, queue, cmap), "printer": redact(p),
+                                "summary": summarize(p, status, queue, cmap, overrides_for(pid, cfg)), "printer": redact(p),
                                 "status": redact(status), "queue": redact(queue)})
     return out
 
@@ -400,7 +435,7 @@ STATES = {"IDLE": "Idle", "RUNNING": "Printing", "PAUSE": "Paused", "FINISH": "F
           "PREPARE": "Preparing", "SLICING": "Slicing", "INIT": "Starting"}
 
 
-def summarize(p: dict, s: dict, queue, cmap: dict) -> dict:
+def summarize(p: dict, s: dict, queue, cmap: dict, overrides: dict | None = None) -> dict:
     """The parts of Bambuddy's printer data a person needs, in plain words (Printer status page)."""
     s = s if isinstance(s, dict) else {}
     t = s.get("temperatures") or {}
@@ -426,7 +461,7 @@ def summarize(p: dict, s: dict, queue, cmap: dict) -> dict:
                   "bed_target": t.get("bed_target"), "chamber": t.get("chamber")},
         "fans": {"part": s.get("cooling_fan_speed"), "aux": s.get("left_aux_fan_speed") or s.get("big_fan1_speed"),
                  "heatbreak": s.get("heatbreak_fan_speed")},
-        "spools": spools(s, cmap), "ams_units": units,
+        "spools": spools(s, cmap, overrides), "ams_units": units,
         "nozzles": [f"{n.get('nozzle_diameter') or '?'} mm {str(n.get('nozzle_type') or '').replace('_', ' ')}".strip()
                     for n in s.get("nozzles") or []],
         "errors": [{"code": e.get("code"), "severity": SEVERITY.get(e.get("severity"), "Message"),
@@ -469,18 +504,30 @@ def bambuddy_presets(cfg: dict | None = None, refresh: bool = False, status: dic
     return out
 
 
-def chosen_presets(model: str = "", cfg: dict | None = None) -> dict:
-    """The Bambuddy profiles picked for a printer model in Slicing (no built-in defaults)."""
+def chosen_presets(printer_id: int | None, cfg: dict | None = None) -> dict:
+    """The Bambuddy profiles picked for a printer in Slicing (no built-in defaults). A printer with none of
+    its own uses what was picked for its model before 0.22.7."""
     cfg = cfg or load_config()
-    return dict((cfg.get("presets_by_model") or {}).get(model or "") or {})
+    if not printer_id:
+        return {}
+    own = (cfg.get("presets_by_printer") or {}).get(str(printer_id))
+    if own:
+        return dict(own)
+    return dict((cfg.get("presets_by_model") or {}).get(WORKER.model_of(printer_id)) or {})
 
 
-def set_presets(keys: dict, model: str = "", clear: bool = False) -> dict:
+def set_presets(keys: dict, printer_id: int, clear: bool = False) -> dict:
     """Slicing: pick the printer / process / filament profile ("source:id" from Bambuddy's list) a printer
-    model slices with; `clear` removes the pick. Only the reference is kept — the profile stays in Bambuddy."""
+    slices with; `clear` removes the pick. Only the reference is kept — the profile stays in Bambuddy."""
     cfg = load_config()
     if clear:
-        cfg.setdefault("presets_by_model", {}).pop(model, None)
+        cfg.setdefault("presets_by_printer", {}).pop(str(printer_id), None)
+        model = WORKER.model_of(printer_id)  # its model's old pick would otherwise still apply
+        if model and model in (cfg.get("presets_by_model") or {}):
+            for pid, m in WORKER.models().items():
+                if m == model and pid != printer_id and str(pid) not in cfg["presets_by_printer"]:
+                    cfg["presets_by_printer"][str(pid)] = cfg["presets_by_model"][model]
+            cfg["presets_by_model"].pop(model, None)
         save_config(cfg)
         return {}
     avail = bambuddy_presets(cfg)
@@ -492,7 +539,7 @@ def set_presets(keys: dict, model: str = "", clear: bool = False) -> dict:
             raise FarmError(f"Choose a {slot} profile from Bambuddy's list")
         src, pid = k.split(":", 1)
         chosen[slot] = {"source": src, "id": pid, "name": hit["name"]}
-    cfg.setdefault("presets_by_model", {})[model] = chosen
+    cfg.setdefault("presets_by_printer", {})[str(printer_id)] = chosen
     save_config(cfg)
     return chosen
 
@@ -517,20 +564,18 @@ def forget_local_slicing() -> None:
 
 
 def missing_presets(printer_id: int | None, cfg: dict | None = None) -> str | None:
-    """The printer model whose slicing profiles aren't picked yet (None = all picked)."""
-    model = WORKER.model_of(printer_id) if printer_id else ""
-    p = chosen_presets(model, cfg)
-    return None if all(p.get(s) for s in PRESET_SLOTS) else (model or "these printers")
+    """The printer (its name) whose slicing profiles aren't picked yet (None = all picked)."""
+    p = chosen_presets(printer_id, cfg)
+    return None if all(p.get(s) for s in PRESET_SLOTS) else (WORKER.name_of(printer_id) or "this printer")
 
 
 def target(printer_id: int | None, cfg: dict | None = None) -> tuple[str, dict]:
-    """What a plate is sliced with for a printer: (key, profiles) — the profiles of the printer's model. The
-    key names those profiles, so printers of the same model share one slice, and picking other profiles
-    means a new slice."""
+    """What a plate is sliced with for a printer: (key, profiles) — the profiles picked for that printer.
+    The key names those profiles, so printers with the same profiles share one slice, and picking other
+    profiles means a new slice."""
     import hashlib
 
-    model = WORKER.model_of(printer_id) if printer_id else ""
-    presets = chosen_presets(model, cfg)
+    presets = chosen_presets(printer_id, cfg)
     refs = {k: [v.get("source"), v.get("id")] for k, v in presets.items()}
     key = "bambuddy:" + hashlib.sha1(json.dumps(refs, sort_keys=True).encode()).hexdigest()[:12]
     return key, presets
@@ -566,7 +611,7 @@ def printer_models(prs: list[dict]) -> list[str]:
 def slice_request(presets: dict, color: str | None) -> dict:
     missing = [s for s in ("printer", "process", "filament") if s not in presets]
     if missing:
-        raise FarmError(f"Pick the {', '.join(missing)} profile for this printer model in Slicing")
+        raise FarmError(f"Pick the {', '.join(missing)} profile for this printer in Slicing")
     ref = lambda s: {"source": presets[s]["source"], "id": presets[s]["id"]}  # noqa: E731
     body = {"printer_preset": ref("printer"), "process_preset": ref("process"), "filament_presets": [ref("filament")],
             "export_3mf": True, "plate": 1}
@@ -897,7 +942,7 @@ class Worker:
         self.current: int | None = None
         self.last_refresh = 0.0
         self.last_auto = 0.0
-        self._models: tuple[float, dict[int, str]] = (0.0, {})
+        self._models: tuple[float, dict[int, tuple[str, str]]] = (0.0, {})
         self.log: list[str] = []
 
     def start(self) -> None:
@@ -970,7 +1015,7 @@ class Worker:
         # sliced by Bambuddy for this printer's model, or slice it now and send it after
         missing = missing_presets(j["printer_id"], cfg)
         if missing:
-            raise FarmError(f"Pick the slicing profiles for {missing} printers in Slicing, then Start print again")
+            raise FarmError(f"Pick the slicing profiles for {missing} in Slicing, then Start print again")
         key, _ = target(j["printer_id"], cfg)
         s = slice_for(latest_slices(j["batch_id"]), j["batch_id"], j["plate"], key)
         if s and s["state"] == "done" and s["sliced_file_id"]:
@@ -1083,14 +1128,25 @@ class Worker:
             elif s["state"] == "failed":
                 _set(j["id"], state="failed", error=f"Slicing failed: {s['error']}")
 
-    def model_of(self, printer_id: int) -> str:
-        """A printer's model (cached a minute)."""
-        if time.time() - self._models[0] > 60 or printer_id not in self._models[1]:
+    def _printer_info(self, printer_id: int | None = None) -> dict:
+        """Printer id → (model, name), cached a minute."""
+        if time.time() - self._models[0] > 60 or (printer_id is not None and printer_id not in self._models[1]):
             try:
-                self._models = (time.time(), {p["id"]: p.get("model") or "" for p in printers(with_status=False)})
+                self._models = (time.time(), {p["id"]: (p.get("model") or "", p.get("name") or f"Printer {p['id']}")
+                                              for p in printers(with_status=False)})
             except FarmError:
                 pass
-        return self._models[1].get(printer_id, "")
+        return self._models[1]
+
+    def model_of(self, printer_id: int) -> str:
+        """A printer's model (cached a minute)."""
+        return (self._printer_info(printer_id).get(printer_id) or ("", ""))[0]
+
+    def name_of(self, printer_id: int | None) -> str:
+        return (self._printer_info(printer_id).get(printer_id) or ("", ""))[1] if printer_id else ""
+
+    def models(self) -> dict:
+        return {pid: v[0] for pid, v in self._printer_info().items()}
 
     def auto_slice(self) -> None:
         """Slice new Make It plates for every printer model in the farm (when on). Never retries a failure."""

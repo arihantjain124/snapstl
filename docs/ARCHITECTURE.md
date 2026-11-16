@@ -449,11 +449,14 @@ Unknown keys are ignored on load, so older settings files keep working.
 Print farm settings are separate: `APP_DIR/farm.json` (mode 600, `farm.py`): `bambuddy_url`
 (default `http://127.0.0.1:8000`, env `SNAPSTL_BAMBUDDY_URL`), `api_key` (SnapSTL's Bambuddy key — never
 sent to the UI), `auto_slice`,
-`presets_by_model` (which Bambuddy profile each model uses — references only:
-`{model: {printer|process|filament: {source, id, name}}}`) and
+`presets_by_printer` (which Bambuddy profile each printer uses — references only:
+`{printer_id: {printer|process|filament: {source, id, name}}}`; `presets_by_model`, the per-model picks
+before 0.22.7, still applies to a printer with none of its own), `color_overrides` (the order colour a
+loaded spool prints, set on the Printers page: `{printer_id: {"<slot>|<hex>": colour}}`, so it lapses
+when another spool is loaded) and
 `print_defaults` (`{printer_id: {speed, bed_levelling, flow_cali, timelapse}}`), all set in the
 Slicing tab. SnapSTL keeps no slicing settings (since 0.21 `forget_local_slicing` drops the old `slicer` /
-`orca_presets_by_model` keys and `APP_DIR/slicer-presets` at start). **No built-in profiles**: a model
+`orca_presets_by_model` keys and `APP_DIR/slicer-presets` at start). **No built-in profiles**: a printer
 without all three isn't sliced or printed
 (`farm.missing_presets`). Settings → Defaults doesn't touch it. Printers, what they make and their
 filament are not stored by SnapSTL — they're read from Bambuddy.
@@ -587,6 +590,7 @@ snapstl.server:app --port 8320`.
 | 47 | **Only SnapSTL reaches the shared records; a daily copy on every computer** (0.22.4): the setup SQL turns on row level security (no policies) on the `snapstl` tables and revokes `anon` / `authenticated` (Supabase's API roles) from the schema on every start; SnapSTL connects as the owner, which bypasses RLS. After a good sync, once a day, each computer saves every record to `backups/shared-records-daily-<date>.json` (mode 600, newest 30 kept); `snapstl-db export` saves one on demand | the records hold customer names, phones and addresses; Supabase's free plan keeps no backups the owner can download |
 | 48 | **Every uploaded order is shared** (0.22.5): orders the records don't have are offered as `released` (`sync._OFFER`: inserts, or only takes a newer status and missing details — never changes a stored state; a stored batched/bundled/printed state is merged back here). Orders first seen through a pull get the report's review rules (`sync._review`); a name/colour fixed on one computer reaches the others while nobody makes the order. Upload syncs before and after ingesting; Orders → **Refresh from Supabase** runs Sync now. Pushes are pipelined (`executemany`, 1000 per round). Supersedes the "only batched orders" part of #22 | owner wanted a report uploaded on any computer to update Supabase and every computer, and a refresh on the Orders page |
 | 49 | **Reset can also clear Supabase** (0.22.6): Maintenance → *also clear Supabase* + typed RESET ALL → `maintenance.reset(shared=True)`: local backup, then `sync.clear` (copy of every record) and the local database emptied under `sync._lock`, so the background sync can't send this computer's orders back in between; the unsynced-changes guard doesn't apply (everything is emptied) | owner wanted one action to reset both this computer and the shared records |
+| 50 | **Slicing profiles per printer; a spool can print as another colour** (0.22.7): `presets_by_printer` keyed by Bambuddy printer id replaces `presets_by_model` (kept as the fallback for printers with no pick of their own; *Remove* on one printer hands the model's pick to its other printers first). The slice key still hashes the profiles, so printers with the same profiles share a slice. Printers page: each spool has *prints as …* (`color_overrides`, keyed by slot + hex so it lapses with the spool); it changes only how SnapSTL reads the spool, nothing is sent to Bambuddy. Supersedes #36 | owner's printers of the same model need different profiles, and Bambuddy's filament names don't always match the order colours |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---

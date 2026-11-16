@@ -189,7 +189,8 @@ def bb(monkeypatch, tmp_path):
     fake = FakeBambuddy()
     monkeypatch.setattr(farm, "_request", fake)
     farm.CONFIG_PATH.unlink(missing_ok=True)
-    farm.update_config(auto_slice=False, presets_by_model={"A1": STD})  # the owner set A1's presets; auto off
+    farm.update_config(auto_slice=False, presets_by_model={"A1": STD},  # A1's presets, as set before 0.22.7
+                       presets_by_printer={}, color_overrides={})
     farm._status_cache.clear()
     monkeypatch.setattr(farm, "_color_map", (0.0, {}))
     monkeypatch.setattr(farm.WORKER, "_models", (0.0, {}))
@@ -524,14 +525,15 @@ def test_make_it_slice_with_bambuddy_and_remove(client, bb, monkeypatch):
     bid, folder = built_batch(client, "PK")
     base, pink = "Bases/{Ayra,pink},{Riya,blue}.3mf", "Names/pink/{Ayra,pink}.3mf"
 
-    # presets come from Bambuddy's list, set per printer model (the fixture set A1's)
-    p = client.get("/api/makeit/presets?model=A1").json()
+    # presets come from Bambuddy's list, set per printer (the A1s still use the pick made for their model)
+    p = client.get("/api/makeit/presets?printer=1").json()
     assert p["names"] == {"printer": "Bambu Lab A1 0.4 nozzle", "process": "0.20mm Standard @BBL A1",
                           "filament": "Bambu PLA Basic @BBL A1"}
     assert [x["key"] for x in p["available"]["process"]] == ["local:7", "standard:0.20mm Standard @BBL A1"]
-    r = client.put("/api/makeit/presets", json={**p["chosen"], "model": "A1", "process": "local:7"})
+    r = client.put("/api/makeit/presets", json={**p["chosen"], "printer_id": 1, "process": "local:7"})
     assert r.status_code == 200 and r.json()["names"]["process"] == "Organizer 0.24mm"
-    assert client.put("/api/makeit/presets", json={**p["chosen"], "model": "A1", "process": "local:99"}).status_code == 400
+    assert client.put("/api/makeit/presets", json={**p["chosen"], "printer_id": 1, "process": "local:99"}).status_code == 400
+    assert client.get("/api/makeit/presets?printer=2").json()["names"]["process"] == "0.20mm Standard @BBL A1"  # only printer 1
 
     # Slice: Bambuddy slices it in the background; the row shows it sliced; nothing is queued to print
     bb.slicer = "ok"
@@ -558,7 +560,7 @@ def test_make_it_slice_with_bambuddy_and_remove(client, bb, monkeypatch):
     s = wait_for(lambda: (lambda s: s if s and s["state"] == "failed" else None)(makeit_row(client, "names", pink)["slice"]))
     assert "no progress" in s["error"]
     st = client.get("/api/printer-status").json()["slicing"]
-    assert st["counts"]["failed"] == 1 and st["counts"]["done"] == 1 and st["presets_by_model"]["A1"]["process"] == "Organizer 0.24mm"
+    assert st["counts"]["failed"] == 1 and st["counts"]["done"] == 1 and st["presets_by_printer"]["1"]["process"] == "Organizer 0.24mm"
 
     # Remove takes a plate off Names (nothing deleted); Put back returns it
     assert client.post("/api/makeit/remove", json={"batch_id": bid, "file": pink}).status_code == 200
@@ -570,26 +572,28 @@ def test_make_it_slice_with_bambuddy_and_remove(client, bb, monkeypatch):
     assert pink in [r["file"] for r in m["names"]] and m["removed"] == []
 
 
-def test_no_built_in_presets_a_model_needs_its_own(client, bb):
+def test_no_built_in_presets_each_printer_needs_its_own(client, bb):
     farm.update_config(presets_by_model={})  # nothing set up yet
     client.get("/api/farm")
     bid, folder = built_batch(client, "PN")
     pink = "Names/pink/{Ayra,pink}.3mf"
     p = client.get("/api/makeit/presets").json()
-    assert p["model"] == "A1" and p["set_for"] == {"A1": False} and p["chosen"] == {}
-    assert makeit_row(client, "names", pink)["slice"] == {"state": "needs_presets", "model": "A1"}
+    assert p["printer"] == 1 and p["set_for"] == {"1": False, "2": False, "3": False} and p["chosen"] == {}
+    sl = makeit_row(client, "names", pink)["slice"]
+    assert sl["state"] == "needs_presets" and sl["printer"] in ("Names A", "Names B")
     r = client.post("/api/makeit/start", json={"batch_id": bid, "file": pink, "printer_id": 2})
-    assert r.status_code == 400 and "slicing profiles for A1" in r.json()["detail"]
+    assert r.status_code == 400 and "slicing profiles for Names A" in r.json()["detail"]
     assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink, "printer_id": 2}]}).json()["queued"] == 0
     h = client.get("/api/health").json()
-    assert h["presets_missing"] == ["A1"] and h["bambuddy"]["connected"] and h["printers"]["total"] == 3
+    assert h["presets_missing"] == ["Base 1", "Names A", "Names B"] and h["bambuddy"]["connected"] and h["printers"]["total"] == 3
     keys = {slot: f"standard:{v['id']}" for slot, v in STD.items()}
-    assert client.put("/api/makeit/presets", json=keys).status_code == 400  # for which printer model?
-    assert client.put("/api/makeit/presets", json={"model": "A1", **keys}).status_code == 200
-    assert client.get("/api/makeit/presets").json()["set_for"] == {"A1": True}
-    assert client.get("/api/health").json()["presets_missing"] == []  # saving refreshes the sidebar status
+    assert client.put("/api/makeit/presets", json=keys).status_code == 400  # for which printer?
+    assert client.put("/api/makeit/presets", json={"printer_id": 2, **keys}).status_code == 200
+    assert client.get("/api/makeit/presets").json()["set_for"] == {"1": False, "2": True, "3": False}
+    assert client.get("/api/health").json()["presets_missing"] == ["Base 1", "Names B"]  # saving refreshes the sidebar
     s = client.get("/api/setup").json()["slicing"]
-    assert s["presets_missing"] == [] and s["printers"]["total"] == 3
+    assert s["presets_missing"] == ["Base 1", "Names B"] and s["printers"]["total"] == 3
+    assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink, "printer_id": 2}]}).json()["queued"] == 1
 
 
 def test_presets_per_printer_auto_slice_import_and_speed(client, bb):
@@ -602,14 +606,14 @@ def test_presets_per_printer_auto_slice_import_and_speed(client, bb):
     bid, folder = built_batch(client, "PV")
     base, pink = "Bases/{Ayra,pink},{Riya,blue}.3mf", "Names/pink/{Ayra,pink}.3mf"
 
-    # P1S printers get their own presets; the A1s keep theirs
-    p = client.get("/api/makeit/presets?model=P1S").json()
+    # the P1S gets its own presets; the A1s keep theirs
+    p = client.get("/api/makeit/presets?printer=4").json()
     assert [x["name"] for x in p["printers"]] == ["Base 1", "Names A", "Names B", "P1S names"] and p["auto_slice"] is False
-    assert p["models"] == ["A1", "P1S"] and p["set_for"] == {"A1": True, "P1S": False}
+    assert p["printer"] == 4 and p["set_for"] == {"1": True, "2": True, "3": True, "4": False}
     keys = {slot: f"standard:{v['id']}" for slot, v in STD.items()}
-    assert client.put("/api/makeit/presets", json={**keys, "model": "P1S", "printer": "local:11"}).status_code == 200
-    assert client.get("/api/makeit/presets?model=P1S").json()["names"]["printer"] == "P1S organizers"
-    assert client.get("/api/makeit/presets?model=A1").json()["names"]["printer"] == "Bambu Lab A1 0.4 nozzle"
+    assert client.put("/api/makeit/presets", json={**keys, "printer_id": 4, "printer": "local:11"}).status_code == 200
+    assert client.get("/api/makeit/presets?printer=4").json()["names"]["printer"] == "P1S organizers"
+    assert client.get("/api/makeit/presets?printer=1").json()["names"]["printer"] == "Bambu Lab A1 0.4 nozzle"
 
     # automatic slicing: each waiting plate, for the printer pre-selected for it (and only that one)
     assert client.put("/api/makeit/settings", json={"auto_slice": True}).json()["auto_slice"] is True
@@ -671,15 +675,15 @@ def test_any_bambuddy_profile_and_nothing_kept_by_snapstl(client, bb):
     bb.presets["cloud_status"] = "ok"
     bb.presets["orca_cloud_status"] = "not_authenticated"
     client.get("/api/farm")
-    p = client.get("/api/makeit/presets?model=A1&refresh=1").json()
+    p = client.get("/api/makeit/presets?printer=1&refresh=1").json()
     assert bb.preset_reads[-1].endswith("?refresh=true") and p["error"] == ""
     assert {x["source"] for sl in p["available"].values() for x in sl} == {"local", "orca_cloud", "cloud", "standard"}
     assert p["status"] == {"cloud_status": "ok", "orca_cloud_status": "not_authenticated"}
-    keys = {"model": "A1", "printer": "standard:Bambu Lab A1 0.4 nozzle", "process": "orca_cloud:oc9", "filament": "cloud:PFUS1"}
+    keys = {"printer_id": 1, "printer": "standard:Bambu Lab A1 0.4 nozzle", "process": "orca_cloud:oc9", "filament": "cloud:PFUS1"}
     assert client.put("/api/makeit/presets", json=keys).json()["names"] == {
         "printer": "Bambu Lab A1 0.4 nozzle", "process": "Orca fine", "filament": "My Silk PLA"}
     # only references to Bambuddy's profiles are kept — never their content
-    assert farm.load_config()["presets_by_model"]["A1"]["filament"] == {"source": "cloud", "id": "PFUS1", "name": "My Silk PLA"}
+    assert farm.load_config()["presets_by_printer"]["1"]["filament"] == {"source": "cloud", "id": "PFUS1", "name": "My Silk PLA"}
     # a profile that isn't in Bambuddy can't be picked
     bad = client.put("/api/makeit/presets", json={**keys, "process": "local:999"})
     assert bad.status_code == 400 and "from Bambuddy's list" in bad.json()["detail"]
@@ -710,3 +714,35 @@ def test_bambuddy_on_another_computer_and_this_computers_address(client, bb, mon
     server._health_stale()
     n = client.get("/api/health").json()["network"]
     assert n["bambuddy_here"] and n["bambuddy_share"] == "http://192.168.1.20:8000"
+
+
+def test_a_spool_can_print_as_another_colour(client, bb):
+    """Printers: a person sets which order colour a loaded spool prints, when Bambuddy's name doesn't match."""
+    bb.printers[4] = {"id": 4, "name": "P1S names", "model": "P1S", "serial_number": "S4", "ip_address": "10.0.0.31",
+                      "location": "", "is_active": True}
+    bb.status[4] = {"connected": True, "state": "IDLE", "ams": [{"id": 0, "tray": [tray(0, "F55A74")]}]}  # Pink
+    p4 = lambda: next(p for p in farm.printers() if p["id"] == 4)  # noqa: E731
+    sp = p4()["spools"][0]
+    assert p4()["colors"] == ["pink"] and sp["key"] == "AMS 1 · 1|f55a74" and not sp["mapped"]
+    pink_plate = {"kind": "names", "colors": ["pink"], "file": "x"}
+    red_plate = {"kind": "names", "colors": ["red"], "file": "y"}
+    assert farm.eligible(pink_plate, p4()) == "" and farm.eligible(red_plate, p4())
+
+    r = client.put("/api/farm/printers/4/color", json={"key": sp["key"], "color": " Red "})
+    assert r.status_code == 200 and r.json()["overrides"] == {sp["key"]: "red"}
+    farm._status_cache.clear()
+    assert p4()["colors"] == ["red"] and p4()["spools"][0]["mapped"] and p4()["spools"][0]["auto"] == "pink"
+    assert farm.eligible(red_plate, p4()) == "" and farm.eligible(pink_plate, p4())
+    st = client.get("/api/printer-status").json()
+    assert next(x for x in st["printers"] if x["id"] == 4)["summary"]["spools"][0]["color"] == "red"
+    assert client.put("/api/farm/printers/4/color", json={"key": sp["key"], "color": "pink!"}).status_code == 400
+
+    bb.status[4] = {"connected": True, "state": "IDLE", "ams": [{"id": 0, "tray": [tray(0, "000000")]}]}  # another spool
+    farm._status_cache.clear()
+    assert p4()["colors"] == ["black"]  # the setting was for the pink spool only
+    bb.status[4] = {"connected": True, "state": "IDLE", "ams": [{"id": 0, "tray": [tray(0, "F55A74")]}]}
+    farm._status_cache.clear()
+    assert p4()["colors"] == ["red"]
+    client.put("/api/farm/printers/4/color", json={"key": sp["key"], "color": ""})  # back to Bambuddy's name
+    farm._status_cache.clear()
+    assert p4()["colors"] == ["pink"]

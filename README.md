@@ -144,7 +144,7 @@ On both systems:
   to copy. On the Bambuddy computer it copies Bambuddy's address (`http://<ip>:8000`) to paste into the
   other SnapSTL computers.
 - No slicer is installed: plates are sliced by Bambuddy's slicer service. After installing, pick
-  the Bambuddy profiles per printer model in the **Slicing** tab (step 4 of
+  the Bambuddy profiles per printer in the **Slicing** tab (step 4 of
   [4. Your printers](#4-your-printers-print-farm)). SnapSTL has no slicing settings of its own.
 
 ## 2. Add the SnapSTL Helper to Chrome
@@ -175,7 +175,7 @@ has a button that takes you to the right place.
 4. **Shared order records** (only if you use more than one computer). See below.
 5. **Print farm (Bambuddy)** (optional). Connected by itself; **Settings → Connections** has the
    address. See [4. Your printers](#4-your-printers-print-farm).
-6. **Slicing profiles for every printer model** (with the print farm). Picked in the **Slicing** tab;
+6. **Slicing profiles for every printer** (with the print farm). Picked in the **Slicing** tab;
    see step 4 of [4. Your printers](#4-your-printers-print-farm).
 
 Settings is split into **Setup** (this checklist) · **Product** (model link, license password, name
@@ -271,10 +271,11 @@ Bambuddy**). SnapSTL only reads them.
    API** and set the sidecar URL (or `SLICER_API_URL` / `BAMBU_STUDIO_API_URL` in its Docker setup).
    Its **Preferred Slicer** decides Bambu Studio or OrcaSlicer. SnapSTL has no slicer and keeps **no
    slicing settings**: in the **Slicing** tab (sidebar) you only pick which **Bambuddy profiles** each
-   printer model uses. The sliced file stays in Bambuddy's library. Until a printer model has its
-   profiles picked, its plates aren't sliced or printed and Print says *No profiles for A1*.
-   - **Bambuddy profiles per printer model**: pick the model (A1, P1S, …), then its printer /
-     process / filament profile → **Save**. Every printer of that model slices with them. Every
+   printer uses. The sliced file stays in Bambuddy's library. Until a printer has its profiles
+   picked, its plates aren't sliced or printed and Print says *No profiles for <printer name>*.
+   - **Bambuddy profiles per printer**: pick the printer by name, then its printer / process /
+     filament profile → **Save**. Printers with the same profiles share one slice. Profiles picked
+     per model before 0.22.7 keep applying to that model's printers until you pick their own. Every
      profile Bambuddy has is listed: yours in Bambuddy, Orca Cloud, Bambu Cloud and the slicer's
      standard ones. Layer height, walls, infill and speeds are part of the **process** profile.
      **Reload from Bambuddy** reads the lists again.
@@ -426,7 +427,7 @@ next to SnapSTL keeps running until you remove it.
 - **Only Bambuddy's slicer slices now.** OrcaSlicer / Bambu Studio on this computer, Test slice,
   Add preset files and sliced files put in the batch folder by hand are gone. SnapSTL keeps no slicing
   settings: the update removes the presets picked for those slicers and SnapSTL's own copy of
-  imported presets. Open **Slicing** once and pick the **Bambuddy profiles** for each printer model
+  imported presets. Open **Slicing** once and pick the **Bambuddy profiles** for each printer
   (import your Bambu Studio presets into Bambuddy first: Profiles → Local Profiles → Import
   Profiles). Profiles already picked for Bambuddy's slicer are kept. OrcaSlicer stays installed;
   remove it yourself if nothing else uses it.
@@ -462,7 +463,8 @@ next to SnapSTL keeps running until you remove it.
 | Its address changed (e.g. `192.168.1.50` → `.51`) | Give the Bambuddy computer a fixed address in your router (DHCP reservation), then enter it again in **Settings → Connections** on each SnapSTL computer |
 | Adding a printer in Bambuddy fails | Check the IP, serial and access code, and that LAN Only Mode **and** Developer Mode are on |
 | A plate shows **Slicing failed** | Read the message. "Bambuddy's slicer isn't running" → in Bambuddy: Settings → Slicer → **Use Slicer API** on, and the slicer container running and reachable from Bambuddy. "isn't made for the printer preset" → pick a process profile made for that printer profile in **Slicing**. Then click **Slice** again |
-| A plate shows **No profiles for A1** (or P1S) | **Slicing → Bambuddy profiles per printer model**: choose that model's printer, process and filament profiles → **Save** |
+| A plate shows **No profiles for** a printer | **Slicing → Bambuddy profiles per printer**: pick that printer, then its printer, process and filament profiles → **Save** |
+| A printer has the right filament but Print says it has another colour | **Printers** → that spool → **prints as …**: pick the order colour it prints. It resets by itself when another spool is loaded in that slot |
 | Slicing lists none of my profiles / a picked profile is "no longer in Bambuddy" | Import them in Bambuddy (Profiles → Local Profiles → Import Profiles), then **Reload from Bambuddy**. Cloud profiles need Bambuddy signed in to Bambu Cloud / Orca Cloud, and for Bambu Cloud an API key with **Allow cloud access** |
 | A plate stays **Slicing** | It's stopped after 20 minutes without progress, with a message. Check Bambuddy → Settings → Slicer, then **Slice** again |
 | A printer is greyed out in Print | It's offline, or that colour isn't loaded (white for bases) — load the spool; the Printers page shows what Bambuddy sees |
