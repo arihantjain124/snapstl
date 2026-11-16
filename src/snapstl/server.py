@@ -105,13 +105,30 @@ async def access_control(request: Request, call_next):
     if why:
         return JSONResponse({"detail": why}, status_code=403)
     path = request.url.path
-    if is_local(request) or path in OPEN_PATHS:
+    if path in OPEN_PATHS:
         return await call_next(request)
+    if is_local(request):
+        return await _needs_shared(request, call_next)
     if auth.valid_cookie(request.cookies.get(auth.COOKIE)):
-        return await call_next(request)
+        return await _needs_shared(request, call_next)
     if path.startswith("/api/"):
         return JSONResponse({"detail": "Sign in required"}, status_code=401)
     return RedirectResponse("/login")
+
+
+# Work that may go on without the shared records: connecting them, settings, the helper's running downloads
+WITHOUT_SHARED = ("/api/shared-records", "/api/sync", "/api/settings", "/api/helper/", "/api/update",
+                  "/api/login", "/api/logout", "/api/portal", "/api/maintenance/backup", "/api/farm/connect")
+
+
+async def _needs_shared(request: Request, call_next):
+    """Every computer works only with a live connection to the shared records (sync.REQUIRED): without it,
+    nothing can be changed — pages still show (GET), the app says why and Settings can fix it."""
+    path = request.url.path
+    if (sync.REQUIRED and request.method not in ("GET", "HEAD", "OPTIONS") and path.startswith("/api/")
+            and not path.startswith(WITHOUT_SHARED) and not sync.online()):
+        return JSONResponse({"detail": sync.offline_reason()}, status_code=503)
+    return await call_next(request)
 
 
 # ---------------- auth ----------------
@@ -262,6 +279,8 @@ def state():
         "downloader": DOWNLOADER.snapshot(),
         "queue": B.queue_counts(), "building": MANAGER.building, "log": MANAGER.log[-120:],
         "sync": sync.STATUS.snapshot(),
+        "shared": {"required": sync.REQUIRED, "online": sync.online(),
+                   "reason": "" if sync.online() else sync.offline_reason()},
     }
 
 
@@ -725,6 +744,17 @@ def sync_run():
     if not sync.enabled():
         raise HTTPException(400, "No shared order records set up — connect them in Settings → Connections → Shared order records")
     return sync.sync_now()
+
+
+@app.post("/api/maintenance/match")
+def maintenance_match():
+    """Settings → Database → Clean up: this computer's orders match the shared records (no confirmation)."""
+    if not sync.enabled():
+        raise HTTPException(400, "No shared order records set up — connect them in Settings → Connections")
+    try:
+        return sync.match()
+    except (sync.SyncError, RuntimeError) as e:
+        raise HTTPException(409, str(e)) from e
 
 
 @app.post("/api/maintenance/reset")

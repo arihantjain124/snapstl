@@ -243,6 +243,18 @@ are sent again at the next sync. To start completely fresh, also reset each comp
 records are emptied together (a backup of each is saved first) and nothing is sent back. Other
 computers keep their own databases; reset them too for a fresh start everywhere.
 
+**Daily handling (Settings → Maintenance → Database).** **Sync** sends this computer's changes and
+loads every computer's; **Clean up** syncs and then makes this computer's orders match Supabase
+exactly (orders Supabase no longer has are removed here, except ones this computer is making, which
+are sent back; old history is tidied; a backup is saved first). Both run at once, without questions.
+Only **Reset** asks (RESET, or RESET ALL with *also clear Supabase*). A report's statuses count as
+recent as the **newest date or time in that file**, so uploading an older file never undoes a newer
+status, on any computer.
+
+**Supabase is required.** Every SnapSTL needs a working connection (the Session pooler address).
+Without it a red bar says why and nothing can be changed — orders, batches, printing — until it's
+back; Settings still works so you can fix it. Downloads already running finish.
+
 **Copies and privacy:** once a day each computer saves a copy of all shared records in its backups
 folder (`shared-records-daily-<date>.json`, the last 30 days kept); the card shows when. `uv run
 snapstl-db export` saves one now. Only SnapSTL can read the records: row level security is on and

@@ -43,6 +43,7 @@ class IngestSummary:
     became_not_needed: int = 0
     kept_newer_status: int = 0  # the database already had a newer webstore status for these orders
     report_date: str = ""       # end of the report's "Date Range" (YYYY-MM-DD), if it has one
+    as_of: str = ""             # the newest date/time in the file (its range end or any row's dates)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -164,6 +165,37 @@ def report_end_date(table: list[list[str]], header_row: int) -> str:
     return ""
 
 
+def _when(v: str) -> str:
+    """A date or date-time cell → '2026-11-14' or '2026-11-14~13:22:05' ('' if not one). The '~' sorts after
+    the '|' of a stamp, so the same day with a time ranks above the day alone (stamps from before 0.22.8)."""
+    from datetime import datetime
+
+    v = (v or "").strip()
+    if not v:
+        return ""
+    for fmt in ("%d/%m/%Y %H:%M:%S", "%d-%m-%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%d/%m/%Y %H:%M", "%d-%m-%Y %H:%M",
+                "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%d/%m/%Y %I:%M %p", "%d-%m-%Y %I:%M %p"):
+        try:
+            return datetime.strptime(v[:19] if "T" in v else v, fmt).strftime("%Y-%m-%d~%H:%M:%S")
+        except ValueError:
+            continue
+    return _date(v)
+
+
+def file_as_of(table: list[list[str]], header_row: int) -> str:
+    """The newest moment a report speaks for: its Date Range end, or the latest date / date-time in any
+    of its date columns (order created, picked up, delivered, RTO, return …), whichever is later."""
+    header = [c.strip().lower() for c in table[header_row]]
+    cols = [i for i, h in enumerate(header) if "date" in h or "time" in h]
+    best = report_end_date(table, header_row)
+    for r in table[header_row + 1:]:
+        for i in cols:
+            w = _when(r[i]) if i < len(r) else ""
+            if w > best:
+                best = w
+    return best
+
+
 def status_stamp(event_date: str, report_date: str, uploaded: str) -> str:
     return f"{event_date or _NO_DATE}|{report_date or _NO_DATE}|{uploaded}"
 
@@ -184,6 +216,7 @@ def ingest(data: bytes, filename: str, db_path: Path | None = None) -> IngestSum
     body = [r for r in table[h + 1 :] if any(c.strip() for c in r)]
     s.rows_total = len(body)
     s.report_date = report_end_date(table, h)
+    s.as_of = file_as_of(table, h)  # an order's status is as new as the newest entry in its file
     uploaded = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
     with db.tx(db_path) as con:
@@ -208,7 +241,7 @@ def ingest(data: bytes, filename: str, db_path: Path | None = None) -> IngestSum
                 "phone": get(r, "Mobile"),
                 "address": ", ".join(x for x in (get(r, "Address"), get(r, "City"), get(r, "State"), get(r, "Pincode")) if x),
                 "status_at": status_stamp(max((_date(get(r, c)) for c in EVENT_COLUMNS), default=""),
-                                          s.report_date, uploaded),
+                                          s.as_of, uploaded),
             })
         con.execute(
             "INSERT INTO files(filename,sha256,ingested_at,summary) VALUES (?,?,?,?)",

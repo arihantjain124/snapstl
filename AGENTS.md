@@ -83,7 +83,12 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   `db.POST_SCHEMA`; writes coming from the records go inside `db.quiet()`. Run the tests with a
   throwaway Postgres too (README → Development) when touching sync, ingest or batch states.
 - A webstore status only replaces a stored one when its `status_at` stamp is at least as high
-  (`ingest.status_stamp`); never let an older report undo a newer status.
+  (`ingest.status_stamp`, dated by the newest entry in the file: `ingest.file_as_of`); never let an
+  older report undo a newer status.
+- **Every computer needs the shared records** (owner decision 0.22.8): with `sync.REQUIRED`, no change
+  (non-GET `/api`) is accepted while `sync.online()` is false, except `server.WITHOUT_SHARED`. Don't add
+  ways to work offline. Settings → Database **Sync** and **Clean up** (`sync.match`) run without
+  confirmation; Clean up never deletes in Supabase and keeps this computer's own batched work.
 - OS differences go only in `platform_os.py` (Mac and Windows); never call `open`, `launchctl`,
   `scutil` or Windows commands elsewhere.
 - Clean-up must keep bundled orders. Every destructive maintenance action takes a backup first.

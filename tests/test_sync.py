@@ -344,3 +344,39 @@ def test_reset_also_clears_the_shared_records(two, tmp_path, monkeypatch):
         assert order("Z1") is None and order("Z2") is None
         ok(sync.sync_now())
         assert sync.summary() == {"orders": {}, "batches": {}}  # nothing came back
+
+
+def test_clean_up_makes_this_computer_match_the_shared_records(two, tmp_path, monkeypatch):
+    from snapstl import batches as B
+
+    monkeypatch.setattr(maintenance, "BACKUP_DIR", tmp_path / "backups")
+    data = report([("M1", "PRINT", "Ana", ""), ("M2", "PRINT", "Ben", ""), ("M3", "PRINT", "Cyd", "")])
+    with two("A"):
+        ingest.ingest(data, "r.csv")
+        ok(sync.sync_now())
+    with two("B"):
+        ingest.ingest(data, "r.csv")
+        b = B.create_batch(["M3"], Settings())  # B makes M3
+        ok(sync.sync_now())
+    with two("A"):
+        a = B.create_batch(["M1"], Settings())
+        with db.tx() as con:
+            db.finish_batch(con, a["batch_id"], "done", {"label": "Batch 1 - 2026-11-16"}, ["M1"])
+        ok(sync.sync_now())
+    with two("B"):
+        with db.tx() as con, db.quiet(con):  # B drifted (e.g. a wrong clock): a normal sync keeps its "newer" state
+            con.execute("UPDATE orders SET state='ready', batch_id=NULL, state_at=9e9 WHERE order_id='M1'")
+        ok(sync.sync_now())
+        assert order("M1")["state"] == "ready"
+        r = sync.match()
+        assert r["orders"] == 3 and r["updated"] >= 1 and r["removed"] == 0 and os.path.exists(r["backup"])
+        assert order("M1")["state"] == "bundled" and order("M1")["batch_computer"] == "PC A"
+    with two("A"):  # A resets everything, Supabase included
+        maintenance.reset(shared=True)
+    with two("B"):
+        r = sync.match()  # B now matches the empty records — but keeps (and sends again) what it makes
+        assert r["removed"] == 2 and r["sent_again"] == 1
+        assert order("M1") is None and order("M2") is None
+        assert order("M3")["state"] == "in_batch" and order("M3")["batch_id"] == b["batch_id"]
+        assert remote("M3")["state"] == "in_batch" and remote("M3")["computer_name"] == "PC B"
+        assert sync.summary()["orders"] == {"in_batch": 1}

@@ -44,6 +44,9 @@ from . import computer, config, db
 
 SCHEMA = "snapstl"
 SYNC_EVERY = 60
+# Every computer needs the shared records: without a working connection nothing can be changed (Orders,
+# Batches, Print …) until it's back — only Settings, Sync and the helper's running downloads work.
+REQUIRED = os.environ.get("SNAPSTL_REQUIRE_SHARED", "1") != "0"
 KEEP_DAILY = 30  # daily copies of the shared records kept in this computer's backups folder
 PULL_OVERLAP_S = 120  # re-read rows changed shortly before the last pull (commits can land out of order)
 
@@ -203,6 +206,20 @@ class SyncError(RuntimeError):
 
 def enabled() -> bool:
     return bool(config.database_url())
+
+
+def online() -> bool:
+    """Connected and the last sync worked (the background sync checks every minute)."""
+    return enabled() and STATUS.last_ok > 0 and not STATUS.error
+
+
+def offline_reason() -> str:
+    if not enabled():
+        return "SnapSTL needs the shared order records (Supabase): connect them in Settings → Connections"
+    if not STATUS.last_ok and not STATUS.error:
+        return "Connecting to the shared order records (Supabase)…"
+    return (f"No connection to the shared order records (Supabase): {STATUS.error or 'not reached yet'} — "
+            "everything is disabled until it's back (Settings → Connections → Sync now)")
 
 
 # ---------------- connection ----------------
@@ -691,3 +708,59 @@ def daily_copy() -> None:
         STATUS.copy_error = ""
     except (SyncError, OSError) as e:
         STATUS.copy_error = f"Daily copy failed: {_short(e)}"
+
+
+# ---------------- clean up: this computer matches the shared records ----------------
+def match() -> dict:
+    """Settings → Database → Clean up: make this computer's orders match the shared records.
+
+    Sends what's waiting, then loads every shared record again and takes its state (who makes it,
+    status, name). Orders the shared records no longer have (cleared on another computer) are removed
+    here — except orders this computer itself is making (in its batch, bundled, printed), which are sent
+    again.
+    Old download history, upload records and finished batches (30 days) are tidied too. A backup of this
+    computer's database is saved first; the shared records are never deleted from."""
+    from . import maintenance as M
+
+    st = sync_now()
+    if st["error"]:
+        raise SyncError(st["error"])
+    path = M.backup()
+    with _lock:
+        with _remote() as rc:
+            rows = rc.execute(f"SELECT *, updated_at::text AS updated_text FROM {SCHEMA}.order_records "
+                              "ORDER BY updated_at").fetchall()
+        have = {r["order_id"] for r in rows}
+        look = "SELECT order_id, state, source_status, name, color, batch_uid, batch_computer_id FROM orders"
+        with db.tx() as con:
+            before = {r[0]: tuple(r[1:]) for r in con.execute(look)}
+            stale = []
+            with db.quiet(con):
+                for r in rows:
+                    s = merge(con, r, force=True)
+                    if s:
+                        stale.append(s)
+                gone = [oid for oid in before if oid not in have]
+                making = [oid for oid in gone if before[oid][0] in ("in_batch", "bundled", "printed")
+                          and before[oid][5] == computer.ID]  # this computer's own work: sent again
+                removed = [oid for oid in gone if oid not in making]
+                for i in range(0, len(removed), 500):
+                    part = removed[i:i + 500]
+                    q = ",".join("?" * len(part))
+                    con.execute(f"DELETE FROM sync_outbox WHERE order_id IN ({q})", part)
+                    con.execute(f"DELETE FROM orders WHERE order_id IN ({q})", part)
+                for oid in making:
+                    con.execute("UPDATE orders SET in_remote=0 WHERE order_id=?", (oid,))
+                if rows:
+                    con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('pulled_until', ?)",
+                                (rows[-1]["updated_text"],))
+            _release_stale(con, stale)
+            after = {r[0]: tuple(r[1:]) for r in con.execute(look)}
+    updated = sum(1 for oid, v in after.items() if oid in before and before[oid] != v)
+    added = sum(1 for oid in after if oid not in before)
+    tidy = M.cleanup(30, orders=False, take_backup=False)
+    if making or stale:
+        sync_now()
+    return {"orders": len(after), "added": added, "updated": updated, "removed": len(removed),
+            "sent_again": len(making), "backup": str(path),
+            "tidied": {k: v for k, v in tidy.items() if k != "backup"}}

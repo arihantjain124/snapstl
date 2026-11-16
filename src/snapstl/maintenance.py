@@ -71,17 +71,18 @@ def _busy(con) -> bool:
     return con.execute("SELECT 1 FROM batches WHERE status='building'").fetchone() is not None
 
 
-def cleanup(older_than_days: int = 30) -> dict:
-    """Remove old records nobody needs; keep bundled orders and anything still in progress."""
+def cleanup(older_than_days: int = 30, orders: bool = True, take_backup: bool = True) -> dict:
+    """Remove old records nobody needs; keep bundled orders and anything still in progress. `orders=False`
+    keeps every order (the shared records decide which orders this computer has: sync.match)."""
     cutoff = time.time() - older_than_days * 86400
-    path = backup()
+    path = backup() if take_backup else None
     with db.tx() as con:
         if _busy(con):
             raise RuntimeError("A batch is being built right now — try again in a minute")
         q = ",".join("?" * len(FINISHED))
         res = {
             "orders_removed": con.execute(
-                "DELETE FROM orders WHERE state='not_needed' AND updated_at < ?", (cutoff,)).rowcount,
+                "DELETE FROM orders WHERE state='not_needed' AND updated_at < ?", (cutoff,)).rowcount if orders else 0,
             "batches_removed": con.execute(
                 f"DELETE FROM batches WHERE status IN ({q}) AND COALESCE(finished_at, created_at) < ?",
                 (*FINISHED, cutoff)).rowcount,
@@ -95,7 +96,7 @@ def cleanup(older_than_days: int = 30) -> dict:
             + con.execute("DELETE FROM slices WHERE state IN ('done','failed') AND updated_at < ?", (cutoff,)).rowcount,
         }
     _vacuum()
-    res["backup"] = str(path)
+    res["backup"] = str(path) if path else ""
     return res
 
 
