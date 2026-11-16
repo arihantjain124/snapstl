@@ -20,7 +20,7 @@ in the app.
 
 - A Mac (macOS 12 or newer) or a Windows 10/11 PC, with internet.
 - **Google Chrome**, signed in to the MakerWorld account you use for the organizer.
-- **Bambu Studio**, to print the plates.
+- **Bambu Studio**: your slicing presets come from it (and you can print plates by hand with it).
 - *Optional, to send plates to your printers from SnapSTL:* Bambu Lab printers on the same network,
   each with **LAN Only Mode** and **Developer Mode** turned on.
 - The model's **license password** from MakerWorld. SnapSTL won't download without it, so models
@@ -53,7 +53,7 @@ powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/ari
 - The first install takes a few minutes. When it's done, **SnapSTL** opens. It also has shortcuts in
   the Start menu and on the Desktop.
 - Windows may ask once whether SnapSTL may use the network. Allow it only if other computers will
-  open SnapSTL through its web page (Settings → Other computers).
+  open SnapSTL through its web page (Settings → Connections → Other computers).
 
 On both systems:
 
@@ -62,13 +62,21 @@ On both systems:
 - It lives in the **SnapSTL-app** folder in your home folder. Keep it there.
 - The installer also sets up **Bambuddy** (the print-farm manager) in the **SnapSTL-Bambuddy** folder.
   It starts at login too, at **http://127.0.0.1:8000** (this computer only), and SnapSTL connects
-  to it by itself. To leave it out, put `SNAPSTL_NO_BAMBUDDY=1` before the install command.
+  to it by itself. **Already running Bambuddy?** The installer uses yours: it never installs a second
+  one, never stops or replaces yours and never touches its printers or data. To leave Bambuddy out,
+  put `SNAPSTL_NO_BAMBUDDY=1` before the install command (Mac: `SNAPSTL_NO_BAMBUDDY=1 curl …`;
+  Windows: run `$env:SNAPSTL_NO_BAMBUDDY="1"` first).
+- It also installs **OrcaSlicer**, which slices plates on this computer (Mac: with Homebrew; Windows:
+  with winget). If that fails, the installer says so; install OrcaSlicer yourself, or on Windows use
+  Bambu Studio as the slicer (Slicing tab).
+- After installing, set your slicing presets per printer model in the **Slicing** tab (step 4 of
+  [4. Your printers](#4-your-printers-print-farm)). SnapSTL has no built-in presets.
 
 ## 2. Add the SnapSTL Helper to Chrome
 
 The helper is a small Chrome extension that makes the names on MakerWorld in your own Chrome.
 
-1. In SnapSTL, go to **Settings → SnapSTL Helper → Show helper folder**. This opens the folder you'll
+1. In SnapSTL, go to **Settings → Connections → SnapSTL Helper → Show helper folder**. This opens the folder you'll
    need in step 4.
 2. In Chrome, type `chrome://extensions` in the address bar and press Return.
 3. Turn on **Developer mode** (top right).
@@ -120,7 +128,7 @@ computer still keeps its own database.
 
 **On each computer: connect it**
 
-1. In SnapSTL, go to **Settings → Shared order records**.
+1. In SnapSTL, go to **Settings → Connections → Shared order records**.
 2. Paste the connection string. Replace `[YOUR-PASSWORD]`, brackets included, with the database
    password, typed exactly as it is, symbols included.
    - SnapSTL percent-encodes the password before connecting (`#` → `%23`, `)` → `%29`, `@` → `%40`,
@@ -137,9 +145,23 @@ SnapSTL checks the connection and creates its tables on first use. To create the
 beforehand, open Supabase → **SQL Editor**, paste [`docs/supabase-schema.sql`](docs/supabase-schema.sql)
 and click **Run**. No password is needed for that, and it's safe to run again. It makes the schema
 `snapstl` with the tables `order_records`, `batch_records` and `meta`, and records are never deleted
-(deleting is refused). It then sends this computer's
-batched, bundled and printed orders and loads everyone else's. The sidebar then shows
-"*name* · shared records".
+(deleting row by row is refused). It then sends this computer's batched, bundled and printed orders
+and loads everyone else's, and says how many it sent and loaded. If that first sync fails, it says
+why instead of "connected". The sidebar then shows "*name* · shared records".
+
+**What is shared, and how to check it.** Only orders taken into a batch (*In a batch*, *Bundled*,
+*Printed*, and orders released back to Ready), with their newest webstore status, plus every
+computer's batches. Orders that are only *Ready* or *Needs review* stay on the computer that
+uploaded the report, so upload the report on each computer. The same card shows the last sync,
+changes waiting, any error, **Sync now** and **Show what's there** (how many orders per state and
+batches per computer are in Supabase right now). In Supabase they're in **Table Editor → schema
+`snapstl`** (switch the schema from `public`): `order_records` and `batch_records`.
+
+**Clearing the shared records** (e.g. after testing): **Clear shared records…** on the same card,
+then type `CLEAR`. It empties them for **every** computer. First it saves a copy of every record in
+this computer's backups folder (`shared-records-<date>.json`). Orders this computer is still making
+are sent again at the next sync. To start completely fresh, also reset each computer's database
+(**Settings → Maintenance → Database**).
 
 The connection string contains the database password. It's kept only on that computer and never
 shown again in full. Give it only to computers that run SnapSTL.
@@ -288,17 +310,17 @@ When the computers are connected to the shared order records:
   took are left out, and show as **in Batch N · computer name**. If the shared records can't be
   reached, no batch is created.
 - **Every computer stays up to date.** Bundled, printed and returned orders, and new webstore
-  statuses, reach the other computers within about a minute. **Settings → Database → Sync now** does
-  it immediately.
+  statuses, reach the other computers within about a minute. **Settings → Connections → Sync now**
+  does it immediately.
 - **Any computer can mark orders printed,** including orders made on another computer.
-- **Resetting is safe.** **Settings → Database → Reset this computer's database** empties only this
+- **Resetting is safe.** **Settings → Maintenance → Reset this computer's database** empties only this
   computer. **Sync now** then loads the shared orders back.
-- **Records are kept for good.** SnapSTL never deletes shared records, and Supabase refuses to delete
-  them too.
+- **Records are kept for good.** SnapSTL never deletes single shared records, and Supabase refuses to
+  delete them too. Only **Clear shared records** (typed confirmation, copy saved first) empties them.
 - **Settings stay on each computer.** License password, folders and connection are never shared.
 
-To use one SnapSTL computer from a browser on another computer, turn on **Settings → Other
-computers** and set a portal password.
+To use one SnapSTL computer from a browser on another computer, turn on **Settings → Connections →
+Other computers** and set a portal password.
 
 ## Updates
 
@@ -306,8 +328,19 @@ SnapSTL checks for updates by itself. When there is one, the sidebar shows **Upd
 Click it, then **Update now**. SnapSTL installs the update and restarts in a few seconds, and the
 helper in Chrome reloads itself. Orders, batches, settings and downloads are kept.
 
-Running the install command again also updates SnapSTL. Bambuddy moves to the version this SnapSTL
-was tested with (`scripts/bambuddy-version.txt`) at the same time.
+Running the install command again also updates SnapSTL (and installs OrcaSlicer if it's missing).
+Bambuddy moves to the version this SnapSTL was tested with (`scripts/bambuddy-version.txt`) at the same
+time, only where SnapSTL's installer put it; a Bambuddy you installed yourself is never changed.
+
+**Updating to 0.19 from an older version:**
+
+- The sidebar is now Orders · Batches · Print · Printers · Slicing · Settings · Help. Downloads is at
+  the bottom of Batches, Printer status is Printers, Make It is Print.
+- **Slicing has no default presets any more.** Open **Slicing** and save presets for each printer
+  model (A1, P1S…) once; until then those printers' plates aren't sliced or printed. Presets set for
+  single printers in 0.18 aren't used.
+- Settings is split into Setup · Product · Plates · Folders · Connections · Maintenance; nothing you
+  saved changes.
 
 ## Troubleshooting
 
@@ -317,10 +350,12 @@ was tested with (`scripts/bambuddy-version.txt`) at the same time.
 | Helper says **Complete the MakerWorld security check** | Click the check in that tab |
 | A name shows **Failed** in the Download queue | Read the detail, then **Retry failed** |
 | A model looks wrong | Batches → open the batch → **Objects** → **Re-download**, then **Rebuild plates** |
-| "No license password" | Settings → enter the license password for this model → **Save settings** |
+| "No license password" | Settings → Product → enter the license password for this model → **Save settings** |
 | "Can't reach the shared records … no batch was created" | Check the internet, then try again |
 | Connect / save says the password or address is wrong | Copy the **Session pooler** string again; put the password in place of `[YOUR-PASSWORD]` with no brackets |
-| Settings → Database shows changes waiting | They're sent on the next sync; **Sync now** shows any problem |
+| Settings → Connections shows changes waiting | They're sent on the next sync; **Sync now** shows any problem |
+| Shared records: Supabase looks empty / another computer doesn't see orders | Only orders taken into a batch are shared — upload the report on each computer. In Supabase look in **Table Editor → schema `snapstl`**, not `public`. **Settings → Connections → Show what's there** shows what's stored |
+| "Connected, but sync fails" | Read the message under it. Usually the password or the address: copy the **Session pooler** string again (the direct `db.….supabase.co` one needs IPv6), then **Connect / save** |
 | Bambuddy lost its printers after installing SnapSTL (0.17 or older) | SnapSTL's installer had started a second, empty Bambuddy next to yours. Run the SnapSTL install command again: it now stops SnapSTL's copy and starts yours again; your printers and data were never deleted |
 | **Bambuddy isn't answering** | Run the install command again (it repairs Bambuddy); log: `~/Library/Logs/Bambuddy` (Windows: `%LOCALAPPDATA%\Bambuddy\logs`) |
 | Adding a printer in Bambuddy fails | Check the IP, serial and access code, and that LAN Only Mode **and** Developer Mode are on |
@@ -330,7 +365,7 @@ was tested with (`scripts/bambuddy-version.txt`) at the same time.
 | A printer is greyed out in Print | It's offline, or that colour isn't loaded (white for bases) — load the spool; the Printers page shows what Bambuddy sees |
 | A pushed plate waits in Bambuddy | Its printer is busy or waiting for the bed to be cleared: **Clear plate** |
 | SnapSTL doesn't open | Run the install command again; it repairs and restarts SnapSTL |
-| Database getting big | Settings → Database → **Clean up** (orders already made are kept) |
+| Database getting big | Settings → Maintenance → **Clean up** (orders already made are kept) |
 
 **Where your data is:**
 

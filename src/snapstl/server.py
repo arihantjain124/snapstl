@@ -93,7 +93,7 @@ def _blocked(request: Request) -> str | None:
             return "Cross-site request blocked"
     if not local:
         if not (SETTINGS.lan_access and auth.enabled()):
-            return "This SnapSTL only accepts connections from its own computer (Settings → Other computers)"
+            return "This SnapSTL only accepts connections from its own computer (Settings → Connections → Other computers)"
         if path.startswith(MAC_ONLY_PREFIXES) or path.endswith("/reveal"):
             return "Only available on the SnapSTL computer"
     return None
@@ -608,10 +608,31 @@ async def maintenance_cleanup(req: Request):
 
 
 @app.get("/api/shared-records")
-def shared_records_info():
-    """Settings → Shared order records (this computer only): connected where, this computer's name."""
-    return {"configured": sync.enabled(), "where": config.describe(), "computer_name": computer.NAME,
-            "status": sync.STATUS.snapshot()}
+def shared_records_info(check: int = 0):
+    """Settings → Connections → Shared order records (this computer only): connected where, this
+    computer's name, sync status; ?check=1 also reads what the shared records hold now."""
+    out = {"configured": sync.enabled(), "where": config.describe(), "computer_name": computer.NAME,
+           "status": sync.STATUS.snapshot()}
+    if check and sync.enabled():
+        try:
+            out["holds"] = sync.summary()
+        except sync.SyncError as e:
+            out["holds_error"] = str(e)
+    return out
+
+
+@app.post("/api/shared-records/clear")
+async def shared_records_clear(req: Request):
+    """Empty the shared order records of every computer ({confirm: "CLEAR"}); saved to a file first."""
+    if not sync.enabled():
+        raise HTTPException(400, "No shared order records connected")
+    b = await req.json()
+    try:
+        r = await run_in_threadpool(sync.clear, str(b.get("confirm") or ""))
+    except sync.SyncError as e:
+        raise HTTPException(400, str(e)) from e
+    await run_in_threadpool(sync.sync_now)
+    return r | {"status": sync.STATUS.snapshot()}
 
 
 @app.post("/api/shared-records")
@@ -635,7 +656,9 @@ async def shared_records_save(req: Request):
         config.set_database_url(url)
         sync.LOOP.start()
         await run_in_threadpool(sync.sync_now)  # send this computer's batched/bundled/printed orders now
-    return shared_records_info()
+        if sync.STATUS.error:  # connected, but the first sync failed: say so instead of "connected"
+            raise HTTPException(400, f"Connected and saved, but the first sync failed: {sync.STATUS.error}")
+    return shared_records_info(check=1)
 
 
 @app.get("/api/setup")
@@ -684,7 +707,7 @@ def sync_status():
 def sync_run():
     """Settings → Database → Sync now: push this computer's changes, load everyone's."""
     if not sync.enabled():
-        raise HTTPException(400, "No shared order records set up — connect them in Settings → Shared order records")
+        raise HTTPException(400, "No shared order records set up — connect them in Settings → Connections → Shared order records")
     return sync.sync_now()
 
 

@@ -10,9 +10,11 @@ the orders that have entered the making process, so all computers agree on who m
     bundled, printed (by a person), released (back to Ready, cancelled batch, reset to ready) and newer
     webstore statuses from an uploaded report.
   * Changes from other computers are **pulled** (rows updated since the last pull) and merged locally.
-  * The shared records are only ever added to and updated, never deleted: the app has no DELETE, and
-    triggers in the database refuse DELETE and TRUNCATE. Resetting the app's database leaves them as
-    they are; the next sync loads them back.
+  * The shared records are only ever added to and updated, never deleted row by row: the app has no
+    DELETE, and triggers in the database refuse DELETE and TRUNCATE. Resetting the app's database
+    leaves them as they are; the next sync loads them back. The one exception is `clear()` (Settings →
+    Connections → Clear shared records, typed confirmation): it saves every record to a file on this
+    computer, then drops the whole `snapstl` schema and starts it again empty.
 
 Conflicts are settled in the database, by rules, not by whoever writes last (see `_WIN`):
   * the computer that claimed an order owns its in_batch → bundled steps (and can release it);
@@ -27,6 +29,7 @@ Settings → Shared order records and kept only on this computer (config.py).
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from contextlib import contextmanager
@@ -505,3 +508,49 @@ def check(url: str | None = None) -> dict:
         n = rc.execute(f"SELECT state, COUNT(*) AS n FROM {SCHEMA}.order_records GROUP BY state").fetchall()
         b = rc.execute(f"SELECT computer_name, COUNT(*) AS n FROM {SCHEMA}.batch_records GROUP BY computer_name").fetchall()
     return {"orders": {r["state"]: r["n"] for r in n}, "batches": {r["computer_name"]: r["n"] for r in b}}
+
+
+def summary() -> dict:
+    """What the shared records hold now: orders per state, batches per computer (Settings → Connections)."""
+    return check()
+
+
+def clear(confirm: str) -> dict:
+    """Empty the shared records (every computer's), after saving them all to a JSON file in this
+    computer's backups folder. Dropping the schema bypasses the no-delete triggers on purpose; the
+    tables are created again, empty, right away. This computer's batched / bundled / printed orders are
+    sent again by the next sync (they're still being made here); other computers send theirs when they
+    are cleared there too or when their orders change."""
+    from .maintenance import BACKUP_DIR
+
+    if confirm != "CLEAR":
+        raise SyncError("Type CLEAR to confirm")
+    global _setup_done
+    with _lock:
+        with _remote() as rc:
+            orders = rc.execute(f"SELECT * FROM {SCHEMA}.order_records ORDER BY order_id").fetchall()
+            batches = rc.execute(f"SELECT * FROM {SCHEMA}.batch_records ORDER BY uid").fetchall()
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        dest = BACKUP_DIR / time.strftime("shared-records-%Y%m%d-%H%M%S.json")
+        dest.write_text(json.dumps({"saved_at": time.time(), "by": computer.NAME, "order_records": orders,
+                                    "batch_records": batches}, default=str, indent=1))
+        try:
+            os.chmod(dest, 0o600)  # customer names, phones and addresses
+        except OSError:
+            pass
+        import psycopg
+
+        try:
+            with psycopg.connect(config.database_url(), autocommit=True, connect_timeout=12,
+                                 prepare_threshold=None, application_name="snapstl") as c:
+                c.execute(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE")
+        except psycopg.Error as e:
+            raise SyncError(f"The shared records couldn't be cleared: {_short(e)}") from e
+        _setup_done = ""
+        with db.tx() as con:  # this computer starts over: send its own again, load everything anew
+            con.execute("UPDATE orders SET in_remote=0")
+            con.execute("UPDATE batches SET synced=0")
+            con.execute("DELETE FROM sync_state WHERE key='pulled_until'")
+        with _remote():
+            pass  # create the empty tables again
+    return {"cleared": {"orders": len(orders), "batches": len(batches)}, "backup": str(dest)}

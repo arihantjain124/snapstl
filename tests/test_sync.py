@@ -167,3 +167,27 @@ def test_reset_waits_for_unsynced_changes(two, monkeypatch):
         with pytest.raises(RuntimeError, match="haven't reached the shared records"):
             maintenance.reset()
         assert order("R1")["state"] == "bundled"
+
+
+def test_clear_shared_records(two, tmp_path, monkeypatch):
+    import json
+
+    pc = two
+    monkeypatch.setattr(maintenance, "BACKUP_DIR", tmp_path / "backups")
+    from snapstl import batches as B
+
+    with pc("A"):
+        ingest.ingest(report([("C1", "PRINT", "Asha", ""), ("C2", "PRINT", "Ravi", "")]), "r.csv")
+        B.create_batch(["C1"], Settings())
+        ok(sync.sync_now())
+        assert sync.summary()["orders"] == {"in_batch": 1}
+        with pytest.raises(sync.SyncError, match="CLEAR"):
+            sync.clear("yes")
+        r = sync.clear("CLEAR")
+        assert r["cleared"] == {"orders": 1, "batches": 1}
+        saved = json.loads(open(r["backup"]).read())
+        assert [o["order_id"] for o in saved["order_records"]] == ["C1"]  # nothing lost: kept on this computer
+        assert sync.summary() == {"orders": {}, "batches": {}}  # empty, tables there again
+        assert order("C1")["state"] == "in_batch"  # this computer still makes it …
+        ok(sync.sync_now())
+        assert remote("C1")["state"] == "in_batch"  # … so it's sent again
