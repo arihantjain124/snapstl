@@ -32,7 +32,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   **.3mf** per plate, file names `{name,color},{name2,color2}.3mf`, **never write ZIP files**. Sliced
   plates (print farm) go only in that batch's `Sliced/` folder, same path + `.gcode.3mf`.
 - **Print farm (Bambuddy):** plates reach printers only through Bambuddy on this computer, only after a
-  person presses **Start print** in Make It (never automatically after a build), and only on a
+  person presses **Start print** in Print (never automatically after a build), and only on a
   printer that has the plate's colour loaded (white for bases). Printers have no Bases / Names
   setting: any printer can print either. Never skip Bambuddy's "Clear plate" step. SnapSTL never talks to printers directly.
 - **No print starts by itself:** every queue item is created with `manual_start: true` (held) and is
@@ -117,14 +117,17 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Plate / object pictures | `render.py`, `pipeline._plate_picture`, `server.model_view` |
 | Updates (git pull, helper self-reload) | `updater.py`, `server.update_*`, `scripts/update.sh`, `helper/background.js` (`reloadIfUpdated`) |
 | Access control / other computers | `server._blocked`, `server.access_control`, `/api/portal`, `__init__.serve` (bind address) |
-| Downloads page (queue + folder) | `<section id="t-downloads">` in `index.html`; `cache.py` for the folder |
+| Download queue + folder (on Batches) | `<section id="t-batches">` in `index.html`; `cache.py` for the folder |
 | MakerWorld page interaction | `helper/content.js`, `helper/inject.js` (bump `helper/manifest.json` version; reload extension) |
 | Backups / clean-up / reset | `maintenance.py` |
 | Install / service / window | Mac `scripts/make_app.sh`; Windows `scripts/windows/*.ps1`; `src/snapstl/__init__.py` |
 | Mac vs Windows (folders, Finder/Explorer, keep awake, restart, LAN name) | `platform_os.py` |
 | Shared order records (Supabase): connection in Settings, sync, claims | `sync.py`, `config.py`, `computer.py`, `server.shared_records_*`, `server.setup_status`, `dbtool.py` (`snapstl-db`), triggers in `db.POST_SCHEMA` |
 | Print farm: Bambuddy connection, printers, Push to queue, slicing | `farm.py` (+ `/api/farm*`, `/api/batches/{id}/plates` and `/push`, `/api/print-jobs` in `server.py`); Printers page + Push to queue panel in `index.html`; `tests/test_farm.py` |
-| Make It tab (Bases / Names / Completed), Ready to ship | `makeit.py`, `/api/makeit*` in `server.py`, `server.TABS` (`ready_to_ship`), Make It section in `index.html`; `tests/test_farm.py` |
+| Print tab (Bases / Names / Completed / Removed), Ready to ship | `makeit.py`, `/api/makeit*` in `server.py`, `server.TABS` (`ready_to_ship`), `<section id="t-makeit">` in `index.html`; `tests/test_farm.py` |
+| Slicing tab (slicer, presets per printer model, print defaults per printer) | `farm.py` (`presets_for_model`, `missing_presets`, `target`, `print_defaults`), `slicer.py`, `/api/makeit/presets` `/print-defaults` `/test-slice`; `<section id="t-slicing">`; `tests/test_slicer.py` |
+| Printers page, sidebar status | `farm.everything` / `summarize`, `/api/printer-status`, `/api/health`; `<section id="t-printers">`, `loadHealth` in `index.html` |
+| Settings sections (Setup · Product · Plates · Folders · Connections · Maintenance) | `data-sec` blocks + `setSec` in `index.html`; checklist from `/api/setup` |
 | Bambuddy install / update | `scripts/bambuddy-mac.sh`, `scripts/windows/bambuddy.ps1`, `scripts/bambuddy-version.txt`, `platform_os.update_bambuddy` |
 | Printed tab / report status timestamps | `ingest.set_printed`, `ingest.status_stamp`, `server.TABS`, `index.html` (`SELKIND`) |
 

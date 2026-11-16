@@ -159,7 +159,11 @@ def board(prs: list[dict] | None = None) -> dict:
         if pid not in keys:
             keys[pid] = farm.target(pid)[0]
         r["slice_for"] = pid
-        if not r["by_file"]:
+        missing = farm.missing_presets(pid) if pid and not r["by_file"] else None
+        if missing:
+            r["slice"] = {"state": "needs_presets", "model": missing}
+            r["sliced"] = False
+        elif not r["by_file"]:
             x = farm.slice_for(slices, r["batch_id"], r["file"], keys[pid])
             r["slice"] = {"state": x["state"], "progress": x["progress"], "error": x["error"]} if x else None
             r["sliced"] = bool(x and x["state"] == "done")
@@ -214,7 +218,11 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
     Not sent yet / failed / cancelled / reprint → sent to that printer and started once queued.
     Waiting held in Bambuddy → moved to that printer if changed, then started."""
     b, plate = _plate(batch_id, file)
-    opts = farm.clean_options(options)
+    # the printer's print defaults (Slicing), with what was set on this plate on top
+    dflt = farm.print_defaults(int(printer_id)) if printer_id else {}
+    speed = speed or dflt.get("speed", "")
+    opts = farm.clean_options({**{k: v for k, v in dflt.items() if k != "speed"},
+                               **{k: v for k, v in (options or {}).items() if v not in ("", None)}})
     if speed and speed not in farm.SPEEDS_SET:
         raise farm.FarmError("Speed is silent, standard, sport or ludicrous")
     spd = farm.SPEEDS_SET.get(speed)
@@ -224,6 +232,10 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
     why = farm.eligible(plate, printer)
     if why:
         raise farm.FarmError(f"{printer['name']} {why}")
+    b_out = Path(b["out_dir"]) if b.get("out_dir") else None
+    missing = farm.missing_presets(printer["id"])
+    if missing and not (b_out and farm.find_sliced(b_out, file)):
+        raise farm.FarmError(f"Set the slicing presets for {missing} printers in Slicing first")
     j = _latest(batch_id, file)
     if j and j["state"] == "sent" and j.get("held"):
         if j["printer_id"] != printer["id"] or opts:
@@ -292,10 +304,14 @@ def slicing_summary() -> dict:
         label = json.loads(r.pop("summary") or "{}").get("label") or f"Batch #{r['batch_id']}"
         items.append({"batch": label, "plate": r["plate"], "kind": r["kind"], "color": r["color"], "state": r["state"],
                       "progress": r["progress"], "error": r["error"], "updated_at": r["updated_at"],
-                      "presets": {k: v.get("name") for k, v in json.loads(r["presets"] or "{}").items()}})
+                      "presets": {k: v.get("name") if isinstance(v, dict) else v
+                                  for k, v in json.loads(r["presets"] or "{}").items()}})
     count = lambda st: sum(1 for i in items if i["state"] == st)  # noqa: E731
-    saved = {k: v["name"] for k, v in farm.chosen_presets().items()}
-    return {"presets": saved or {k: f"{v} (Bambu standard)" for k, v in farm.DEFAULT_PRESETS.items()}, "items": items,
+    cfg = farm.load_config()
+    by_model = {m: ({k: (v["name"] if isinstance(v, dict) else v) for k, v in p.items()})
+                for m, p in ((cfg.get("orca_presets_by_model") if farm.engine(cfg) in farm.LOCAL
+                              else cfg.get("presets_by_model")) or {}).items()}
+    return {"presets_by_model": by_model, "items": items,
             "counts": {st: count(st) for st in ("queued", "uploading", "slicing", "done", "failed")}}
 
 

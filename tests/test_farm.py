@@ -37,6 +37,11 @@ def _part(body: bytes, field: str) -> bytes:
     return m.group(1) if m else b""
 
 
+STD = {"printer": {"source": "standard", "id": "Bambu Lab A1 0.4 nozzle", "name": "Bambu Lab A1 0.4 nozzle"},
+       "process": {"source": "standard", "id": "0.20mm Standard @BBL A1", "name": "0.20mm Standard @BBL A1"},
+       "filament": {"source": "standard", "id": "Bambu PLA Basic @BBL A1", "name": "Bambu PLA Basic @BBL A1"}}
+
+
 def tray(i, hex_, material="PLA Basic", remain=80):
     return {"id": i, "tray_color": hex_ + "FF", "tray_type": "PLA", "tray_sub_brands": material, "remain": remain,
             "state": 11, "exists": True}
@@ -180,7 +185,7 @@ def bb(monkeypatch, tmp_path):
     fake = FakeBambuddy()
     monkeypatch.setattr(farm, "_request", fake)
     farm.CONFIG_PATH.unlink(missing_ok=True)
-    farm.update_config(auto_slice=False)  # tests that want it turn it on
+    farm.update_config(auto_slice=False, presets_by_model={"A1": STD})  # the owner set A1's presets; auto off
     farm._status_cache.clear()
     monkeypatch.setattr(farm, "_color_map", (0.0, {}))
     monkeypatch.setattr(farm.WORKER, "_models", (0.0, {}))
@@ -197,7 +202,7 @@ def bb(monkeypatch, tmp_path):
         con.execute("DELETE FROM slices")
         con.execute("DELETE FROM downloads WHERE batch_id > ?", (first,))
         con.execute("DELETE FROM batches WHERE id > ?", (first,))
-        con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%' OR order_id LIKE 'PB%' OR order_id LIKE 'PS%' OR order_id LIKE 'PM%' OR order_id LIKE 'PK%' OR order_id LIKE 'PV%' OR order_id LIKE 'PO%'")
+        con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%' OR order_id LIKE 'PB%' OR order_id LIKE 'PS%' OR order_id LIKE 'PM%' OR order_id LIKE 'PK%' OR order_id LIKE 'PV%' OR order_id LIKE 'PO%' OR order_id LIKE 'PN%'")
     farm.CONFIG_PATH.unlink(missing_ok=True)
 
 
@@ -515,36 +520,41 @@ def test_make_it_slice_with_bambuddy_and_remove(client, bb, monkeypatch):
     bid, folder = built_batch(client, "PK")
     base, pink = "Bases/{Ayra,pink},{Riya,blue}.3mf", "Names/pink/{Ayra,pink}.3mf"
 
-    # presets come from Bambuddy; Bambu's standard A1 ones are chosen until someone picks others
-    p = client.get("/api/makeit/presets").json()
+    # presets come from Bambuddy's list, set per printer model (the fixture set A1's)
+    p = client.get("/api/makeit/presets?model=A1").json()
     assert p["names"] == {"printer": "Bambu Lab A1 0.4 nozzle", "process": "0.20mm Standard @BBL A1",
                           "filament": "Bambu PLA Basic @BBL A1"}
     assert [x["key"] for x in p["available"]["process"]] == ["local:7", "standard:0.20mm Standard @BBL A1"]
-    r = client.put("/api/makeit/presets", json={**p["chosen"], "process": "local:7"})
+    r = client.put("/api/makeit/presets", json={**p["chosen"], "model": "A1", "process": "local:7"})
     assert r.status_code == 200 and r.json()["names"]["process"] == "Organizer 0.24mm"
-    assert client.put("/api/makeit/presets", json={**p["chosen"], "process": "local:99"}).status_code == 400
+    assert client.put("/api/makeit/presets", json={**p["chosen"], "model": "A1", "process": "local:99"}).status_code == 400
 
     # Slice: Bambuddy slices it in the background; the row shows it sliced; nothing is queued to print
     bb.slicer = "ok"
-    assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": base}]}).json()["queued"] == 1
+    assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": base, "printer_id": 1}]}).json()["queued"] == 1
     wait_for(lambda: makeit_row(client, "bases", base)["sliced"])
     assert bb.slice_bodies[-1][1]["process_preset"] == {"source": "local", "id": "7"} and bb.queue == {}
-    assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": base}]}).json()["queued"] == 0
+    assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": base, "printer_id": 1}]}).json()["queued"] == 0
     # Start print then sends Bambuddy's sliced file — no second slice, nothing written locally
     n = len(bb.slice_bodies)
-    client.post("/api/makeit/start", json={"batch_id": bid, "file": base, "printer_id": 1})
+    # the printer's print defaults (Slicing) apply; what's set on the plate wins
+    r = client.put("/api/makeit/print-defaults", json={"printer_id": 1, "bed_levelling": "off", "timelapse": True})
+    assert r.json() == {"speed": "", "bed_levelling": "off", "timelapse": True}
+    assert client.put("/api/makeit/print-defaults", json={"printer_id": 1, "speed": "warp"}).status_code == 400
+    client.post("/api/makeit/start", json={"batch_id": bid, "file": base, "printer_id": 1, "options": {"timelapse": False}})
     wait_for(lambda: bb.queue and bb.queue[1].get("manual_start") is False)
+    assert bb.queue[1]["bed_levelling"] == "off" and bb.queue[1]["timelapse"] is False
     assert len(bb.slice_bodies) == n and bb.files[bb.queue[1]["library_file_id"]]["filename"].endswith(".gcode.3mf")
     assert not (folder / "Sliced").exists()
 
     # a slice that makes no progress is given up with a clear message (never stuck)
     bb.slicer = "hang"
     monkeypatch.setattr(farm, "SLICE_TIMEOUT_S", 0)
-    client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink}]})
+    client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink, "printer_id": 2}]})
     s = wait_for(lambda: (lambda s: s if s and s["state"] == "failed" else None)(makeit_row(client, "names", pink)["slice"]))
     assert "no progress" in s["error"]
     st = client.get("/api/printer-status").json()["slicing"]
-    assert st["counts"]["failed"] == 1 and st["counts"]["done"] == 1 and st["presets"]["process"] == "Organizer 0.24mm"
+    assert st["counts"]["failed"] == 1 and st["counts"]["done"] == 1 and st["presets_by_model"]["A1"]["process"] == "Organizer 0.24mm"
 
     # Remove takes a plate off Names (nothing deleted); Put back returns it
     assert client.post("/api/makeit/remove", json={"batch_id": bid, "file": pink}).status_code == 200
@@ -556,11 +566,26 @@ def test_make_it_slice_with_bambuddy_and_remove(client, bb, monkeypatch):
     assert pink in [r["file"] for r in m["names"]] and m["removed"] == []
 
 
-def test_no_presets_listed_falls_back_to_standard(client, bb):
-    bb.presets = {}  # Bambuddy's slicer isn't running: it lists nothing
+def test_no_built_in_presets_a_model_needs_its_own(client, bb):
+    farm.update_config(presets_by_model={})  # nothing set up yet
+    client.get("/api/farm")
+    bid, folder = built_batch(client, "PN")
+    pink = "Names/pink/{Ayra,pink}.3mf"
     p = client.get("/api/makeit/presets").json()
-    assert not p["bambuddy_listed"] and p["chosen"]["printer"] == "standard:Bambu Lab A1 0.4 nozzle"
-    assert client.put("/api/makeit/presets", json=p["chosen"]).status_code == 200
+    assert p["model"] == "A1" and p["set_for"] == {"A1": False} and p["chosen"] == {}
+    assert makeit_row(client, "names", pink)["slice"] == {"state": "needs_presets", "model": "A1"}
+    r = client.post("/api/makeit/start", json={"batch_id": bid, "file": pink, "printer_id": 2})
+    assert r.status_code == 400 and "slicing presets for A1" in r.json()["detail"]
+    assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink, "printer_id": 2}]}).json()["queued"] == 0
+    h = client.get("/api/health").json()
+    assert h["presets_missing"] == ["A1"] and h["bambuddy"]["connected"] and h["printers"]["total"] == 3
+    keys = {slot: f"standard:{v['id']}" for slot, v in STD.items()}
+    assert client.put("/api/makeit/presets", json=keys).status_code == 400  # for which printer model?
+    assert client.put("/api/makeit/presets", json={"model": "A1", **keys}).status_code == 200
+    assert client.get("/api/makeit/presets").json()["set_for"] == {"A1": True}
+    assert client.get("/api/health").json()["presets_missing"] == []  # saving refreshes the sidebar status
+    s = client.get("/api/setup").json()["slicing"]
+    assert s["presets_missing"] == [] and s["printers"]["total"] == 3
 
 
 def test_presets_per_printer_auto_slice_import_and_speed(client, bb):
@@ -573,13 +598,14 @@ def test_presets_per_printer_auto_slice_import_and_speed(client, bb):
     bid, folder = built_batch(client, "PV")
     base, pink = "Bases/{Ayra,pink},{Riya,blue}.3mf", "Names/pink/{Ayra,pink}.3mf"
 
-    # the P1S printer gets its own printer preset; the others keep the default
-    p = client.get("/api/makeit/presets?printer_id=4").json()
+    # P1S printers get their own presets; the A1s keep theirs
+    p = client.get("/api/makeit/presets?model=P1S").json()
     assert [x["name"] for x in p["printers"]] == ["Base 1", "Names A", "Names B", "P1S names"] and p["auto_slice"] is False
-    assert client.put("/api/makeit/presets", json={**p["chosen"], "printer_id": 4, "printer": "local:11"}).status_code == 200
-    p4 = client.get("/api/makeit/presets?printer_id=4").json()
-    assert p4["names"]["printer"] == "P1S organizers" and [x["own"] for x in p4["printers"]] == [False, False, False, True]
-    assert client.get("/api/makeit/presets?printer_id=2").json()["names"]["printer"] == "Bambu Lab A1 0.4 nozzle"
+    assert p["models"] == ["A1", "P1S"] and p["set_for"] == {"A1": True, "P1S": False}
+    keys = {slot: f"standard:{v['id']}" for slot, v in STD.items()}
+    assert client.put("/api/makeit/presets", json={**keys, "model": "P1S", "printer": "local:11"}).status_code == 200
+    assert client.get("/api/makeit/presets?model=P1S").json()["names"]["printer"] == "P1S organizers"
+    assert client.get("/api/makeit/presets?model=A1").json()["names"]["printer"] == "Bambu Lab A1 0.4 nozzle"
 
     # automatic slicing: each waiting plate, for the printer pre-selected for it (and only that one)
     assert client.put("/api/makeit/settings", json={"auto_slice": True}).json()["auto_slice"] is True

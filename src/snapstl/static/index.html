@@ -15,7 +15,7 @@ tr.other td{color:var(--muted)}
 .side h1 small.pc{margin-top:6px;font-size:11px;opacity:.8}
 .checklist{list-style:none;padding:0;margin:6px 0 0}
 .checklist li{display:flex;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line)}
-.checklist li>div{flex:1}
+.checklist li>div{flex:1;min-width:0;overflow-wrap:anywhere}
 .checklist .mark{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700;flex:none}
 .checklist li.ok .mark{background:var(--ok,#1f9d55);color:#fff}
 .checklist li.todo .mark{background:var(--warn,#c77d00);color:#fff}
@@ -38,7 +38,7 @@ nav#tabs .ic{width:18px;text-align:center;font-size:15px}
 .help .toc{display:flex;gap:6px;flex-wrap:wrap}.help .toc a{font-size:12px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;text-decoration:none}
 button,.btn{font:inherit;padding:6px 12px;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer;white-space:nowrap}
 button:hover{border-color:var(--muted)}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary,.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 button.small{padding:3px 8px;font-size:12px}
 button:disabled{opacity:.5;cursor:default}
 input,select{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 7px;width:100%}
@@ -80,7 +80,7 @@ details.objsbox summary{cursor:pointer;font-weight:600;margin:10px 0 6px}
 .empty{color:var(--muted);text-align:center;padding:26px}
 .edit{display:flex;gap:4px;min-width:260px}.edit input{padding:3px 6px}
 .reason{font-size:12px;color:var(--warn)}
-section[hidden]{display:none}
+section[hidden],[hidden]{display:none!important}
 body,td,th,.hint,.pill,code{-webkit-user-select:text;user-select:text}
 .frow th{padding:3px 4px}.frow input,.frow select{padding:3px 5px;font-size:12px;min-width:60px}
 .otable td.addr{max-width:220px;font-size:12px}
@@ -96,15 +96,32 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 .pscard h4{margin:10px 0 3px;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;font-weight:600}
 .pscard .line{font-size:13px;margin:2px 0}.pscard .bar{width:100%;margin:4px 0}
 .slicebox{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0;background:var(--bg)}
-.mktable td{vertical-align:middle}.mktable select{min-width:190px}.mktable .fn{font-size:12px;word-break:break-all;max-width:260px}
+.mktable td{vertical-align:middle}.mktable select{min-width:190px}.mktable .fn{font-size:12px;word-break:break-all;max-width:260px;min-width:150px}
 .prgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:8px}
 .prcard{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--bg)}
 .prcard .top{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.prcard .top b{font-size:14px}
 .prcard .facts{font-size:12px;color:var(--muted);margin:4px 0}
 .spools{display:flex;flex-direction:column;gap:3px;margin-top:6px}.spool{display:flex;gap:6px;align-items:center;font-size:12.5px}
 .spool .dot{width:14px;height:14px;border-radius:50%;border:1px solid var(--line);flex:none}.spool .slot{color:var(--muted);min-width:64px;font-size:11.5px}
-@media (max-width:800px){.app{grid-template-columns:1fr}.side{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:0;border-bottom:1px solid var(--line);padding:8px 10px}
-  nav#tabs{flex-direction:row}nav#tabs button{width:auto;padding:6px 9px}.side .foot{margin:0;flex-direction:row;flex-wrap:wrap}.bar{display:none}}
+.health{display:flex;flex-direction:column;gap:1px;font-size:12.5px;border-top:1px solid var(--line);padding-top:8px}
+.health a{display:flex;gap:8px;align-items:center;padding:4px 6px;border-radius:6px;color:var(--text);text-decoration:none}
+.health a:hover{background:var(--chip)}
+.health .d{width:8px;height:8px;border-radius:50%;background:var(--line);flex:none}
+.health .d.ok{background:var(--ok)}.health .d.warn{background:var(--warn)}.health .d.err{background:var(--err)}.health .d.info{background:var(--accent)}
+.health small{margin-left:auto;color:var(--muted);font-size:11.5px;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(400px,100%),1fr));gap:14px;align-items:start}.grid2>.card{margin-bottom:0}
+.sec{display:flex;flex-direction:column;gap:14px}.sec>.card{margin-bottom:0}
+.intro{font-size:13px;color:var(--muted);margin:0 2px;max-width:900px}
+.check{display:flex;gap:8px;align-items:center;color:var(--text);font-size:13px;margin:10px 0 2px}
+.under{margin:3px 0 0}
+.savebar{position:sticky;bottom:10px;z-index:4;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;display:flex;gap:8px;align-items:center;margin-top:14px;box-shadow:0 4px 14px rgba(0,0,0,.08)}
+.steps{counter-reset:st;list-style:none;padding:0;margin:8px 0 0}
+.steps>li{counter-increment:st;position:relative;padding:0 0 10px 32px;font-size:13px;line-height:1.55}
+.steps>li::before{content:counter(st);position:absolute;left:0;top:0;width:22px;height:22px;border-radius:50%;background:var(--infobg);color:var(--accent);font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center}
+.callout{background:var(--infobg);border-radius:8px;padding:8px 12px;font-size:12.5px;margin:8px 0}
+.pdtable select{min-width:120px;padding:3px 6px}.pdtable td{vertical-align:middle}
+@media (max-width:800px){.app{grid-template-columns:minmax(0,1fr)}nav#tabs{flex-wrap:wrap}.hint code,.callout code{word-break:break-all}.toolbar{flex-wrap:wrap}.side{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:0;border-bottom:1px solid var(--line);padding:8px 10px}
+  nav#tabs{flex-direction:row}nav#tabs button{width:auto;padding:6px 9px}.side .foot{margin:0;flex-direction:row;flex-wrap:wrap}.health{flex-direction:row;flex-wrap:wrap;border:0;padding:0}.bar{display:none}}
 </style>
 </head>
 <body>
@@ -114,15 +131,17 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <nav id="tabs">
     <button data-t="orders" class="on"><span class="ic">▤</span>Orders</button>
     <button data-t="batches"><span class="ic">▦</span>Batches</button>
-    <button data-t="downloads"><span class="ic">⇣</span>Downloads</button>
-    <button data-t="makeit"><span class="ic">⚒</span>Make It</button>
+    <button data-t="makeit"><span class="ic">⚒</span>Print</button>
+    <button data-t="printers"><span class="ic">◉</span>Printers</button>
     <button data-t="slicing"><span class="ic">▣</span>Slicing</button>
-    <button data-t="pstatus"><span class="ic">◉</span>Printer status</button>
     <button data-t="settings"><span class="ic">⚙</span>Settings</button>
     <button data-t="help"><span class="ic">?</span>Help</button>
   </nav>
   <div class="foot">
-    <span class="pill" id="dl" title="MakerWorld downloads">Downloads idle</span>
+    <div class="health" title="Click a line to go there">
+      <a href="#" data-go="settings:connections" id="hhelper"><span class="d" id="hdot"></span>Helper<small id="dl">…</small></a>
+      <div id="hrows" style="display:contents"></div>
+    </div>
     <button id="dlpause" class="small">Pause downloads</button>
     <button id="updbadge" class="small primary" hidden>Update available</button>
     <button id="logout" class="small">Sign out</button>
@@ -166,11 +185,12 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 
 <section id="t-batches" hidden>
   <div class="card">
-    <div class="toolbar"><h2 style="margin:0">Batches</h2><span class="grow hint" id="queueinfo"></span><button id="retry" class="small" hidden>Retry failed downloads</button></div>
+    <div class="toolbar"><h2 style="margin:0">Batches</h2><span class="grow hint" id="queueinfo"></span></div>
+    <p class="hint">A batch takes the orders you picked from MakerWorld models to print-ready plates: <b>Queue download</b> → the helper generates every name → <b>Queue build</b> → plates. Then <b>Print</b> sends them to your printers. Nothing starts by itself.</p>
     <div class="tw"><table><thead><tr><th>#</th><th>Folder</th><th>Computer</th><th>Created</th><th>Orders</th><th>Models</th><th>Plates</th><th>Status</th><th></th></tr></thead><tbody id="batches"></tbody></table></div>
   </div>
   <div class="card" id="bdetail" hidden>
-    <div class="toolbar"><h2 style="margin:0" id="btitle"></h2><span class="grow"></span><button id="bmakeit" class="primary" hidden title="Print these plates: Make It → Bases / Names">Make it</button> <button id="bfinder" hidden class="fm">Show in Finder</button> <a class="btn primary" id="bzip">Download ZIP</a></div>
+    <div class="toolbar"><h2 style="margin:0" id="btitle"></h2><span class="grow"></span><button id="bmakeit" class="primary" hidden title="Send these plates to your printers: Print → Bases / Names">Print</button> <button id="bfinder" hidden class="fm">Show in Finder</button> <a class="btn primary" id="bzip">Download ZIP</a></div>
     <div class="msgs" id="bother" hidden></div>
     <div class="msgs" id="bmsgs"></div>
     <details class="objsbox" id="bobjsbox"><summary id="bobjsum">Objects</summary>
@@ -182,214 +202,306 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <h3>Names</h3><div class="plates" id="bnames"></div>
     <p class="hint">Bases are shown from the top as they'll sit on the plate (any watermark found is painted red); names as outlines. Click a plate to get its .3mf. Review in Bambu Studio before printing.</p>
   </div>
-  <div class="card"><h2>Activity</h2><div class="log" id="log"></div></div>
-</section>
-
-<section id="t-downloads" hidden>
   <div class="card">
     <div class="toolbar"><h2 style="margin:0">Download queue</h2><span class="grow hint" id="dlsession"></span>
       <button id="qpause" class="small">Pause</button><button id="retry2" class="small">Retry failed</button></div>
-    <p class="hint">Names queued by <b>Queue download</b> / <b>Re-download</b> on the Batches page. The SnapSTL Helper in your MakerWorld tab works through them one at a time, oldest first.</p>
-    <div class="tw" style="max-height:60vh;overflow:auto"><table><thead><tr><th>#</th><th>Name</th><th>Comp.</th><th>Batch</th><th>State</th><th>Watermark</th><th>Tries</th><th>Detail</th></tr></thead><tbody id="dlq"></tbody></table></div>
+    <p class="hint">Names waiting for MakerWorld (from <b>Queue download</b> / <b>Re-download</b>). The SnapSTL Helper in your MakerWorld tab works through them one at a time, oldest first.</p>
+    <div class="tw" style="max-height:40vh;overflow:auto"><table><thead><tr><th>#</th><th>Name</th><th>Comp.</th><th>Batch</th><th>State</th><th>Watermark</th><th>Tries</th><th>Detail</th></tr></thead><tbody id="dlq"></tbody></table></div>
+    <div class="toolbar" style="margin:10px 0 0"><span class="hint grow" id="dlfolder"></span><button id="dlfinder" class="small fm">Show in Finder</button></div>
+    <p class="hint under">Every downloaded model is kept in this folder (one folder per name with <code>base.stl</code>, <code>name.stl</code>, <code>info.json</code>) and reused by later batches. SnapSTL never deletes them; a deleted one is simply downloaded again. Change the folder in Settings → Folders.</p>
   </div>
-  <div class="card">
-    <div class="toolbar"><h2 style="margin:0">Downloaded models</h2><span class="grow"></span><button id="dlfinder" class="small fm">Show in Finder</button></div>
-    <p class="hint" id="dlfolder"></p>
-    <p class="hint">Every model downloaded from MakerWorld is kept here — one folder per name (e.g. <code>SONAL - 5 comp - …</code> with <code>base.stl</code>, <code>name.stl</code>, <code>info.json</code>). SnapSTL never deletes them; clean up in Finder whenever you like. A deleted model is simply downloaded again the next time a batch needs it. Change the folder in Settings.</p>
-  </div>
+  <details class="card"><summary style="cursor:pointer;font-weight:600">Activity log</summary><div class="log" id="log" style="margin-top:8px"></div></details>
 </section>
+
+
 
 <section id="t-makeit" hidden>
   <div class="card">
-    <div class="toolbar"><h2 style="margin:0">Make It</h2><span class="grow hint" id="mkinfo"></span><button class="small" id="mkrefresh">Refresh</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
-    <div class="msgs" id="mkmsgs"></div>
+    <div class="toolbar"><h2 style="margin:0">Print</h2><span class="grow hint" id="mkinfo"></span><button class="small" id="slp_all" title="Slice every waiting plate now, each for its chosen printer">Slice all waiting</button><button class="small" id="mkrefresh">Refresh</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
+    <div class="msgs" id="mkmsgs"></div><div class="hint" id="slp_allmsg"></div>
     <div class="chips" id="mktabs"></div>
     <div id="mk-bases" class="mkpane">
-      <p class="hint">Base plates of your built batches. A printer is pre-selected: the next <b>available</b> printer with white loaded and the most filament left. Nothing prints until you press <b>Start print</b>.</p>
-      <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Plate</th><th>Slice</th><th>Printer</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mkbases"></tbody></table></div>
+      <p class="hint">Base plates of your built batches, printed in white. A printer is pre-selected — the next <b>available</b> one with white loaded and the most filament left. <b>Slice</b> shows if the plate is sliced for that printer's model. <b>Options</b> start from the printer's print defaults (Slicing); change them for one plate here. Nothing prints until you press <b>Start print</b>.</p>
+      <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mkbases"></tbody></table></div>
     </div>
     <div id="mk-names" class="mkpane" hidden>
-      <p class="hint">Name plates by colour. Only printers with that colour loaded (read from Bambuddy) can be chosen; one is pre-selected when it's available. Nothing prints until you press <b>Start print</b>.</p>
-      <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Slice</th><th>Printer</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mknames"></tbody></table></div>
+      <p class="hint">Name plates, one colour each. Only printers with that colour loaded (read from Bambuddy) can be chosen; one is pre-selected when it's available. Nothing prints until you press <b>Start print</b>.</p>
+      <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mknames"></tbody></table></div>
     </div>
-    <div id="mk-slice" class="mkpane" hidden>
-      <p class="hint">Every plate waiting in Bases / Names and its slicing. <b>Slice</b> on a plate (or <b>Slice all</b>) slices it now; <b>Start print</b> on a plate that isn't sliced for that printer's model yet slices it first. The slicer, presets and automatic slicing are set in <a href="#" data-go="slicing"><b>Slicing</b></a>.</p>
-      <div class="toolbar"><button id="slp_all" class="primary">Slice all waiting plates</button><span class="hint grow" id="slp_allmsg"></span></div>
-      <h3>Slicing</h3>
-      <div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Slice</th><th></th></tr></thead><tbody id="mkslices"></tbody></table></div>
+    <div id="mk-completed" class="mkpane" hidden>
+      <p class="hint">Printed plates. When an order's base and name are both printed it shows in <b>Orders → Ready to ship</b>. <b>Reprint</b> only if a print failed — it goes back to Bases / Names to send again.</p>
+      <div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Printed on</th><th>When</th><th></th></tr></thead><tbody id="mkdone"></tbody></table></div>
     </div>
     <div id="mk-removed" class="mkpane" hidden>
       <p class="hint">Plates taken off Bases / Names (for example printed by hand). Nothing was deleted — <b>Put back</b> returns a plate to its list.</p>
       <div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Removed</th><th></th></tr></thead><tbody id="mkremoved"></tbody></table></div>
     </div>
-    <div id="mk-completed" class="mkpane" hidden>
-      <p class="hint">Printed plates. When an order's base and its name are both printed it shows in <b>Orders → Ready to ship</b>. <b>Reprint</b> only if a print failed — it goes back to Bases / Names to send again.</p>
-      <div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Printed on</th><th>When</th><th></th></tr></thead><tbody id="mkdone"></tbody></table></div>
-    </div>
-    <div id="mk-printers" class="mkpane" hidden>
-      <p class="hint">Live from Bambuddy: each printer's state and the filament in every slot. Printers and filament are managed in Bambuddy. Full details: <b>Printer status</b>.</p>
-      <div class="prgrid" id="printers"></div>
-      <div class="log" id="farmlog" style="margin-top:10px;max-height:120px"></div>
-    </div>
   </div>
 </section>
 
 <section id="t-slicing" hidden>
+ <div class="sec">
   <div class="card">
     <h2>Slicing</h2>
-    <p class="hint">How SnapSTL slices plates before printing. Plates are sliced one at a time in the background; printing still needs <b>Start print</b> in Make It.</p>
-      <div class="row3" style="max-width:900px;grid-template-columns:1fr 2fr"><div><label>Slicer</label><select id="slp_engine"><option value="orca">OrcaSlicer on this computer</option><option value="bambu">Bambu Studio on this computer</option><option value="bambuddy">Bambuddy's slicer</option></select></div><div class="hint" id="slp_enginemsg" style="align-self:end;padding-bottom:6px"></div></div>
-      <label style="display:flex;gap:8px;align-items:center;color:var(--text);margin:8px 0"><input type="checkbox" id="slp_auto"> <b>Slice new plates automatically</b> <span class="hint">— every new plate is sliced with the presets of the printer pre-selected for it (Start print on another printer slices it for that one). Printing still needs <b>Start print</b>.</span></label>
-      <div class="row3" style="max-width:900px;grid-template-columns:1fr 2fr"><div><label>Presets for printer</label><select id="slp_model"></select></div><div class="hint" id="slp_modelhint" style="align-self:end;padding-bottom:6px"></div></div>
-      <div class="row3" style="max-width:900px"><div><label>Printer preset</label><select id="slp_printer"></select></div><div><label>Process preset <span class="hint">(speeds, layer height, infill…)</span></label><select id="slp_process"></select></div><div><label>Filament preset</label><select id="slp_filament"></select></div></div>
-      <div class="toolbar" style="margin-top:10px"><button id="slp_save">Save presets</button><button id="slp_clear" hidden title="This printer uses the default presets again">Use default for this printer</button><span class="hint grow" id="slp_msg"></span></div>
-      <h3>Add presets</h3>
-      <p class="hint" id="slp_imphint">Make the preset in Bambu Studio (or OrcaSlicer), save it, then export it: <b>File → Export → Export Preset Bundle</b> (.bbscfg), or a single filament (.bbsflmt) / preset (.json). Add it here and it appears in the lists above.</p>
-      <div class="toolbar">
-        <label class="btn" style="margin:0;color:var(--text)">Add printer preset…<input type="file" data-imp="printer" accept=".json,.zip,.bbscfg,.bbsflmt,.orca_filament" hidden></label>
-        <label class="btn" style="margin:0;color:var(--text)">Add process preset…<input type="file" data-imp="process" accept=".json,.zip,.bbscfg,.bbsflmt,.orca_filament" hidden></label>
-        <label class="btn" style="margin:0;color:var(--text)">Add filament preset…<input type="file" data-imp="filament" accept=".json,.zip,.bbscfg,.bbsflmt,.orca_filament" hidden></label>
-        <span class="hint grow" id="slp_impmsg"></span></div>
-      <h3>Test</h3>
-      <div class="toolbar"><button id="slp_test">Test slicer</button><span class="hint grow" id="slp_testmsg">Slices a small test cube with the slicer and the presets shown above — a quick check on a new computer.</span></div>
+    <p class="hint" style="max-width:900px">Before a plate prints it's sliced into G-code for the printer it goes to, with the <b>presets you set for that printer model</b>. SnapSTL has no presets of its own: you bring the presets you already print with from Bambu Studio, so farm prints come out like the ones you slice by hand. Slicing runs in the background, one plate at a time; printing always waits for <b>Start print</b>.</p>
+    <ul class="checklist" id="slp_steps"></ul>
   </div>
+  <div class="grid2">
+   <div class="sec">
+    <div class="card">
+      <h2>Slicer</h2>
+      <label>Slices with</label>
+      <select id="slp_engine"><option value="orca">OrcaSlicer on this computer</option><option value="bambu">Bambu Studio on this computer</option><option value="bambuddy">Bambuddy's slicer</option></select>
+      <p class="hint under" id="slp_enginemsg"></p>
+      <label class="check"><input type="checkbox" id="slp_auto"> <b>Slice new plates automatically</b></label>
+      <p class="hint under">Each new plate is sliced for the printer pre-selected for it in Print, so it's ready when you press Start print. Off: a plate is sliced when you press Slice or Start print.</p>
+    </div>
+    <div class="card" id="slp_presetcard">
+      <h2>Presets per printer model</h2>
+      <p class="hint under">Every printer of a model slices with the same three presets. Pick the model, then its presets:</p>
+      <div class="chips" id="slp_models" style="margin:8px 0 4px"></div>
+      <p class="hint under" id="slp_modelhint"></p>
+      <div id="slp_presetrows">
+        <label>Printer preset <span class="hint">— machine, nozzle, bed</span></label><select id="slp_printer"></select>
+        <label>Process preset <span class="hint">— layer height, walls, infill, speeds</span></label><select id="slp_process"></select>
+        <label>Filament preset <span class="hint">— temperatures, cooling, flow</span></label><select id="slp_filament"></select>
+        <label class="check"><input type="checkbox" id="slp_sys"> Show Bambu Lab system presets too</label>
+        <p class="hint under" id="slp_sysmsg"></p>
+        <div class="toolbar" style="margin-top:10px"><button id="slp_save" class="primary">Save presets</button><button id="slp_test" title="Slices a 20 mm test cube with these presets — a quick check on a new computer">Test slice</button><button id="slp_clear" hidden>Remove</button><span class="grow"></span><button id="slp_reload" class="small" title="Read the presets again (after saving new ones in Bambu Studio)">Reload lists</button></div>
+        <p class="hint" id="slp_msg"></p>
+        <p class="hint" id="slp_testmsg"></p>
+      </div>
+    </div>
+   </div>
+   <div class="card" id="slp_impcard">
+      <h2>How to bring your presets from Bambu Studio</h2>
+      <h3>Presets saved in Bambu Studio on this computer</h3>
+      <ol class="steps">
+        <li>Open <b>Bambu Studio</b> and pick the printer (e.g. <i>Bambu Lab A1 0.4 nozzle</i>), the filament and the process you print organizers with. Change what you need (walls, infill, speeds…).</li>
+        <li>Save each changed preset: the <b>save icon</b> next to its list → give it a clear name, e.g. <i>Organizer A1 0.20</i>.</li>
+        <li>Here press <b>Reload lists</b>. Your presets appear under <i>yours (Bambu Studio)</i> — choose them for the model and <b>Save presets</b>.</li>
+      </ol>
+      <div class="callout">Bambu Studio keeps them in <code>%APPDATA%\BambuStudio\user\&lt;account id&gt;\</code> on Windows (<code>~/Library/Application Support/BambuStudio/user/</code> on a Mac), in the folders <code>machine</code>, <code>process</code> and <code>filament</code>. Signed in with your Bambu account? Presets saved on another computer arrive here once Bambu Studio is opened and signed in on this one.</div>
+      <h3>Presets from another computer</h3>
+      <ol class="steps">
+        <li>On that computer, in Bambu Studio: <b>File → Export → Export Preset Bundle</b>.</li>
+        <li>Choose <b>Printer preset bundle</b> (.bbscfg — the printer with its process and filament presets) or <b>Filament preset bundle</b> (.bbsflmt). A single preset: its <code>.json</code> from the user folder above.</li>
+        <li>Copy the file to this computer and add it — a bundle adds all of its presets at once:</li>
+      </ol>
+      <div class="toolbar"><label class="btn primary" style="margin:0;color:#fff">Add preset files…<input type="file" id="slp_import" multiple accept=".json,.zip,.bbscfg,.bbsflmt,.orca_filament" hidden></label><span class="hint grow" id="slp_impmsg"></span></div>
+      <p class="hint" id="slp_imphint"></p>
+      <h3>Good to know</h3>
+      <ul class="hint" style="padding-left:18px;margin:4px 0">
+        <li>The process preset must be made for that printer (Bambu Studio's <i>compatible printers</i>); otherwise slicing fails and says so.</li>
+        <li>Name plates are sliced in their colour, bases in white — one filament preset per model is enough.</li>
+        <li>Changing a model's presets slices its plates again (automatically or at Start print); plates already printed aren't touched.</li>
+      </ul>
+      <details class="kvd" style="margin-top:6px"><summary class="hint">Folders SnapSTL reads presets from</summary><ul class="hint" id="slp_folders" style="padding-left:18px;margin:4px 0;word-break:break-all"></ul></details>
+   </div>
+  </div>
+  <div class="card">
+    <h2>Print defaults per printer</h2>
+    <p class="hint">What each printer does when a plate starts. In <b>Print</b> you can change them for one plate (the <b>Options</b> column). <i>Bambuddy's default</i> leaves it to Bambuddy and the printer.</p>
+    <div class="tw"><table class="pdtable"><thead><tr><th>Printer</th><th>Model</th><th>Speed</th><th>Bed levelling</th><th>Flow calibration</th><th>Timelapse</th><th></th></tr></thead><tbody id="slp_defaults"></tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="toolbar"><h2 style="margin:0">Slicing activity</h2><span class="grow hint" id="slp_actsum"></span><button class="small" id="slp_actref">Refresh</button></div>
+    <div class="tw" style="max-height:45vh;overflow:auto" id="slp_activity"></div>
+  </div>
+ </div>
 </section>
 
-<section id="t-pstatus" hidden>
+<section id="t-printers" hidden>
   <div class="card">
-    <div class="toolbar"><h2 style="margin:0">Printer status</h2><span class="grow hint" id="psinfo"></span>
-      <label style="display:flex;gap:6px;align-items:center;margin:0;color:var(--text)"><input type="checkbox" id="psauto"> Auto-refresh</label>
-      <button class="small" id="psrefresh">Refresh</button><a class="btn small" id="psdl" href="/api/printer-status?download=1">Download JSON</a></div>
-    <p class="hint">What each printer is doing, read live from Bambuddy, and how slicing is going. Each card ends with <b>All fields</b> (everything Bambuddy reports, as it comes); <b>Download JSON</b> keeps a copy. Read only — access codes and keys are hidden.</p>
+    <div class="toolbar"><h2 style="margin:0">Printers</h2><span class="grow hint" id="psinfo"></span>
+      <label class="check" style="margin:0"><input type="checkbox" id="psauto" checked> Auto-refresh</label>
+      <button class="small" id="psrefresh">Refresh</button><a class="btn small" id="psdl" href="/api/printer-status?download=1">Download JSON</a><a class="btn small" id="bbopen2" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
+    <p class="hint">Live from Bambuddy: what each printer is doing, its temperatures, the filament in every slot and its queue. Printers and spools are managed in Bambuddy — load a spool and it shows up here. <b>Clear plate</b> tells Bambuddy the bed is empty, so the next started print can begin. <b>All fields</b> shows everything Bambuddy reports; access codes and keys are never shown.</p>
     <div class="msgs" id="psmsg"></div>
-    <div id="psslice"></div>
     <div class="prgrid" id="pslist"></div>
-    <div id="pssys" style="margin-top:10px"></div>
+    <details class="kvd" style="margin-top:12px"><summary><b>Farm activity</b> <span class="hint">sending, starting and slicing, newest last</span></summary><div class="log" id="farmlog" style="margin-top:6px"></div></details>
+    <div id="pssys" style="margin-top:6px"></div>
   </div>
 </section>
 
 <section id="t-settings" hidden>
-  <div class="grid">
-  <div class="card" id="setupcard">
-    <h2>Setup</h2>
-    <p class="hint">Everything SnapSTL needs on this computer. Each step links to where you do it.</p>
-    <ul class="checklist" id="setuplist"></ul>
-  </div>
-  <div class="card" id="sharedcard">
-    <h2>Shared order records (optional)</h2>
-    <p class="hint">Only for <b>several SnapSTL computers</b>: they share the records of every order taken into a batch, bundled or printed (in your Supabase project), so no order is made twice. Each computer still keeps its own database. Skip this with one computer.</p>
-    <p class="hint" id="sharedinfo"></p>
-    <label>Connection string (Supabase → Connect → Connection string → URI → <b>Session pooler</b>, with your database password in place of <code>[YOUR-PASSWORD]</code>)</label>
-    <input id="sharedurl" type="password" autocomplete="off" spellcheck="false" placeholder="postgresql://postgres.xxxx:password@aws-0-ap-south-1.pooler.supabase.com:5432/postgres">
-    <label>This computer's name (shown on its batches)</label>
-    <input id="pcnamein" maxlength="60" placeholder="e.g. Packing Mac">
-    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button id="sharedsave" class="primary">Connect / save</button><button id="shareddisc" hidden>Disconnect</button></div>
-    <p class="hint">The connection string holds your database password: it's kept only on this computer (readable by you only), never shown again in full and never sent anywhere else.</p>
-    <p class="hint" id="sharedmsg"></p>
-  </div>
-  <div class="card" id="farmsetcard">
-    <h2>Print farm (Bambuddy)</h2>
-    <p class="hint" id="farmsetinfo">…</p>
-    <label>Bambuddy address</label><input id="bburl" placeholder="http://127.0.0.1:8000">
-    <label>API key (only if Bambuddy's login is on: Bambuddy → Settings → API Keys)</label><input id="bbkey" type="password" autocomplete="off" placeholder="leave empty: SnapSTL makes its own">
-    <div style="display:flex;gap:8px;margin-top:10px"><button id="bbconnect">Connect</button></div>
-    <p class="hint" id="bbmsg"></p>
-  </div>
-  <div class="card">
-    <h2>Model maker options</h2>
-    <p class="hint">Applied to every name. Print version is always NO AMS; names are single line. Compartments come from the scaling table.</p>
-    <label>Font</label><select id="m_Font"></select>
-    <div class="row2">
-      <div><label>Font size (mm)</label><input id="m_Font_size" type="number" step="1"></div>
-      <div><label>Thickness (mm)</label><input id="m_Thickness" type="number" step="1"></div>
-      <div><label>Outline (mm)</label><input id="m_Outline" type="number" step="1"></div>
-      <div><label>Rotate text</label><select id="m_Rotate_text"></select></div>
+  <div class="chips" id="setchips"></div>
+
+  <div class="sec" data-sec="setup">
+    <p class="intro">Everything SnapSTL needs on this computer, in order. A step marked <b>!</b> still needs doing — its button takes you there. Optional steps are marked –.</p>
+    <div class="card" id="setupcard">
+      <h2>Setup checklist</h2>
+      <ul class="checklist" id="setuplist"></ul>
     </div>
-    <label>MakerWorld model page link (the helper only works on this exact page)</label>
-    <input id="mw_url" placeholder="https://makerworld.com/en/makerlab/parametricModelMaker?designId=…">
-    <p class="hint" id="mw_hint"></p>
-    <label>License password for this model</label>
-    <div class="row2" style="grid-template-columns:1fr auto"><input id="lic" type="password" placeholder="Not set" autocomplete="off"><button id="licshow" type="button">Show</button></div>
-    <p class="hint" id="lichint"></p>
-    <p class="hint">Each model has its own password — change the link and its saved password appears. Press <b>Save settings</b> to keep changes.</p>
-  </div>
-  <div class="card">
-    <h2>Scaling and compartments (rules v1.1)</h2>
-    <table><thead><tr><th>Letters</th><th>Length</th><th>Height</th><th>Comp.</th></tr></thead><tbody id="bands"></tbody></table>
-    <div class="row2">
-      <div><label>Name Z scale %</label><input id="s_name_z" type="number" step="1"></div>
-      <div><label>Max length (mm)</label><input id="s_max_length" type="number" step="1"></div>
+    <div class="card">
+      <h2>Where things are</h2>
+      <table class="kv" style="font-size:13px">
+        <tr><td class="k">Orders</td><td>Upload the webstore report, review names, pick orders → <b>Create batch</b>.</td></tr>
+        <tr><td class="k">Batches</td><td>Download models from MakerWorld and build plates; the download queue.</td></tr>
+        <tr><td class="k">Print</td><td>Send each plate to a printer and start it (Bases / Names / Completed / Removed).</td></tr>
+        <tr><td class="k">Printers</td><td>What every printer is doing and the filament loaded, live from Bambuddy.</td></tr>
+        <tr><td class="k">Slicing</td><td>The slicer, presets per printer model and print defaults per printer.</td></tr>
+        <tr><td class="k">Settings</td><td>This page: the product, plates, folders, connections and maintenance.</td></tr>
+      </table>
     </div>
-    <p class="hint">Base X = Name X · Base Z = Name Y · Base Y 100 %</p>
   </div>
-  <div class="card">
-    <h2>Plate and fit</h2>
-    <div class="row3">
-      <div><label>Bed X</label><input id="p_bed_x" type="number" step="1"></div>
-      <div><label>Bed Y</label><input id="p_bed_y" type="number" step="1"></div>
-      <div><label>Bed Z</label><input id="p_bed_z" type="number" step="1"></div>
+
+  <div class="sec" data-sec="product" hidden>
+    <p class="intro">The organizer you make: which MakerWorld model, how each name is generated, and how it's sized. Applies to models downloaded and plates built after you press <b>Save settings</b>.</p>
+    <div class="grid2">
+      <div class="card">
+        <h2>MakerWorld model</h2>
+        <label>Model page link <span class="hint">— the helper only works on this exact page</span></label>
+        <input id="mw_url" placeholder="https://makerworld.com/en/makerlab/parametricModelMaker?designId=…">
+        <p class="hint under" id="mw_hint"></p>
+        <label>License password for this model</label>
+        <div class="row2" style="grid-template-columns:1fr auto"><input id="lic" type="password" placeholder="Not set" autocomplete="off"><button id="licshow" type="button">Show</button></div>
+        <p class="hint under" id="lichint"></p>
+        <p class="hint">Without it MakerWorld adds a "SALE NOT PERMITTED" watermark, so downloads are refused until it's set. Each model keeps its own password — change the link and its saved password appears.</p>
+      </div>
+      <div class="card">
+        <h2>Name style</h2>
+        <p class="hint under">The same for every name. Print version is always NO AMS; names are one line; compartments come from the scaling table. Changing these makes new models (ones already downloaded stay as they were).</p>
+        <label>Font</label><select id="m_Font"></select>
+        <div class="row2">
+          <div><label>Font size (mm)</label><input id="m_Font_size" type="number" step="1"></div>
+          <div><label>Thickness (mm)</label><input id="m_Thickness" type="number" step="1"></div>
+          <div><label>Outline (mm)</label><input id="m_Outline" type="number" step="1"></div>
+          <div><label>Rotate text</label><select id="m_Rotate_text"></select></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Size by letter count <span class="hint">(scaling rules v1.1)</span></h2>
+        <p class="hint under">Each organizer is resized to the length and height for its number of letters; the name piece gets exactly the same factors as its base so it fits after printing.</p>
+        <table><thead><tr><th>Letters</th><th>Length (mm)</th><th>Height (mm)</th><th>Compartments</th></tr></thead><tbody id="bands"></tbody></table>
+        <div class="row2">
+          <div><label>Name thickness (Z) %</label><input id="s_name_z" type="number" step="1"></div>
+          <div><label>Longest allowed (mm)</label><input id="s_max_length" type="number" step="1"></div>
+        </div>
+        <p class="hint under">Base X = Name X · Base Z = Name Y · Base Y 100 %</p>
+      </div>
     </div>
-    <div class="row2">
-      <div><label>Edge margin (mm)</label><input id="p_margin" type="number" step="0.5"></div>
-      <div><label>Gap between parts</label><input id="p_gap" type="number" step="0.5"></div>
-      <div><label>Max names / plate</label><input id="p_max_names_per_plate" type="number" min="1" max="3"></div>
-      <div><label>Bases / plate</label><input id="p_bases_per_plate" type="number" min="1" max="3"></div>
+  </div>
+
+  <div class="sec" data-sec="plates" hidden>
+    <p class="intro">How plates are filled. The bed is 256 × 256 × 256 mm on both the A1 and the P1S, so one plate layout fits every printer.</p>
+    <div class="grid2">
+      <div class="card">
+        <h2>Bed</h2>
+        <div class="row3">
+          <div><label>Width X (mm)</label><input id="p_bed_x" type="number" step="1"></div>
+          <div><label>Depth Y (mm)</label><input id="p_bed_y" type="number" step="1"></div>
+          <div><label>Height Z (mm)</label><input id="p_bed_z" type="number" step="1"></div>
+        </div>
+        <div class="row2">
+          <div><label>Edge margin (mm)</label><input id="p_margin" type="number" step="0.5"></div>
+          <div><label>Gap between parts (mm)</label><input id="p_gap" type="number" step="0.5"></div>
+        </div>
+        <p class="hint under">Margin keeps parts away from the bed edge; gap is the space between two parts.</p>
+      </div>
+      <div class="card">
+        <h2>What goes on a plate</h2>
+        <div class="row2">
+          <div><label>Names per plate (max)</label><input id="p_max_names_per_plate" type="number" min="1" max="3"></div>
+          <div><label>Bases per plate</label><input id="p_bases_per_plate" type="number" min="1" max="3"></div>
+        </div>
+        <label>Rotations allowed when fitting <span class="hint">(flat on the bed only)</span></label>
+        <div id="rots" style="display:flex;gap:12px;font-size:13px"></div>
+        <p class="hint under">Names: one colour per plate. The last plate of a batch may hold fewer.</p>
+      </div>
     </div>
-    <label>Allowed rotations (flat on the bed only)</label>
-    <div id="rots" style="display:flex;gap:12px;font-size:13px"></div>
-    <label>Output folder (each batch gets a folder + ZIP here)</label>
-    <div class="row2" style="grid-template-columns:1fr auto"><input id="o_dir"><button id="o_pick" hidden>Choose…</button></div>
-    <label>Downloads folder (models from MakerWorld, kept until you delete them)</label>
-    <div class="row2" style="grid-template-columns:1fr auto"><input id="o_dl"><button id="o_dlpick" hidden>Choose…</button></div>
-    <label>Pause between downloads (s)</label><input id="o_delay" type="number" step="0.5" min="0">
-    <div style="display:flex;gap:8px;margin-top:12px"><button id="save" class="primary">Save settings</button><button id="reset">Defaults</button></div>
-    <p class="hint" id="savehint"></p>
   </div>
-  <div class="card" id="helpercard">
-    <h2>SnapSTL Helper (Chrome)</h2>
-    <p class="hint">Models are generated in your normal Chrome, where you're signed in to MakerWorld. The helper fills the model-maker page for each queued name, presses Generate and hands the files to SnapSTL. Security checks: just click them in that tab.</p>
-    <ol class="hint" style="padding-left:18px;margin:6px 0">
-      <li>In Chrome, open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top right).</li>
-      <li>Click <b>Load unpacked</b> and choose the helper folder: <button class="small" id="helperfolder">Show helper folder</button> <span class="hint" id="helperpath"></span></li>
-      <li>Click the puzzle-piece icon in Chrome's toolbar and pin <b>SnapSTL Helper</b>.</li>
-      <li>Open the <a href="https://makerworld.com/en/makerlab/parametricModelMaker?designId=2600234&amp;from=model_page&amp;modelName=Custom_Name_Desk_Organizer_v2.34.scad&amp;protected=true&amp;unikey=70189420-efcd-4593-a07c-771fe72d52b3" target="_blank" rel="noopener">MakerWorld model maker</a> in Chrome and leave that tab open. That's it — no codes or settings.</li>
-    </ol>
-    <p class="hint" id="helperinfo"></p>
+
+  <div class="sec" data-sec="folders" hidden>
+    <p class="intro">Where SnapSTL saves files on this computer. It never deletes batch folders or downloaded models — you clean them up yourself.</p>
+    <div class="card" style="max-width:900px">
+      <h2>Folders</h2>
+      <label>Plates (output) folder <span class="hint">— each day and batch gets its own folder here</span></label>
+      <div class="row2" style="grid-template-columns:1fr auto"><input id="o_dir"><button id="o_pick" hidden>Choose…</button></div>
+      <label>Downloads folder <span class="hint">— models from MakerWorld, reused by later batches</span></label>
+      <div class="row2" style="grid-template-columns:1fr auto"><input id="o_dl"><button id="o_dlpick" hidden>Choose…</button></div>
+      <label>Pause between downloads (seconds)</label><input id="o_delay" type="number" step="0.5" min="0" style="max-width:160px">
+      <p class="hint under">A short pause between names is gentler on MakerWorld.</p>
+    </div>
   </div>
-  <div class="card" id="portalcard">
-    <h2>Other computers (web portal)</h2>
-    <p class="hint">Let other computers on this network open SnapSTL in their browser (upload reports, review orders, queue batches, download plates). This computer keeps running the service and the Chrome helper. Other computers must sign in with the portal password; this computer never has to.</p>
-    <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" id="lan"> Allow other computers on this network</label>
-    <label>Portal password (at least 10 characters; leave empty to keep the current one)</label>
-    <div class="row2" style="grid-template-columns:1fr auto"><input id="portalpw" type="password" autocomplete="new-password" placeholder="Not set"><button id="portalsave">Save</button></div>
-    <p class="hint" id="portalinfo"></p>
+
+  <div class="sec" data-sec="connections" hidden>
+    <p class="intro">What SnapSTL talks to: the Chrome helper (MakerWorld), Bambuddy (your printers), the shared order records (other SnapSTL computers) and the web portal (browsers on your network).</p>
+    <div class="grid2">
+      <div class="card" id="helpercard">
+        <h2>SnapSTL Helper (Chrome)</h2>
+        <p class="hint">Models are generated in your normal Chrome, where you're signed in to MakerWorld. The helper fills the model-maker page for each queued name, presses Generate and hands the files to SnapSTL. Security checks: just click them in that tab.</p>
+        <ol class="steps">
+          <li>In Chrome, open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top right).</li>
+          <li>Click <b>Load unpacked</b> and choose the helper folder: <button class="small" id="helperfolder">Show helper folder</button> <span class="hint" id="helperpath"></span></li>
+          <li>Click the puzzle-piece icon in Chrome's toolbar and pin <b>SnapSTL Helper</b>.</li>
+          <li>Open the <a href="https://makerworld.com/en/makerlab/parametricModelMaker?designId=2600234&amp;from=model_page&amp;modelName=Custom_Name_Desk_Organizer_v2.34.scad&amp;protected=true&amp;unikey=70189420-efcd-4593-a07c-771fe72d52b3" target="_blank" rel="noopener">MakerWorld model maker</a> in Chrome and leave that tab open.</li>
+        </ol>
+        <p class="hint" id="helperinfo"></p>
+      </div>
+      <div class="card" id="farmsetcard">
+        <h2>Print farm (Bambuddy)</h2>
+        <p class="hint" id="farmsetinfo">…</p>
+        <label>Bambuddy address</label><input id="bburl" placeholder="http://127.0.0.1:8000">
+        <label>API key <span class="hint">— only if Bambuddy's login is on (Bambuddy → Settings → API Keys)</span></label><input id="bbkey" type="password" autocomplete="off" placeholder="leave empty: SnapSTL makes its own">
+        <div class="toolbar" style="margin-top:10px"><button id="bbconnect">Connect</button><span class="hint grow" id="bbmsg"></span></div>
+        <p class="hint">Bambuddy is installed with SnapSTL. Already had Bambuddy? The installer uses yours and never replaces it or its printers. Add printers in Bambuddy; SnapSTL reads them and their filament.</p>
+      </div>
+      <div class="card" id="sharedcard">
+        <h2>Shared order records <span class="hint">(optional)</span></h2>
+        <p class="hint">Only for <b>several SnapSTL computers</b>: they share the records of every order taken into a batch, bundled or printed (in your Supabase project), so no order is made twice. Each computer still keeps its own database. Skip this with one computer.</p>
+        <p class="hint" id="sharedinfo"></p>
+        <label>Connection string <span class="hint">— Supabase → Connect → URI → <b>Session pooler</b>, your database password in place of <code>[YOUR-PASSWORD]</code></span></label>
+        <input id="sharedurl" type="password" autocomplete="off" spellcheck="false" placeholder="postgresql://postgres.xxxx:password@aws-0-ap-south-1.pooler.supabase.com:5432/postgres">
+        <label>This computer's name <span class="hint">— shown on its batches</span></label>
+        <input id="pcnamein" maxlength="60" placeholder="e.g. Packing PC">
+        <div class="toolbar" style="margin-top:10px"><button id="sharedsave" class="primary">Connect / save</button><button id="shareddisc" hidden>Disconnect</button></div>
+        <p class="hint">The connection string holds your database password: it's kept only on this computer (readable by you only), never shown again in full and never sent anywhere else.</p>
+        <p class="hint" id="sharedmsg"></p>
+      </div>
+      <div class="card" id="portalcard">
+        <h2>Other computers (web portal)</h2>
+        <p class="hint">Let other computers on this network open SnapSTL in their browser (upload reports, review orders, queue batches, download plates). This computer keeps running the service and the Chrome helper. Others sign in with the portal password; this computer never has to.</p>
+        <label class="check"><input type="checkbox" id="lan"> Allow other computers on this network</label>
+        <label>Portal password <span class="hint">— at least 10 characters; empty keeps the current one</span></label>
+        <div class="row2" style="grid-template-columns:1fr auto"><input id="portalpw" type="password" autocomplete="new-password" placeholder="Not set"><button id="portalsave">Save</button></div>
+        <p class="hint" id="portalinfo"></p>
+      </div>
+    </div>
   </div>
-  <div class="card" id="updcard">
-    <h2>Updates</h2>
-    <p class="hint" id="updinfo">…</p>
-    <ul class="hint" id="updlist" style="padding-left:18px;margin:4px 0"></ul>
-    <div style="display:flex;gap:8px;margin-top:8px"><button id="updcheck">Check for updates</button><button id="updgo" class="primary" hidden>Update now</button></div>
-    <p class="hint">Updating fetches the latest SnapSTL from its repository, installs it and restarts SnapSTL (a few seconds). The Chrome helper reloads itself. Orders, batches, settings and downloaded models are kept.</p>
+
+  <div class="sec" data-sec="maintenance" hidden>
+    <p class="intro">Keeping SnapSTL up to date and its database tidy. None of these delete batch folders or downloaded models.</p>
+    <div class="grid2">
+      <div class="card" id="updcard">
+        <h2>Updates</h2>
+        <p class="hint" id="updinfo">…</p>
+        <ul class="hint" id="updlist" style="padding-left:18px;margin:4px 0"></ul>
+        <div class="toolbar" style="margin-top:8px"><button id="updcheck">Check for updates</button><button id="updgo" class="primary" hidden>Update now</button></div>
+        <p class="hint">Updating fetches the latest SnapSTL, installs it and restarts it (a few seconds); Bambuddy is brought to the tested version too. The Chrome helper reloads itself. Orders, batches, settings and downloaded models are kept.</p>
+      </div>
+      <div class="card">
+        <h2>Database</h2>
+        <p class="hint" id="dbkind"></p>
+        <p class="hint" id="dbinfo">…</p>
+        <label>Clean up records older than (days)</label>
+        <div class="row2" style="grid-template-columns:1fr auto"><input id="cleandays" type="number" min="0" value="30"><button id="cleanup">Clean up</button></div>
+        <p class="hint under">Removes old <i>Not needed</i> orders, finished batches, download history and upload records. Orders already made are kept, so a later report can't bring them back. A backup is saved first.</p>
+        <div class="toolbar" style="margin-top:10px"><button id="syncnow" class="primary" title="Send this computer's changes to the shared order records and load everyone's">Sync now</button><button id="backupnow">Back up now</button><span class="grow"></span><button id="resetdb" style="color:var(--err)" title="Empties this computer's database only — never the shared order records">Reset this computer's database…</button></div>
+        <p class="hint" id="syncinfo"></p>
+        <p class="hint" id="dbmsg"></p>
+      </div>
+    </div>
   </div>
-  <div class="card">
-    <h2>Database</h2>
-    <p class="hint" id="dbkind"></p>
-    <p class="hint" id="dbinfo">…</p>
-    <label>Clean up records older than (days)</label>
-    <div class="row2" style="grid-template-columns:1fr auto"><input id="cleandays" type="number" min="0" value="30"><button id="cleanup">Clean up</button></div>
-    <p class="hint">Removes old <i>Not needed</i> orders, finished batches, download history and upload records. Orders already made are kept, so a later report can't bring them back. A backup is saved first.</p>
-    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button id="syncnow" class="primary" title="Send this computer's changes to the shared order records and load everyone's">Sync now</button><button id="backupnow">Back up now</button><button id="resetdb" style="color:var(--err)" title="Empties this computer's database only — never the shared order records">Reset this computer's database…</button></div>
-    <p class="hint" id="syncinfo"></p>
-    <p class="hint" id="dbmsg"></p>
-  </div>
-  </div>
+
+  <div class="savebar" id="savebar" hidden><span class="hint grow" id="savehint">Changes here are kept when you press <b>Save settings</b>.</span><button id="reset" title="Product, plate and folder settings back to SnapSTL's defaults">Restore defaults</button><button id="save" class="primary">Save settings</button></div>
 </section>
 
 <section id="t-help" class="help" hidden>
   <div class="card">
     <h2>Help</h2>
     <p>SnapSTL turns webstore orders for the <b>Custom Name Desk Organizer</b> (SKU <code>Magicians_35</code>) into print-ready plates: each name is generated on MakerWorld, scaled to the agreed rules, grouped 3 per plate and saved as <b>.3mf</b> files.</p>
-    <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-printers">Make It</a><a href="#h-pstatus">Printer status</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-portal">Other computers</a><a href="#h-data">Your data</a></div>
+    <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-printers">Print</a><a href="#h-pstatus">Printers</a><a href="#h-slicing">Slicing</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-portal">Other computers</a><a href="#h-data">Your data</a></div>
   </div>
 
   <div class="card" id="h-start">
@@ -398,9 +510,9 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Orders → Upload report (.xlsx)</b> — the webstore <i>Order Reconciliation Report</i>. Only <code>Magicians_35</code> orders are kept. Uploading the same or a newer report never creates duplicates; it only updates statuses.</li>
       <li><b>Needs review</b> — fix names with spaces, symbols or missing colour, then <b>Approve</b>. Use <b>Skip</b> for orders you don't want to make.</li>
       <li><b>Ready</b> — tick orders (or use the column filters and <b>Select all matching</b>) → <b>Create batch</b>.</li>
-      <li><b>Batches → Queue download</b> — the helper in your MakerWorld tab generates each name, one at a time (watch it on <b>Downloads</b>).</li>
+      <li><b>Batches → Queue download</b> — the helper in your MakerWorld tab generates each name, one at a time (watch it in the <b>Download queue</b> on the same page).</li>
       <li>When the batch says <b>Ready to build</b> → <b>Queue build</b>.</li>
-      <li><b>Make It</b> → <b>Bases</b> / <b>Names</b>: check the printer on each plate and click <b>Start print</b> — or <b>Show in Finder</b> on the batch, open the plates in Bambu Studio and print by hand. Bases in white; names in the colour of their folder.</li>
+      <li><b>Print</b> → <b>Bases</b> / <b>Names</b>: check the printer on each plate and click <b>Start print</b> — or <b>Show in Finder</b> on the batch, open the plates in Bambu Studio and print by hand. Bases in white; names in the colour of their folder.</li>
       <li><b>Orders → Ready to ship</b> lists orders whose base and name are both printed; tick them → <b>Mark printed</b> (orders printed by hand: <b>Bundled</b> tab).</li>
     </ol>
   </div>
@@ -414,7 +526,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <tr><td>Needs review</td><td>Report says PRINT, but the name or colour needs a human (space in the name, symbols, missing colour, special request).</td></tr>
       <tr><td>In a batch</td><td>Reserved by a batch that isn't built yet.</td></tr>
       <tr><td>Bundled</td><td>Made into plates in a batch, not printed yet. Never made again unless you press <b>Remake</b>.</td></tr>
-      <tr><td>Ready to ship</td><td>Base and name both printed (Make It). Tick them → <b>Mark printed</b> once shipped.</td></tr>
+      <tr><td>Ready to ship</td><td>Base and name both printed (Print). Tick them → <b>Mark printed</b> once shipped.</td></tr>
       <tr><td>Skipped</td><td>You pressed Skip. <b>Make anyway</b> moves it back to Ready.</td></tr>
       <tr><td>Delivered · RTO · In Transit · Cancelled · Others</td><td>The report says these don't need making (Others = e.g. PACK).</td></tr>
     </table>
@@ -456,7 +568,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <ul>
       <li><b>No password, no download.</b> Queue download / Re-download are refused until the password for this model is entered in <b>Settings</b>. A batch made earlier picks up the password automatically.</li>
       <li><b>The helper confirms the password before and after Generate.</b> It types the password first and again last, waits for the page to take it, checks the box still holds it right before pressing Generate and right after, and watches the page's own Generate request for it. If any check fails, the download is <b>not saved</b> and is tried again (3 tries).</li>
-      <li><b>Every download is scanned.</b> If the watermark is still on the base, the download is not saved and is tried again. The Downloads page has a <b>Watermark</b> column.</li>
+      <li><b>Every download is scanned.</b> If the watermark is still on the base, the download is not saved and is tried again. The Download queue (Batches) has a <b>Watermark</b> column.</li>
       <li><b>Every build checks again.</b> A base with a watermark is held back and its order returns to Ready; the batch says "Watermark check: found on N".</li>
       <li><b>See it yourself.</b> Open a batch → <b>Objects</b>: a picture of the back of every base (watermark painted red), click it for the top view, and <b>Re-download</b> any single object. Then press <b>Rebuild plates</b> — it waits until re-downloads are in, so the plates use the fresh files. Base plates are drawn from the top.</li>
     </ul>
@@ -465,26 +577,38 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 
   <div class="card" id="h-downloads">
     <h2>Downloads</h2>
-    <p>The <b>Downloads</b> page shows the queue — every name waiting, being generated, done or failed, and which batch asked for it — with <b>Pause</b> and <b>Retry failed</b>.</p>
-    <p>Downloaded models are saved in the <b>Downloads folder</b> (default <code>~/SnapSTL/Downloads</code>, change it in Settings): one folder per name, e.g. <code>SONAL - 5 comp - …</code> with <code>base.stl</code> and <code>name.stl</code> exactly as MakerWorld made them. They're reused by every later batch and are <b>never deleted by SnapSTL</b> — clean them up in Finder (<b>Show in Finder</b> on the Downloads page). If you delete one, it's downloaded again the next time a batch needs it.</p>
+    <p>The <b>Download queue</b> at the bottom of <b>Batches</b> shows every name waiting, being generated, done or failed, and which batch asked for it — with <b>Pause</b> and <b>Retry failed</b>.</p>
+    <p>Downloaded models are saved in the <b>Downloads folder</b> (default <code>~/SnapSTL/Downloads</code>, change it in Settings → Folders): one folder per name, e.g. <code>SONAL - 5 comp - …</code> with <code>base.stl</code> and <code>name.stl</code> exactly as MakerWorld made them. They're reused by every later batch and are <b>never deleted by SnapSTL</b> — clean them up yourself (<b>Show in Finder</b> under the queue). If you delete one, it's downloaded again the next time a batch needs it.</p>
   </div>
 
   <div class="card" id="h-printers">
-    <h2>Make It (print farm)</h2>
-    <p><b>Bambuddy</b>, the open-source print-farm manager, is installed with SnapSTL on this computer (<code>http://127.0.0.1:8000</code>). It's connected to your Bambu printers and keeps a queue per printer. SnapSTL connects to it by itself; the <b>Printers</b> page shows it.</p>
+    <h2>Print (print farm)</h2>
+    <p><b>Bambuddy</b>, the open-source print-farm manager, is installed with SnapSTL on this computer (<code>http://127.0.0.1:8000</code>) — or, if you already had Bambuddy, SnapSTL uses yours and never replaces it. It's connected to your Bambu printers and keeps a queue per printer.</p>
     <ol>
       <li><b>On each printer:</b> Settings → Network → <b>LAN Only Mode</b> on, then <b>Developer Mode</b> on. Developer Mode disconnects the printer from Bambu Cloud and the Handy app.</li>
-      <li><b>In Bambuddy</b> (Make It → <b>Open Bambuddy</b>): add each printer. Any printer can print bases or names — it only needs the right filament loaded.</li>
+      <li><b>In Bambuddy</b> (Printers → <b>Open Bambuddy</b>): add each printer. Any printer can print bases or names — it only needs the right filament loaded.</li>
       <li><b>Filament</b> is read from Bambuddy: every AMS slot and external spool with Bambu's colour name (<i>Hot Pink</i>, <i>Jade White</i>). Nothing to type in SnapSTL — load the spool and it shows up.</li>
+      <li><b>Slicing</b>: set the presets for each printer model (see Slicing below).</li>
     </ol>
-    <p><b>Make It</b> (sidebar) has four parts. <b>Bases</b>: every base plate still to print, with the next <b>available</b> printer that has white loaded and the most filament left already chosen. <b>Names</b>: every name plate with its colour — only printers with that colour loaded (from Bambuddy) can be chosen; one is pre-selected when available. <b>Completed</b>: printed plates, with <b>Reprint</b> only for a failed print. <b>Printers</b>: state, filament per slot, and <b>Clear plate</b>.</p>
-    <p><b>Nothing prints until you click Start print</b> on a plate: that click sends it to the chosen printer (with its <b>Options</b>: bed levelling, flow calibration, timelapse) and starts it. Bambuddy then prints it as soon as the printer is free and its bed has been cleared (<b>Clear plate</b>, in Bambuddy or Make It → Printers). If Bambuddy warns (e.g. too little filament), SnapSTL asks before starting anyway. A printed plate moves to <b>Completed</b>; once an order's base and name are both printed it shows in <b>Orders → Ready to ship</b>.</p>
-    <p><b>Slicing</b> is set up in the <b>Slicing</b> tab. The slicer runs on this computer: <b>OrcaSlicer</b> or <b>Bambu Studio</b> (same engine and Bambu presets; on a Mac only OrcaSlicer — Bambu Studio's command line crashes there), or Bambuddy's slicer. <b>Test slicer</b> slices a test cube. <b>Presets for printer</b>: each printer can have its own printer / process / filament presets (speeds, layer height and infill are in the process preset); others use the default. A plate is always sliced with the presets of the printer it goes to. Presets saved in Bambu Studio on this computer show up by themselves; from another computer, export a preset bundle (<b>File → Export → Export Preset Bundle</b>) and use <b>Add … preset</b>. <b>Slice new plates automatically</b> slices each new plate for its pre-selected printer; <b>Make It → Slice</b> shows every plate's slicing (<i>Waiting to slice → Slicing → Sliced</i>, or <i>Slicing failed</i> with the reason). A slice with no progress for 20 minutes is stopped with a message. <b>Start print</b> on a plate that isn't sliced yet slices it first. <b>Remove</b> takes a plate off its list (e.g. printed by hand); <b>Make It → Removed → Put back</b> returns it.</p>
+    <p><b>Print</b> (sidebar) has four lists. <b>Bases</b>: every base plate still to print, with the next <b>available</b> printer that has white loaded and the most filament left already chosen. <b>Names</b>: every name plate with its colour — only printers with that colour loaded can be chosen; one is pre-selected when available. <b>Completed</b>: printed plates, with <b>Reprint</b> only for a failed print. <b>Removed</b>: plates taken off the lists (e.g. printed by hand), with <b>Put back</b>.</p>
+    <p>Each plate shows whether it's <b>sliced</b> for its printer's model (<i>Sliced</i>, <i>Slicing</i>, <i>Slicing failed</i> with the reason, or <i>No presets for A1</i> → Slicing). <b>Options</b> start from the printer's print defaults (Slicing → Print defaults); change speed, bed levelling, flow calibration or timelapse for that plate only.</p>
+    <p><b>Nothing prints until you click Start print</b> on a plate: that click slices it if needed, sends it to the chosen printer and starts it. Bambuddy prints it as soon as the printer is free and its bed has been cleared (<b>Clear plate</b> on the Printers page, or in Bambuddy). If Bambuddy warns (e.g. too little filament), SnapSTL asks before starting anyway. A printed plate moves to <b>Completed</b>; once an order's base and name are both printed it shows in <b>Orders → Ready to ship</b>.</p>
   </div>
 
   <div class="card" id="h-pstatus">
-    <h2>Printer status</h2>
-    <p>Each printer in plain words: state and current print (progress, time left, layer, speed), temperatures and fans, filament per slot and AMS humidity, errors, network, SD card, door, nozzle, firmware and its queue in Bambuddy. At the top, <b>Slicing</b>: what Bambuddy is slicing, waiting, done and failed. <b>All fields</b> on each card shows everything Bambuddy reports as it comes; <b>Download JSON</b> saves a copy. Read only — access codes and keys are hidden.</p>
+    <h2>Printers</h2>
+    <p>Each printer in plain words: state and current print (progress, time left, layer, speed), temperatures and fans, filament per slot and AMS humidity, errors, network, SD card, door, nozzle, firmware and its queue in Bambuddy. <b>Clear plate</b> appears when a printer waits for its bed to be cleared. <b>All fields</b> on each card shows everything Bambuddy reports as it comes; <b>Download JSON</b> saves a copy; <b>Farm activity</b> lists what SnapSTL sent, started and sliced. Read only — access codes and keys are hidden.</p>
+  </div>
+  <div class="card" id="h-slicing">
+    <h2>Slicing</h2>
+    <p>Every plate is sliced for the printer it goes to, with the <b>presets set for that printer model</b> (all A1s share one set, all P1Ss another). SnapSTL has <b>no built-in presets</b>: a model without its presets isn't sliced or printed, and Print says so — so farm prints always use the settings you tuned.</p>
+    <ul>
+      <li><b>Slicer</b> — <b>OrcaSlicer</b> or <b>Bambu Studio</b> on this computer (same engine, same Bambu presets; on a Mac only OrcaSlicer — Bambu Studio's command line crashes there), or Bambuddy's slicer. <b>Test slice</b> slices a 20 mm cube with a model's presets — do it once on a new computer.</li>
+      <li><b>Presets per printer model</b> — choose the printer, process (layer height, walls, infill, speeds) and filament preset for each model. Your own presets are listed first; tick <b>Show Bambu Lab system presets</b> to choose from Bambu's.</li>
+      <li><b>Bringing presets from Bambu Studio</b> — presets saved in Bambu Studio on this computer are read directly (<code>%APPDATA%\BambuStudio\user\…</code> on Windows): save them there, then <b>Reload lists</b>. From another computer: <b>File → Export → Export Preset Bundle</b> (.bbscfg / .bbsflmt) and <b>Add preset files…</b>.</li>
+      <li><b>Print defaults per printer</b> — speed, bed levelling, flow calibration and timelapse each printer uses at Start print (changeable per plate in Print).</li>
+      <li><b>Slice new plates automatically</b> — each new plate is sliced for its pre-selected printer. A slice with no progress for 20 minutes is stopped with a message; a failed automatic slice isn't retried by itself (<b>Slice</b> again in Print).</li>
+    </ul>
   </div>
 
   <div class="card" id="h-output">
@@ -508,13 +632,14 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <div class="card" id="h-settings">
     <h2>Settings</h2>
     <ul>
-      <li><b>Model maker options</b> — font, font size, thickness, outline, rotate text; same for every name. Changing them makes new models (old ones stay cached).</li>
-      <li><b>MakerWorld model page link</b> — the model-maker page the helper must be on (its designId is checked). <b>License password for this model</b> — removes the anti-sale markings; each model keeps its own password (saved in SnapSTL's settings on this computer).</li>
-      <li><b>Scaling and compartments</b> — target length/height and compartments per letter count (Scaling Rules v1.1).</li>
-      <li><b>Plate and fit</b> — bed size, edge margin, gap between parts, names/bases per plate, allowed rotations (flat on the bed only).</li>
-      <li><b>Output folder</b> — where dated batch folders go. <b>Downloads folder</b> — where downloaded models are kept. <b>Pause between downloads</b> — seconds between names.</li>
-      <li><b>Database</b> — back up, clean up old records (orders already made are always kept), or reset. None of these delete files.</li>
+      <li><b>Setup</b> — the checklist of what this computer still needs, with a button to each step.</li>
+      <li><b>Product</b> — the MakerWorld model link and its license password (removes the anti-sale markings; each model keeps its own), the name style (font, size, thickness, outline, rotate text) and the size per letter count (Scaling Rules v1.1).</li>
+      <li><b>Plates</b> — bed size (256 × 256 × 256 mm on the A1 and P1S), edge margin, gap between parts, names/bases per plate, allowed rotations (flat on the bed only).</li>
+      <li><b>Folders</b> — where dated batch folders and downloaded models go; the pause between downloads.</li>
+      <li><b>Connections</b> — the Chrome helper, Bambuddy, the shared order records (several computers) and the web portal (browsers on your network).</li>
+      <li><b>Maintenance</b> — updates, and the database: back up, clean up old records (orders already made are always kept), or reset. None of these delete files.</li>
     </ul>
+    <p class="hint">Slicer, presets and print defaults are on the <b>Slicing</b> page.</p>
   </div>
 
   <div class="card" id="h-trouble">
@@ -525,13 +650,14 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <tr><td>Complete the MakerWorld security check</td><td>Click the check in that tab.</td></tr>
       <tr><td>A name is Failed in the download queue</td><td>Read the detail; <b>Retry failed</b>.</td></tr>
       <tr><td>Fit check failed on a batch</td><td>That order wasn't printed and is back in Ready; create a new batch for it. If it keeps failing, check the scaling table.</td></tr>
-      <tr><td>Batch stays Downloading</td><td>Check the sidebar and the Downloads page; Pause/Resume; or Build now with what's ready.</td></tr>
+      <tr><td>Batch stays Downloading</td><td>Check the sidebar and the Download queue on Batches; Pause/Resume; or Build now with what's ready.</td></tr>
       <tr><td>A model looks wrong</td><td>Batches → Open → <b>Objects</b> → <b>Re-download</b> that one (or Re-download the whole batch), then <b>Rebuild plates</b>.</td></tr>
-      <tr><td>"watermark still on the base" / "didn't confirm the license password"</td><td>Check the license password in Settings, reload the SnapSTL Helper (2.2.1) in <code>chrome://extensions</code>, then <b>Retry failed</b> on Downloads.</td></tr>
-      <tr><td>Queue download says "Add the license password"</td><td>Settings → MakerWorld model → License password → Save.</td></tr>
-      <tr><td>Printers: Bambuddy isn't answering</td><td>Run the SnapSTL install command again (it repairs Bambuddy). Log: <code>~/Library/Logs/Bambuddy</code>.</td></tr>
-      <tr><td>Slicing failed</td><td>"OrcaSlicer / Bambu Studio isn't installed" → install it (the SnapSTL installer installs OrcaSlicer) or choose the other in Slicing. "isn't made for the printer preset" → pick a process preset for that printer in Make It → Slice. Then <b>Slice</b> again.</td></tr>
-      <tr><td>A started plate stays "Started · in queue"</td><td>Its printer is busy or waiting for the bed to be cleared: Make It → Printers → <b>Clear plate</b>.</td></tr>
+      <tr><td>"watermark still on the base" / "didn't confirm the license password"</td><td>Check the license password in Settings, reload the SnapSTL Helper (2.2.1) in <code>chrome://extensions</code>, then <b>Retry failed</b> in the Download queue.</td></tr>
+      <tr><td>Queue download says "Add the license password"</td><td>Settings → Product → License password → Save settings.</td></tr>
+      <tr><td>Bambuddy isn't answering</td><td>Run the SnapSTL install command again (it starts Bambuddy, and never replaces one you already had). Log: <code>~/Library/Logs/Bambuddy</code> (Mac), <code>%LOCALAPPDATA%\SnapSTL</code> (Windows).</td></tr>
+      <tr><td>No presets for A1 (or P1S)</td><td>Slicing → <b>Presets per printer model</b>: choose that model's printer, process and filament preset → <b>Save presets</b>.</td></tr>
+      <tr><td>Slicing failed</td><td>"OrcaSlicer / Bambu Studio isn't installed" → install it (the SnapSTL installer installs OrcaSlicer) or choose the other in Slicing. "isn't made for the printer preset" → pick a process preset made for that printer in Slicing. Then <b>Slice</b> again in Print. <b>Test slice</b> in Slicing checks the setup.</td></tr>
+      <tr><td>A started plate stays "Started · in queue"</td><td>Its printer is busy or waiting for the bed to be cleared: Printers → <b>Clear plate</b>.</td></tr>
       <tr><td>Can't copy text in the window</td><td>Quit and reopen SnapSTL.app.</td></tr>
       <tr><td>Portal doesn't open</td><td>Terminal: <code>launchctl kickstart -k gui/$(id -u)/local.snapmagicians.snapstl</code>; log: <code>~/Library/Logs/SnapSTL.log</code>.</td></tr>
     </table>
@@ -576,8 +702,9 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   for(const s of PAGES)$('t-'+s).hidden=s!==t;
-  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='downloads')loadQueue(); if(t==='makeit')loadMakeIt(); if(t==='slicing')loadPresets(); if(t==='pstatus')loadStatusAll(); if(t==='settings'){loadSetup();loadShared();loadFarmSettings();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
-const PAGES=['orders','batches','downloads','makeit','slicing','pstatus','settings','help'];
+  if(t==='orders')loadOrders(); if(t==='batches'){loadBatches();loadQueue()} if(t==='makeit')loadMakeIt(); if(t==='printers')loadStatusAll(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
+const PAGES=['orders','batches','makeit','printers','slicing','settings','help'];
+const OLD_PAGES={downloads:'batches',pstatus:'printers'};  // pages merged in 0.19
 
 // ---------- orders ----------
 // What can be ticked depends on the tab: Ready orders (→ Create batch), Bundled (→ Mark printed),
@@ -677,7 +804,7 @@ async function loadBatches(){const bs=await api('/api/batches');
     if(b.status==='created')acts.push(`<button class="small primary" data-dl="${b.id}">Queue download</button>`);
     if(b.status==='models_ready')acts.push(`<button class="small primary" data-build="${b.id}">Queue build</button>`);
     if(b.status==='waiting')acts.push(`<button class="small" data-build="${b.id}" data-partial="1" title="Build with the models that are ready; orders still missing a model are left out">Build now with what's ready</button>`);
-    if(finished)acts.push(`<button class="small primary" data-make="${b.id}" title="Print these plates: Make It → Bases / Names">Make it</button>`);
+    if(finished)acts.push(`<button class="small primary" data-make="${b.id}" title="Send these plates to your printers: Print → Bases / Names">Print</button>`);
     if(built)acts.push(`<button class="small" data-redl="${b.id}" title="Fetch every model of this batch again from MakerWorld (replaces the saved ones)">Re-download</button>`,`<button class="small" data-rebuild="${b.id}" title="Make the plates again from the downloaded models — writes a new Batch folder; the old one stays">Rebuild plates</button>`);
     if(['created','waiting','models_ready'].includes(b.status))acts.push(`<button class="small" data-cancel="${b.id}">${b.label?'Stop':'Cancel'}</button>`);
     return `<tr><td>${b.id}</td><td>${esc(b.label||'—')}</td><td>${pc}</td><td>${new Date(b.created_at*1000).toLocaleString()}</td><td>${b.orders}</td><td>${models}</td><td>${b.plates||'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${acts.join(' ')}</td></tr>`}).join(''):'<tr><td colspan="9" class="empty">No batches yet — select orders on the Orders tab</td></tr>';
@@ -731,149 +858,189 @@ async function loadQueue(){const r=await api('/api/downloads');const d=r.downloa
 $('dlfinder').onclick=()=>post('/api/downloads/reveal');
 $('qpause').onclick=async()=>{await post('/api/downloader/'+($('qpause').dataset.paused==='1'?'resume':'pause'));loadQueue();refresh()};
 $('retry2').onclick=async()=>{await post('/api/downloads/retry');loadQueue()};
-$('retry').onclick=async()=>{const r=await post('/api/downloads/retry');$('queueinfo').textContent=`${r.requeued} download(s) re-queued`;loadBatches()};
 
 // ---------- print job status ----------
 const JST={queued:['Waiting to send','info'],slicing:['Slicing','info'],uploading:['Sending','info'],sent:['In Bambuddy queue','info'],printing:['Printing','info'],done:['Printed','ok'],failed:['Failed','err'],cancelled:['Cancelled','']};
 const jobPill=j=>{if(!j)return '<span class="hint">not pushed</span>';const st=j.state==='sent'?(j.held?['Waiting for Start','warn']:['Started · in queue','info']):(JST[j.state]||[j.state,'']);
   return `<span class="pill ${st[1]}">${st[0]}${j.state==='printing'&&j.progress!=null?' '+Math.round(j.progress)+'%':''}</span> <span class="hint">${esc(j.printer_name||'')}</span>${j.error?`<div class="reason">${esc(j.error)}</div>`:''}`};
-// ---------- printers page (Bambuddy) ----------
-const STATE_PILL=s=>{if(!s)return '<span class="pill">—</span>';if(!s.connected)return `<span class="pill err" title="${esc(s.error||'')}">Offline</span>`;
-  const st=(s.state||'').toUpperCase();const busy=['RUNNING','PREPARE','SLICING','INIT'].includes(st);
-  let h=`<span class="pill ${s.errors?'err':busy?'info':st==='PAUSE'?'warn':st==='FAILED'?'err':'ok'}">${esc(st?st[0]+st.slice(1).toLowerCase():'Idle')}${busy&&s.progress!=null?' '+Math.round(s.progress)+'%':''}</span>`;
-  if(busy&&s.remaining_time)h+=` <span class="hint">${Math.round(s.remaining_time)} min left</span>`;
-  if(s.errors)h+=` <span class="reason">${s.errors} error${s.errors>1?'s':''} on the printer</span>`;
-  if(s.awaiting_plate_clear)h+=`<div class="reason">Waiting for the bed to be cleared</div>`;return h};
 const fmtMin=m=>m>=60?`${Math.floor(m/60)} h ${Math.round(m%60)} min`:`${Math.round(m)} min`;
 function spoolRow(x){const name=x.name||(x.approx?`≈ ${x.approx}`:(x.hex||'unknown colour'));
   return `<div class="spool"><span class="slot">${esc(x.slot)}</span><span class="dot" style="background:${esc(x.hex||'transparent')}"></span><span>${esc(name)}</span><span class="hint">${esc(x.material||'')}${x.remain!=null?` · ${x.remain}%`:''}</span></div>`}
-function printerCard(p){const s=p.status||{};
-  const facts=[s.layer!=null&&s.layers?`layer ${s.layer}/${s.layers}`:'',s.nozzle!=null?`nozzle ${Math.round(s.nozzle)}°${s.nozzle_target?'/'+Math.round(s.nozzle_target)+'°':''}`:'',s.bed!=null?`bed ${Math.round(s.bed)}°${s.bed_target?'/'+Math.round(s.bed_target)+'°':''}`:'',s.wired?'ethernet':(s.wifi!=null?`Wi-Fi ${s.wifi} dBm`:''),s.door_open?'door open':'',s.sdcard===false?'no SD card':''].filter(Boolean).join(' · ');
-  return `<div class="prcard"><div class="top"><b>${esc(p.name)}</b><span class="hint">${esc(p.model||'')}</span><span class="grow"></span>${STATE_PILL(s)}</div>
-    <div class="facts">${esc(p.ip)}${p.location?` · ${esc(p.location)}`:''}</div>
-    ${s.file?`<div class="facts">Printing: ${esc(s.file)}</div>`:''}${facts?`<div class="facts">${esc(facts)}</div>`:''}
-    <div class="spools">${p.spools.length?p.spools.map(spoolRow).join(''):'<span class="hint">No filament reported</span>'}</div>
-    ${META.local&&s.awaiting_plate_clear?`<div style="margin-top:8px"><button class="small primary" data-pclear="${p.id}" title="You checked the bed is empty: the next queued print may start">Clear plate</button></div>`:''}</div>`}
-// ---------- Make It: Bases / Names / Completed ----------
+const optVal=v=>v===true?'on':v===false?'off':String(v);
+const cap=s=>s?s[0].toUpperCase()+s.slice(1):s;
+const setVal=v=>v!==''&&v!=null;
+
+// ---------- Print: Bases / Names / Completed / Removed ----------
 let MK=null,MKTAB='bases';const MKSEL={};const OPTLBL={bed_levelling:'Bed levelling',flow_cali:'Flow calibration',timelapse:'Timelapse'};
-try{MKTAB=localStorage.getItem('mktab')||'bases'}catch{}
-function optSummary(o,speed){const on=(speed?[`Speed: ${speed}`]:[]).concat(Object.entries(o||{}).filter(([k,v])=>v!==''&&v!=null).map(([k,v])=>`${OPTLBL[k]||k}: ${v===true?'on':v===false?'off':v}`));return on.length?on.join(' · '):'Bambuddy defaults'}
-function mkShow(t,quiet){MKTAB=t;try{localStorage.setItem('mktab',t)}catch{}for(const k of MKPANES)$('mk-'+k).hidden=k!==t;mkChips()}
-const MKPANES=['bases','names','slice','completed','removed','printers'];
-function mkChips(){if(!MK)return;const waiting=[...MK.bases,...MK.names].filter(r=>!r.sliced).length;
-  const n={bases:MK.bases.length,names:MK.names.length,slice:waiting,completed:MK.completed.length,removed:MK.removed.length,printers:MK.printers.length};
-  $('mktabs').innerHTML=[['bases','Bases'],['names','Names'],['slice','Slice'],['completed','Completed'],['removed','Removed'],['printers','Printers']].map(([k,l])=>`<button data-mk="${k}" class="${MKTAB===k?'on':''}">${l} · ${n[k]}</button>`).join('');
+const MKPANES=['bases','names','completed','removed'];
+try{MKTAB=localStorage.getItem('mktab')||'bases'}catch{}if(!MKPANES.includes(MKTAB))MKTAB='bases';
+const mkPrinter=id=>(MK&&MK.printers.find(p=>String(p.id)===String(id)))||{};
+// a plate prints with its printer's print defaults (Slicing), with what's changed on this plate on top
+function optSummary(o,speed,dflt){dflt=dflt||{};const eff={};
+  for(const [k,v] of Object.entries(dflt))if(k!=='speed'&&setVal(v))eff[k]=v;
+  for(const [k,v] of Object.entries(o||{}))if(setVal(v))eff[k]=v;
+  const sp=speed||dflt.speed||'';const on=(sp?[`Speed ${cap(sp)}`]:[]).concat(Object.entries(eff).map(([k,v])=>`${OPTLBL[k]||k} ${optVal(v)}`));
+  const own=!!speed||Object.values(o||{}).some(setVal);
+  return (on.length?on.join(' · '):'Bambuddy defaults')+(own?' · changed for this plate':'')}
+function mkShow(t){MKTAB=t;try{localStorage.setItem('mktab',t)}catch{}for(const k of MKPANES)$('mk-'+k).hidden=k!==t;mkChips()}
+function mkChips(){if(!MK)return;const n={bases:MK.bases.length,names:MK.names.length,completed:MK.completed.length,removed:MK.removed.length};
+  $('mktabs').innerHTML=[['bases','Bases'],['names','Names'],['completed','Completed'],['removed','Removed']].map(([k,l])=>`<button data-mk="${k}" class="${MKTAB===k?'on':''}">${l} · ${n[k]}</button>`).join('');
   document.querySelectorAll('[data-mk]').forEach(b=>b.onclick=()=>mkShow(b.dataset.mk))}
 const mkKey=r=>r.batch_id+'|'+r.file;
-function sliceCell(r){if(MK&&MK.models&&MK.models.length>1){const st=r.slices||{};
-    return MK.models.map(m=>{const x=st[m];const t=!x?['not sliced','warn']:x.state==='done'?['sliced','ok']:x.state==='failed'?['failed','err']:['slicing'+(x.progress?' '+Math.round(x.progress)+'%':''),'info'];return `<div><span class="pill ${t[1]}" title="${esc(x&&x.error||'')}">${esc(m)}: ${t[0]}</span></div>`}).join('')+(MK.models.some(m=>!st[m]||st[m].state==='failed')?`<button class="small" data-mkslice="${esc(mkKey(r))}" title="Slice it now for every printer model">Slice</button>`:'')}
-  const sl=r.slice;
-  if(r.sliced)return '<span class="pill ok">Sliced</span>';
-  if(sl&&['queued','uploading','slicing'].includes(sl.state))return `<span class="pill info">${sl.state==='queued'?'Waiting to slice':sl.state==='uploading'?'Sending to slicer':'Slicing'+(sl.progress?' '+Math.round(sl.progress)+'%':'')}</span>`;
-  const btn=`<button class="small" data-mkslice="${esc(mkKey(r))}" title="Slice it now">Slice</button>`;
+function sliceCell(r,sel){const sl=r.slice,k=esc(mkKey(r));
+  const other=r.slice_for&&sel&&sel.printer&&String(r.slice_for)!==sel.printer?`<div class="hint">for ${esc(mkPrinter(r.slice_for).name||'')} — Start print slices it for your choice if needed</div>`:'';
+  if(sl&&sl.state==='needs_presets')return `<span class="pill warn">No presets for ${esc(sl.model)}</span><div class="hint"><a href="#" data-go="slicing">Set them in Slicing</a></div>`;
+  if(r.sliced)return `<span class="pill ok">Sliced</span>${sl&&sl.by==='file'?' <span class="hint">(sliced file)</span>':` <button class="small" data-mkslice="${k}" data-again="1" title="Slice it again with the current presets">↻</button>`}${other}`;
+  if(sl&&['queued','uploading','slicing'].includes(sl.state))return `<span class="pill info">${sl.state==='queued'?'Waiting to slice':sl.state==='uploading'?'Sending to slicer':'Slicing'+(sl.progress?' '+Math.round(sl.progress)+'%':'')}</span>${other}`;
+  const btn=`<button class="small" data-mkslice="${k}" title="Slice it now for the chosen printer">Slice</button>`;
   if(sl&&sl.state==='failed')return `<span class="pill err">Slicing failed</span> ${btn}<div class="reason">${esc(sl.error||'')}</div>`;
-  return `<span class="pill warn">Not sliced</span> ${btn}`}
+  return `<span class="pill">Not sliced</span> ${btn}${other}`}
 function mkStatus(r){const j=r.job;if(!j||j.state==='reprint')return `<span class="hint">${j?'reprint — choose a printer':'not started'}</span>`;return jobPill(j)}
 function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={printer:String(r.suggested??(r.job&&r.job.printer_id?r.job.printer_id:'')),options:{...((r.job&&r.job.options)||{})},speed:(r.job&&r.job.speed)||''});
-  const j=r.job,busy=r.job_active&&!(j&&j.state==='sent'&&j.held);
+  const j=r.job,busy=r.job_active&&!(j&&j.state==='sent'&&j.held),d=mkPrinter(sel.printer).defaults||{};
   const opts='<option value="">— choose a printer —</option>'+r.choices.map(c=>`<option value="${c.id}" ${String(c.id)===sel.printer?'selected':''} ${c.why_not?'disabled':''}>${esc(c.name)}${c.why_not?' · '+esc(c.why_not):[c.available?'available':(c.state?c.state.toLowerCase():'busy'),c.left>=0?c.left+'% left':'',c.note].filter(Boolean).map(esc).join(' · ').replace(/^/,' · ')}</option>`).join('');
-  const speedSel=`<label style="margin:4px 0 2px">Print speed</label><select data-mkspeed="${esc(k)}"><option value="">Printer default</option>${(MK.speeds||[]).map(v=>`<option value="${v}" ${sel.speed===v?'selected':''}>${v[0].toUpperCase()+v.slice(1)}</option>`).join('')}</select>`;
-  const optSel=(kk,vals)=>`<label style="margin:4px 0 2px">${OPTLBL[kk]}</label><select data-mkopt="${esc(k)}" data-k="${kk}"><option value="">Bambuddy default</option>${vals.map(v=>`<option value="${v}" ${String(sel.options[kk])===String(v)?'selected':''}>${v===true?'on':v===false?'off':v}</option>`).join('')}</select>`;
+  const dflt=v=>`<option value="">Printer default${setVal(v)?' ('+esc(v)+')':''}</option>`;
+  const speedSel=`<label style="margin:4px 0 2px">Print speed</label><select data-mkspeed="${esc(k)}">${dflt(d.speed?cap(d.speed):'')}${(MK.speeds||[]).map(v=>`<option value="${v}" ${sel.speed===v?'selected':''}>${cap(v)}</option>`).join('')}</select>`;
+  const optSel=(kk,vals)=>`<label style="margin:4px 0 2px">${OPTLBL[kk]}</label><select data-mkopt="${esc(k)}" data-k="${kk}">${dflt(setVal(d[kk])?optVal(d[kk]):'')}${vals.map(v=>`<option value="${v}" ${setVal(sel.options[kk])&&String(sel.options[kk])===String(v)?'selected':''}>${optVal(v)}</option>`).join('')}</select>`;
   const held=j&&j.state==='sent'&&j.held;
   const btn=busy?'':`<button class="small primary" data-mkstart="${esc(k)}" title="Send to this printer and start printing (once its bed is cleared)">${held?'Start print':(j&&['failed','cancelled'].includes(j.state)?'Start print again':'Start print')}</button>`;
   const plate=`<div class="fn">${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>`;
   return `<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td>${withColour?`<td style="white-space:nowrap">${sw(r.colors[0]||'')}</td>`:''}<td>${plate}</td>
-    <td>${sliceCell(r)}</td>
     <td><select data-mkpr="${esc(k)}" ${busy?'disabled':''}>${opts}</select></td>
-    <td>${busy?`<span class="hint">${esc(optSummary(j&&j.options,j&&j.speed))}</span>`:`<details><summary class="hint" style="cursor:pointer">${esc(optSummary(sel.options,sel.speed))}</summary>${speedSel}${Object.entries(MK.options).map(([kk,v])=>optSel(kk,v)).join('')}</details>`}</td>
+    <td>${sliceCell(r,sel)}</td>
+    <td>${busy?`<span class="hint">${esc(optSummary(j&&j.options,j&&j.speed))}</span>`:`<details><summary class="hint" style="cursor:pointer">${esc(optSummary(sel.options,sel.speed,d))}</summary>${speedSel}${Object.entries(MK.options).map(([kk,v])=>optSel(kk,v)).join('')}<div class="hint" style="margin-top:4px">For this plate only. Each printer's defaults: <a href="#" data-go="slicing">Slicing</a>.</div></details>`}</td>
     <td>${mkStatus(r)}</td><td style="white-space:nowrap">${btn}${busy?'':` <button class="small" data-mkrm="${esc(k)}" title="Take it off this list (e.g. printed by hand) — Put back in Removed">Remove</button>`}</td></tr>`}
-function mkRender(){const editing=['mkbases','mknames'].some(id=>$(id).contains(document.activeElement)||$(id).querySelector('details[open]'));
+const plateCell=r=>`<div>${r.kind==='bases'?'<b>Bases</b>':`<b>Names</b> ${sw(r.colors[0]||'')}`}</div><div class="fn" style="font-size:12px">${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>`;
+function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(id).contains(document.activeElement)||$(id).querySelector('details[open]'));
   if(!editing){
-    $('mkbases').innerHTML=MK.bases.length?MK.bases.map(r=>mkRow(r,false)).join(''):'<tr><td colspan="7" class="empty">No base plates waiting — build a batch first</td></tr>';
+    $('mkbases').innerHTML=MK.bases.length?MK.bases.map(r=>mkRow(r,false)).join(''):'<tr><td colspan="7" class="empty">No base plates waiting — build a batch first (Batches → Queue build)</td></tr>';
     const names=[...MK.names].sort((a,b)=>(a.colors[0]||'').localeCompare(b.colors[0]||'')||a.batch_id-b.batch_id);
     $('mknames').innerHTML=names.length?names.map(r=>mkRow(r,true)).join(''):'<tr><td colspan="8" class="empty">No name plates waiting</td></tr>'}
-  $('mkdone').innerHTML=MK.completed.length?MK.completed.map(r=>`<tr><td class="hint">${esc(r.batch)}</td><td><div>${r.kind==='bases'?'<b>Bases</b>':`<b>Names</b> ${sw(r.colors[0]||'')}`}</div><div class="fn" style="font-size:12px">${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div></td><td>${esc(r.job.printer_name||'')}</td><td class="hint">${r.job.updated_at?new Date(r.job.updated_at*1000).toLocaleString():''}</td><td><button class="small" data-mkre="${esc(mkKey(r))}" title="Only if this print failed: back to ${r.kind==='bases'?'Bases':'Names'} to send again">Reprint</button></td></tr>`).join(''):'<tr><td colspan="5" class="empty">Nothing printed yet</td></tr>';
-  const queue=[...MK.bases,...MK.names];
-  $('mkslices').innerHTML=queue.length?queue.map(r=>`<tr><td class="hint">${esc(r.batch)}</td><td><div>${r.kind==='bases'?'<b>Bases</b>':`<b>Names</b> ${sw(r.colors[0]||'')}`}</div><div class="fn" style="font-size:12px">${esc(r.file.split('/').pop())}</div></td><td>${sliceCell(r)}</td><td>${r.sliced&&r.slice&&r.slice.by!=='file'?`<button class="small" data-mkslice="${esc(mkKey(r))}" data-again="1" title="Slice it again with the current presets">Slice again</button>`:''}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">No plates waiting</td></tr>';
-  $('mkremoved').innerHTML=MK.removed.length?MK.removed.map(r=>`<tr><td class="hint">${esc(r.batch)}</td><td><div>${r.kind==='bases'?'<b>Bases</b>':`<b>Names</b> ${sw(r.colors[0]||'')}`}</div><div class="fn" style="font-size:12px">${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div></td><td class="hint">${r.removed_at?new Date(r.removed_at*1000).toLocaleString():''}</td><td><button class="small" data-mkback="${esc(mkKey(r))}">Put back</button></td></tr>`).join(''):'<tr><td colspan="4" class="empty">Nothing removed</td></tr>';
+  $('mkdone').innerHTML=MK.completed.length?MK.completed.map(r=>`<tr><td class="hint">${esc(r.batch)}</td><td>${plateCell(r)}</td><td>${esc(r.job.printer_name||'')}</td><td class="hint">${r.job.updated_at?new Date(r.job.updated_at*1000).toLocaleString():''}</td><td><button class="small" data-mkre="${esc(mkKey(r))}" title="Only if this print failed: back to ${r.kind==='bases'?'Bases':'Names'} to send again">Reprint</button></td></tr>`).join(''):'<tr><td colspan="5" class="empty">Nothing printed yet</td></tr>';
+  $('mkremoved').innerHTML=MK.removed.length?MK.removed.map(r=>`<tr><td class="hint">${esc(r.batch)}</td><td>${plateCell(r)}</td><td class="hint">${r.removed_at?new Date(r.removed_at*1000).toLocaleString():''}</td><td><button class="small" data-mkback="${esc(mkKey(r))}">Put back</button></td></tr>`).join(''):'<tr><td colspan="4" class="empty">Nothing removed</td></tr>';
   const all=[...MK.bases,...MK.names,...MK.completed,...MK.removed],find=k=>all.find(r=>mkKey(r)===k);
   document.querySelectorAll('[data-mkslice]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkslice);x.disabled=true;
     const sel=MKSEL[x.dataset.mkslice];const pid=(sel&&sel.printer)||r.suggested||null;
-    try{await post('/api/makeit/slice',{plates:[{batch_id:r.batch_id,file:r.file,printer_id:pid?+pid:null}],again:!!x.dataset.again})}catch(e){alert(e.message)}loadMakeIt()});
+    if(!pid){alert('Choose a printer first — the plate is sliced with the presets of its printer model');x.disabled=false;return}
+    try{await post('/api/makeit/slice',{plates:[{batch_id:r.batch_id,file:r.file,printer_id:+pid}],again:!!x.dataset.again})}catch(e){alert(e.message)}loadMakeIt()});
   document.querySelectorAll('[data-mkrm]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkrm);
     if(!confirm('Take this plate off '+(r.kind==='bases'?'Bases':'Names')+'? (e.g. printed by hand) Nothing is deleted — Put back is in Removed.'))return;
     try{await post('/api/makeit/remove',{batch_id:r.batch_id,file:r.file})}catch(e){alert(e.message)}loadMakeIt()});
   document.querySelectorAll('[data-mkback]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkback);
     try{await post('/api/makeit/remove',{batch_id:r.batch_id,file:r.file,put_back:true})}catch(e){alert(e.message)}loadMakeIt()});
-  document.querySelectorAll('[data-mkpr]').forEach(x=>x.onchange=()=>{MKSEL[x.dataset.mkpr].printer=x.value});
+  document.querySelectorAll('[data-mkpr]').forEach(x=>x.onchange=()=>{MKSEL[x.dataset.mkpr].printer=x.value;x.blur();mkRender(true)});
   document.querySelectorAll('[data-mkspeed]').forEach(x=>x.onchange=()=>{MKSEL[x.dataset.mkspeed].speed=x.value});
   document.querySelectorAll('[data-mkopt]').forEach(x=>x.onchange=()=>{const v=x.value;MKSEL[x.dataset.mkopt].options[x.dataset.k]=v===''?'':v==='true'?true:v==='false'?false:v});
-  document.querySelectorAll('.mktable details').forEach(d=>d.ontoggle=()=>{if(!d.open){const s=d.querySelector('[data-mkopt]');if(s){const m=MKSEL[s.dataset.mkopt];d.querySelector('summary').textContent=optSummary(m.options,m.speed)}}});
+  document.querySelectorAll('.mktable details').forEach(d=>d.ontoggle=()=>{if(!d.open){const s=d.querySelector('[data-mkopt]');if(s){const k=s.dataset.mkopt,m=MKSEL[k];d.querySelector('summary').textContent=optSummary(m.options,m.speed,mkPrinter(m.printer).defaults)}}});
   document.querySelectorAll('[data-mkstart]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkstart),sel=MKSEL[x.dataset.mkstart];
     if(!sel.printer){alert('Choose a printer');return}
     const pr=r.choices.find(c=>String(c.id)===sel.printer);
-    if(!confirm(`Start printing ${r.kind==='bases'?'this base plate':'this '+(r.colors[0]||'')+' name plate'} on ${pr?pr.name:'that printer'}? It prints as soon as the printer is free and its bed has been cleared.`))return;
+    if(!confirm(`Start printing ${r.kind==='bases'?'this base plate':'this '+(r.colors[0]||'')+' name plate'} on ${pr?pr.name:'that printer'}?\n\n${optSummary(sel.options,sel.speed,mkPrinter(sel.printer).defaults)}\n\nIt prints as soon as the printer is free and its bed has been cleared.`))return;
     x.disabled=true;const body={batch_id:r.batch_id,file:r.file,printer_id:+sel.printer,options:sel.options,speed:sel.speed||''};
     try{await post('/api/makeit/start',body)}catch(e){if(/anyway|filament|warn/i.test(e.message)&&confirm(e.message+'\n\nStart anyway?')){try{await post('/api/makeit/start',{...body,force:true})}catch(e2){alert(e2.message)}}else alert(e.message)}
     document.activeElement&&document.activeElement.blur();loadMakeIt()});
   document.querySelectorAll('[data-mkre]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkre);
     if(!confirm('Reprint this plate? Only if the print failed. It goes back to '+(r.kind==='bases'?'Bases':'Names')+' — choose a printer and press Start print there. Its orders leave Ready to ship until it is printed again.'))return;
     try{await post('/api/makeit/reprint',{batch_id:r.batch_id,file:r.file});delete MKSEL[x.dataset.mkre]}catch(e){alert(e.message)}loadMakeIt()})}
+function farmMsgs(st,printers){return st.connected?(st.error?`<div class="e">${esc(st.error)}</div>`:'')
+      :st.reachable?`<div class="w">Bambuddy is running at <code>${esc(st.url)}</code> but SnapSTL isn't connected — <a href="#" data-go="settings:connections">Settings → Connections</a>.</div>`
+      :`<div class="e">Bambuddy isn't answering at <code>${esc(st.url||'')}</code>. It's installed with SnapSTL and starts at login — re-run the SnapSTL installer if it's missing.</div>`}
 async function loadMakeIt(){let r;try{r=await api('/api/makeit')}catch(e){$('mkmsgs').innerHTML=`<div class="e">${esc(e.message)}</div>`;return}MK=r;
   const st=r.status;$('bbopen').href=st.url;$('bbopen').hidden=!st.reachable||!META.local;
-  const unsliced=[...r.bases,...r.names].filter(x=>!x.sliced&&!x.job_active).length;
-  $('mkmsgs').innerHTML=(st.connected?(st.error?`<div class="e">${esc(st.error)}</div>`:'')
-      :st.reachable?`<div class="w">Bambuddy is running at <code>${esc(st.url)}</code> but SnapSTL isn't connected — Settings → Print farm.</div>`
-      :`<div class="e">Bambuddy isn't answering at <code>${esc(st.url)}</code>. It's installed with SnapSTL and starts at login — re-run the SnapSTL installer if it's missing.</div>`)
-    +(st.connected&&!r.printers.length?'<div class="w">No printers in Bambuddy yet — add them in Bambuddy (Open Bambuddy).</div>':'')
-    +(()=>{const failed=[...r.bases,...r.names].filter(x=>x.slice&&x.slice.state==='failed');return failed.length?`<div class="e">${failed.length} plate${failed.length>1?'s':''} failed to slice: ${esc(failed[0].slice.error||'')}</div>`:''})();
+  const rows=[...r.bases,...r.names];
+  const need=[...new Set(rows.filter(x=>x.slice&&x.slice.state==='needs_presets').map(x=>x.slice.model))];
+  const failed=rows.filter(x=>x.slice&&x.slice.state==='failed');
+  $('mkmsgs').innerHTML=farmMsgs(st)
+    +(st.connected&&!r.printers.length?'<div class="w">No printers in Bambuddy yet — add them in Bambuddy (<b>Open Bambuddy</b>).</div>':'')
+    +(need.length?`<div class="w">No slicing presets for <b>${need.map(esc).join(', ')}</b> printers yet — <a href="#" data-go="slicing">set them in Slicing</a>. Their plates can't be sliced or printed until then.</div>`:'')
+    +(failed.length?`<div class="e">${failed.length} plate${failed.length>1?'s':''} failed to slice: ${esc(failed[0].slice.error||'')}</div>`:'');
   const busy=r.printers.filter(p=>p.status&&['RUNNING','PREPARE','PAUSE'].includes((p.status.state||'').toUpperCase())).length;
   const clear=r.printers.filter(p=>p.status&&p.status.awaiting_plate_clear).length;
-  $('mkinfo').textContent=`${r.printers.length} printer${r.printers.length===1?'':'s'} · ${busy} printing${clear?` · ${clear} waiting for the bed to be cleared`:''}`;
-  $('printers').innerHTML=r.printers.length?r.printers.map(printerCard).join(''):'<div class="empty">No printers</div>';
-  document.querySelectorAll('[data-pclear]').forEach(x=>x.onclick=async()=>{if(!confirm('Is the bed of this printer empty and clean? Its next started print begins then.'))return;try{await post(`/api/farm/printers/${x.dataset.pclear}/clear-plate`)}catch(e){alert(e.message)}loadMakeIt()});
-  $('farmlog').textContent=(r.worker.log||[]).join('\n');
-  mkShow(MKTAB,true);mkRender()}
+  $('mkinfo').innerHTML=`${r.printers.length} printer${r.printers.length===1?'':'s'} · ${busy} printing${clear?` · <a href="#" data-go="printers">${clear} waiting for the bed to be cleared</a>`:''}`;
+  mkShow(MKTAB);mkRender()}
 $('mkrefresh').onclick=()=>loadMakeIt();
-let SLPR='',PRESETS_OK=false;
-async function loadPresets(){$('slp_msg').textContent='Loading Bambuddy\'s presets…';let p;try{p=await api('/api/makeit/presets'+(SLPR?'?printer_id='+SLPR:''))}catch(e){$('slp_msg').textContent=e.message;return}
-  PRESETS_OK=true;$('slp_auto').checked=p.auto_slice;$('slp_engine').value=p.engine;
-  $('slp_engine').querySelector('[value=bambu]').disabled=!p.bambu_works_here;
-  $('slp_enginemsg').innerHTML=p.engine==='bambu'?(p.bambu?'Bambu Studio found. Presets are read from Bambu Studio / OrcaSlicer on this computer (your saved presets included) and from the ones added here. New on this PC? Press <b>Test slicer</b>.':'<span style="color:var(--err)">Bambu Studio isn\'t installed on this computer</span> — install it, or choose OrcaSlicer.'):p.engine==='orca'?(p.orca?`OrcaSlicer found. Presets are read from Bambu Studio / OrcaSlicer on this computer (your saved presets included) and from the ones added here.`:`<span style="color:var(--err)">OrcaSlicer isn't installed on this computer</span> — re-run the SnapSTL installer (it installs OrcaSlicer), or choose Bambuddy's slicer.`):`Bambuddy slices with the presets in Bambuddy. Its slicer must be running: Bambuddy → Settings → Slicer → Use Slicer API.`;
-  $('slp_test').disabled=p.engine==='bambuddy';
-  $('slp_imphint').innerHTML=p.engine!=='bambuddy'?'Make the preset in Bambu Studio (or OrcaSlicer) and save it — it shows up here by itself. A preset from elsewhere: export it (<b>File → Export → Export Preset Bundle</b> .bbscfg, or a .json / .bbsflmt) and add it here; SnapSTL keeps it for slicing.':'Make the preset in Bambu Studio (or OrcaSlicer), export it (<b>File → Export → Export Preset Bundle</b> .bbscfg, or .bbsflmt / .json) and add it here — it goes into Bambuddy\'s presets.';
-  $('slp_model').innerHTML=`<option value="">All printers (default)</option>`+p.printers.map(x=>`<option value="${x.id}" ${String(x.id)===SLPR?'selected':''}>${esc(x.name)}${x.model?' ('+esc(x.model)+')':''}${x.own?' — own presets':' — uses the default'}</option>`).join('');
-  const cur=p.printers.find(x=>String(x.id)===SLPR);
-  $('slp_modelhint').textContent=cur?(cur.own?`${cur.name} slices with these presets.`:`${cur.name} uses the default presets until you save some for it.`):'Used for every printer without its own presets. Pick a printer to give it its own — plates are sliced with the presets of the printer they go to.';
-  $('slp_clear').hidden=!(cur&&cur.own);
-  for(const slot of ['printer','process','filament']){const el=$('slp_'+slot);
-    el.innerHTML='<option value="">— choose —</option>'+p.available[slot].map(x=>`<option value="${esc(x.key)}" ${x.key===p.chosen[slot]?'selected':''}>${esc(x.name)} (${esc(x.source)})</option>`).join('')}
-  $('slp_msg').textContent=!p.bambuddy_listed?'Bambuddy lists no presets — its slicer isn\'t running (Bambuddy → Settings → Slicer). Bambu\'s standard A1 presets are used until then.':''}
-$('slp_model').onchange=()=>{SLPR=$('slp_model').value;loadPresets()};
-$('slp_engine').onchange=async()=>{try{await api('/api/makeit/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({slicer:$('slp_engine').value})});loadPresets()}catch(e){$('slp_msg').textContent=e.message}};
-$('slp_auto').onchange=async()=>{try{const r=await api('/api/makeit/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({auto_slice:$('slp_auto').checked})});$('slp_msg').textContent=r.auto_slice?'New plates are sliced automatically.':'Automatic slicing off — use Slice / Slice all.'}catch(e){$('slp_msg').textContent=e.message}};
-$('slp_save').onclick=async()=>{try{const r=await api('/api/makeit/presets',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({printer_id:SLPR||null,printer:$('slp_printer').value,process:$('slp_process').value,filament:$('slp_filament').value})});$('slp_msg').textContent=`Saved for ${SLPR?($('slp_model').selectedOptions[0].text.split(' — ')[0]):'all printers'}: `+Object.values(r.names).join(' · ')+'. Plates already sliced keep their slice — use Slice again to redo them.';loadPresets()}catch(e){$('slp_msg').textContent=e.message}};
-$('slp_clear').onclick=async()=>{try{await api('/api/makeit/presets',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({printer_id:SLPR,clear:true})});loadPresets()}catch(e){$('slp_msg').textContent=e.message}};
-document.querySelectorAll('[data-imp]').forEach(inp=>inp.onchange=async()=>{const f=inp.files[0];if(!f)return;$('slp_impmsg').textContent=`Adding ${f.name} to Bambuddy…`;
-  const fd=new FormData();fd.append('file',f);fd.append('kind',inp.dataset.imp);
-  try{const r=await api('/api/makeit/presets/import',{method:'POST',body:fd});$('slp_impmsg').textContent=`${f.name}: ${r.imported} preset${r.imported===1?'':'s'} added${r.names&&r.names.length?' ('+r.names.join(', ')+')':''}${r.skipped?`, ${r.skipped} skipped`:''}${r.errors.length?' — '+r.errors.join('; '):''}.`;loadPresets()}
-  catch(e){$('slp_impmsg').textContent=e.message}inp.value=''});
-$('slp_all').onclick=async()=>{if(!MK)return;const todo=[...MK.bases,...MK.names].filter(r=>!r.sliced&&!(r.slice&&['queued','uploading','slicing'].includes(r.slice.state)));
-  if(!todo.length){$('slp_allmsg').textContent='Nothing waiting to slice';return}
-  try{const r=await post('/api/makeit/slice',{plates:todo.map(x=>{const sel=MKSEL[mkKey(x)];const pid=(sel&&sel.printer)||x.suggested||null;return {batch_id:x.batch_id,file:x.file,printer_id:pid?+pid:null}})});$('slp_allmsg').textContent=`${r.queued} plate(s) queued for slicing`}catch(e){$('slp_allmsg').textContent=e.message}loadMakeIt()};
-document.querySelectorAll('#mk-slice [data-go]').forEach(a=>a.onclick=e=>{e.preventDefault();show(a.dataset.go)});
+$('slp_all').onclick=async()=>{if(!MK)return;const todo=[...MK.bases,...MK.names].filter(r=>!r.sliced&&!(r.slice&&['queued','uploading','slicing','needs_presets'].includes(r.slice.state)));
+  if(!todo.length){$('slp_allmsg').textContent='Nothing waiting to slice.';return}
+  try{const r=await post('/api/makeit/slice',{plates:todo.map(x=>{const sel=MKSEL[mkKey(x)];const pid=(sel&&sel.printer)||x.suggested||null;return {batch_id:x.batch_id,file:x.file,printer_id:pid?+pid:null}})});$('slp_allmsg').textContent=`${r.queued} plate(s) queued for slicing.`}catch(e){$('slp_allmsg').textContent=e.message}loadMakeIt()};
+
+// ---------- Slicing ----------
+let SLMODEL='',SLP=null,SLSYS=false;try{SLSYS=localStorage.getItem('slsys')==='1';SLMODEL=localStorage.getItem('slmodel')||''}catch{}
+const SYS_SRC=['Bambu Lab','standard'],SLOTS=['printer','process','filament'];
+const ENGINE_NAME={orca:'OrcaSlicer',bambu:'Bambu Studio',bambuddy:"Bambuddy's slicer"};
+const srcLabel=s=>s==='standard'||s==='Bambu Lab'?'Bambu Lab system presets':s==='local'?'Added to Bambuddy':s==='cloud'?'Your Bambu cloud presets':s;
+const putJSON=(path,b)=>api(path,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+async function loadPresets(){$('slp_msg').textContent='Loading presets…';$('slp_msg').style.color='';let p;
+  try{p=await api('/api/makeit/presets'+(SLMODEL?'?model='+encodeURIComponent(SLMODEL):''))}catch(e){$('slp_msg').textContent=e.message;return}
+  if(SLMODEL&&p.models.length&&!p.models.includes(SLMODEL)){SLMODEL='';return loadPresets()}
+  SLP=p;SLMODEL=p.model||'';$('slp_msg').textContent='';
+  $('slp_auto').checked=p.auto_slice;$('slp_engine').value=p.engine;$('slp_engine').querySelector('[value=bambu]').disabled=!p.bambu_works_here;
+  const exe=p.engine==='orca'?p.orca:p.engine==='bambu'?p.bambu:'',found=p.engine==='bambuddy'||!!exe;
+  $('slp_enginemsg').innerHTML=(p.engine==='bambuddy'?`Bambuddy slices with the presets stored in Bambuddy; its slicer must be running (Bambuddy → Settings → Slicer → <b>Use Slicer API</b>). A slicer on this computer is faster and reads your Bambu Studio presets directly.`
+    :found?`<span style="color:var(--ok)">✓ ${ENGINE_NAME[p.engine]} found</span> · <code>${esc(exe)}</code>`
+    :`<span style="color:var(--err)">${ENGINE_NAME[p.engine]} isn't installed on this computer.</span> ${p.engine==='orca'?'Re-run the SnapSTL installer (it installs OrcaSlicer), or install it from orcaslicer.com.':'Install Bambu Studio from bambulab.com, or choose OrcaSlicer.'}`)
+    +(p.engine!=='bambuddy'?' OrcaSlicer and Bambu Studio use the same Bambu presets.':'')+(!p.bambu_works_here?' <span class="hint">Bambu Studio can\'t slice for SnapSTL on a Mac (its command line crashes there) — use OrcaSlicer.</span>':'');
+  const allSet=p.models.length&&p.models.every(m=>p.set_for[m]);
+  const step=(ok,t,d,opt)=>`<li class="${ok?'ok':opt?'opt':'todo'}"><span class="mark">${ok?'✓':opt?'–':'!'}</span><div><b>${t}</b><div class="hint">${d}</div></div></li>`;
+  $('slp_steps').innerHTML=step(found,'Slicer',found?`${ENGINE_NAME[p.engine]} slices your plates.`:'Install it, or choose another slicer below.')
+    +step(allSet,'Presets for every printer model',p.models.length?p.models.map(m=>`${esc(m)}: ${p.set_for[m]?'set':'<b>not set</b>'}`).join(' · '):'Add your printers in Bambuddy first — their models show up here.')
+    +step(false,'Test slice','Optional: <b>Test slice</b> checks the slicer and a model\'s presets on this computer in a few seconds.',true);
+  $('slp_models').innerHTML=p.models.map(m=>`<button data-slm="${esc(m)}" class="${m===SLMODEL?'on':''}">${esc(m)} <span class="pill ${p.set_for[m]?'ok':'warn'}" style="margin-left:4px">${p.set_for[m]?'set':'not set'}</span></button>`).join('');
+  document.querySelectorAll('[data-slm]').forEach(b=>b.onclick=()=>{SLMODEL=b.dataset.slm;try{localStorage.setItem('slmodel',SLMODEL)}catch{}loadPresets()});
+  const prs=p.printers.filter(x=>(x.model||'')===SLMODEL);
+  $('slp_modelhint').innerHTML=!p.models.length?'<span style="color:var(--warn)">No printers yet.</span> Add them in Bambuddy (Printers → Open Bambuddy).'
+    :`<b>${esc(SLMODEL)}</b>: ${prs.map(x=>esc(x.name)).join(', ')}. ${p.set_for[SLMODEL]?'Plates for these printers are sliced with the presets below.':'<b style="color:var(--warn)">No presets yet</b> — plates for these printers aren\'t sliced or printed until you save them.'}`;
+  $('slp_presetrows').hidden=!p.models.length;$('slp_sys').checked=SLSYS;fillPresetSelects();
+  $('slp_save').textContent=`Save presets for ${SLMODEL||'this model'}`;$('slp_clear').hidden=!p.set_for[SLMODEL];
+  $('slp_test').disabled=p.engine==='bambuddy'||!p.set_for[SLMODEL];
+  $('slp_test').title=p.engine==='bambuddy'?'The test runs a slicer on this computer':!p.set_for[SLMODEL]?'Save the presets first':'Slices a 20 mm test cube with these presets';
+  $('slp_imphint').innerHTML=p.engine==='bambuddy'?'With Bambuddy\'s slicer, added presets go into Bambuddy.':'Added presets are kept by SnapSTL for slicing (listed as <i>added in SnapSTL</i>).';
+  $('slp_folders').innerHTML=(p.folders||[]).map(f=>`<li>${esc(f.label)}: <code>${esc(f.path)}</code></li>`).join('');
+  renderDefaults(p);slicingBox(p.activity)}
+function fillPresetSelects(){const p=SLP;if(!p)return;let own=0;const none=[];
+  for(const slot of SLOTS){const el=$('slp_'+slot),cur=p.chosen[slot]||'',all=p.available[slot]||[];const mine=all.filter(x=>!SYS_SRC.includes(x.source)).length;own+=mine;if(!mine)none.push(slot);
+    const list=all.filter(x=>SLSYS||!SYS_SRC.includes(x.source)||x.key===cur),groups={};
+    for(const x of list)(groups[x.source]=groups[x.source]||[]).push(x);
+    el.innerHTML='<option value="">— choose —</option>'+Object.entries(groups).map(([g,xs])=>`<optgroup label="${esc(srcLabel(g))}">${xs.map(x=>`<option value="${esc(x.key)}" ${x.key===cur?'selected':''}>${esc(x.name)}</option>`).join('')}</optgroup>`).join('')}
+  $('slp_sysmsg').innerHTML=!own?'<span style="color:var(--warn)">No presets of your own found yet.</span> Bring them from Bambu Studio (see <b>How to bring your presets</b>), or tick the box to choose from Bambu Lab\'s system presets.'
+    :none.length&&!SLSYS?`No ${none.join(' or ')} preset of your own — tick the box to choose Bambu Lab's (for the printer preset that's usually right).`:''}
+$('slp_sys').onchange=()=>{SLSYS=$('slp_sys').checked;try{localStorage.setItem('slsys',SLSYS?'1':'0')}catch{}fillPresetSelects()};
+$('slp_reload').onclick=()=>loadPresets();
+$('slp_engine').onchange=async()=>{try{await putJSON('/api/makeit/settings',{slicer:$('slp_engine').value});loadPresets();loadHealth()}catch(e){$('slp_msg').textContent=e.message}};
+$('slp_auto').onchange=async()=>{try{const r=await putJSON('/api/makeit/settings',{auto_slice:$('slp_auto').checked});$('slp_msg').textContent=r.auto_slice?'New plates are sliced automatically.':'Automatic slicing off — plates are sliced with Slice or at Start print.'}catch(e){$('slp_msg').textContent=e.message}};
+$('slp_save').onclick=async()=>{const body={model:SLMODEL};for(const sl of SLOTS)body[sl]=$('slp_'+sl).value;
+  if(SLOTS.some(sl=>!body[sl])){$('slp_msg').textContent='Choose all three: printer, process and filament.';$('slp_msg').style.color='var(--err)';return}
+  try{const r=await putJSON('/api/makeit/presets',body);await loadPresets();$('slp_msg').innerHTML=`Saved for <b>${esc(SLMODEL)}</b>: ${Object.values(r.names).map(esc).join(' · ')}. Its plates are sliced with these from now on.`;$('slp_msg').style.color='var(--ok)';loadHealth()}catch(e){$('slp_msg').textContent=e.message;$('slp_msg').style.color='var(--err)'}};
+$('slp_clear').onclick=async()=>{if(!confirm(`Remove the slicing presets for ${SLMODEL}? Its plates aren't sliced or printed until you set new ones.`))return;
+  try{await putJSON('/api/makeit/presets',{model:SLMODEL,clear:true});loadPresets();loadHealth()}catch(e){$('slp_msg').textContent=e.message}};
+$('slp_import').onchange=async()=>{const files=[...$('slp_import').files];if(!files.length)return;const out=[];
+  for(const f of files){$('slp_impmsg').textContent=`Adding ${f.name}…`;const fd=new FormData();fd.append('file',f);fd.append('kind','');
+    try{const r=await api('/api/makeit/presets/import',{method:'POST',body:fd});out.push(`${f.name}: ${r.imported} added${r.names&&r.names.length?' ('+r.names.join(', ')+')':''}${r.skipped?`, ${r.skipped} skipped`:''}${r.errors.length?' — '+r.errors.join('; '):''}`)}
+    catch(e){out.push(`${f.name}: ${e.message}`)}}
+  $('slp_impmsg').textContent=out.join(' · ');$('slp_import').value='';loadPresets()};
 $('slp_test').onclick=async()=>{$('slp_testmsg').textContent='Slicing a test cube…';$('slp_testmsg').style.color='';
-  try{const r=await post('/api/makeit/test-slice',{printer_id:SLPR||null});$('slp_testmsg').textContent=`✓ ${r.engine} sliced the test cube in ${r.seconds} s for ${r.printer_model||'the printer'} (${r.presets.printer} · ${r.presets.process} · ${r.presets.filament}).`;$('slp_testmsg').style.color='var(--ok)'}
+  try{const r=await post('/api/makeit/test-slice',{model:SLMODEL});$('slp_testmsg').textContent=`✓ ${r.engine} sliced the test cube in ${r.seconds} s for ${r.printer_model||SLMODEL} (${r.presets.printer} · ${r.presets.process} · ${r.presets.filament}).`;$('slp_testmsg').style.color='var(--ok)'}
   catch(e){$('slp_testmsg').textContent=e.message;$('slp_testmsg').style.color='var(--err)'}};
+function renderDefaults(p){const sel=(id,k,vals,cur)=>`<select data-pd="${id}" data-k="${k}"><option value="">Bambuddy's default</option>${vals.map(v=>`<option value="${v}" ${setVal(cur)&&String(cur)===String(v)?'selected':''}>${k==='speed'?cap(v):optVal(v)}</option>`).join('')}</select>`;
+  $('slp_defaults').innerHTML=p.printers.length?p.printers.map(x=>{const d=x.defaults||{};return `<tr><td><b>${esc(x.name)}</b></td><td class="hint">${esc(x.model)}</td><td>${sel(x.id,'speed',p.speeds,d.speed)}</td>${Object.entries(p.options).map(([k,v])=>`<td>${sel(x.id,k,v,d[k])}</td>`).join('')}<td style="white-space:nowrap"><button class="small" data-pdsave="${x.id}">Save</button> <span class="hint" data-pdmsg="${x.id}"></span></td></tr>`}).join(''):'<tr><td colspan="7" class="empty">No printers in Bambuddy yet</td></tr>';
+  document.querySelectorAll('[data-pdsave]').forEach(b=>b.onclick=async()=>{const id=b.dataset.pdsave,body={printer_id:+id},m=document.querySelector(`[data-pdmsg="${id}"]`);
+    document.querySelectorAll(`[data-pd="${id}"]`).forEach(x=>{const v=x.value;body[x.dataset.k]=v==='true'?true:v==='false'?false:v});
+    try{await putJSON('/api/makeit/print-defaults',body);m.textContent='Saved';m.style.color='var(--ok)'}catch(e){m.textContent=e.message;m.style.color='var(--err)'}})}
+const SLST={queued:['Waiting','info'],uploading:['Sending','info'],slicing:['Slicing','info'],done:['Sliced','ok'],failed:['Failed','err']};
+function slicingBox(sl){if(!sl)return;const c=sl.counts||{},items=sl.items||[];
+  $('slp_actsum').textContent=`${c.slicing||0} slicing · ${(c.queued||0)+(c.uploading||0)} waiting · ${c.done||0} sliced · ${c.failed||0} failed`;
+  $('slp_activity').innerHTML=items.length?`<table><thead><tr><th>State</th><th>Plate</th><th>Batch</th><th>Presets</th><th>Updated</th></tr></thead><tbody>${items.map(i=>{const st=SLST[i.state]||[i.state,''];const pr=i.presets||{};
+    return `<tr><td><span class="pill ${st[1]}">${st[0]}${i.state==='slicing'&&i.progress?' '+Math.round(i.progress)+'%':''}</span></td><td><div>${i.kind==='bases'?'<b>Bases</b>':`<b>Names</b> ${sw(i.color||'')}`}</div><div class="fn" style="font-size:12px">${esc(i.plate.split('/').pop())}</div>${i.error?`<div class="reason">${esc(i.error)}</div>`:''}</td><td class="hint">${esc(i.batch)}</td><td class="hint">${esc([pr.printer,pr.process,pr.filament].filter(Boolean).join(' · '))}</td><td class="hint" style="white-space:nowrap">${i.updated_at?new Date(i.updated_at*1000).toLocaleString():''}</td></tr>`}).join('')}</tbody></table>`:'<div class="empty">Nothing sliced yet</div>'}
+$('slp_actref').onclick=async()=>{try{const p=await api('/api/makeit/presets'+(SLMODEL?'?model='+encodeURIComponent(SLMODEL):''));slicingBox(p.activity)}catch(e){$('slp_actsum').textContent=e.message}};
+
 async function loadFarmSettings(){if(!META.local){$('farmsetcard').hidden=true;return}let r;try{r=await api('/api/farm')}catch(e){$('farmsetinfo').textContent=e.message;return}
   const st=r.status;
-  $('farmsetinfo').innerHTML=st.connected?`<b>Connected</b> to Bambuddy at <code>${esc(st.url)}</code>${st.auth_enabled?' (login on, SnapSTL uses its API key)':''} · ${r.printers.length} printer${r.printers.length===1?'':'s'}. Printers and filament are set up in Bambuddy.`:st.reachable?`Bambuddy is running at <code>${esc(st.url)}</code> but not connected${st.error?': '+esc(st.error):''}.`:`<span style="color:var(--err)">Bambuddy isn't answering at <code>${esc(st.url)}</code></span> — it's installed with SnapSTL; re-run the installer if it's missing.`;
+  $('farmsetinfo').innerHTML=st.connected?`<b style="color:var(--ok)">Connected</b> to Bambuddy at <code>${esc(st.url)}</code>${st.auth_enabled?' (login on, SnapSTL uses its API key)':''} · ${r.printers.length} printer${r.printers.length===1?'':'s'}.`:st.reachable?`Bambuddy is running at <code>${esc(st.url)}</code> but not connected${st.error?': '+esc(st.error):''}.`:`<span style="color:var(--err)">Bambuddy isn't answering at <code>${esc(st.url)}</code></span> — it's installed with SnapSTL; re-run the installer if it's missing.`;
   if(document.activeElement!==$('bburl'))$('bburl').value=st.url;
 }
 $('bbconnect').onclick=async()=>{$('bbmsg').textContent='Connecting…';$('bbmsg').style.color='';
-  try{await post('/api/farm/connect',{url:$('bburl').value.trim(),api_key:$('bbkey').value.trim()});$('bbkey').value='';$('bbmsg').textContent='Connected.';loadFarmSettings();loadSetup()}catch(e){$('bbmsg').textContent=e.message;$('bbmsg').style.color='var(--err)'}};
+  try{await post('/api/farm/connect',{url:$('bburl').value.trim(),api_key:$('bbkey').value.trim()});$('bbkey').value='';$('bbmsg').textContent='Connected.';loadFarmSettings();loadSetup();loadHealth()}catch(e){$('bbmsg').textContent=e.message;$('bbmsg').style.color='var(--err)'}};
 
-// ---------- printer status (everything from Bambuddy, read only) ----------
+// ---------- Printers (everything from Bambuddy, read only) ----------
 const PSOPEN=new Set();
 function kvVal(v){if(v===null||v===undefined)return '<span class="hint">—</span>';if(typeof v==='boolean')return v?'true':'false';
   const t=String(v);if(/^#?[0-9a-f]{6}([0-9a-f]{2})?$/i.test(t)&&t.length>=6)return `<span class="swatch" style="background:#${esc(t.replace('#','').slice(0,6))}"></span>${esc(t)}`;return esc(t)}
@@ -891,7 +1058,7 @@ function statusCard(p){const m=p.summary||{};const raw=p.status||{};
   let h=`<div class="pscard"><div class="top" style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b style="font-size:15px">${esc(p.name)}</b><span class="hint">${esc(m.model||'')}</span><span class="grow"></span>${pill}</div>
     <div class="line hint">${esc(m.ip||'')}${m.location?` · ${esc(m.location)}`:''}</div>`;
   if(!m.connected)h+=`<div class="reason" style="margin-top:6px">Bambuddy can't reach this printer${m.error?': '+esc(m.error):''}. Check it's on, on the network, in LAN Only + Developer Mode.</div>`;
-  if(m.awaiting_plate_clear)h+=`<div class="msgs"><div class="w">Waiting for the bed to be cleared — then press Clear plate (Make It → Printers or Bambuddy).</div></div>`;
+  if(m.awaiting_plate_clear)h+=`<div class="msgs"><div class="w">Waiting for the bed to be cleared.${META.local?` <button class="small primary" data-pclear="${p.id}" title="You checked the bed is empty: the next started print may begin">Clear plate</button>`:''}</div></div>`;
   const j=m.job;
   h+='<h4>Now</h4>'+(j?`<div class="line"><b>${esc(j.file||'Printing')}</b></div><div class="bar"><i style="width:${Math.max(0,Math.min(100,j.progress||0))}%"></i></div>
     <div class="line">${j.progress!=null?Math.round(j.progress)+'% done':''}${j.remaining_min?` · ${fmtMin(j.remaining_min)} left`:''}${j.layers?` · layer ${j.layer||0} of ${j.layers}`:''}${j.speed?` · ${esc(j.speed)} speed`:''}</div>${j.stage?`<div class="line hint">${esc(j.stage)}</div>`:''}`
@@ -906,22 +1073,27 @@ function statusCard(p){const m=p.summary||{};const raw=p.status||{};
   const ai=Object.keys(m.ai||{});if(ai.length)h+=`<div class="line hint">AI checks on: ${esc(ai.map(k=>k.replace(/_/g,' ')).join(', '))}</div>`;
   const q=m.queue||[];h+=`<h4>Queue in Bambuddy</h4>`+(q.length?q.map(x=>`<div class="line">${esc(x.file)} <span class="hint">· ${x.held?'waiting for Start':esc(x.status||'')}</span></div>`).join(''):'<div class="line hint">Empty</div>');
   h+=kvDetails('All fields (as Bambuddy reports them)',{printer:p.printer,status:raw,queue:p.queue},`p${p.id}.all`)+'</div>';return h}
-function slicingBox(sl){if(!sl)return '';const c=sl.counts||{};const pr=sl.presets||{};
-  const now=(sl.items||[]).filter(i=>['queued','uploading','slicing'].includes(i.state));const bad=(sl.items||[]).filter(i=>i.state==='failed').slice(0,5);
-  return `<div class="slicebox"><div class="toolbar" style="margin:0 0 4px"><b>Slicing</b><span class="grow"></span><span class="hint">${c.slicing||0} slicing · ${(c.queued||0)+(c.uploading||0)} waiting · ${c.done||0} done · ${c.failed||0} failed</span></div>
-    <div class="line hint">Presets: ${esc([pr.printer,pr.process,pr.filament].filter(Boolean).join(' · ')||'not chosen — Make It → Slice')}</div>
-    ${now.map(i=>`<div class="line">${i.state==='slicing'?'Slicing':i.state==='uploading'?'Sending to slicer':'Waiting'}: <b>${esc(i.plate.split('/').pop())}</b> <span class="hint">(${esc(i.batch)})</span>${i.progress?` · ${Math.round(i.progress)}%`:''}</div>`).join('')}
-    ${bad.map(i=>`<div class="line reason">Failed: ${esc(i.plate.split('/').pop())} — ${esc(i.error||'')}</div>`).join('')}
-    ${!now.length&&!bad.length?'<div class="line hint">Nothing slicing right now.</div>':''}</div>`}
 async function loadStatusAll(){$('psinfo').textContent='Loading…';let r;try{r=await api('/api/printer-status')}catch(e){$('psmsg').innerHTML=`<div class="e">${esc(e.message)}</div>`;$('psinfo').textContent='';return}
-  $('psmsg').innerHTML=r.error?`<div class="e">${esc(r.error)}</div>`:'';
-  const ps=r.printers||[],on=ps.filter(p=>p.summary&&p.summary.connected).length,printing=ps.filter(p=>p.summary&&p.summary.raw_state==='RUNNING').length;
-  $('psinfo').textContent=`${ps.length} printer${ps.length===1?'':'s'} · ${on} online · ${printing} printing · updated ${new Date(r.fetched_at*1000).toLocaleTimeString()}`;
-  $('psslice').innerHTML=slicingBox(r.slicing);
-  if(!$('pslist').querySelector('details[open]')||!ps.length)$('pslist').innerHTML=ps.length?ps.map(statusCard).join(''):'<div class="empty">No printers in Bambuddy</div>';
+  const bb=r.bambuddy||{};$('bbopen2').href=bb.url||'#';$('bbopen2').hidden=!bb.reachable||!META.local;
+  $('psmsg').innerHTML=(r.error?`<div class="e">${esc(r.error)}</div>`:'')+(bb.url&&!bb.connected?farmMsgs(bb):'');
+  const ps=r.printers||[],on=ps.filter(p=>p.summary&&p.summary.connected).length,printing=ps.filter(p=>p.summary&&p.summary.raw_state==='RUNNING').length,clear=ps.filter(p=>p.summary&&p.summary.awaiting_plate_clear).length;
+  $('psinfo').textContent=`${ps.length} printer${ps.length===1?'':'s'} · ${on} online · ${printing} printing${clear?` · ${clear} waiting for the bed to be cleared`:''} · updated ${new Date(r.fetched_at*1000).toLocaleTimeString()}`;
+  if(!$('pslist').querySelector('details[open]')||!ps.length)$('pslist').innerHTML=ps.length?ps.map(statusCard).join(''):'<div class="empty">No printers in Bambuddy — add them there (Open Bambuddy)</div>';
+  $('farmlog').textContent=(r.log||[]).join('\n')||'Nothing yet';
   $('pssys').innerHTML=kvDetails('Bambuddy system info',r.system||{},'system');
-  document.querySelectorAll('#t-pstatus details.kvd').forEach(d=>d.ontoggle=()=>{d.open?PSOPEN.add(d.dataset.path):PSOPEN.delete(d.dataset.path)})}
+  document.querySelectorAll('[data-pclear]').forEach(x=>x.onclick=async()=>{if(!confirm('Is the bed of this printer empty and clean? Its next started print begins then.'))return;try{await post(`/api/farm/printers/${x.dataset.pclear}/clear-plate`)}catch(e){alert(e.message)}loadStatusAll()});
+  document.querySelectorAll('#t-printers details.kvd').forEach(d=>d.ontoggle=()=>{d.open?PSOPEN.add(d.dataset.path):PSOPEN.delete(d.dataset.path)})}
 $('psrefresh').onclick=()=>loadStatusAll();
+
+// ---------- sidebar status ----------
+let HEALTH=null;
+async function loadHealth(){try{HEALTH=await api('/api/health')}catch{return}const h=HEALTH;
+  const miss=h.presets_missing||[],pr=h.printers||{};
+  const rows=[['Bambuddy',h.bambuddy.connected?['ok','connected']:['err','not connected'],'settings:connections',h.bambuddy.error||''],
+    ['Slicer',!h.slicer.found?['err','not installed']:miss.length?['warn','no presets: '+miss.join(', ')]:['ok',h.slicer.name],'slicing',h.slicer.name],
+    ['Printers',pr.total?[pr.online===pr.total?'ok':pr.online?'warn':'err',`${pr.online}/${pr.total} online`]:['',h.bambuddy.connected?'none yet':'—'],'printers','']];
+  $('hrows').innerHTML=rows.map(([l,[c,t],go,tip])=>`<a href="#" data-go="${go}" title="${esc(tip||t)}"><span class="d ${c}"></span>${l}<small>${esc(t)}</small></a>`).join('')}
+document.addEventListener('click',e=>{const a=e.target.closest('[data-go]');if(!a)return;e.preventDefault();const [t,sec]=a.dataset.go.split(':');show(t);if(sec)setSec(sec)});
 
 // ---------- settings ----------
 function fillSettings(){const m=S.model;
@@ -960,19 +1132,29 @@ async function loadPortal(){if(!META.local){$('portalcard').hidden=true;return}
 $('portalsave').onclick=async()=>{try{const r=await post('/api/portal',{enabled:$('lan').checked,password:$('portalpw').value});$('portalpw').value='';
   $('portalinfo').textContent=r.restarting?'Saved — SnapSTL is restarting (a few seconds). macOS may ask to allow incoming connections: click Allow.':(r.note||'Saved.');setTimeout(loadPortal,4000)}catch(e){$('portalinfo').textContent=e.message;$('portalinfo').style.color='var(--err)'}};
 
+// ---------- settings sections ----------
+const SETSECS=[['setup','Setup'],['product','Product'],['plates','Plates'],['folders','Folders'],['connections','Connections'],['maintenance','Maintenance']];
+let SETSEC='setup';try{SETSEC=localStorage.getItem('setsec')||'setup'}catch{}
+function setSec(sec){if(!SETSECS.some(x=>x[0]===sec))sec='setup';SETSEC=sec;try{localStorage.setItem('setsec',sec)}catch{}
+  document.querySelectorAll('#t-settings [data-sec]').forEach(d=>d.hidden=d.dataset.sec!==sec);
+  $('savebar').hidden=!['product','plates','folders'].includes(sec);
+  $('setchips').innerHTML=SETSECS.map(([k,l])=>`<button data-ss="${k}" class="${k===sec?'on':''}">${l}</button>`).join('');
+  document.querySelectorAll('[data-ss]').forEach(b=>b.onclick=()=>setSec(b.dataset.ss))}
 // ---------- setup checklist ----------
-function jump(id){const el=$(id);if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.classList.add('flash');setTimeout(()=>el.classList.remove('flash'),1600)}}
+function jump(id){const el=$(id);const sec=el&&el.closest('[data-sec]');if(sec)setSec(sec.dataset.sec);if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.classList.add('flash');setTimeout(()=>el.classList.remove('flash'),1600)}}
 async function loadSetup(){if(!META.local){$('setupcard').hidden=true;$('sharedcard').hidden=true;return}
   let s;try{s=await api('/api/setup')}catch{return}
   $('helperpath').textContent=s.helper_folder;
-  const step=(ok,title,detail,go,opt)=>`<li class="${ok?'ok':(opt?'opt':'todo')}"><span class="mark">${ok?'✓':(opt?'–':'!')}</span><div><b>${title}</b><div class="hint">${detail}</div></div>${go?`<button class="small" data-jump="${go}">${ok?'View':'Set up'}</button>`:''}</li>`;
+  const step=(ok,title,detail,go,opt)=>`<li class="${ok?'ok':(opt?'opt':'todo')}"><span class="mark">${ok?'✓':(opt?'–':'!')}</span><div><b>${title}</b><div class="hint">${detail}</div></div>${go?`<button class="small" ${go.startsWith('tab:')?`data-go="${go.slice(4)}"`:`data-jump="${go}"`}>${ok?'View':'Set up'}</button>`:''}</li>`;
+  const sl=s.slicing||{},slr=sl.slicer||{},miss=sl.presets_missing||[];
   const h=s.helper;
   $('setuplist').innerHTML=[
     step(h.connected&&h.on_page,'SnapSTL Helper in Chrome',h.connected?(h.on_page?'Connected, on the model page.':'Connected — click the helper icon → Open model page.'):'Not connected yet: add it to Chrome (Show helper folder → Load unpacked), then open the model page.','helpercard'),
     step(s.model.link&&s.model.license,'MakerWorld model link and license password',s.model.license?'Set — downloads come without the watermark.':'Enter the license password for this model (downloads are refused without it).','lic'),
     step(true,'Output and downloads folders',`Plates: ${esc(s.folders.output)} · Models: ${esc(s.folders.downloads)}`,'o_dir'),
     step(s.shared_records.configured&&s.shared_records.ok,'Shared order records',s.shared_records.configured?(s.shared_records.error?esc(s.shared_records.error):(s.shared_records.ok?'Connected.':'Connecting…')):'Optional — only for several SnapSTL computers.','sharedcard',!s.shared_records.configured),
-    step(s.farm.connected&&s.farm.printers>0,'Print farm (Bambuddy)',s.farm.connected?(s.farm.printers?`${s.farm.printers} printer${s.farm.printers>1?'s':''} in Bambuddy.`:'Connected — add your printers in Bambuddy (Make It → Open Bambuddy).'):(esc(s.farm.error)||'Bambuddy is not running.')+' Optional — only to send plates to your printers from SnapSTL.','farmsetcard',!s.farm.connected),
+    step(s.farm.connected&&s.farm.printers>0,'Print farm (Bambuddy)',s.farm.connected?(s.farm.printers?`${s.farm.printers} printer${s.farm.printers>1?'s':''} in Bambuddy.`:'Connected — add your printers in Bambuddy (Print → Open Bambuddy).'):(esc(s.farm.error)||'Bambuddy is not running.')+' Optional — only to send plates to your printers from SnapSTL.','farmsetcard',!s.farm.connected),
+    step(slr.found&&s.farm.printers>0&&!miss.length,'Slicing presets for every printer model',!slr.found?`${esc(slr.name||'The slicer')} isn't installed on this computer.`:!s.farm.printers?'After adding printers: choose the presets for each printer model.':miss.length?`No presets yet for <b>${esc(miss.join(', '))}</b> — bring yours from Bambu Studio.`:`${esc(slr.name)} · presets set for every printer model.`,'tab:slicing',!s.farm.connected),
     step(s.updates.git,'Updates',s.updates.git?'Automatic: SnapSTL shows "Update available" when there is one.':esc(s.updates.error||'Not available'),'updcard'),
   ].join('');
   document.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>jump(b.dataset.jump))}
@@ -1040,24 +1222,26 @@ async function refresh(){try{const st=await api('/api/state');if(tab==='settings
   const d=st.downloader;
   const offPage=d.online&&!d.on_page;
   const dlText=d.paused?'Downloads paused':!d.online?(pending?'Helper not connected — open the MakerWorld tab':'Helper not connected'):offPage?'Helper tab is not on the model page':d.status||'Helper ready';
-  $('dl').textContent=dlText;$('dl').title=d.status||'';$('dl').className='pill '+((!d.online||offPage)&&pending?'err':offPage?'warn':/security check/i.test(d.status||'')?'err':d.current?'info':d.paused?'warn':d.online?'ok':'');
+  $('dl').textContent=d.paused?'paused':!d.online?'not connected':offPage?'wrong page':/security check/i.test(d.status||'')?'security check':d.current?'downloading':'ready';$('hhelper').title=dlText+(d.status&&d.status!==dlText?' · '+d.status:'');
+  $('hdot').className='d '+((!d.online||offPage)&&pending?'err':offPage?'warn':/security check/i.test(d.status||'')?'err':d.current?'info':d.paused?'warn':d.online?'ok':'');
   $('helperinfo').textContent=!d.online?'Helper not connected — open the MakerWorld model page in Chrome (with the helper installed).':offPage?'Helper connected, but its tab is not on the model page — click the helper icon → Open model page.':`Helper ready on the model page · ${d.status}`;
   $('dlpause').textContent=d.paused?'Resume downloads':'Pause downloads';$('dlpause').dataset.paused=d.paused?'1':'0';
-  $('queueinfo').textContent=`Download queue: ${q.queued||0} waiting, ${q.claimed||0} in progress, ${q.done||0} done${q.failed?`, ${q.failed} failed`:''}`;$('retry').hidden=!q.failed;
+  $('queueinfo').textContent=`Download queue: ${q.queued||0} waiting, ${q.claimed||0} in progress, ${q.done||0} done${q.failed?`, ${q.failed} failed`:''}`;
   licHint(st.license_set);
   const key=JSON.stringify(st.counts)+JSON.stringify(q)+st.building;
   if(key!==lastKey){lastKey=key;loadFacets();
     if(tab==='orders')loadOrders(); if(tab==='batches')loadBatches()}
-  if(tab==='downloads')loadQueue();
-  if(++TICK%3===0){if(tab==='makeit')loadMakeIt();if(tab==='pstatus'&&$('psauto').checked)loadStatusAll()}
+  if(tab==='batches')loadQueue();
+  if(++TICK%3===0){if(tab==='makeit')loadMakeIt();if(tab==='printers'&&$('psauto').checked)loadStatusAll()}
+  if(TICK%8===0)loadHealth();
   const log=$('log');const atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-4;log.textContent=st.log.join('\n');if(atEnd)log.scrollTop=log.scrollHeight;
 }catch(e){}}
 function refreshAll(){lastKey='';refresh()}
 (async()=>{META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;
-  if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders';if(t==='printers')t='makeit'}catch{}if(!PAGES.includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;
+  if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders';t=OLD_PAGES[t]||t}catch{}if(!PAGES.includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;
   document.querySelectorAll('.fm').forEach(x=>x.textContent='Show in '+META.file_manager);
   if(META.os==='windows')document.body.classList.add('win');
-  $('pcname').textContent=META.computer.name+(META.shared_records?' · shared records':'');show(t);refresh();setInterval(refresh,2000);
+  $('pcname').textContent=META.computer.name+(META.shared_records?' · shared records':'');show(t);refresh();loadHealth();setInterval(refresh,2000);
   if(META.local){loadUpdates(1);setInterval(()=>loadUpdates(1),6*3600*1000)}})();
 </script>
 </body>
