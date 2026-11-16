@@ -59,5 +59,22 @@ CREATE OR REPLACE TRIGGER batch_records_no_delete BEFORE DELETE ON snapstl.batch
     FOR EACH ROW EXECUTE FUNCTION snapstl.refuse_delete();
 CREATE OR REPLACE TRIGGER batch_records_no_truncate BEFORE TRUNCATE ON snapstl.batch_records
     FOR EACH STATEMENT EXECUTE FUNCTION snapstl.refuse_delete();
+-- Only SnapSTL (the database owner, through the connection string) reads or writes these tables.
+-- Row level security with no policies refuses everyone else, and Supabase's API roles get no access
+-- even if the schema is ever exposed in the Data API settings. The owner bypasses RLS.
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['order_records', 'batch_records', 'meta'] LOOP
+    IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = format('snapstl.%I', t)::regclass) THEN
+      EXECUTE format('ALTER TABLE snapstl.%I ENABLE ROW LEVEL SECURITY', t);
+    END IF;
+  END LOOP;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')
+     AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE ALL ON SCHEMA snapstl FROM anon, authenticated;
+    REVOKE ALL ON ALL TABLES IN SCHEMA snapstl FROM anon, authenticated;
+  END IF;
+END $$;
 INSERT INTO snapstl.meta(key, value) VALUES ('schema_version', '1')
     ON CONFLICT (key) DO NOTHING;

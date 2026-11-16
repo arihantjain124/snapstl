@@ -223,3 +223,60 @@ def test_old_batch_orders_get_their_owner(two):
         ok(sync.sync_now())
         assert order("L1")["state"] == "bundled" and order("L1")["batch_id"] == a["batch_id"]
         assert remote("L1")["state"] == "bundled" and remote("L2")["state"] == "bundled"
+
+
+def test_only_snapstl_reaches_the_records(two):
+    """Row level security on, and Supabase's API roles get no access even if someone granted it."""
+    import psycopg
+
+    url = os.environ["SNAPSTL_TEST_DATABASE_URL"]
+    with psycopg.connect(url, autocommit=True) as c:
+        for role in ("anon", "authenticated"):
+            if not c.execute("SELECT 1 FROM pg_roles WHERE rolname=%s", (role,)).fetchone():
+                c.execute(f"CREATE ROLE {role} NOLOGIN")
+    with two("A"):
+        sync.check()  # creates the tables
+        with psycopg.connect(url, autocommit=True) as c:  # e.g. the schema exposed in the Data API settings
+            c.execute("GRANT USAGE ON SCHEMA snapstl TO anon, authenticated")
+            c.execute("GRANT SELECT ON ALL TABLES IN SCHEMA snapstl TO anon, authenticated")
+        sync._setup_done = ""
+        sync.check()  # every SnapSTL start runs the setup again
+        with psycopg.connect(url, autocommit=True) as c:
+            rls = dict(c.execute("SELECT relname, relrowsecurity FROM pg_class WHERE relnamespace = "
+                                 "'snapstl'::regnamespace AND relkind = 'r'").fetchall())
+            assert rls == {"order_records": True, "batch_records": True, "meta": True}
+            c.execute("SET ROLE anon")
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                c.execute("SELECT * FROM snapstl.order_records")
+        ok(sync.sync_now())  # SnapSTL itself (the owner) still reads and writes
+
+
+def test_daily_copy_of_the_shared_records(two):
+    from snapstl import batches as B
+    from snapstl.maintenance import BACKUP_DIR
+
+    with two("A"):
+        ingest.ingest(report([("D1", "PRINT", "Devi", "")]), "r.csv")
+        B.create_batch(["D1"], Settings())
+        ok(sync.sync_now())
+        for old in BACKUP_DIR.glob("shared-records-*.json"):
+            old.unlink()
+        for day in range(1, 32):  # older daily copies: only the newest KEEP_DAILY stay
+            (BACKUP_DIR / f"shared-records-daily-2026-01-{day:02d}.json").write_text("{}")
+
+        sync.daily_copy()
+        today = sync._daily_path()
+        assert today.exists() and (today.stat().st_mode & 0o777) == 0o600
+        import json
+
+        saved = json.loads(today.read_text())
+        assert [o["order_id"] for o in saved["order_records"]] == ["D1"] and len(saved["batch_records"]) == 1
+        daily = sorted(BACKUP_DIR.glob("shared-records-daily-*.json"))
+        assert len(daily) == sync.KEEP_DAILY and daily[-1] == today
+        first = today.stat().st_mtime_ns
+        sync.daily_copy()  # once a day
+        assert today.stat().st_mtime_ns == first
+        assert sync.STATUS.snapshot()["last_copy"]["file"] == today.name
+
+        r = sync.export()  # `snapstl-db export`: a kept, timestamped copy
+        assert r["orders"] == 1 and "daily" not in r["file"]

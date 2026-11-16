@@ -2,6 +2,7 @@
 
   check   Test the connection set in Settings → Shared order records and show what the records hold.
   sync    Push this computer's changes and load everyone's (same as Settings → Connections → Sync now).
+  export  Save a copy of every shared record in this computer's backups folder (JSON).
   schema  Print the SQL that creates the shared records (no connection needed; docs/supabase-schema.sql).
 """
 from __future__ import annotations
@@ -31,6 +32,9 @@ def main() -> None:
                 sys.exit(s["error"])
             print(f"Synced at {datetime.fromtimestamp(s['last_ok']):%H:%M:%S}: sent {s['pushed']} change(s), "
                   f"loaded {s['pulled']} record(s); {s['pending']} waiting.")
+        elif cmd == "export":
+            r = sync.export()
+            print(f"Saved {r['orders']} order record(s) and {r['batches']} batch record(s) to {r['file']}")
         else:
             sys.exit(__doc__)
     except sync.SyncError as e:
