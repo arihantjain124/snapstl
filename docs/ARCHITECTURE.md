@@ -32,7 +32,7 @@ Webstore "Order Reconciliation Report" (.xlsx)
 
 | Piece | What / where |
 |---|---|
-| **Service** | `snapstl-serve` → FastAPI/uvicorn on **http://127.0.0.1:8317** (`SNAPSTL_PORT` to change); always localhost; optional Windows logistics uses `0.0.0.0:8002` (see §13). Started at login by launchd: `~/Library/LaunchAgents/local.snapmagicians.snapstl.plist` (`RunAtLoad`, `KeepAlive`). Hosts the portal, the helper API, the download queue and the batch builder thread. Runs `caffeinate -i` while alive. |
+| **Service** | `snapstl-serve` → FastAPI/uvicorn on **http://127.0.0.1:8317** (`SNAPSTL_PORT` to change); always localhost; optional Mac/Windows logistics uses `0.0.0.0:8002` (see §13). Started at login by launchd: `~/Library/LaunchAgents/local.snapmagicians.snapstl.plist` (`RunAtLoad`, `KeepAlive`). Hosts the portal, the helper API, the download queue and the batch builder thread. Runs `caffeinate -i` while alive. |
 | **App window** | `~/Applications/SnapSTL.app` → `snapstl` → pywebview window on the same URL (adds native folder picker; text selection on). UI = side navigation: Orders · Batches · Downloads · Make It · Slicing · Printer status · Settings · Help. If the service isn't up it kickstarts it. Closing the window doesn't stop the service. |
 | **SnapSTL Helper** | Chrome extension (`helper/`, *Load unpacked*) in the user's **normal** Chrome, on the MakerWorld model-maker tab. Generates each queued name on the real page and uploads the files. |
 | **Data** | `~/Library/Application Support/SnapSTL/` (`APP_DIR`, override with `SNAPSTL_HOME`): `snapstl.db`, `settings.json`, `backups/`, `auth.json` (only if a portal password is set). |
@@ -117,7 +117,7 @@ Snapstl/
 │   ├── dbtool.py             `snapstl-db check | sync | export | schema`
 │   ├── updater.py            Settings → Updates (git fetch / pull --ff-only / uv sync)
 │   ├── watermark.py, render.py   watermark detection; plate / object pictures
-│   ├── logistics.py          optional Windows port-8002 read-only orders listener
+│   ├── logistics.py          optional Mac/Windows port-8002 read-only orders listener
 │   ├── server.py             FastAPI app: every HTTP endpoint (§11), access control (§13), tab/filter SQL
 │   ├── settings.py           dataclasses + defaults (§12); APP_DIR, CACHE_DIR, output path, MakerWorld URL
 │   ├── db.py                 local SQLite schema + MIGRATIONS + sync triggers, tx(), quiet(), batch helpers
@@ -472,10 +472,10 @@ filament are not stored by SnapSTL — they're read from Bambuddy.
   (DNS-rebinding guard).
 * **Other websites** in any browser: rejected — a request's `Origin` must match its host.
   `chrome-extension://` origins are accepted **only** on `/api/helper/*` and only from this Mac.
-* **Other computers:** the full app refuses every remote request. Optional Windows logistics
+* **Other computers:** the full app refuses every remote request. Optional Mac/Windows logistics
   hosting uses a separate listener on port 8002, password sign-in and an explicit order-read route
   allowlist (`logistics.py`). `lan_access` retains its stored name but now enables logistics only.
-  Start/stop hosting takes effect after a person restarts the service. No worker runs in the
+  Save starts/stops hosting immediately; Settings reports the actual listener status or bind error. No worker runs in the
   logistics listener; the host's normal shared-records sync supplies its local read data.
 * Bambuddy listens on the owner's local network (port 8000; the Windows firewall rule allows the local
   subnet only). Its login is off by default — anyone on that network can use it; the README recommends
@@ -804,8 +804,12 @@ installs the new packages before starting, since Windows can't replace files Pyt
 `.gitattributes` keeps `.sh` files LF and `.ps1` files CRLF.
 
 
-### Read-only logistics (Windows host)
+### Read-only logistics (Mac or Windows host)
 
-The full app now listens only on localhost on Mac and Windows. In Windows Settings → Connections → Logistics access, enable hosting and set a password, then restart SnapSTL when no download or build is active. Employees open `http://HOST-IP:8002` and sign in. Permit TCP 8002 for the local subnet in Windows Firewall if needed. This supersedes the former remote-control portal.
+The full app now listens only on localhost on Mac and Windows. On Mac or Windows, open Settings → Connections → Logistics access, enable hosting, set a password and press Save. Save starts or stops the listener immediately without restarting the app. Employees open `http://HOST-IP:8002` and sign in. Permit TCP 8002 for the local subnet in Windows Firewall if needed. This supersedes the former remote-control portal.
 
 `logistics.py` hosts an explicit allowlist: login, orders, facets and CSV export. No edit, upload, batch, helper, printer or settings route is exposed. The shared orders table supports copying, filters, categories, pagination and browser-local saved column views. Refresh orders reloads the host’s local synchronized records, also refreshed every minute; it never pushes changes or runs cleanup. Main Orders has no Supabase refresh button; use Settings → Database → Sync or Clean up.
+
+Orders pagination includes a Page selector to jump directly to any page. Logistics uses the same control. Logistics hosting is available on both Mac and Windows; Settings reports whether port 8002 is actually listening. Allow incoming connections in the host firewall for LAN access. The UTF-8 interface is decoded explicitly on Windows.
+
+Settings → Connections → Logistics access shows the current host LAN IP addresses as clickable links with Copy address buttons (port 8002). Use a numeric IP link from another computer on the same network.

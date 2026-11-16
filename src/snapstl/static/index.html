@@ -207,7 +207,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="tw"><table class="otable"><thead><tr><th><input type="checkbox" id="pagecheck" title="Select this page"></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Address</th><th>Report status</th><th>Name to print</th><th>Colour</th><th>Qty</th><th>Size L×H · comp.</th><th>State</th><th></th></tr>
     <tr class="frow"><th></th><th><input data-f="order" placeholder="filter"></th><th><input data-f="date" placeholder="2026-11"></th><th><input data-f="customer" placeholder="filter"></th><th><input data-f="phone" placeholder="filter"></th><th><input data-f="address" placeholder="filter"></th><th><select data-f="status"><option value="">all</option></select></th><th><input data-f="name" placeholder="filter"></th><th><select data-f="color"><option value="">all</option></select></th><th><input data-f="qty" placeholder="=" style="width:44px"></th><th></th><th></th><th></th></tr></thead>
     <tbody id="orders"></tbody></table></div>
-    <div class="toolbar" style="margin-top:8px"><span class="hint grow" id="pageinfo" aria-live="polite"></span><label for="pagesize">Rows per page</label><select id="pagesize"><option>25</option><option>50</option><option selected>100</option><option>200</option><option>500</option></select><button id="prev" class="small">Previous</button><button id="next" class="small">Next</button></div>
+    <div class="toolbar" style="margin-top:8px"><span class="hint grow" id="pageinfo" aria-live="polite"></span><label for="pagesize">Rows per page</label><select id="pagesize"><option>25</option><option>50</option><option selected>100</option><option>200</option><option>500</option></select><label for="pagenumber">Page</label><select id="pagenumber" aria-label="Go to orders page"><option value="1">1</option></select><button id="prev" class="small">Previous</button><button id="next" class="small">Next</button></div>
   </div>
 </section>
 
@@ -445,7 +445,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
 
   <div class="sec" data-sec="connections" hidden>
-    <p class="intro">What SnapSTL talks to: the Chrome helper (MakerWorld), Bambuddy (your printers), the shared order records (other SnapSTL computers) and read-only logistics (Windows host).</p>
+    <p class="intro">What SnapSTL talks to: the Chrome helper (MakerWorld), Bambuddy (your printers), the shared order records (other SnapSTL computers) and read-only logistics (Mac or Windows host).</p>
     <div class="grid2">
       <div class="card" id="helpercard">
         <h2>SnapSTL Helper (Chrome)</h2>
@@ -494,12 +494,12 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         </div>
       </div>
       <div class="card" id="portalcard">
-        <h2>Logistics access (Windows host)</h2>
-        <p class="hint">Host a read-only orders table on port 8002. Employees can browse categories, filter, copy rows and save views. The Windows host keeps data current through its normal shared-records sync. Restart SnapSTL after changing this option.</p>
+        <h2>Logistics access</h2>
+        <p class="hint">Host a read-only orders table on port 8002. Employees can browse categories, filter, copy rows and save views. This computer keeps data current through its normal shared-records sync. Save starts or stops logistics immediately; the full app keeps running.</p>
         <label class="check"><input type="checkbox" id="lan"> Enable read-only logistics on port 8002</label>
         <label>Portal password <span class="hint">— at least 10 characters; empty keeps the current one</span></label>
         <div class="row2" style="grid-template-columns:1fr auto"><input id="portalpw" type="password" autocomplete="new-password" placeholder="Not set"><button id="portalsave">Save</button></div>
-        <p class="hint" id="portalinfo"></p>
+        <p class="hint" id="portalinfo" aria-live="polite"></p><div id="logisticsurls"></div>
       </div>
     </div>
   </div>
@@ -684,7 +684,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Product</b> — the MakerWorld model link and its license password (removes the anti-sale markings; each model keeps its own), the name style (font, size, thickness, outline, rotate text) and the size per letter count (Scaling Rules v1.1).</li>
       <li><b>Plates</b> — bed size (256 × 256 × 256 mm on the A1 and P1S), edge margin, gap between parts, names/bases per plate, allowed rotations (flat on the bed only).</li>
       <li><b>Folders</b> — where dated batch folders and downloaded models go; the pause between downloads.</li>
-      <li><b>Connections</b> — the Chrome helper, Bambuddy, the shared order records (several computers) and read-only logistics (Windows host).</li>
+      <li><b>Connections</b> — the Chrome helper, Bambuddy, the shared order records (several computers) and read-only logistics (Mac or Windows host).</li>
       <li><b>Maintenance</b> — updates, and the database: back up, clean up old records (orders already made are always kept), or reset. None of these delete files.</li>
     </ul>
     <p class="hint">Slicing profiles and print defaults are on the <b>Slicing</b> page.</p>
@@ -713,7 +713,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
 
   <div class="card" id="h-portal">
-    <h2>Read-only logistics</h2><p>On the Windows host, enable <b>Settings → Connections → Logistics access</b> and set a password. Restart SnapSTL when no batch is downloading or building. Employees open <code>http://HOST-IP:8002</code> and sign in. Allow TCP 8002 for the local subnet in Windows Firewall if needed.</p><p>Employees can read, copy, filter and export orders, choose columns and save views. Refresh orders reloads the host's synchronized data; it also reloads every minute. Uploads, changes, batches, printers, slicing and settings are unavailable. The full app stays local on Mac and Windows.</p>
+    <h2>Read-only logistics</h2><p>On the Mac or Windows host, enable <b>Settings → Connections → Logistics access</b> and set a password. Press Save to start hosting immediately. Employees open <code>http://HOST-IP:8002</code> and sign in. Allow SnapSTL incoming connections in the Mac firewall, or TCP 8002 for the local subnet in Windows Firewall if needed.</p><p>Employees can read, copy, filter and export orders, choose columns and save views. Refresh orders reloads the host's synchronized data; it also reloads every minute. Uploads, changes, batches, printers, slicing and settings are unavailable. The full app stays local on Mac and Windows.</p>
   </div>
 
   <div class="card" id="h-data">
@@ -761,6 +761,9 @@ async function loadOrders(){
   const r=await api('/api/orders?'+p);
   if(r.total && filter.offset>=r.total){filter.offset=Math.floor((r.total-1)/LIMIT)*LIMIT;return loadOrders()}
   $('pageinfo').textContent=r.total?`${filter.offset+1}–${Math.min(filter.offset+LIMIT,r.total)} of ${r.total} · Page ${Math.floor(filter.offset/LIMIT)+1} of ${Math.ceil(r.total/LIMIT)}`:'No orders';
+  const pages=Math.max(1,Math.ceil(r.total/LIMIT));const current=Math.min(pages,Math.floor(filter.offset/LIMIT)+1);
+  if(+$('pagenumber').dataset.pages!==pages){$('pagenumber').innerHTML=Array.from({length:pages},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('');$('pagenumber').dataset.pages=pages}
+  $('pagenumber').value=current;$('pagenumber').disabled=!r.total;
   $('prev').disabled=filter.offset===0; $('next').disabled=filter.offset+LIMIT>=r.total;
   $('csvlink').href='/api/orders.csv?'+filterParams({});
   if(!r.orders.length){$('orders').innerHTML='<tr><td colspan="13" class="empty">No orders here</td></tr>';$('pagecheck').checked=false;return}
@@ -851,6 +854,7 @@ function saveViews(){try{localStorage.setItem(VIEW_KEY,JSON.stringify(orderViews
 $('saveview').onclick=()=>{const name=prompt('Name this view');if(!name||!name.trim())return;orderViews[name.trim()]={tab:filter.tab,f:{...filter.f},columns:[...visibleColumns]};saveViews();renderViews();$('ordview').value=name.trim()};
 $('deleteview').onclick=()=>{const n=$('ordview').value;if(n&&confirm(`Delete view “${n}”?`)){delete orderViews[n];saveViews();renderViews()}};
 $('ordview').onchange=async()=>{const v=orderViews[$('ordview').value];if(!v)return;filter.tab=v.tab;filter.f={...v.f};filter.offset=0;visibleColumns=v.columns.filter(i=>Number.isInteger(i)&&i>=1&&i<=11);document.querySelectorAll('.frow [data-f]').forEach(el=>el.value=filter.f[el.dataset.f]||'');await loadFacets();document.querySelectorAll('.frow [data-f]').forEach(el=>el.value=filter.f[el.dataset.f]||'');renderColumns();loadOrders()};
+$('pagenumber').onchange=()=>{filter.offset=(+$('pagenumber').value-1)*LIMIT;loadOrders()};
 $('pagesize').onchange=()=>{LIMIT=+$('pagesize').value;filter.offset=0;loadOrders()};
 renderViews();renderColumns();
 $('prev').onclick=()=>{filter.offset=Math.max(0,filter.offset-LIMIT);loadOrders()};
@@ -1209,12 +1213,13 @@ function licHint(set){$('lichint').textContent=set?'Saved for the current model'
 
 // ---------- web portal ----------
 async function loadPortal(){if(!META.local){$('portalcard').hidden=true;return}
-  if(META.os!=='windows'){$('portalcard').hidden=true;return}const p=await api('/api/portal');$('lan').checked=p.lan_access;
+  const p=await api('/api/portal');$('lan').checked=p.lan_access;
   $('portalpw').placeholder=p.password_set?'Set (type to change)':'Not set';
   const urls=p.urls.length?p.urls.map(u=>`<code>${esc(u)}</code>`).join(' or '):'';
-  $('portalinfo').innerHTML=!p.lan_access?'Off — only this computer can open SnapSTL.':(p.listening_on_network?`On. Employees open ${urls} and sign in with the logistics password.`:'On — restarting SnapSTL to listen on the network…');}
-$('portalsave').onclick=async()=>{try{const r=await post('/api/portal',{enabled:$('lan').checked,password:$('portalpw').value});$('portalpw').value='';
-  $('portalinfo').textContent=r.restarting?'Saved — SnapSTL is restarting (a few seconds). macOS may ask to allow incoming connections: click Allow.':(r.note||'Saved.');setTimeout(loadPortal,4000)}catch(e){$('portalinfo').textContent=e.message;$('portalinfo').style.color='var(--err)'}};
+  $('logisticsurls').innerHTML=p.lan_access?p.urls.map(u=>`<div class="toolbar"><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a><input aria-label="Logistics address" readonly value="${esc(u)}" style="min-width:240px"><button type="button" class="small" data-copy-logistics>Copy address</button></div>`).join(''):'';
+  document.querySelectorAll('[data-copy-logistics]').forEach(b=>b.onclick=async()=>{const input=b.previousElementSibling;try{await navigator.clipboard.writeText(input.value);b.textContent='Copied'}catch{input.focus();input.select();b.textContent=document.execCommand('copy')?'Copied':'Select and copy address'}});
+  $('portalinfo').innerHTML=!p.lan_access?'Off — logistics is disabled.':p.error?esc(p.error):p.listening_on_network?`Listening on port 8002. Employees open ${urls}. If it opens on this computer at http://127.0.0.1:8002 but not another computer, allow incoming TCP 8002 for the local subnet in the host’s firewall and check both computers are on the same network.`:'Enabled, but not listening. Press Save to start logistics.';}
+$('portalsave').onclick=async()=>{const b=$('portalsave');b.disabled=true;try{await post('/api/portal',{enabled:$('lan').checked,password:$('portalpw').value});$('portalpw').value='';await loadPortal()}catch(e){$('portalinfo').textContent=e.message;$('portalinfo').style.color='var(--err)'}finally{b.disabled=false}};
 
 // ---------- settings sections ----------
 const SETSECS=[['setup','Setup'],['product','Product'],['plates','Plates'],['folders','Folders'],['connections','Connections'],['maintenance','Maintenance']];

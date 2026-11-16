@@ -114,7 +114,7 @@ class Settings:
     output_dir: str = str(DEFAULT_OUTPUT_DIR)
     downloads_dir: str = str(DEFAULT_DOWNLOADS_DIR)  # downloaded models, kept until deleted in Finder
     makerworld_url: str = MAKERWORLD_URL  # the model-maker page the helper must be on (its designId is checked)
-    lan_access: bool = False  # enable Windows read-only logistics on port 8002 (needs a password)
+    lan_access: bool = False  # enable read-only logistics on port 8002 (needs a password)
     license_passwords: dict = field(default_factory=dict)  # MakerWorld license password per designId
 
     @property

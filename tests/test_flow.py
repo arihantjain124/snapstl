@@ -212,18 +212,21 @@ def test_cleanup_keeps_made_orders_and_reset_empties(client):
 
 def test_other_computers_need_portal_and_login(client, monkeypatch):
     from snapstl import server, logistics
-    monkeypatch.setattr(server.platform_os, 'WINDOWS', True)
     remote = TestClient(server.app, base_url='http://192.168.1.20:8317', client=('192.168.1.50', 50001))
     staff = TestClient(logistics.app, base_url='http://192.168.1.20:8002', client=('192.168.1.50', 50001))
     assert staff.get('/api/orders').status_code == 403
-    assert client.post('/api/portal', json={'enabled': True, 'password': 'portal-pass-123'}).status_code == 200
+    r = client.post('/api/portal', json={'enabled': True, 'password': 'portal-pass-123'})
+    assert r.status_code == 200 and r.json()['listening_on_network']
+    assert not r.json()['restarting']
     try:
         assert remote.get('/api/state').status_code == 403
         assert remote.post('/api/login', json={'password': 'portal-pass-123'}).status_code == 403
         assert staff.get('/api/orders').status_code == 401
         assert staff.post('/api/login', json={'password': 'wrong'}).status_code == 401
         assert staff.post('/api/login', json={'password': 'portal-pass-123'}).status_code == 200
-        assert staff.get('/').status_code == 200
+        page = staff.get('/')
+        assert page.status_code == 200 and 'const LOGISTICS=true;' in page.text
+        assert 'id="pagenumber"' in page.text
         assert staff.get('/api/orders?tab=all&limit=25').status_code == 200
         assert staff.get('/api/orders/facets').status_code == 200
         for path in ['/api/settings', '/api/state', '/api/farm/printers', '/api/helper/next']:
@@ -552,3 +555,36 @@ def test_adhoc_orders_are_added_by_hand_and_batched_like_any_order(client):
     for p in b["summary"]["plates"]:
         r = client.post("/api/makeit/remove", json={"batch_id": bid, "file": p["file"]})
         assert r.status_code == 200, r.text
+
+
+def test_logistics_page_uses_utf8(monkeypatch):
+    from snapstl import logistics, server
+    original = Path.read_text
+    def windows_default(path, *args, **kwargs):
+        if path == server.STATIC / 'index.html':
+            assert kwargs.get('encoding') == 'utf-8'
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'read_text', windows_default)
+    assert 'const LOGISTICS=true;' in logistics.page().body.decode('utf-8')
+
+
+def test_logistics_reports_occupied_port(monkeypatch):
+    from snapstl import logistics, server, auth
+    monkeypatch.setattr(server.SETTINGS, 'lan_access', True)
+    monkeypatch.setattr(auth, 'enabled', lambda: True)
+    class BusySocket:
+        def bind(self, address):
+            raise OSError('occupied')
+        def close(self):
+            pass
+    monkeypatch.setattr(logistics.socket, 'socket', lambda *a: BusySocket())
+    assert logistics.start() is None
+    assert not logistics.status()['listening_on_network']
+    assert '8002' in logistics.status()['error']
+
+
+def test_logistics_urls_show_current_host_ips_first(monkeypatch):
+    from snapstl import server
+    monkeypatch.setattr(server.platform_os, 'lan_ips', lambda: ['192.168.1.24', '192.168.1.24', '10.0.0.8'])
+    monkeypatch.setattr(server.platform_os, 'lan_name', lambda: 'host.local')
+    assert server._portal_urls() == ['http://192.168.1.24:8002', 'http://10.0.0.8:8002', 'http://host.local:8002']

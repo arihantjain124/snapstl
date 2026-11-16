@@ -48,8 +48,8 @@ async def _lifespan(_app):
     sync.LOOP.start()   # shared order records (Supabase), if connected in Settings
     farm.WORKER.start()  # Push to queue → Bambuddy (connects by itself on a fresh install)
     yield
-    if logistics_server:
-        logistics_server.should_exit = True
+    from .logistics import stop as stop_logistics
+    stop_logistics()
 
 
 app = FastAPI(title="SnapSTL", docs_url=None, redoc_url=None, openapi_url=None, lifespan=_lifespan)
@@ -165,9 +165,9 @@ def auth_check(request: Request):
 
 # ---------------- web portal for other computers (this computer only) ----------------
 def _portal_urls() -> list[str]:
-    urls = [f"http://{platform_os.lan_name()}:8002"]
-    urls += [f"http://{ip}:8002" for ip in platform_os.lan_ips()]
-    return urls
+    """Current LAN addresses, with copyable numeric IPs first."""
+    hosts = [*platform_os.lan_ips(), platform_os.lan_name()]
+    return [f"http://{host}:8002" for host in dict.fromkeys(hosts) if host]
 
 
 def _port() -> int:
@@ -231,8 +231,9 @@ def update_restart():
 
 @app.get("/api/portal")
 def portal_info():
+    from .logistics import status
     return {"lan_access": SETTINGS.lan_access, "password_set": auth.enabled(),
-            "listening_on_network": SETTINGS.lan_access and platform_os.WINDOWS,
+            **status(),
             "urls": _portal_urls() if SETTINGS.lan_access else []}
 
 
@@ -247,16 +248,14 @@ async def portal_update(req: Request):
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
     enable = bool(body.get("enabled", SETTINGS.lan_access))
-    if enable and not platform_os.WINDOWS:
-        raise HTTPException(400, "Logistics hosting is available on Windows")
     if enable and not auth.enabled():
         raise HTTPException(400, "Set a portal password first (at least 10 characters)")
-    changed = enable != SETTINGS.lan_access
     SETTINGS.lan_access = enable
     save_settings(SETTINGS)
-    restarting = False  # hosting changes take effect after a person restarts safely
-    return {"lan_access": enable, "password_set": auth.enabled(), "restarting": restarting,
-            "note": "" if (restarting or not changed) else "Restart SnapSTL for this to take effect"}
+    from . import logistics
+    await run_in_threadpool(logistics.start if enable else logistics.stop)
+    return portal_info() | {"restarting": False, "note": "Saved"}
+
 
 
 # ---------------- app ----------------
