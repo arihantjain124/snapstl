@@ -245,9 +245,11 @@ records are emptied together (a backup of each is saved first) and nothing is se
 computers keep their own databases; reset them too for a fresh start everywhere.
 
 **Daily handling (Settings → Maintenance → Database).** **Sync** sends this computer's changes and
-loads every computer's; **Clean up** syncs and then makes this computer's orders match Supabase
-exactly (orders Supabase no longer has are removed here, except ones this computer is making, which
-are sent back; old history is tidied; a backup is saved first). Both run at once, without questions.
+loads every computer's; **Clean up** syncs and then makes this computer match Supabase exactly
+(orders and batches Supabase doesn't have are removed here, with their download and print rows —
+batch folders and models on disk are kept; old history is tidied; a backup is saved first). When
+Supabase is cleared on one computer (Clear shared records, or Reset with *also clear Supabase*),
+every other computer empties itself to match at its next sync, so nothing comes back. Both run at once, without questions.
 Only **Reset** asks (RESET, or RESET ALL with *also clear Supabase*). A report's statuses count as
 recent as the **newest date or time in that file**, so uploading an older file never undoes a newer
 status, on any computer.

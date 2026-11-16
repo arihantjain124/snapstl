@@ -103,6 +103,9 @@ CREATE TABLE IF NOT EXISTS {SCHEMA}.batch_records (
     updated_at    timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 CREATE TABLE IF NOT EXISTS {SCHEMA}.meta (key text PRIMARY KEY, value text);
+-- A new id every time the records are created (again, after Clear / Reset with "also clear Supabase"):
+-- each computer notices it changed and makes itself match the empty records (sync._follow_reset).
+INSERT INTO {SCHEMA}.meta(key, value) VALUES ('instance', gen_random_uuid()::text) ON CONFLICT (key) DO NOTHING;
 CREATE OR REPLACE FUNCTION {SCHEMA}.refuse_delete() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   RAISE EXCEPTION 'SnapSTL records are never deleted (% on %.%)', TG_OP, TG_TABLE_SCHEMA, TG_TABLE_NAME;
@@ -530,6 +533,7 @@ class Status:
         self.pulled = 0
         self.running = False
         self.copy_error = ""
+        self.note = ""  # e.g. this computer followed a reset of the shared records
 
     def snapshot(self) -> dict:
         with db.tx() as con:
@@ -537,7 +541,8 @@ class Status:
                                   "SELECT order_id FROM orders WHERE COALESCE(in_remote,0)=0)").fetchone()[0]
         return {"enabled": enabled(), "last_ok": self.last_ok, "last_try": self.last_try, "error": self.error,
                 "pending": pending, "pushed": self.pushed, "pulled": self.pulled, "running": self.running,
-                "computer": computer.NAME, "last_copy": last_copy(), "copy_error": self.copy_error}
+                "computer": computer.NAME, "last_copy": last_copy(), "copy_error": self.copy_error,
+                "note": self.note}
 
 
 STATUS = Status()
@@ -551,6 +556,7 @@ def sync_now() -> dict:
         STATUS.running = True
         STATUS.last_try = time.time()
         try:
+            _follow_reset()  # the records were cleared on some computer: match them before sending anything
             with _remote() as rc:
                 STATUS.pushed = n = _push(rc)
                 for _ in range(20):  # a big report: keep sending until everything is there
@@ -622,9 +628,9 @@ def summary() -> dict:
 def clear(confirm: str) -> dict:
     """Empty the shared records (every computer's), after saving them all to a JSON file in this
     computer's backups folder. Dropping the schema bypasses the no-delete triggers on purpose; the
-    tables are created again, empty, right away. This computer's batched / bundled / printed orders are
-    sent again by the next sync (they're still being made here); other computers send theirs when they
-    are cleared there too or when their orders change."""
+    tables are created again, empty, right away, with a new `instance` id: at their next sync every
+    computer — this one included — notices and makes itself match the empty records (`_follow_reset`),
+    so nothing is sent back."""
     from .maintenance import BACKUP_DIR
 
     if confirm != "CLEAR":
@@ -643,12 +649,8 @@ def clear(confirm: str) -> dict:
         except psycopg.Error as e:
             raise SyncError(f"The shared records couldn't be cleared: {_short(e)}") from e
         _setup_done = ""
-        with db.tx() as con:  # this computer starts over: send its own again, load everything anew
-            con.execute("UPDATE orders SET in_remote=0")
-            con.execute("UPDATE batches SET synced=0")
-            con.execute("DELETE FROM sync_state WHERE key='pulled_until'")
         with _remote():
-            pass  # create the empty tables again
+            pass  # create the empty tables again (with a new instance id)
     return {"cleared": saved, "backup": str(dest)}
 
 
@@ -711,15 +713,92 @@ def daily_copy() -> None:
 
 
 # ---------------- clean up: this computer matches the shared records ----------------
-def match() -> dict:
-    """Settings → Database → Clean up: make this computer's orders match the shared records.
+def _apply_match(rows: list[dict], batch_uids: set[str]) -> dict:
+    """Make this computer's database hold exactly what the shared records hold: every record's state is
+    taken (merge(force=True)); orders the records don't have are removed, and so are this computer's
+    batches they don't have (with their download, print and slice rows) — unless a shared order still
+    belongs to it. Files on disk (batch folders, models) are never touched."""
+    from .maintenance import _busy
 
-    Sends what's waiting, then loads every shared record again and takes its state (who makes it,
-    status, name). Orders the shared records no longer have (cleared on another computer) are removed
-    here — except orders this computer itself is making (in its batch, bundled, printed), which are sent
-    again.
-    Old download history, upload records and finished batches (30 days) are tidied too. A backup of this
-    computer's database is saved first; the shared records are never deleted from."""
+    have = {r["order_id"] for r in rows}
+    keep_uids = set(batch_uids) | {r["batch_uid"] for r in rows if r.get("batch_uid")}
+    look = "SELECT order_id, state, source_status, name, color, batch_uid FROM orders"
+    with db.tx() as con:
+        if _busy(con):
+            raise SyncError("A batch is being built right now — try again in a minute")
+        before = {r[0]: tuple(r[1:]) for r in con.execute(look)}
+        stale = []
+        with db.quiet(con):
+            for r in rows:
+                x = merge(con, r, force=True)
+                if x:
+                    stale.append(x)
+            gone = [oid for oid in before if oid not in have]
+            for i in range(0, len(gone), 500):
+                part = gone[i:i + 500]
+                q = ",".join("?" * len(part))
+                con.execute(f"DELETE FROM sync_outbox WHERE order_id IN ({q})", part)
+                con.execute(f"DELETE FROM orders WHERE order_id IN ({q})", part)
+            drop = [b[0] for b in con.execute("SELECT id, uid FROM batches") if b[1] not in keep_uids]
+            for bid in drop:
+                for t in ("downloads", "print_jobs", "slices"):
+                    con.execute(f"DELETE FROM {t} WHERE batch_id=?", (bid,))
+                con.execute("UPDATE orders SET batch_id=NULL WHERE batch_id=?", (bid,))
+                con.execute("DELETE FROM batches WHERE id=?", (bid,))
+            # kept batches the records lack (e.g. cleared while its orders were sent again): send them again
+            for (uid,) in con.execute("SELECT uid FROM batches").fetchall():
+                if uid not in batch_uids:
+                    con.execute("UPDATE batches SET synced=0 WHERE uid=?", (uid,))
+            if rows:
+                con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('pulled_until', ?)",
+                            (max(r["updated_text"] for r in rows),))
+            else:
+                con.execute("DELETE FROM sync_state WHERE key='pulled_until'")
+        _release_stale(con, stale)
+        after = {r[0]: tuple(r[1:]) for r in con.execute(look)}
+    return {"orders": len(after), "added": sum(1 for o in after if o not in before),
+            "updated": sum(1 for o, v in after.items() if o in before and before[o] != v),
+            "removed": len(gone), "batches_removed": len(drop)}
+
+
+def _everything(rc) -> tuple[list[dict], set[str]]:
+    rows = rc.execute(f"SELECT *, updated_at::text AS updated_text FROM {SCHEMA}.order_records").fetchall()
+    uids = {r["uid"] for r in rc.execute(f"SELECT uid FROM {SCHEMA}.batch_records").fetchall()}
+    return rows, uids
+
+
+def _follow_reset() -> None:
+    """At the start of every sync: if the shared records were created again since this computer last
+    synced (Clear shared records / Reset with "also clear Supabase" on any computer), make this computer
+    match them — a backup first — so nothing of the old records is sent back."""
+    from .maintenance import backup
+
+    with _remote() as rc:
+        r = rc.execute(f"SELECT value FROM {SCHEMA}.meta WHERE key='instance'").fetchone()
+        now = r["value"] if r else ""
+        with db.tx() as con:
+            seen = con.execute("SELECT value FROM sync_state WHERE key='instance'").fetchone()
+        seen = seen[0] if seen else ""
+        if not now or now == seen:
+            return
+        if seen:  # cleared since: match (first sync after updating just learns the id)
+            rows, uids = _everything(rc)
+            backup()
+            res = _apply_match(rows, uids)
+            STATUS.note = (f"The shared records were cleared on a computer: this one now matches them "
+                           f"({res['removed']} order(s), {res['batches_removed']} batch(es) removed here; backup saved)")
+    with db.tx() as con:
+        con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('instance', ?)", (now,))
+
+
+def match() -> dict:
+    """Settings → Database → Clean up: make this computer match the shared records exactly.
+
+    Syncs first (this computer's changes are sent), then loads every shared record again and makes the
+    local database hold exactly that — orders and their states; orders the records don't have are
+    removed, and this computer's batches they don't have (with their download / print / slice rows).
+    Old upload records and history (30 days) are tidied. A backup is saved first; nothing is deleted in
+    the shared records and no file on disk is touched."""
     from . import maintenance as M
 
     st = sync_now()
@@ -728,39 +807,8 @@ def match() -> dict:
     path = M.backup()
     with _lock:
         with _remote() as rc:
-            rows = rc.execute(f"SELECT *, updated_at::text AS updated_text FROM {SCHEMA}.order_records "
-                              "ORDER BY updated_at").fetchall()
-        have = {r["order_id"] for r in rows}
-        look = "SELECT order_id, state, source_status, name, color, batch_uid, batch_computer_id FROM orders"
-        with db.tx() as con:
-            before = {r[0]: tuple(r[1:]) for r in con.execute(look)}
-            stale = []
-            with db.quiet(con):
-                for r in rows:
-                    s = merge(con, r, force=True)
-                    if s:
-                        stale.append(s)
-                gone = [oid for oid in before if oid not in have]
-                making = [oid for oid in gone if before[oid][0] in ("in_batch", "bundled", "printed")
-                          and before[oid][5] == computer.ID]  # this computer's own work: sent again
-                removed = [oid for oid in gone if oid not in making]
-                for i in range(0, len(removed), 500):
-                    part = removed[i:i + 500]
-                    q = ",".join("?" * len(part))
-                    con.execute(f"DELETE FROM sync_outbox WHERE order_id IN ({q})", part)
-                    con.execute(f"DELETE FROM orders WHERE order_id IN ({q})", part)
-                for oid in making:
-                    con.execute("UPDATE orders SET in_remote=0 WHERE order_id=?", (oid,))
-                if rows:
-                    con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('pulled_until', ?)",
-                                (rows[-1]["updated_text"],))
-            _release_stale(con, stale)
-            after = {r[0]: tuple(r[1:]) for r in con.execute(look)}
-    updated = sum(1 for oid, v in after.items() if oid in before and before[oid] != v)
-    added = sum(1 for oid in after if oid not in before)
+            rows, uids = _everything(rc)
+        res = _apply_match(rows, uids)
     tidy = M.cleanup(30, orders=False, take_backup=False)
-    if making or stale:
-        sync_now()
-    return {"orders": len(after), "added": added, "updated": updated, "removed": len(removed),
-            "sent_again": len(making), "backup": str(path),
-            "tidied": {k: v for k, v in tidy.items() if k != "backup"}}
+    sync_now()  # kept batches the records lacked go back up
+    return res | {"backup": str(path), "tidied": {k: v for k, v in tidy.items() if k != "backup"}}

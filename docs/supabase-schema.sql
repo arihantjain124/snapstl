@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS snapstl.batch_records (
     updated_at    timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 CREATE TABLE IF NOT EXISTS snapstl.meta (key text PRIMARY KEY, value text);
+-- A new id every time the records are created (again, after Clear / Reset with "also clear Supabase"):
+-- each computer notices it changed and makes itself match the empty records (sync._follow_reset).
+INSERT INTO snapstl.meta(key, value) VALUES ('instance', gen_random_uuid()::text) ON CONFLICT (key) DO NOTHING;
 CREATE OR REPLACE FUNCTION snapstl.refuse_delete() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   RAISE EXCEPTION 'SnapSTL records are never deleted (% on %.%)', TG_OP, TG_TABLE_SCHEMA, TG_TABLE_NAME;

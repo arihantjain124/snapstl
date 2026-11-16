@@ -188,10 +188,11 @@ def test_clear_shared_records(two, tmp_path, monkeypatch):
         saved = json.loads(open(r["backup"]).read())
         assert [o["order_id"] for o in saved["order_records"]] == ["C1", "C2"]  # nothing lost: kept on this computer
         assert sync.summary() == {"orders": {}, "batches": {}}  # empty, tables there again
-        assert order("C1")["state"] == "in_batch"  # this computer still makes it …
-        ok(sync.sync_now())
-        assert remote("C1")["state"] == "in_batch"  # … so it's sent again
-        assert remote("C2")["state"] == "released"  # and its report's orders are offered again
+        ok(sync.sync_now())  # this computer follows the reset: matches the empty records, sends nothing back
+        assert order("C1") is None and order("C2") is None
+        with db.tx() as con:
+            assert con.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == 0
+        assert sync.summary() == {"orders": {}, "batches": {}}
 
 
 def test_old_batch_orders_get_their_owner(two):
@@ -371,12 +372,39 @@ def test_clean_up_makes_this_computer_match_the_shared_records(two, tmp_path, mo
         r = sync.match()
         assert r["orders"] == 3 and r["updated"] >= 1 and r["removed"] == 0 and os.path.exists(r["backup"])
         assert order("M1")["state"] == "bundled" and order("M1")["batch_computer"] == "PC A"
+        with db.tx() as con:  # a download row of B's batch (it goes with the batch)
+            con.execute("INSERT INTO downloads(cache_key, name, compartments, model_json, state, batch_id, "
+                        "created_at, updated_at) VALUES ('k', 'Cyd', 3, '{}', 'done', ?, 0, 0)", (b["batch_id"],))
     with two("A"):  # A resets everything, Supabase included
         maintenance.reset(shared=True)
-    with two("B"):
-        r = sync.match()  # B now matches the empty records — but keeps (and sends again) what it makes
-        assert r["removed"] == 2 and r["sent_again"] == 1
-        assert order("M1") is None and order("M2") is None
-        assert order("M3")["state"] == "in_batch" and order("M3")["batch_id"] == b["batch_id"]
-        assert remote("M3")["state"] == "in_batch" and remote("M3")["computer_name"] == "PC B"
-        assert sync.summary()["orders"] == {"in_batch": 1}
+    with two("B"):  # B follows at its next sync: matches the empty records, nothing comes back
+        s = ok(sync.sync_now())
+        assert "cleared on a computer" in s["note"]
+        assert order("M1") is None and order("M2") is None and order("M3") is None
+        with db.tx() as con:
+            assert con.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == 0
+            assert con.execute("SELECT COUNT(*) FROM downloads").fetchone()[0] == 0
+        assert sync.summary() == {"orders": {}, "batches": {}}
+        r = sync.match()  # Clean up afterwards: nothing left to change
+        assert r["removed"] == 0 and r["batches_removed"] == 0 and r["orders"] == 0
+
+
+def test_clean_up_sends_back_a_batch_its_shared_orders_still_name(two, tmp_path, monkeypatch):
+    """The records hold a batch's orders but not the batch itself (its 'already sent' mark outlived a
+    clear): Clean up keeps the batch and sends it again."""
+    import psycopg
+
+    from snapstl import batches as B
+
+    monkeypatch.setattr(maintenance, "BACKUP_DIR", tmp_path / "backups")
+    with two("A"):
+        ingest.ingest(report([("K1", "PRINT", "Kia", "")]), "r.csv")
+        a = B.create_batch(["K1"], Settings())
+        ok(sync.sync_now())
+        with psycopg.connect(os.environ["SNAPSTL_TEST_DATABASE_URL"], autocommit=True) as c:  # test database only
+            c.execute("ALTER TABLE snapstl.batch_records DISABLE TRIGGER USER")
+            c.execute("DELETE FROM snapstl.batch_records")
+            c.execute("ALTER TABLE snapstl.batch_records ENABLE TRIGGER USER")
+        r = sync.match()
+        assert r["batches_removed"] == 0 and order("K1")["batch_id"] == a["batch_id"]
+        assert sync.summary()["batches"] == {"PC A": 1}  # sent again
