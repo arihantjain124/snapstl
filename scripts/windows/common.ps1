@@ -26,16 +26,17 @@ function Get-OtherBambuddy {
 }
 
 # Bambuddy, by what you asked for; never fails the SnapSTL install:
-#   SNAPSTL_BAMBUDDY=docker  Bambuddy + its slicer service in Docker on this PC (bambuddy-server.ps1, as administrator)
+#   SNAPSTL_BAMBUDDY=server  this PC is the Bambuddy computer: Bambuddy as a Windows service + its slicer
+#                            service in Docker (bambuddy-server.ps1, as administrator)
 #   SNAPSTL_BAMBUDDY=native  the older install next to SnapSTL (bambuddy.ps1, no slicer service)
 #   otherwise                nothing: Bambuddy runs on its own computer (bambuddy-server.ps1 there); a
 #                            Bambuddy installed here by an older SnapSTL keeps being updated
 #   SNAPSTL_NO_BAMBUDDY=1    nothing at all
 function Install-Bambuddy {
   if ($env:SNAPSTL_NO_BAMBUDDY -eq "1") { return }
-  if ($env:SNAPSTL_BAMBUDDY -eq "docker") {
+  if ($env:SNAPSTL_BAMBUDDY -eq "server") {
     $Server = Join-Path $PSScriptRoot "bambuddy-server.ps1"
-    Write-Host "Setting up Bambuddy and its slicer service in Docker (a window asks for administrator rights)..."
+    Write-Host "Setting up Bambuddy and its slicer service (a window asks for administrator rights)..."
     $p = Start-Process powershell -Verb RunAs -Wait -PassThru -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-NoExit", "-File", "`"$Server`""
     return
   }

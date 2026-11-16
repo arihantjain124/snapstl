@@ -3,8 +3,8 @@
 #   * a background task "SnapSTL" that starts at log-on and restarts SnapSTL if it stops
 #     (web portal http://127.0.0.1:8317, downloads, plate builds)
 #   * "SnapSTL" shortcuts in the Start menu and on the Desktop (the app window)
-#   * Bambuddy: SNAPSTL_BAMBUDDY_URL=http://<Bambuddy computer>:8000 connects to yours; SNAPSTL_BAMBUDDY=docker
-#     sets it up (with its slicer service) in Docker on this PC - see Install-Bambuddy in common.ps1
+#   * Bambuddy: SNAPSTL_BAMBUDDY_URL=http://<Bambuddy computer>:8000 connects to yours; SNAPSTL_BAMBUDDY=server
+#     sets it up on this PC (Windows service + slicer service in Docker) - see Install-Bambuddy in common.ps1
 # Run:  powershell -ExecutionPolicy Bypass -File scripts\windows\install.ps1
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
