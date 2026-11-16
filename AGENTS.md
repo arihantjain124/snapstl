@@ -88,7 +88,10 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - **Every computer needs the shared records** (owner decision 0.22.8): with `sync.REQUIRED`, no change
   (non-GET `/api`) is accepted while `sync.online()` is false, except `server.WITHOUT_SHARED`. Don't add
   ways to work offline. Settings → Database **Sync** and **Clean up** (`sync.match`) run without
-  confirmation; Clean up never deletes in Supabase and keeps this computer's own batched work.
+  confirmation; Clean up never deletes in Supabase and makes this computer hold exactly what Supabase
+  holds (`sync._apply_match`: orders, batches and their download / print / slice rows; never files on
+  disk). A cleared Supabase (new `meta.instance`) is followed by every computer at its next sync
+  (`sync._follow_reset`) — never re-send old rows after a clear.
 - OS differences go only in `platform_os.py` (Mac and Windows); never call `open`, `launchctl`,
   `scutil` or Windows commands elsewhere.
 - Clean-up must keep bundled orders. Every destructive maintenance action takes a backup first.
