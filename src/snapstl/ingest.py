@@ -304,11 +304,11 @@ def _upsert(con, s: IngestSummary, filename: str, o: dict) -> None:
         con.execute(
             """INSERT INTO orders(order_id,clubbed_id,sku,order_date,source_status,quantity,raw_name,raw_color,
                special_request,name,color,review_reason,state,first_file,last_file,first_seen,updated_at,
-               customer_name,phone,address,status_at,state_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               customer_name,phone,address,status_at,state_at,first_status)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (o["order_id"], o["clubbed_id"], "Magicians_35", o["order_date"], o["source_status"], o["quantity"],
              raw_name, raw_color, special, name, color, review, state, filename, filename, t, t,
-             o["customer_name"], o["phone"], o["address"], o["status_at"], t),
+             o["customer_name"], o["phone"], o["address"], o["status_at"], t, o["source_status"]),
         )
         s.new += 1
         if state == "ready":
@@ -429,8 +429,8 @@ def add_adhoc(name: str, phone: str, color: str, quantity: int = 1, note: str = 
         con.execute(
             """INSERT INTO orders(order_id,clubbed_id,sku,order_date,source_status,quantity,raw_name,raw_color,
                special_request,name,color,name_edited,review_reason,state,first_file,last_file,first_seen,updated_at,
-               customer_name,phone,address,status_at,state_at)
-               VALUES (?,'',?,?,?,?,?,?,?,?,?,0,NULL,'ready','added by hand','added by hand',?,?,?,?,'',?,?)""",
+               customer_name,phone,address,status_at,state_at,first_status)
+               VALUES (?,'',?,?,?,?,?,?,?,?,?,0,NULL,'ready','added by hand','added by hand',?,?,?,?,'',?,?,'PRINT')""",
             (oid, ADHOC_SKU, now.date().isoformat(), "PRINT", qty, raw_name, raw_color, note, clean, col,
              t, t, raw_name, phone, stamp, t),
         )

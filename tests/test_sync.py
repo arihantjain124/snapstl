@@ -247,7 +247,8 @@ def test_only_snapstl_reaches_the_records(two):
         with psycopg.connect(url, autocommit=True) as c:
             rls = dict(c.execute("SELECT relname, relrowsecurity FROM pg_class WHERE relnamespace = "
                                  "'snapstl'::regnamespace AND relkind = 'r'").fetchall())
-            assert rls == {"order_records": True, "batch_records": True, "meta": True, "report_rows": True, "report_uploads": True}
+            assert rls == {"order_records": True, "batch_records": True, "meta": True, "report_rows": True,
+                           "report_uploads": True, "order_notes": True, "usage_counts": True}
             c.execute("SET ROLE anon")
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 c.execute("SELECT * FROM snapstl.order_records")
@@ -658,3 +659,95 @@ def test_skip_approve_and_ready_to_ship_reach_every_computer(two):
     with pc("B"):
         ok(sync.sync_now())
         assert order("V3")["state"] == "bundled" and order("V3")["made_at"]
+
+
+def test_people_set_fields_reach_every_computer(two):
+    """0.23: Label Generated, Express, flags … set on one computer reach the others; per group the
+    newest change wins, so an older one sent later can't undo it."""
+    pc = two
+    data = report([("P1", "PRINT", "Asha", ""), ("P2", "DELIVERED", "Ravi", "02/11/2026")])
+    for name in ("A", "B"):
+        with pc(name):
+            ingest.ingest(data, "r.csv")
+            ok(sync.sync_now())
+    with pc("A"):
+        with db.tx() as con:
+            db.set_group(con, "P1", "express", express_by="2026-11-25", express_note="birthday")
+            db.set_group(con, "P1", "label", label_at=db.now(), label_by="logistics")
+        ok(sync.sync_now())
+        r = remote("P1")
+        assert (r["express_by"], r["express_note"], r["label_by"]) == ("2026-11-25", "birthday", "logistics")
+        assert r["first_status"] == "PRINT" and remote("P2")["first_status"] == "DELIVERED"
+    with pc("B"):
+        ok(sync.sync_now())
+        o = order("P1")
+        assert (o["express_by"], o["express_note"], o["label_by"]) == ("2026-11-25", "birthday", "logistics")
+        with db.tx() as con:  # B undoes Label Generated (a newer change)
+            db.set_group(con, "P1", "label")
+        ok(sync.sync_now())
+        assert remote("P1")["label_at"] is None
+    with pc("A"):
+        # A sends its older label again (e.g. it hadn't pulled yet): the newer undo stays
+        with db.tx() as con:
+            con.execute("INSERT OR REPLACE INTO sync_outbox(order_id, queued_at) VALUES ('P1', ?)", (db.now(),))
+        ok(sync.sync_now())
+        assert remote("P1")["label_at"] is None and order("P1")["label_at"] is None
+        assert order("P1")["express_by"] == "2026-11-25"
+
+
+def test_print_started_reaches_every_computer(two):
+    from snapstl import batches as B
+
+    pc = two
+    data = report([("S1", "PRINT", "Asha", "")])
+    for name in ("A", "B"):
+        with pc(name):
+            ingest.ingest(data, "r.csv")
+            ok(sync.sync_now())
+    with pc("A"):
+        a = B.create_batch(["S1"], Settings())
+        with db.tx() as con:
+            db.finish_batch(con, a["batch_id"], "done", {"label": "Batch 1"}, ["S1"])
+            con.execute("UPDATE orders SET print_started_at=? WHERE order_id='S1'", (db.now(),))
+        ok(sync.sync_now())
+        assert remote("S1")["print_started_at"]
+    with pc("B"):
+        ok(sync.sync_now())
+        assert order("S1")["state"] == "bundled" and order("S1")["print_started_at"]
+
+
+def test_call_notes_and_usage_reach_the_shared_records(two):
+    pc = two
+    with pc("A"):
+        ingest.ingest(report([("C1", "PRINT", "Asha", "")]), "r.csv")
+        with db.tx() as con:
+            db.add_note(con, "C1", "Customer called, wants it by Friday", "logistics")
+            db.count_usage(con, "copy_tracking_link")
+            db.count_usage(con, "copy_tracking_link")
+        ok(sync.sync_now())
+        assert sync.pending() == 0
+        with db.tx() as con:
+            db.count_usage(con, "copy_tracking_link")
+        ok(sync.sync_now())
+    with pc("B"):
+        ok(sync.sync_now())
+        with db.tx() as con:
+            notes = db.rows(con, "SELECT order_id, text, author FROM order_notes")
+        assert notes == [{"order_id": "C1", "text": "Customer called, wants it by Friday", "author": "logistics"}]
+        assert sync.usage() == [{"feature": "copy_tracking_link", "count": 3, "days": 1}]
+    with sync._remote() as rc:  # never deleted
+        import psycopg
+        with pytest.raises(psycopg.Error):
+            rc.execute("DELETE FROM snapstl.order_notes")
+
+
+def test_older_snapstl_cannot_write_after_the_upgrade(two, monkeypatch):
+    with two("A"):
+        ok(sync.sync_now())
+        with sync._remote() as rc:
+            assert rc.execute("SELECT value FROM snapstl.meta WHERE key='schema_version'").fetchone()["value"] \
+                == str(sync.SCHEMA_VERSION)
+        monkeypatch.setattr(sync, "SCHEMA_VERSION", sync.SCHEMA_VERSION - 1)  # an older SnapSTL
+        monkeypatch.setattr(sync, "_setup_done", "")
+        st = sync.sync_now()
+        assert "newer SnapSTL" in st["error"]

@@ -156,7 +156,27 @@ MIGRATIONS = [
     ("slices", "sliced_path", "TEXT"),      # OrcaSlicer's sliced file (batch folder / Sliced/<model>/…)
     ("files", "sent", "INTEGER"),           # 1 = in the shared records' report_uploads
     ("print_jobs", "ams_tray", "INTEGER"),  # filament slot it prints from (Bambu global tray id: AMS n·4+slot, 254 external)
+    # 0.23: order flow + logistics (docs/build-plan-order-flow-and-logistics.md)
+    ("orders", "first_status", "TEXT"),      # webstore status when first seen (orders first seen past PRINT are history)
+    ("orders", "print_started_at", "REAL"),  # a plate holding it was first started → Printing
 ]
+
+# Things people set on an order (mostly on the logistics page). Each group travels as one piece between
+# computers with its own `<group>_changed` time: the newest change of a group wins everywhere, whatever
+# happens to the order's state. Clearing a group sets its fields to NULL and still stamps `_changed`.
+FIELD_GROUPS: dict[str, tuple[str, ...]] = {
+    "label": ("label_at", "label_by"),                          # Label Generated → Label done – ship it
+    "express": ("express_by", "express_note"),                  # needed-by date (YYYY-MM-DD) + note
+    "flag": ("flag", "flag_note"),                              # why it is in Problems – check
+    "name_note": ("name_change_reason", "name_confirmed_at"),   # name changed after confirming with the customer
+    "remake": ("remake_at", "remake_reason"),                   # remake requested (by logistics)
+    "reuse": ("reuse_of", "reused_by"),                         # new order ← returned (RTO) piece of another order
+}
+_GROUP_TYPES = {"label_at": "REAL", "name_confirmed_at": "REAL", "remake_at": "REAL"}
+FLAGS = ("past_print_not_made", "cancelled_in_production", "cancel_request", "unknown_status")
+MIGRATIONS += [("orders", c, _GROUP_TYPES.get(c, "TEXT")) for g in FIELD_GROUPS.values() for c in g]
+MIGRATIONS += [("orders", f"{g}_changed", "REAL") for g in FIELD_GROUPS]
+GROUP_COLS = tuple(c for g, cs in FIELD_GROUPS.items() for c in (*cs, f"{g}_changed"))
 
 # Bookkeeping for the shared records, kept by triggers so no code path can forget it:
 #  * orders.state_at = time of the last state change (unless the writer sets it itself);
@@ -164,8 +184,17 @@ MIGRATIONS = [
 #    sync itself (inside `quiet()`) are not queued again;
 #  * batches.synced = 0 whenever a batch changes.
 _NOW = "(julianday('now') - 2440587.5) * 86400.0"
+_SENT_COLS = ("state", "source_status", "status_at", "name", "color", "review_reason", "made_at",
+              "first_status", "print_started_at", *(f"{g}_changed" for g in FIELD_GROUPS))
 POST_SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS sync_outbox (order_id TEXT PRIMARY KEY, queued_at REAL);
+-- call notes on an order (logistics page); shared with every computer, never edited or deleted
+CREATE TABLE IF NOT EXISTS order_notes (uid TEXT PRIMARY KEY, order_id TEXT NOT NULL, at REAL NOT NULL,
+    text TEXT NOT NULL, author TEXT, sent INTEGER);
+CREATE INDEX IF NOT EXISTS order_notes_order ON order_notes(order_id, at);
+-- how often each feature is used on this computer, per day (no customer data)
+CREATE TABLE IF NOT EXISTS usage_counts (day TEXT NOT NULL, feature TEXT NOT NULL, count INTEGER NOT NULL,
+    sent INTEGER, PRIMARY KEY (day, feature));
 CREATE TABLE IF NOT EXISTS report_rows (order_id TEXT PRIMARY KEY, data TEXT, status_at TEXT, file TEXT, sent INTEGER);
 CREATE TABLE IF NOT EXISTS shop_lines (order_id TEXT PRIMARY KEY, data TEXT, status_at TEXT, file TEXT, sent INTEGER);
 CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT);
@@ -174,10 +203,9 @@ CREATE TRIGGER IF NOT EXISTS orders_state_at AFTER UPDATE OF state ON orders
   WHEN NEW.state IS NOT OLD.state AND NEW.state_at IS OLD.state_at
   BEGIN UPDATE orders SET state_at = {_NOW} WHERE order_id = NEW.order_id; END;
 DROP TRIGGER IF EXISTS orders_outbox_upd;
-CREATE TRIGGER IF NOT EXISTS orders_outbox_upd2 AFTER UPDATE ON orders
-  WHEN (NEW.state IS NOT OLD.state OR NEW.source_status IS NOT OLD.source_status
-        OR NEW.status_at IS NOT OLD.status_at OR NEW.name IS NOT OLD.name OR NEW.color IS NOT OLD.color
-        OR NEW.review_reason IS NOT OLD.review_reason OR NEW.made_at IS NOT OLD.made_at)
+DROP TRIGGER IF EXISTS orders_outbox_upd2;
+CREATE TRIGGER IF NOT EXISTS orders_outbox_upd3 AFTER UPDATE ON orders
+  WHEN ({' OR '.join(f'NEW.{c} IS NOT OLD.{c}' for c in _SENT_COLS)})
    AND (COALESCE(NEW.in_remote, 0) = 1 OR NEW.state IN ('in_batch', 'bundled', 'printed'))
    AND NOT EXISTS (SELECT 1 FROM sync_flags WHERE quiet = 1)
   BEGIN INSERT OR REPLACE INTO sync_outbox(order_id, queued_at) VALUES (NEW.order_id, {_NOW}); END;
@@ -241,6 +269,9 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
                 "WHERE b.id=orders.batch_id AND orders.batch_uid IS NULL "
                 "AND orders.state IN ('in_batch','bundled','printed')")
     _upgrade_stamps(con)
+    # orders from before 0.23: ones SnapSTL listed to make started at PRINT; the rest are history
+    con.execute("UPDATE orders SET first_status=CASE WHEN state IN ('ready','needs_review','in_batch','bundled',"
+                "'printed') THEN 'PRINT' ELSE UPPER(COALESCE(source_status,'')) END WHERE first_status IS NULL")
     con.commit()
     return con
 
@@ -271,6 +302,39 @@ def now() -> float:
 
 def rows(con, sql: str, *args) -> list[dict]:
     return [dict(r) for r in con.execute(sql, args).fetchall()]
+
+
+def set_group(con, order_id: str, group: str, **values) -> bool:
+    """Set (or, with no values, clear) one FIELD_GROUPS group of an order and stamp it as the newest
+    change, so it reaches every computer. Fields not given become NULL. Returns False for no such order."""
+    cols = FIELD_GROUPS[group]
+    unknown = set(values) - set(cols)
+    if unknown:
+        raise ValueError(f"Not part of {group}: {', '.join(sorted(unknown))}")
+    sets = ", ".join(f"{c}=?" for c in cols)
+    return con.execute(f"UPDATE orders SET {sets}, {group}_changed=?, updated_at=? WHERE order_id=?",
+                       (*(values.get(c) for c in cols), now(), now(), order_id)).rowcount > 0
+
+
+def add_note(con, order_id: str, text: str, author: str = "") -> dict:
+    """A call note on an order (shared with every computer; never edited or deleted)."""
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("Write the note first")
+    n = {"uid": uuid.uuid4().hex, "order_id": order_id, "at": now(), "text": text[:2000], "author": author or None}
+    con.execute("INSERT INTO order_notes(uid, order_id, at, text, author, sent) VALUES (?,?,?,?,?,0)",
+                (n["uid"], n["order_id"], n["at"], n["text"], n["author"]))
+    return n
+
+
+def count_usage(con, feature: str, day: str | None = None) -> None:
+    """+1 use of a feature today (Settings → Usage). Feature names only, never customer data."""
+    feature = (feature or "").strip()[:64]
+    if not feature:
+        return
+    day = day or time.strftime("%Y-%m-%d")
+    con.execute("INSERT INTO usage_counts(day, feature, count, sent) VALUES (?,?,1,0) ON CONFLICT(day, feature) "
+                "DO UPDATE SET count=count+1, sent=0", (day, feature))
 
 
 def create_batch(con, order_ids: list[str], out_dir: str, settings_json: str = "{}", status: str = "waiting",

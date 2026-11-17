@@ -58,6 +58,46 @@ ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS review_reason text;
 ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS made_at double precision;
 ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS tab text;
 ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS ready_type text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS first_status text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS print_started_at double precision;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS label_at double precision;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS label_by text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS express_by text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS express_note text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS flag text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS flag_note text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS name_change_reason text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS name_confirmed_at double precision;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS remake_at double precision;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS remake_reason text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS reuse_of text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS reused_by text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS label_changed double precision;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS express_changed double precision;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS flag_changed double precision;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS name_note_changed double precision;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS remake_changed double precision;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS reuse_changed double precision;
+COMMENT ON COLUMN snapstl.order_records.first_status IS 'Webstore status when SnapSTL first saw the order (first seen past PRINT = history, never flagged).';
+COMMENT ON COLUMN snapstl.order_records.print_started_at IS 'When a plate holding the order was first started (epoch seconds) → Printing.';
+COMMENT ON COLUMN snapstl.order_records.label_at IS 'Label Generated pressed on the logistics page (epoch seconds) → Label done – ship it; NULL = no label yet.';
+COMMENT ON COLUMN snapstl.order_records.label_by IS 'Who pressed Label Generated (e.g. logistics).';
+COMMENT ON COLUMN snapstl.order_records.express_by IS 'Express: date the customer needs it by (YYYY-MM-DD); NULL = not express.';
+COMMENT ON COLUMN snapstl.order_records.express_note IS 'Express: note from the customer call.';
+COMMENT ON COLUMN snapstl.order_records.flag IS 'Why the order is in Problems – check: past_print_not_made | cancelled_in_production | cancel_request | unknown_status; NULL = none.';
+COMMENT ON COLUMN snapstl.order_records.flag_note IS 'Words shown with the flag.';
+COMMENT ON COLUMN snapstl.order_records.name_change_reason IS 'Why the name / colour was changed after confirming with the customer.';
+COMMENT ON COLUMN snapstl.order_records.name_confirmed_at IS 'When that change was confirmed with the customer (epoch seconds).';
+COMMENT ON COLUMN snapstl.order_records.remake_at IS 'Remake requested (epoch seconds); NULL = none.';
+COMMENT ON COLUMN snapstl.order_records.remake_reason IS 'Why a remake was requested.';
+COMMENT ON COLUMN snapstl.order_records.reuse_of IS 'This order is sent with the returned (RTO) piece of that order.';
+COMMENT ON COLUMN snapstl.order_records.reused_by IS 'This returned (RTO) piece went to that order (each piece is used once).';
+COMMENT ON COLUMN snapstl.order_records.label_changed IS 'Last change of label_at, label_by (epoch seconds): the newest change wins.';
+COMMENT ON COLUMN snapstl.order_records.express_changed IS 'Last change of express_by, express_note (epoch seconds): the newest change wins.';
+COMMENT ON COLUMN snapstl.order_records.flag_changed IS 'Last change of flag, flag_note (epoch seconds): the newest change wins.';
+COMMENT ON COLUMN snapstl.order_records.name_note_changed IS 'Last change of name_change_reason, name_confirmed_at (epoch seconds): the newest change wins.';
+COMMENT ON COLUMN snapstl.order_records.remake_changed IS 'Last change of remake_at, remake_reason (epoch seconds): the newest change wins.';
+COMMENT ON COLUMN snapstl.order_records.reuse_changed IS 'Last change of reuse_of, reused_by (epoch seconds): the newest change wins.';
 CREATE INDEX IF NOT EXISTS order_records_tab ON snapstl.order_records (tab, ready_type);
 CREATE INDEX IF NOT EXISTS order_records_club ON snapstl.order_records (clubbed_id);
 CREATE OR REPLACE FUNCTION snapstl.set_tab() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -117,6 +157,36 @@ CREATE OR REPLACE TRIGGER order_records_no_truncate BEFORE TRUNCATE ON snapstl.o
 CREATE OR REPLACE TRIGGER batch_records_no_delete BEFORE DELETE ON snapstl.batch_records
     FOR EACH ROW EXECUTE FUNCTION snapstl.refuse_delete();
 CREATE OR REPLACE TRIGGER batch_records_no_truncate BEFORE TRUNCATE ON snapstl.batch_records
+    FOR EACH STATEMENT EXECUTE FUNCTION snapstl.refuse_delete();
+CREATE TABLE IF NOT EXISTS snapstl.order_notes (
+    uid       text PRIMARY KEY,
+    order_id  text NOT NULL,
+    at        double precision NOT NULL,
+    text      text NOT NULL,
+    author    text,
+    computer  text,
+    stored_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX IF NOT EXISTS order_notes_order ON snapstl.order_notes (order_id, at);
+CREATE INDEX IF NOT EXISTS order_notes_stored ON snapstl.order_notes (stored_at);
+COMMENT ON TABLE snapstl.order_notes IS 'Call notes on an order (logistics page); `at` = epoch seconds. Never edited or deleted.';
+CREATE TABLE IF NOT EXISTS snapstl.usage_counts (
+    computer_id   text NOT NULL,
+    computer_name text,
+    day           text NOT NULL,
+    feature       text NOT NULL,
+    count         integer NOT NULL,
+    updated_at    timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (computer_id, day, feature)
+);
+COMMENT ON TABLE snapstl.usage_counts IS 'How often each SnapSTL feature was used, per computer per day (feature names only, no customer data).';
+CREATE OR REPLACE TRIGGER order_notes_no_delete BEFORE DELETE ON snapstl.order_notes
+    FOR EACH ROW EXECUTE FUNCTION snapstl.refuse_delete();
+CREATE OR REPLACE TRIGGER order_notes_no_truncate BEFORE TRUNCATE ON snapstl.order_notes
+    FOR EACH STATEMENT EXECUTE FUNCTION snapstl.refuse_delete();
+CREATE OR REPLACE TRIGGER usage_counts_no_delete BEFORE DELETE ON snapstl.usage_counts
+    FOR EACH ROW EXECUTE FUNCTION snapstl.refuse_delete();
+CREATE OR REPLACE TRIGGER usage_counts_no_truncate BEFORE TRUNCATE ON snapstl.usage_counts
     FOR EACH STATEMENT EXECUTE FUNCTION snapstl.refuse_delete();
 -- The rest of the webstore report for every Magicians_35 order (report.py), for reading and querying.
 CREATE TABLE IF NOT EXISTS snapstl.report_rows (
@@ -323,7 +393,8 @@ COMMENT ON COLUMN snapstl.report_rows.return_condition IS 'Return Condition — 
 DO $$
 DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['order_records', 'batch_records', 'meta', 'report_rows', 'report_uploads'] LOOP
+  FOREACH t IN ARRAY ARRAY['order_records', 'batch_records', 'meta', 'report_rows', 'report_uploads',
+                           'order_notes', 'usage_counts'] LOOP
     IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = format('snapstl.%I', t)::regclass) THEN
       EXECUTE format('ALTER TABLE snapstl.%I ENABLE ROW LEVEL SECURITY', t);
     END IF;
@@ -777,5 +848,5 @@ BEGIN
 EXCEPTION WHEN others THEN  -- never block the sync: the stamps are only compared, and merge upgrades them too
   RAISE WARNING 'SnapSTL: status stamps not rewritten: %', SQLERRM;
 END $$;
-INSERT INTO snapstl.meta(key, value) VALUES ('schema_version', '1')
+INSERT INTO snapstl.meta(key, value) VALUES ('schema_version', '2')
     ON CONFLICT (key) DO NOTHING;

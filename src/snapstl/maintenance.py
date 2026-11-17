@@ -140,7 +140,7 @@ def _empty() -> None:
         if _busy(con):
             raise RuntimeError("A batch is being built right now — try again in a minute")
         for t in ("downloads", "batches", "orders", "files", "sync_outbox", "sync_state", "print_jobs", "slices",
-                  "report_rows", "shop_lines"):
+                  "report_rows", "shop_lines", "order_notes", "usage_counts"):
             con.execute(f"DELETE FROM {t}")
         con.execute("DELETE FROM sqlite_sequence WHERE name IN ('downloads','batches','files','print_jobs','slices')")
     _vacuum()

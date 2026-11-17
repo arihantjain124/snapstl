@@ -11,7 +11,9 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
    decision log (§16: things that were tried and **don't work**) and *How to extend safely* (§18).
 2. `docs/scaling-rules-v1.1-handoff.md` — the business's scaling spec.
 3. `README.md` — how the owner installs and uses it.
-4. The files you'll touch. Read them fully before editing.
+4. `documentation.md` — the running log of discussions with the owner: current understanding of the
+   Order Reconciliation Report (webstore statuses and what they mean), app states, and open questions.
+5. The files you'll touch. Read them fully before editing.
 
 ## 2. Binding rules (change only if the owner explicitly asks)
 
@@ -209,5 +211,15 @@ git switch main && git merge --no-ff change/<short-name> && git branch -d change
   (§12), decision log (§16) when a decision changes.
 - `README.md` and the in-app **Help** page — when the owner's steps or the output change.
 - `AGENTS.md` — when rules or workflow change.
+- `documentation.md` — at the end of every session with the owner that explains, clarifies or decides
+  something (not only code changes):
+  - Add a short dated entry under **Log**: what was asked, what was found, what was decided, what is
+    still open. A few bullets, not a transcript; newest at the bottom.
+  - Keep **Current understanding** true: webstore status meanings, how the report is read, app states
+    and Orders tabs. Change it in the same commit as code that changes any of them.
+  - Mark open questions **Open** and resolve them in a later entry when the owner answers. Never
+    assume a status meaning the owner hasn't confirmed: ask.
+  - The repository is public: counts, column and status names only, never customer names, phones,
+    addresses or order IDs.
 
 Orders pagination includes a Page selector to jump directly to any page. Logistics uses the same control. Logistics hosting is available on both Mac and Windows; Settings reports whether port 8002 is actually listening. Allow incoming connections in the host firewall for LAN access. The UTF-8 interface is decoded explicitly on Windows.
