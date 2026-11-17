@@ -489,7 +489,7 @@ When the computers are connected to the shared order records:
   delete them too. Only **Clear shared records** (typed confirmation, copy saved first) empties them.
 - **Settings stay on each computer.** License password, folders and connection are never shared.
 
-To browse orders from another computer, enable **Settings → Connections → Logistics access** on the host, set a password and press Save, then open `http://HOST-IP:8002`. This gives read-only logistics access.
+To browse orders from another computer, enable **Settings → Connections → Logistics access** on the host, set a password and press Save, then open `http://HOST-IP:8002`. This is the **logistics page** for the labelling and customer-care team (below).
 
 ## Updates
 
@@ -616,7 +616,28 @@ SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn snapstl.server:ap
   records; `uv run snapstl-db export` saves a copy of them in the backups folder.
 
 
-### Read-only logistics (Mac or Windows host)
+### Logistics page (label and customer-care team)
+
+Open `http://HOST-IP:8002` and sign in with the logistics password.
+
+- **Search** (top): order ID, phone (any way it's written) or customer name — shows all of that
+  customer's orders. "Last report uploaded" says how fresh the statuses are.
+- **Labels:** *Labels to make* (printed orders; "label expired" and Express first, **Copy order IDs**
+  for the website; **Label Generated** on each row) and *Label done – ship it*.
+- **Customer help:** *Check name first*, *Cancel requests & problems*, *Remake requests*.
+- **Tracking:** *Being made*, *On the way* (red when stuck more than 5 days), *Delivered*, *Coming back
+  (RTO)*, *Cancelled*. Orders not labelled 7 days after ordering are red.
+- Click an order: full details, its clubbed orders and the customer's other orders, then
+  - **Share:** Copy tracking link (the webstore's ClickPost page), Copy message (ready-made replies),
+    WhatsApp (opens WhatsApp with the message; you press Send);
+  - **Change:** Label Generated / Undo, Edit name (only before it's in a batch; tick *Confirmed with
+    customer* and say why), Express (needed-by date + note; red from 3 days before), Customer wants to
+    cancel (production sees it at once in Problems), Remake request (arrived broken …), Use returned piece;
+  - **Notes:** call notes, shared with everyone.
+- Nothing else of SnapSTL can be changed from this page. Every button is counted per day
+  (Settings → Usage) so the layout can be improved later.
+
+### Logistics host (Mac or Windows)
 
 The full app now listens only on localhost on Mac and Windows. On Mac or Windows, open Settings → Connections → Logistics access, enable hosting, set a password and press Save. Save starts or stops the listener immediately without restarting the app. Employees open `http://HOST-IP:8002` and sign in. Permit TCP 8002 for the local subnet in Windows Firewall if needed. This supersedes the former remote-control portal.
 

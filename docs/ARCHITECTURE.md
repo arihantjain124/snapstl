@@ -122,7 +122,9 @@ Snapstl/
 │   ├── dbtool.py             `snapstl-db check | sync | export | schema`
 │   ├── updater.py            Settings → Updates (git fetch / pull --ff-only / uv sync)
 │   ├── watermark.py, render.py   watermark detection; plate / object pictures
-│   ├── logistics.py          optional Mac/Windows port-8002 read-only orders listener
+│   ├── logistics.py          optional Mac/Windows port-8002 listener: the logistics page (READS / WRITES)
+│   ├── logistics_api.py      logistics page: lists, search, order panel, its actions, usage (0.23)
+│   ├── tabs.py               the Orders tab rule (Python + SQL), 0.23
 │   ├── server.py             FastAPI app: every HTTP endpoint (§11), access control (§13), tab/filter SQL
 │   ├── settings.py           dataclasses + defaults (§12); APP_DIR, CACHE_DIR, output path, MakerWorld URL
 │   ├── db.py                 local SQLite schema + MIGRATIONS + sync triggers, tx(), quiet(), batch helpers
@@ -648,6 +650,7 @@ snapstl.server:app --port 8320`.
 | 69 | **Order-flow data, phase 1** (0.23, owner-approved plan `docs/build-plan-order-flow-and-logistics.md`): orders get `first_status`, `print_started_at` and the field groups (`db.FIELD_GROUPS`, each with `<group>_changed`; newest change per group wins locally in `sync.merge` and in Supabase via `_GROUPS_SQL` in `_UPSERT` / `_CLAIM` / `_OFFER`); new shared tables `order_notes` (append-only) and `usage_counts` (per computer/day/feature), both with RLS and no-delete triggers. The outbox trigger is now `orders_outbox_upd3` (also watches the new columns). `SCHEMA_VERSION` 2: an older SnapSTL stops syncing (update every computer the same day). No screen change yet | per-field change times keep people's actions (label, express, flags) independent of the who-makes-it state rules (`_WIN`) |
 | 70 | **One tab rule, report rules, Printing** (0.23 phase 2): `tabs.py` holds the new 12 tabs as Python and as one SQL CASE shared by SQLite and the Supabase `set_tab()` trigger (old `tab` values are worked out again once at setup; the shop glossary keeps the old names marked "before 0.23"). Ingest flags problems instead of guessing (see §6); AWB EXPIRED clears a label; `print_started_at` from print jobs. Label group gets `label_note`; flag `back_to_print` added. `db.connect` tolerates a column added by another thread at the same moment (first start after updating). Dry run on the owner's database: all 1,670 orders in exactly one tab, none in Problems | owner's process: To make → Ready to print → Printing → Printed – pack it → Label done – ship it; a report must never undo work done in the app |
 | 71 | **Production Orders page** (0.23 phase 3): 12 tabs in Make / Pack & ship / Records groups, Stage column with the tab's words, Express badge (red ≤ 3 days) and Express-first sorting (Orders and Print: `makeit.board` sorts plates by their orders' earliest `express_by`, so free printers are pre-selected for them first), returned-piece highlight + Use / Undo, Clear flag, reasons shown in words (flag, label expired, name change, remake). Saved views moved to `snapstl-order-views-v2` (old tab names). Make anyway on a delivered order records a remake so it shows in New orders | owner: simple words for staff, express orders prioritised, reuse returned pieces |
+| 72 | **Logistics page** (0.23 phase 4, owner decision): port 8002 no longer shows the Orders page read-only; it serves the label / customer-care page and allows exactly the writes in `logistics.WRITES` (was: order reads only). Label Generated lives only there (production sees the result). WhatsApp opens `wa.me` in the person's own browser with the text filled in; SnapSTL sends nothing. Copy buttons fall back to `execCommand` because port 8002 is plain HTTP (no clipboard API) | the team that talks to customers needs to act, not just read; one place for labels, Express and customer questions |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -863,7 +866,22 @@ installs the new packages before starting, since Windows can't replace files Pyt
 `.gitattributes` keeps `.sh` files LF and `.ps1` files CRLF.
 
 
-### Read-only logistics (Mac or Windows host)
+### Logistics page (0.23)
+
+`logistics_api.py`: lists (`VIEWS`: labels, ship_it, check_name, problems, remakes, being_made,
+on_the_way, delivered, rto, cancelled), search (order ID, customer, phone by its last 10 digits), order
+detail (notes, clubbed group, the customer's other orders, returned pieces), CSV with the page's columns
+only, and the actions (label, express, name, note, cancel-request, remake; use / undo returned piece via
+`/api/orders/{id}/…`). Label Generated covers the whole clubbed group and is refused until every order of
+it is printed; Express applies to the group's unshipped orders. `view_of` adds words for the phone
+(`words`), the tracking link (`settings.logistics.tracking_url` with `{awb}` / `{order_id}`), and red
+flags (late: `late_days` since ordering and not labelled; stuck: On the way `stuck_days` after pickup;
+Express red `express_red_days` before). Every action counts itself in `usage_counts`; the page counts
+screens and copy / WhatsApp clicks via `POST /api/usage`. `logistics.py` serves the page (`#t-desk`) and
+only `READS` / `WRITES`; writes need the shared records online. The main app registers the same routes
+(local use) plus `GET /api/usage` (Settings → Usage).
+
+### Logistics host (Mac or Windows)
 
 The full app now listens only on localhost on Mac and Windows. On Mac or Windows, open Settings → Connections → Logistics access, enable hosting, set a password and press Save. Save starts or stops the listener immediately without restarting the app. Employees open `http://HOST-IP:8002` and sign in. Permit TCP 8002 for the local subnet in Windows Firewall if needed. This supersedes the former remote-control portal.
 

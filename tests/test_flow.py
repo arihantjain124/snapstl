@@ -216,30 +216,36 @@ def test_other_computers_need_portal_and_login(client, monkeypatch):
     monkeypatch.setattr(logistics, 'PORT', 0)  # disposable port; never collide with the owner's listener
     remote = TestClient(server.app, base_url='http://192.168.1.20:8317', client=('192.168.1.50', 50001))
     staff = TestClient(logistics.app, base_url='http://192.168.1.20:8002', client=('192.168.1.50', 50001))
-    assert staff.get('/api/orders').status_code == 403
+    assert staff.get('/api/logistics/orders').status_code == 403
     r = client.post('/api/portal', json={'enabled': True, 'password': 'portal-pass-123'})
     assert r.status_code == 200 and r.json()['listening_on_network']
     assert not r.json()['restarting']
     try:
         assert remote.get('/api/state').status_code == 403
         assert remote.post('/api/login', json={'password': 'portal-pass-123'}).status_code == 403
-        assert staff.get('/api/orders').status_code == 401
+        assert staff.get('/api/logistics/orders').status_code == 401
         assert staff.post('/api/login', json={'password': 'wrong'}).status_code == 401
         assert staff.post('/api/login', json={'password': 'portal-pass-123'}).status_code == 200
         page = staff.get('/')
         assert page.status_code == 200 and 'const LOGISTICS=true;' in page.text
-        assert 'id="pagenumber"' in page.text
-        assert staff.get('/api/orders?tab=all&limit=25').status_code == 200
-        assert staff.get('/api/orders/facets').status_code == 200
-        for path in ['/api/settings', '/api/state', '/api/farm/printers', '/api/helper/next']:
-            assert staff.get(path).status_code == 403
-        for path in ['/api/sync', '/api/orders/printed', '/api/ingest', '/api/batches', '/api/portal']:
-            assert staff.post(path, json={}).status_code == 403
-        assert staff.get('/api/orders', headers={'Origin': 'http://evil.example'}).status_code == 403
+        assert 'id="t-desk"' in page.text
+        for path in ['/api/logistics/orders?view=labels', '/api/logistics/counts', '/api/logistics/meta',
+                     '/api/logistics/orders.csv?view=labels']:
+            assert staff.get(path).status_code == 200, path
+        # 0.23: only the logistics lists and its own actions; nothing else of the app
+        for path in ['/api/settings', '/api/state', '/api/farm/printers', '/api/helper/next', '/api/orders',
+                     '/api/orders/facets', '/api/orders.csv', '/api/usage']:
+            assert staff.get(path).status_code == 403, path
+        for path in ['/api/sync', '/api/orders/printed', '/api/ingest', '/api/batches', '/api/portal',
+                     '/api/orders/X1/skip', '/api/orders/X1/reset', '/api/orders/X1/clear-flag', '/api/orders/X1/name']:
+            assert staff.post(path, json={}).status_code == 403, path
+        assert staff.post('/api/logistics/order/nope/label', json={}).status_code == 404  # allowed path, no order
+        assert staff.post('/api/usage', json={'feature': 'open_page'}).status_code == 200
+        assert staff.get('/api/logistics/counts', headers={'Origin': 'http://evil.example'}).status_code == 403
         assert client.get('/api/state').status_code == 200
     finally:
         client.post('/api/portal', json={'enabled': False})
-    assert staff.get('/api/orders').status_code == 403
+    assert staff.get('/api/logistics/orders').status_code == 403
 
 
 def _req(path, origin=None, host="127.0.0.1:8317", client_ip="127.0.0.1"):

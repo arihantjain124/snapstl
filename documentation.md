@@ -287,3 +287,23 @@ Every computer must see the same tab for an order (shared records in Supabase).
   tab (a delivered order made again shows in New orders).
 - Checked in the browser on a copy of the owner's database (deleted afterwards); 116 tests pass.
 - Not built yet: anything on the logistics page (Label Generated, Express, notes …) = phase 4.
+
+### 2026-11-18: Phase 4 (logistics page) built and committed
+- Port 8002 now serves the logistics page instead of a read-only Orders page. Layout as agreed:
+  search (order ID, phone any way it's written, customer name) + "Last report uploaded"; menus
+  **Labels** (Labels to make, Label done – ship it), **Customer help** (Check name first, Cancel
+  requests & problems, Remake requests), **Tracking** (Being made, On the way, Delivered, Coming back,
+  Cancelled); a panel per order with **Share** (tracking link, ready-made messages, WhatsApp),
+  **Change** (Label Generated / Undo, Edit name, Express, Customer wants to cancel, Remake request, Use
+  returned piece) and **Notes**.
+- Rules: Label Generated covers a whole clubbed order and waits until every name in it is printed;
+  Express also applies to the whole clubbed order; name edits need "Confirmed with customer" + a reason
+  and only before a batch; red = 7 days since ordering and no label / stuck On the way > 5 days /
+  Express ≤ 3 days. Tracking link = ClickPost pattern (editable later in Settings, phase 6).
+- Port 8002 refuses everything else (checked: settings, batches, skip, reset, clear flag, Orders list …).
+  Changes there need the shared records online, like everywhere else.
+- Every action and click is counted per day (feature names only).
+- Checked in the browser on a throwaway copy bound to this computer only (127.0.0.1), deleted
+  afterwards; no password typed (a script-made sign-in). AGENTS.md rule for port 8002 updated.
+- Open for phase 5/6: Settings → Usage screen; Settings fields for the tracking link, day limits and
+  message texts (defaults are in place).

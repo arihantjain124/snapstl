@@ -58,6 +58,10 @@ async def _lifespan(_app):
 
 
 app = FastAPI(title="SnapSTL", docs_url=None, redoc_url=None, openapi_url=None, lifespan=_lifespan)
+from . import logistics_api  # noqa: E402  (the logistics page: also usable on this computer)
+
+logistics_api.register(app)
+app.add_api_route("/api/usage", logistics_api.usage, methods=["GET"])  # Settings → Usage
 
 OPEN_PATHS = {"/login", "/api/login", "/api/auth-check", "/favicon.ico"}
 
@@ -512,6 +516,9 @@ def reset_order(order_id: str):
         raise HTTPException(404, "No such order") from e
     with db.tx() as con:
         o = dict(con.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone())
+        if o.get("reuse_of"):  # made again: no longer sent with a returned piece
+            db.set_group(con, order_id, "reuse")
+            o["reuse_of"] = None
         if tabs.tab_of(o) not in ("to_make", "check_name") and o.get("flag") is None:
             db.set_group(con, order_id, "remake", remake_at=db.now(), remake_reason="Made again (Remake)")
     sync.LOOP.kick()

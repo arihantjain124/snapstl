@@ -106,15 +106,41 @@ class PlateSettings:
     rotations: list[int] = field(default_factory=lambda: [0, 180])  # degrees about Z only
 
 
+def default_messages() -> dict:
+    """Ready-made replies on the logistics page. {customer} {order_id} {name} {colour} {tracking} {address}
+    {needed_by} are filled in from the order."""
+    return {
+        "Being made": "Hello {customer}, your name organizer \"{name}\" (order {order_id}) is being made. "
+                      "We'll send you the tracking link as soon as it ships.",
+        "Shipped": "Hello {customer}, your order {order_id} has been shipped. Track it here: {tracking}",
+        "Delivered": "Hello {customer}, your order {order_id} has been delivered. We hope you love it!",
+        "Express": "Hello {customer}, we've marked order {order_id} as express. We'll do our best to "
+                   "deliver it by {needed_by}.",
+        "Confirm address": "Hello {customer}, please confirm the delivery address for order {order_id}: {address}",
+    }
+
+
+@dataclass
+class LogisticsSettings:
+    """The logistics page (label and customer-care team), 0.23."""
+    # the webstore's own tracking page; {awb} and {order_id} are filled in (owner's ClickPost link)
+    tracking_url: str = "https://shopdeck.clickpost.ai/en?waybill={awb}&cp_id=105"
+    late_days: int = 7          # red when not yet in Label done this many days after the order date
+    express_red_days: int = 3   # Express turns red this many days before the needed-by date
+    stuck_days: int = 5         # On the way longer than this = stuck (red)
+    messages: dict = field(default_factory=default_messages)
+
+
 @dataclass
 class Settings:
     model: ModelParams = field(default_factory=ModelParams)
     scaling: ScalingSettings = field(default_factory=ScalingSettings)
     plate: PlateSettings = field(default_factory=PlateSettings)
+    logistics: LogisticsSettings = field(default_factory=LogisticsSettings)
     output_dir: str = str(DEFAULT_OUTPUT_DIR)
     downloads_dir: str = str(DEFAULT_DOWNLOADS_DIR)  # downloaded models, kept until deleted in Finder
     makerworld_url: str = MAKERWORLD_URL  # the model-maker page the helper must be on (its designId is checked)
-    lan_access: bool = False  # enable read-only logistics on port 8002 (needs a password)
+    lan_access: bool = False  # enable the logistics page on port 8002 (needs a password)
     license_passwords: dict = field(default_factory=dict)  # MakerWorld license password per designId
 
     @property
@@ -142,6 +168,10 @@ class Settings:
             s.scaling = ScalingSettings(bands=bands, **_known(ScalingSettings, {**_scalar_fields(s.scaling), **rest}))
         if "plate" in d:
             s.plate = PlateSettings(**_known(PlateSettings, {**asdict(s.plate), **d["plate"]}))
+        if isinstance(d.get("logistics"), dict):
+            s.logistics = LogisticsSettings(**_known(LogisticsSettings, {**asdict(s.logistics), **d["logistics"]}))
+            if not isinstance(s.logistics.messages, dict) or not s.logistics.messages:
+                s.logistics.messages = default_messages()
         for k in ("output_dir", "downloads_dir", "makerworld_url", "lan_access", "delay_between_downloads_s",
                   "license_passwords"):
             if k in d:
@@ -161,6 +191,13 @@ class Settings:
             errs.append("Names per plate must be 1–3")
         if not (1 <= p.bases_per_plate <= 3):
             errs.append("Bases per plate must be 1–3")
+        lg = self.logistics
+        if lg.tracking_url and not (lg.tracking_url.startswith("https://")
+                                    and ("{awb}" in lg.tracking_url or "{order_id}" in lg.tracking_url)):
+            errs.append("Tracking link must start with https:// and contain {awb} or {order_id}")
+        for k in ("late_days", "express_red_days", "stuck_days"):
+            if not (0 <= int(getattr(lg, k)) <= 60):
+                errs.append("Logistics day limits must be 0–60")
         bands = sorted(self.scaling.bands, key=lambda b: b.min_letters)
         if not bands:
             errs.append("Scaling table is empty")

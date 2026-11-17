@@ -99,6 +99,48 @@ details.objsbox summary{cursor:pointer;font-weight:600;margin:10px 0 6px}
 .empty{color:var(--muted);text-align:center;padding:26px}
 .edit{display:flex;gap:4px;min-width:260px}.edit input{padding:3px 6px}
 .reason{font-size:12px;color:var(--warn)}
+/* ---------- logistics page (label and customer-care team, 0.23) ---------- */
+#t-desk{font-size:15px}
+.dtop{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.dtop input[type=search]{flex:1;min-width:220px;font-size:16px;padding:10px 12px}
+.dfresh{font-size:13px;color:var(--muted)}
+.dgrid{display:grid;grid-template-columns:220px minmax(0,1fr);gap:14px;align-items:start}
+.dmenu{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;position:sticky;top:10px}
+.dmenu h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:10px 6px 4px}
+.dmenu h3:first-child{margin-top:2px}
+.dmenu button{display:flex;justify-content:space-between;width:100%;border:0;background:none;text-align:left;padding:9px 10px;border-radius:8px;font-size:15px;color:var(--text)}
+.dmenu button:hover{background:var(--chip)}
+.dmenu button.on{background:var(--infobg);color:var(--accent);font-weight:600}
+.dmenu .n{color:var(--muted);font-weight:400}
+.dlist{display:flex;flex-direction:column;gap:8px}
+.drow{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;cursor:pointer}
+.drow:hover{border-color:var(--accent)}
+.drow.red{border-left-color:var(--err);background:var(--errbg)}
+.drow .who{font-weight:600}
+.drow .what{font-size:14px}
+.drow .meta{font-size:13px;color:var(--muted)}
+.drow .acts{display:flex;gap:6px;align-items:start;flex-wrap:wrap;justify-content:flex-end}
+.dbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.dpanel{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--panel);border-left:1px solid var(--line);box-shadow:-8px 0 24px rgba(0,0,0,.12);z-index:20;overflow:auto;padding:16px 18px}
+.dpanel h2{margin:0 0 4px;font-size:18px}
+.dpanel .sect{border-top:1px solid var(--line);margin-top:12px;padding-top:10px}
+.dpanel .sect h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px}
+.dpanel .btns{display:flex;gap:8px;flex-wrap:wrap}
+.dpanel .btns button,.dpanel .btns select{font-size:14px;padding:8px 12px}
+.dpanel dl{display:grid;grid-template-columns:120px minmax(0,1fr);gap:4px 10px;margin:0;font-size:14px}
+.dpanel dt{color:var(--muted)}.dpanel dd{margin:0;overflow-wrap:anywhere}
+.dpanel form{display:flex;flex-direction:column;gap:8px;margin-top:8px;padding:10px;background:var(--chip);border-radius:8px}
+.dpanel form label{display:flex;flex-direction:column;gap:3px;font-size:13px}
+.dpanel form label.tick{flex-direction:row;align-items:center;gap:8px;font-size:14px}
+.dnote{border-left:3px solid var(--line);padding:4px 8px;margin:6px 0;font-size:14px}
+.dpanel textarea,.dpanel input{font:inherit}
+.dnote .hint{font-size:12px}
+.dclose{float:right}
+@media (max-width:760px){.dgrid{grid-template-columns:minmax(0,1fr)}
+  .dmenu{position:static;display:flex;gap:6px;overflow-x:auto;padding:6px}
+  .dmenu h3{display:none}.dmenu button{white-space:nowrap;width:auto;gap:6px}
+  .drow{grid-template-columns:minmax(0,1fr)}.drow .acts{justify-content:flex-start}}
+
 section[hidden],[hidden]{display:none!important}
 body,td,th,.hint,.pill,code{-webkit-user-select:text;user-select:text}
 .frow th{padding:3px 4px}.frow input,.frow select{padding:3px 5px;font-size:12px;min-width:60px}
@@ -223,6 +265,27 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <tbody id="orders"></tbody></table></div>
     <div class="toolbar" style="margin-top:8px"><span class="hint grow" id="pageinfo" aria-live="polite"></span><label for="pagesize">Rows per page</label><select id="pagesize"><option>25</option><option>50</option><option selected>100</option><option>200</option><option>500</option></select><label for="pagenumber">Page</label><select id="pagenumber" aria-label="Go to orders page"><option value="1">1</option></select><button id="prev" class="small">Previous</button><button id="next" class="small">Next</button></div>
   </div>
+</section>
+
+
+<section id="t-desk" hidden>
+  <div class="dtop">
+    <input type="search" id="dq" placeholder="Search: order ID, phone or customer name" autocomplete="off" aria-label="Search orders">
+    <button id="drefresh">Refresh</button>
+    <span class="dfresh" id="dfresh"></span>
+  </div>
+  <div class="dgrid">
+    <nav class="dmenu" id="dmenu" aria-label="Lists"></nav>
+    <div>
+      <div class="dbar"><b id="dtitle"></b><span class="grow hint" id="dinfo"></span>
+        <button id="dcopyids" class="small" hidden>Copy order IDs</button>
+        <a class="btn small" id="dcsv" href="#">Download (CSV)</a></div>
+      <div class="msgs" id="dmsg"></div>
+      <div class="dlist" id="dlist"></div>
+      <div class="dbar" style="margin-top:10px"><span class="grow hint" id="dpage"></span><button id="dprev" class="small">Previous</button><button id="dnext" class="small">Next</button></div>
+    </div>
+  </div>
+  <aside class="dpanel" id="dpanel" hidden aria-label="Order"></aside>
 </section>
 
 <section id="t-batches" hidden>
@@ -463,7 +526,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
 
   <div class="sec" data-sec="connections" hidden>
-    <p class="intro">What SnapSTL talks to: the Chrome helper (MakerWorld), Bambuddy (your printers), the shared order records (other SnapSTL computers) and read-only logistics (Mac or Windows host).</p>
+    <p class="intro">What SnapSTL talks to: the Chrome helper (MakerWorld), Bambuddy (your printers), the shared order records (other SnapSTL computers) and the logistics page (Mac or Windows host).</p>
     <div class="grid2">
       <div class="card" id="helpercard">
         <h2>SnapSTL Helper (Chrome)</h2>
@@ -523,7 +586,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <div class="card" id="portalcard">
         <h2>Logistics access</h2>
         <p class="hint">Host a read-only orders table on port 8002. Employees can browse categories, filter, copy rows and save views. This computer keeps data current through its normal shared-records sync. Save starts or stops logistics immediately; the full app keeps running.</p>
-        <label class="check"><input type="checkbox" id="lan"> Enable read-only logistics on port 8002</label>
+        <label class="check"><input type="checkbox" id="lan"> Enable the logistics page on port 8002 (labels, Express, customer questions)</label>
         <label for="portalpw"><b>Set or change logistics password</b></label>
         <p class="hint" id="portalpwhint">Use at least 10 characters. Employees enter this password when signing in.</p>
         <div class="toolbar"><input id="portalpw" type="password" autocomplete="new-password" placeholder="Enter a new password (10+ characters)" aria-describedby="portalpwhint" style="flex:1;min-width:220px"><button id="portalpwshow" type="button" aria-controls="portalpw" aria-pressed="false">Show</button><button id="portalsave" class="primary">Save logistics access</button></div>
@@ -718,7 +781,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Product</b> — the MakerWorld model link and its license password (removes the anti-sale markings; each model keeps its own), the name style (font, size, thickness, outline, rotate text) and the size per letter count (Scaling Rules v1.1).</li>
       <li><b>Plates</b> — bed size (256 × 256 × 256 mm on the A1 and P1S), edge margin, gap between parts, names/bases per plate, allowed rotations (flat on the bed only).</li>
       <li><b>Folders</b> — where dated batch folders and downloaded models go; the pause between downloads.</li>
-      <li><b>Connections</b> — the Chrome helper, Bambuddy, the shared order records (several computers) and read-only logistics (Mac or Windows host).</li>
+      <li><b>Connections</b> — the Chrome helper, Bambuddy, the shared order records (several computers) and the logistics page (Mac or Windows host).</li>
       <li><b>Maintenance</b> — updates, and the database: back up, clean up old records (orders already made are always kept), or reset. None of these delete files.</li>
     </ul>
     <p class="hint">Slicing profiles and print defaults are on the <b>Slicing</b> page.</p>
@@ -747,7 +810,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
 
   <div class="card" id="h-portal">
-    <h2>Read-only logistics</h2><p>On the Mac or Windows host, enable <b>Settings → Connections → Logistics access</b> and set a password. Press Save to start hosting immediately. Employees open <code>http://HOST-IP:8002</code> and sign in. Allow SnapSTL incoming connections in the Mac firewall, or TCP 8002 for the local subnet in Windows Firewall if needed.</p><p>Employees can read, copy, filter and export orders, choose columns and save views. Refresh orders reloads the host's synchronized data; it also reloads every minute. Uploads, changes, batches, printers, slicing and settings are unavailable. The full app stays local on Mac and Windows.</p>
+    <h2>Logistics page</h2><p>On the Mac or Windows host, enable <b>Settings → Connections → Logistics access</b> and set a password. Press Save to start hosting immediately. Employees open <code>http://HOST-IP:8002</code> and sign in. Allow SnapSTL incoming connections in the Mac firewall, or TCP 8002 for the local subnet in Windows Firewall if needed.</p><p>Employees can read, copy, filter and export orders, choose columns and save views. Refresh orders reloads the host's synchronized data; it also reloads every minute. Uploads, changes, batches, printers, slicing and settings are unavailable. The full app stays local on Mac and Windows.</p>
   </div>
 
   <div class="card" id="h-data">
@@ -1477,14 +1540,135 @@ async function refresh(){try{const st=await api('/api/state');showShared(st.shar
   const log=$('log');const atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-4;log.textContent=st.log.join('\n');if(atEnd)log.scrollTop=log.scrollHeight;
 }catch(e){}}
 function refreshAll(){lastKey='';refresh()}
+// ---------- logistics page (label and customer-care team, 0.23) ----------
+const DMENU=[['Labels',[['labels','Labels to make'],['ship_it','Label done – ship it']]],
+  ['Customer help',[['check_name','Check name first'],['problems','Cancel requests & problems'],['remakes','Remake requests']]],
+  ['Tracking',[['being_made','Being made'],['on_the_way','On the way'],['delivered','Delivered'],['rto','Coming back (RTO)'],['cancelled','Cancelled']]]];
+const DTITLE=Object.fromEntries(DMENU.flatMap(g=>g[1]));
+let D={view:'labels',q:'',offset:0,rows:[],meta:null,open:null},DLIMIT=100;
+const use=f=>{post('/api/usage',{feature:f}).catch(()=>{})};
+async function copyText(t,what){try{if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(t);
+  else{const a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.append(a);a.select();document.execCommand('copy');a.remove()}
+  dFlash(`${what} copied`)}catch{prompt('Copy this:',t)}}
+function dFlash(m,bad){$('dmsg').innerHTML=`<div class="${bad?'e':'o'}">${esc(m)}</div>`;clearTimeout(dFlash.t);dFlash.t=setTimeout(()=>$('dmsg').innerHTML='',4000)}
+const dDate=d=>d?new Date(d.length>10?d:d+'T12:00:00').toLocaleDateString([], {day:'numeric',month:'short',year:'numeric'}):'';
+function dExpress(o){return o.express_by?`<span class="pill ${o.express_red?'err':'warn'}" title="${esc(o.express_note||'')}">EXPRESS · needed by ${esc(dDate(o.express_by))}${o.express_days<0?' (late)':''}</span>`:''}
+async function dLoad(){
+  const [c,m]=await Promise.all([api('/api/logistics/counts'),api('/api/logistics/meta')]);D.meta=m;
+  $('dfresh').textContent=m.last_upload?`Last report uploaded: ${new Date(m.last_upload).toLocaleString([], {dateStyle:'medium',timeStyle:'short'})}`:'No report uploaded yet';
+  $('dmenu').innerHTML=DMENU.map(([g,vs])=>`<h3>${esc(g)}</h3>`+vs.map(([k,l])=>`<button data-v="${k}" class="${!D.q&&D.view===k?'on':''}"><span>${esc(l)}</span><span class="n">${c[k]||0}</span></button>`).join('')).join('');
+  document.querySelectorAll('#dmenu [data-v]').forEach(b=>b.onclick=()=>{D.view=b.dataset.v;D.q='';$('dq').value='';D.offset=0;use('view_'+D.view);dLoad()});
+  await dList()}
+async function dList(){
+  const p=new URLSearchParams({view:D.view,q:D.q,limit:DLIMIT,offset:D.offset});
+  const r=await api('/api/logistics/orders?'+p);D.rows=r.orders;
+  $('dtitle').textContent=D.q?`Search: “${D.q}”`:DTITLE[D.view];
+  $('dinfo').textContent=r.total?`${r.total} order${r.total>1?'s':''}`:'';
+  $('dcopyids').hidden=D.q||D.view!=='labels'||!r.total;
+  $('dcsv').href='/api/logistics/orders.csv?'+new URLSearchParams({view:D.view,q:D.q});
+  $('dpage').textContent=r.total>DLIMIT?`${D.offset+1}–${Math.min(D.offset+DLIMIT,r.total)} of ${r.total}`:'';
+  $('dprev').hidden=$('dnext').hidden=r.total<=DLIMIT;$('dprev').disabled=D.offset===0;$('dnext').disabled=D.offset+DLIMIT>=r.total;
+  $('dlist').innerHTML=r.orders.length?r.orders.map(o=>{
+    const red=o.late||o.stuck||o.express_red||o.tab==='problems';
+    const why=[o.late?`${o.days} days since order`:'',o.stuck?'On the way a long time — check with the courier':''].filter(Boolean).join(' · ');
+    const quick=o.tab==='pack_it'&&!D.q?`<button class="small primary" data-label="${esc(o.order_id)}">Label Generated</button>`:'';
+    return `<div class="drow ${red?'red':''}" data-open="${esc(o.order_id)}">
+      <div><div class="who">${esc(o.order_id)} · ${esc(o.customer_name)} <span class="meta">${esc(o.phone)}</span></div>
+        <div class="what"><b>${esc(o.name)}</b> · ${sw(o.color)} · ×${o.quantity} — ${esc(o.words)}</div>
+        <div class="meta">Ordered ${esc(dDate(o.order_date))}${o.days!=null?` (${o.days} day${o.days===1?'':'s'})`:''}${o.clubbed_id?' · clubbed '+esc(o.clubbed_id):''}${o.courier?' · '+esc(o.courier):''}${o.awb?' · AWB '+esc(o.awb):''}${why?' · <b>'+esc(why)+'</b>':''}</div>
+        ${o.flag_note?`<div class="reason">${esc(o.flag_note)}</div>`:''}${o.remake_reason&&D.view==='remakes'?`<div class="reason">Remake: ${esc(o.remake_reason)}</div>`:''}</div>
+      <div class="acts">${dExpress(o)}${quick}</div></div>`}).join(''):'<div class="hint" style="padding:20px">Nothing here.</div>';
+  document.querySelectorAll('#dlist [data-open]').forEach(el=>el.onclick=e=>{if(e.target.closest('button'))return;dOpen(el.dataset.open)});
+  document.querySelectorAll('#dlist [data-label]').forEach(b=>b.onclick=()=>dLabel(b.dataset.label,false))}
+async function dLabel(id,undo){if(undo&&!confirm('Undo Label Generated for '+id+'? It goes back to Labels to make.'))return;
+  try{await post(`/api/logistics/order/${encodeURIComponent(id)}/label`,{undo});dFlash(undo?`${id}: label undone`:`${id}: Label Generated → Label done – ship it`);
+    await dLoad();if(D.open)dOpen(D.open)}catch(e){dFlash(e.message,true)}}
+function dMsg(o,key){const t=(D.meta.messages||{})[key]||'';const first=(o.customer_name||'').split(' ')[0]||'there';
+  return t.replace(/\{customer\}/g,first).replace(/\{order_id\}/g,o.order_id).replace(/\{name\}/g,o.name).replace(/\{colour\}/g,o.color)
+    .replace(/\{tracking\}/g,o.tracking||'(tracking link not ready yet)').replace(/\{address\}/g,o.address).replace(/\{needed_by\}/g,dDate(o.express_by)||'the date you asked for')}
+function waLink(o,text){let d=(o.phone||'').replace(/\D/g,'');if(d.length===10)d='91'+d;if(d.length===11&&d[0]==='0')d='91'+d.slice(1);
+  return `https://wa.me/${d}?text=${encodeURIComponent(text)}`}
+async function dOpen(id){D.open=id;use('open_order');let o;try{o=await api('/api/logistics/order/'+encodeURIComponent(id))}catch(e){dFlash(e.message,true);return}
+  const P=$('dpanel');P.hidden=false;
+  const notShipped=['to_make','check_name','ready_to_print','printing','pack_it'].includes(o.tab);
+  const canName=['to_make','check_name'].includes(o.tab);
+  const msgs=Object.keys(D.meta.messages||{});
+  const row=(k,v)=>v?`<dt>${k}</dt><dd>${v}</dd>`:'';
+  P.innerHTML=`<button class="dclose small" id="dclose">Close</button>
+    <h2>${esc(o.order_id)}</h2><div>${esc(o.words)} ${dExpress(o)}</div>
+    ${o.flag_note?`<div class="reason">${esc(o.flag_note)}</div>`:''}${o.label_note&&!o.label_at?`<div class="reason">${esc(o.label_note)}</div>`:''}
+    <div class="sect"><dl>
+      ${row('Customer',esc(o.customer_name))}${row('Phone',esc(o.phone))}${row('Address',esc(o.address))}
+      ${row('Name to print',`<b>${esc(o.name)}</b>${o.raw_name&&o.raw_name!==o.name?` <span class="hint">(typed: ${esc(o.raw_name)})</span>`:''}`)}
+      ${row('Colour',sw(o.color))}${row('Quantity',String(o.quantity))}${row('Special request',esc(o.special_request))}
+      ${row('Check',esc(o.review_reason))}${row('Name changed',esc(o.name_change_reason))}
+      ${row('Ordered',esc(dDate(o.order_date))+(o.days!=null?` (${o.days} days ago)`:''))}${row('Payment',esc(o.payment))}
+      ${row('Courier',esc(o.courier))}${row('AWB',esc(o.awb))}${row('Picked up',esc(dDate(o.pickup_date)))}${row('Delivered',esc(dDate(o.delivered_date)))}
+      ${row('Label',o.label_at?'done '+new Date(o.label_at*1000).toLocaleString([], {dateStyle:'short',timeStyle:'short'}):'')}
+      ${row('Remake',esc(o.remake_reason))}${row('Returned piece',o.reuse_of?'sent with the returned piece of '+esc(o.reuse_of):'')}
+      ${row('Website status',esc(o.source_status))}
+    </dl>
+    ${o.group.length?`<div class="hint" style="margin-top:8px">Clubbed with: ${o.group.map(g=>`<a href="#" data-go="${esc(g.order_id)}">${esc(g.order_id)}</a> (${esc(g.name)} · ${esc(g.words)})`).join(', ')}</div>`:''}
+    ${o.other_orders.length?`<div class="hint" style="margin-top:4px">Other orders of this customer: ${o.other_orders.map(g=>`<a href="#" data-go="${esc(g.order_id)}">${esc(g.order_id)}</a> (${esc(g.words)})`).join(', ')}</div>`:''}</div>
+    <div class="sect"><h3>Share</h3><div class="btns">
+      <button id="dtrack" ${o.tracking?'':'disabled title="No tracking yet: the website hasn\'t given it an AWB"'}>${o.tracking?'Copy tracking link':'No tracking yet'}</button>
+      <select id="dmsgsel" aria-label="Message">${msgs.map(m=>`<option>${esc(m)}</option>`).join('')}</select>
+      <button id="dmsgcopy">Copy message</button><button id="dwa" ${o.phone?'':'disabled'}>WhatsApp</button></div></div>
+    <div class="sect"><h3>Change</h3><div class="btns">
+      ${o.tab==='pack_it'?`<button class="primary" id="dlabel">Label Generated</button>`:''}${o.label_at?`<button id="dunlabel">Undo Label Generated</button>`:''}
+      ${canName?`<button id="dname">Edit name</button>`:''}${notShipped?`<button id="dexp">${o.express_by?'Change Express':'Express'}</button>`:''}
+      ${[...['to_make','check_name','ready_to_print','printing','pack_it','ship_it','problems']].includes(o.tab)&&o.flag!=='cancel_request'?`<button id="dcancel">Customer wants to cancel</button>`:''}
+      ${!['to_make','check_name','ready_to_print','printing'].includes(o.tab)?`<button id="dremake">Remake request</button>`:''}</div>
+      ${o.returned.length?`<div style="margin-top:8px">${o.returned.map(x=>`<div><span class="pill ${x.back?'ok':'warn'}">${x.back?'Returned piece available':'Returned piece on its way back'}</span> ${esc(x.order_id)} ${x.back?`<button class="small" data-reuse="${esc(x.order_id)}">Use returned piece</button>`:''}</div>`).join('')}</div>`:''}
+      ${o.reuse_of?`<div style="margin-top:8px"><button class="small" id="dunreuse">Undo returned piece</button></div>`:''}
+      <div id="dform"></div></div>
+    <div class="sect"><h3>Notes</h3><form id="dnoteform"><textarea id="dnotetext" rows="2" placeholder="e.g. Customer called, wants it by Friday" maxlength="2000"></textarea><button class="primary" type="submit">Add note</button></form>
+      ${o.notes.map(n=>`<div class="dnote">${esc(n.text)}<div class="hint">${new Date(n.at*1000).toLocaleString([], {dateStyle:'short',timeStyle:'short'})}${n.author?' · '+esc(n.author):''}</div></div>`).join('')||'<div class="hint">No notes yet.</div>'}</div>`;
+  const act=async(path,body,ok)=>{try{await post(`/api/logistics/order/${encodeURIComponent(o.order_id)}/${path}`,body);dFlash(ok);await dLoad();dOpen(o.order_id)}catch(e){dFlash(e.message,true)}};
+  $('dclose').onclick=()=>{P.hidden=true;D.open=null};
+  P.querySelectorAll('[data-go]').forEach(a=>a.onclick=e=>{e.preventDefault();dOpen(a.dataset.go)});
+  $('dtrack').onclick=()=>{copyText(o.tracking,'Tracking link');use('copy_tracking_link')};
+  $('dmsgcopy').onclick=()=>{copyText(dMsg(o,$('dmsgsel').value),'Message');use('copy_message')};
+  $('dwa').onclick=()=>{window.open(waLink(o,dMsg(o,$('dmsgsel').value)),'_blank','noopener');use('whatsapp')};
+  if($('dlabel'))$('dlabel').onclick=()=>dLabel(o.order_id,false);
+  if($('dunlabel'))$('dunlabel').onclick=()=>dLabel(o.order_id,true);
+  if($('dunreuse'))$('dunreuse').onclick=async()=>{if(!confirm('Make this order after all? The returned piece becomes free again.'))return;
+    try{await post(`/api/orders/${encodeURIComponent(o.order_id)}/undo-returned`);dFlash('Returned piece undone');await dLoad();dOpen(o.order_id)}catch(e){dFlash(e.message,true)}};
+  P.querySelectorAll('[data-reuse]').forEach(b=>b.onclick=async()=>{if(!confirm(`Send the returned piece of ${b.dataset.reuse} instead of making a new one?\n\nCheck the piece first: not damaged, same name and colour.`))return;
+    try{await post(`/api/orders/${encodeURIComponent(o.order_id)}/use-returned`,{rto_order_id:b.dataset.reuse});dFlash('Returned piece used');await dLoad();dOpen(o.order_id)}catch(e){dFlash(e.message,true)}});
+  const form=(html,submit)=>{$('dform').innerHTML=`<form>${html}<div class="btns"><button class="primary" type="submit">Save</button><button type="button" id="dformx">Cancel</button></div></form>`;
+    $('dform').querySelector('form').onsubmit=e=>{e.preventDefault();submit(new FormData(e.target))};$('dformx').onclick=()=>$('dform').innerHTML=''};
+  if($('dname'))$('dname').onclick=()=>form(`<label>Name to print<input name="name" value="${esc(o.name)}" maxlength="40" required></label>
+      <label>Colour<input name="color" value="${esc(o.color)}" maxlength="30" required></label>
+      <label>Why is it changed?<input name="reason" maxlength="300" required placeholder="e.g. Customer asked: Riya → Riyaa"></label>
+      <label class="tick"><input type="checkbox" name="ok" required> Confirmed with customer</label>`,
+    f=>act('name',{name:f.get('name'),color:f.get('color'),reason:f.get('reason'),confirmed:f.get('ok')==='on'},'Name saved — the order is in New orders – to make'));
+  if($('dexp'))$('dexp').onclick=()=>form(`<label>Customer needs it by<input type="date" name="by" value="${esc(o.express_by||'')}"></label>
+      <label>Note<input name="note" maxlength="300" value="${esc(o.express_note||'')}" placeholder="e.g. birthday on 25th"></label>
+      <div class="hint">Leave the date empty to remove Express.${o.group.length?' Applies to the whole clubbed order.':''}</div>`,
+    f=>{const by=f.get('by');if(by&&new Date(by+'T23:59:59')<Date.now()+864e5&&!confirm('That date is today or already past. Save anyway?'))return;
+      act('express',{needed_by:by,note:f.get('note')},by?'Express saved — production sees it at the top':'Express removed')});
+  if($('dcancel'))$('dcancel').onclick=()=>form(`<label>What did the customer say? (optional)<input name="note" maxlength="300"></label>
+      <div class="hint">Production sees it at once in Problems – check. Also cancel it on the website.</div>`,
+    f=>act('cancel-request',{note:f.get('note')},'Cancel request sent to production'));
+  if($('dremake'))$('dremake').onclick=()=>form(`<label>Why must it be made again?<input name="reason" maxlength="300" required placeholder="e.g. arrived broken"></label>`,
+    f=>act('remake',{reason:f.get('reason')},'Remake requested — it is in New orders – to make'));
+  $('dnoteform').onsubmit=e=>{e.preventDefault();act('note',{text:$('dnotetext').value},'Note added')};
+}
+let dqT;$('dq').oninput=()=>{clearTimeout(dqT);dqT=setTimeout(()=>{D.q=$('dq').value.trim();D.offset=0;if(D.q)use('search');dLoad()},300)};
+$('drefresh').onclick=()=>dLoad();
+$('dprev').onclick=()=>{D.offset=Math.max(0,D.offset-DLIMIT);dList()};
+$('dnext').onclick=()=>{D.offset+=DLIMIT;dList()};
+$('dcopyids').onclick=async()=>{const r=await api('/api/logistics/orders?'+new URLSearchParams({view:'labels',limit:500}));copyText(r.orders.map(o=>o.order_id).join('\n'),`${r.orders.length} order IDs`);use('copy_order_ids')};
+$('dcsv').onclick=()=>use('download_csv');
+
 (async()=>{if(LOGISTICS){
   META={computer:{name:''}};document.body.classList.add('logistics');
   document.querySelector('aside').hidden=true;document.querySelector('.content').style.marginLeft='0';
-  for(const id of PAGES)if(id!=='orders')$('t-'+id).remove();
-  $('report').closest('.card').hidden=true;$('selbar').hidden=true;$('adhocform').hidden=true;
-  $('status').textContent='Logistics · Read only · Data follows the host’s shared-records sync';
-  const b=document.createElement('button');b.textContent='Refresh orders';b.onclick=()=>{loadFacets();loadOrders()};$('status').parentNode.append(b);
-  await loadFacets();await loadOrders();setInterval(()=>{loadFacets();loadOrders()},60000);return;
+  for(const id of PAGES)$('t-'+id).remove();
+  $('t-desk').hidden=false;
+  $('status').textContent='SnapSTL · Logistics';
+  await dLoad();use('open_page');setInterval(()=>{if(!D.open&&!document.querySelector('#dform form'))dLoad()},60000);return;
 }META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;
   if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders';t=OLD_PAGES[t]||t}catch{}if(!PAGES.includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;
   document.querySelectorAll('.fm').forEach(x=>x.textContent='Show in '+META.file_manager);

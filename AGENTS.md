@@ -55,7 +55,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - The app accepts extension calls **only** on `/api/helper/*` from 127.0.0.1. Don't widen that.
 - The helper must keep checking, before every name, that its working tab is on the configured model
   page (designId); the app must never hand out work when `on_page` is false.
-- The full app is localhost only. Optional Mac/Windows logistics listener on port 8002 requires `lan_access` + password and permits only authenticated order reads. Never expose editing, helper, settings, batches or printer controls there.
+- The full app is localhost only. Optional Mac/Windows logistics listener on port 8002 requires `lan_access` + password. It permits only the logistics page's reads (`logistics.READS`) and, since 0.23 (owner decision), exactly these changes (`logistics.WRITES`, only while the shared records are reachable): Label Generated / Undo, Express, name change confirmed with the customer (before a batch only), call notes, customer wants to cancel, remake request, use / undo a returned piece, usage counts. Don't add more without the owner asking. Never expose editing, helper, settings, batches or printer controls there.
 - Installers must **never run a second Bambuddy or stop one they didn't install**: detect an existing
   Bambuddy (service, data folder, launchd job, or the port answering) and use it; stop only processes
   started from SnapSTL's own Bambuddy folder; never delete Bambuddy data.
@@ -155,6 +155,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Watermark check / license confirmation | `watermark.py`, `batches.check_license` / `store_result`, `helper/content.js` (`runJob`), `helper/inject.js` |
 | Plate / object pictures | `render.py`, `pipeline._plate_picture`, `server.model_view` |
 | Updates (git pull, helper self-reload) | `updater.py`, `server.update_*`, `scripts/update.sh`, `helper/background.js` (`reloadIfUpdated`) |
+| Logistics page (label + customer-care team): lists, search, actions, tracking link, messages | `logistics_api.py` (`VIEWS`, `ROUTES`), `logistics.py` (`READS` / `WRITES`), `settings.LogisticsSettings`, `<section id="t-desk">` + `dLoad` / `dOpen` in `index.html`; `tests/test_logistics_page.py` |
 | Access control / other computers | `server._blocked`, `server.access_control`, `/api/portal`, `__init__.serve` (bind address) |
 | Download queue + folder (on Batches) | `<section id="t-batches">` in `index.html`; `cache.py` for the folder |
 | MakerWorld page interaction | `helper/content.js`, `helper/inject.js` (bump `helper/manifest.json` version; reload extension) |
