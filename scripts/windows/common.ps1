@@ -9,6 +9,28 @@ $BambuddyPort = if ($env:BAMBUDDY_PORT) { [int]$env:BAMBUDDY_PORT } else { 8000 
 $BambuddyDir = Join-Path $HOME "SnapSTL-Bambuddy"
 $BambuddyData = Join-Path $env:LOCALAPPDATA "Bambuddy"
 
+# The "SnapSTL" background task: starts at log-on, runs run-service.ps1 with NO window. conhost --headless
+# is needed because on Windows 11 the console opens in Windows Terminal, which ignores -WindowStyle Hidden:
+# the window stayed open, and closing it stopped SnapSTL.
+function Register-SnapSTLTask($Root) {
+  $Run = Join-Path $Root "scripts\windows\run-service.ps1"
+  $Action = New-ScheduledTaskAction -Execute "conhost.exe" -WorkingDirectory $Root `
+    -Argument "--headless powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Run`""
+  $Trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+  $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
+  Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Force `
+    -Description "SnapSTL background service: web portal, MakerWorld downloads, plate builds" | Out-Null
+}
+
+# Older installs ran the task in a visible window: switch them to the headless one (takes effect at the next start).
+function Repair-SnapSTLTask($Root) {
+  $t = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  if ($t -and ($t.Actions | Select-Object -First 1).Execute -ne "conhost.exe") {
+    try { Register-SnapSTLTask $Root } catch {}
+  }
+}
+
 # Stops only the Bambuddy SnapSTL installed (its python runs from $BambuddyDir) - never another Bambuddy or
 # whatever else listens on the port.
 function Stop-Bambuddy {

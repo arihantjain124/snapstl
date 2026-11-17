@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import auth, cache, computer, config, db, farm, makeit, platform_os, sync, updater
+from . import auth, bambuddy_host, cache, computer, config, db, farm, makeit, platform_os, sync, updater
 from .ingest import add_adhoc, ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
 from . import maintenance as M
@@ -47,6 +47,7 @@ async def _lifespan(_app):
     logistics_server = start_logistics()
     sync.LOOP.start()   # shared order records (Supabase), if connected in Settings
     farm.WORKER.start()  # Push to queue → Bambuddy (connects by itself on a fresh install)
+    bambuddy_host.start_watch()  # Bambuddy computer: Keep running (starts Bambuddy / Docker when they stop)
     yield
     from .logistics import stop as stop_logistics
     stop_logistics()
@@ -119,7 +120,8 @@ async def access_control(request: Request, call_next):
 
 # Work that may go on without the shared records: connecting them, settings, the helper's running downloads
 WITHOUT_SHARED = ("/api/shared-records", "/api/sync", "/api/settings", "/api/helper/", "/api/update",
-                  "/api/login", "/api/logout", "/api/portal", "/api/maintenance/backup", "/api/farm/connect")
+                  "/api/login", "/api/logout", "/api/portal", "/api/maintenance/backup", "/api/farm/connect",
+                  "/api/bambuddy-host")
 
 
 async def _needs_shared(request: Request, call_next):
@@ -1081,16 +1083,11 @@ def makeit_presets(printer: int = 0, refresh: int = 0):
     chosen = farm.chosen_presets(printer, cfg)
     base |= {"chosen": {k: f"{v['source']}:{v['id']}" for k, v in chosen.items()},
              "names": {k: v["name"] for k, v in chosen.items()}}
-    status: dict = {}
-    try:
-        avail = farm.bambuddy_presets(cfg, refresh=bool(refresh), status=status)
+    try:  # local (yours in Bambuddy) + standard profiles only — no cloud (ARCHITECTURE #62)
+        avail = farm.bambuddy_presets(cfg, refresh=bool(refresh))
     except farm.FarmError as e:
         return base | {"available": {sl: [] for sl in farm.PRESET_SLOTS}, "error": str(e), "status": {}}
-    try:  # no Bambu Cloud profiles: say exactly why (key, sign-in, owner) instead of "not signed in"
-        cloud_why = farm.cloud_problem(status.get("cloud_status", ""), cfg)
-    except Exception as e:  # noqa: BLE001  (never break the page over the explanation)
-        cloud_why = str(e)
-    return base | {"available": avail, "error": "", "status": status, "cloud_problem": cloud_why}
+    return base | {"available": avail, "error": "", "status": {}, "cloud_problem": ""}
 
 
 @app.put("/api/makeit/presets")
@@ -1248,6 +1245,37 @@ def printer_status_all(download: int = 0):
         return StreamingResponse(iter([json.dumps(data, indent=2, default=str)]), media_type="application/json",
                                  headers={"Content-Disposition": f"attachment; filename={name}"})
     return data
+
+
+# ---- the Bambuddy computer (Windows): Bambuddy's service + the slicer service in Docker ----
+@app.get("/api/bambuddy-host")
+def bambuddy_host_status():
+    """Settings → Connections → This Bambuddy computer: is each part up (empty on other computers)."""
+    return bambuddy_host.HOST.status()
+
+
+@app.post("/api/bambuddy-host/{action}")
+async def bambuddy_host_action(action: str, req: Request):
+    """start (what is down; may ask Windows for admin rights) · restart-bambuddy · restart-slicer ·
+    keep-running {on}. Only from a person's click; nothing running is stopped otherwise."""
+    if not bambuddy_host.is_here():
+        raise HTTPException(400, "Bambuddy isn't set up on this computer — run scripts/windows/bambuddy-server.ps1 once")
+    if action == "keep-running":
+        body = await req.json()
+        return {"keep_running": bambuddy_host.set_keep_running(bool(body.get("on")))}
+    try:
+        fn = {"start": lambda: bambuddy_host.HOST.start(elevate=True),
+              "restart-bambuddy": bambuddy_host.HOST.restart_bambuddy,
+              "restart-slicer": bambuddy_host.HOST.restart_slicer}.get(action)
+        if fn is None:
+            raise HTTPException(404, "Unknown action")
+        started = fn()
+    except PermissionError as e:
+        raise HTTPException(400, str(e)) from e
+    if not started:
+        raise HTTPException(409, f"{bambuddy_host.HOST.busy} — wait for it to finish")
+    _health_stale()
+    return {"ok": True}
 
 
 @app.post("/api/farm/connect")

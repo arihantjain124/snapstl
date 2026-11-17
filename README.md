@@ -75,8 +75,7 @@ runs on Mac and Windows computers alike and connects to it over the network.
      (**File → Export → Export Preset Bundle**).
    - Optional, recommended when others share your network: turn on Bambuddy's login (**Settings →
      Authentication**) and give each SnapSTL an API key (**Settings → API keys**: Queue, Read status,
-     Library, Control printer, Allow cloud access), created while signed in as the Bambuddy user who
-     is signed in to Bambu Cloud — that's whose cloud profiles SnapSTL then sees.
+     Library, Control printer — not Allow cloud access: SnapSTL uses no cloud profiles).
 
 **Running it again** changes nothing that's installed: it only applies settings (Bambuddy's slicer
 settings, firewall) and downloads only what's missing. Settings are remembered in
@@ -94,6 +93,15 @@ Windows service; add the printers again there.
 
 The slicer service runs while someone is signed in to that PC (Docker Desktop); Bambuddy itself runs
 from boot.
+
+**If Bambuddy or the slicer service stops** (after a restart, Docker Desktop closed, …) you don't need to
+run the script again: in SnapSTL on the Bambuddy computer, **Settings → Connections → This Bambuddy
+computer** shows Bambuddy, Docker Desktop and the slicer service, and **Start** starts whatever is down
+(Windows may ask to allow changes for Bambuddy — choose Yes). With **Keep running** on (default) SnapSTL
+checks every minute and starts what has stopped by itself; it never restarts anything that's running.
+**Restart Bambuddy** / **Restart slicer** are there when one is stuck (prints on the printers keep going).
+Running the script once more (version 0.22.19 or newer) lets SnapSTL start Bambuddy without the Windows
+prompt.
 
 ## 1. Install
 
@@ -499,15 +507,17 @@ next to SnapSTL keeps running until you remove it.
 | Shared records: Supabase looks empty / another computer doesn't see orders | Press **Settings → Database → Sync** on both computers; an upload that couldn't reach Supabase says so and is sent automatically later. In Supabase look in **Table Editor → schema `snapstl`**, not `public`. **Settings → Connections → Show what's there** shows what's stored |
 | "Connected, but sync fails" | Read the message under it. Usually the password or the address: copy the **Session pooler** string again (the direct `db.….supabase.co` one needs IPv6), then **Connect / save** |
 | Bambuddy lost its printers after installing SnapSTL (0.17 or older) | SnapSTL's installer had started a second, empty Bambuddy next to yours. Run the SnapSTL install command again: it now stops SnapSTL's copy and starts yours again; your printers and data were never deleted |
-| **Bambuddy isn't answering** | On the Bambuddy computer: is it on? Services → **Bambuddy** running? Run the step-0 command again (it starts it and re-applies the firewall rules). Logs: `C:\ProgramData\Bambuddy\logs`. From a SnapSTL computer, open `http://<Bambuddy computer>:8000` in a browser: if it doesn't load, check both are on the same network and the firewall rule *SnapSTL Bambuddy (TCP 8000)* exists |
+| **Bambuddy isn't answering** | On the Bambuddy computer: is it on? In SnapSTL there: **Settings → Connections → This Bambuddy computer → Start** (or run the step-0 command again: it also re-applies the firewall rules). Logs: `C:\ProgramData\Bambuddy\logs`. From a SnapSTL computer, open `http://<Bambuddy computer>:8000` in a browser: if it doesn't load, check both are on the same network and the firewall rule *SnapSTL Bambuddy (TCP 8000)* exists |
 | Bambuddy doesn't find a printer | Printer and Bambuddy computer on the same network; printer in LAN Only + Developer Mode; the rule *SnapSTL Bambuddy printer discovery (UDP 2021)* exists (run step 0 again). Or add it by IP address (printer screen: Settings → Network) |
-| Slicing fails with "sidecar unreachable" | On the Bambuddy computer someone must be signed in and Docker Desktop running (the slicer service runs in it). Run step 0 again; logs: `docker compose -f C:\ProgramData\SnapSTL-Bambuddy\docker-compose.yml logs` |
+| Slicing fails with "sidecar unreachable" | On the Bambuddy computer someone must be signed in and Docker Desktop running (the slicer service runs in it). In SnapSTL there: **Settings → Connections → This Bambuddy computer → Start**; logs: `docker compose -f C:\ProgramData\SnapSTL-Bambuddy\docker-compose.yml logs` |
 | Its address changed (e.g. `192.168.1.50` → `.51`) | Give the Bambuddy computer a fixed address in your router (DHCP reservation), then enter it again in **Settings → Connections** on each SnapSTL computer |
 | Adding a printer in Bambuddy fails | Check the IP, serial and access code, and that LAN Only Mode **and** Developer Mode are on |
 | A plate shows **Slicing failed** | Read the message. "Bambuddy's slicer isn't running" → in Bambuddy: Settings → Slicer → **Use Slicer API** on, and the slicer container running and reachable from Bambuddy. "isn't made for the printer preset" → pick a process profile made for that printer profile in **Slicing**. Then click **Slice** again |
 | A plate shows **No profiles for** a printer | **Slicing → Bambuddy profiles per printer**: pick that printer, then its printer, process and filament profiles → **Save** |
 | A printer has the right filament but Print says it has another colour | **Printers** → that spool → **prints as …**: pick the order colour it prints. It resets by itself when another spool is loaded in that slot |
-| Slicing lists none of my profiles / a picked profile is "no longer in Bambuddy" | Import them in Bambuddy (Profiles → Local Profiles → Import Profiles), then **Reload from Bambuddy**. Cloud profiles need Bambuddy signed in to Bambu Cloud / Orca Cloud. With Bambuddy's login on, SnapSTL's key must have **Allow cloud access** and be created by the Bambuddy user who is signed in to Bambu Cloud (sign-ins are per user) — the Slicing page says which of these is missing |
+| Slicing lists none of my profiles / a picked profile is "no longer in Bambuddy" | SnapSTL lists Bambuddy's **local** profiles and the slicer's standard ones (no cloud profiles). Import yours in Bambuddy (**Profiles → Local Profiles → Import Profiles**: a Bambu Studio export, `.json` or `.zip`), then **Reload from Bambuddy** |
+| Slicing fails with **'NoneType' object has no attribute 'get'** | Bambuddy fails reading Bambu Cloud's profile list (a Bambuddy bug). SnapSTL uses no cloud profiles: in Bambuddy sign out of Bambu Cloud (**Settings → Bambu Cloud**), import your profiles under **Profiles → Local Profiles → Import**, pick them in **Slicing**, then **Slice** again |
+| A terminal window opens with SnapSTL, and closing it stops SnapSTL | Fixed in 0.22.19: SnapSTL's background task now runs with no window (it switches by itself at its next start; or run the install command again) |
 | A plate stays **Slicing** | It's stopped after 20 minutes without progress, with a message. Check Bambuddy → Settings → Slicer, then **Slice** again |
 | A printer is greyed out in Print | It's offline, or that colour isn't loaded (white for bases) — load the spool; the Printers page shows what Bambuddy sees |
 | A pushed plate waits in Bambuddy | Its printer is busy or waiting for the bed to be cleared: **Clear plate** |

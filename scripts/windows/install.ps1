@@ -22,14 +22,7 @@ Write-Host "Installing SnapSTL's Python parts (first time: a few minutes)..."
 if ($LASTEXITCODE -ne 0) { throw "Installing SnapSTL's Python parts failed" }
 
 Write-Host "Setting up the SnapSTL background task..."
-$Run = Join-Path $PSScriptRoot "run-service.ps1"
-$Action = New-ScheduledTaskAction -Execute "powershell.exe" -WorkingDirectory $Root `
-  -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Run`""
-$Trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
-$Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
-  -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
-Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Force `
-  -Description "SnapSTL background service: web portal, MakerWorld downloads, plate builds" | Out-Null
+Register-SnapSTLTask $Root
 Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 Stop-SnapSTL
 Start-ScheduledTask -TaskName $TaskName

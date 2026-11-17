@@ -8,6 +8,7 @@ import os
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 WINDOWS = sys.platform == "win32"
@@ -131,6 +132,113 @@ def update_bambuddy(root: Path) -> bool:
                           str(root / "scripts" / "windows" / "bambuddy.ps1")], stdout=out, stderr=out,
                          creationflags=NO_WINDOW | 0x00000008 | 0x00000200)  # DETACHED, NEW_PROCESS_GROUP
     return True
+
+
+# ---- the Bambuddy computer (Windows only): Bambuddy's Windows service and Docker Desktop ----
+BAMBUDDY_SERVICE = "Bambuddy"  # Bambuddy's own Windows installer names its service so
+_SC_STATES = {"1": "stopped", "2": "starting", "3": "stopping", "4": "running", "5": "starting", "6": "stopping",
+              "7": "paused"}
+
+
+def bambuddy_setup_dir() -> Path:
+    """Where scripts/windows/bambuddy-server.ps1 keeps setup.json and the slicer's docker-compose.yml."""
+    return Path(os.environ.get("ProgramData") or "C:/ProgramData") / "SnapSTL-Bambuddy"
+
+
+def service_state(name: str = BAMBUDDY_SERVICE) -> str | None:
+    """running / stopped / starting / stopping / paused; None = no such service (or not Windows)."""
+    if not WINDOWS:
+        return None
+    try:
+        r = subprocess.run(["sc.exe", "query", name], capture_output=True, text=True, timeout=10,
+                           creationflags=NO_WINDOW)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in r.stdout.splitlines():
+        if "STATE" in line and ":" in line:
+            return _SC_STATES.get(line.split(":", 1)[1].split()[0], "unknown")
+    return None
+
+
+def control_service(action: str, name: str = BAMBUDDY_SERVICE, elevate: bool = False) -> str:
+    """Start or restart a Windows service. Returns "" when done or asked for, else why not.
+    `elevate` (only from a person's click): when Windows refuses (SnapSTL runs without admin rights),
+    ask with Windows' own admin prompt (UAC) — the person approves it there."""
+    if not WINDOWS:
+        return "Only on the Windows Bambuddy computer"
+    if action not in ("start", "restart"):
+        raise ValueError(action)
+    cmds = [["sc.exe", "start", name]] if action == "start" else [["sc.exe", "stop", name], ["sc.exe", "start", name]]
+    denied = False
+    for i, cmd in enumerate(cmds):
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30, creationflags=NO_WINDOW)
+        except (OSError, subprocess.SubprocessError) as e:
+            return str(e)
+        if r.returncode == 5:  # ERROR_ACCESS_DENIED
+            denied = True
+            break
+        if r.returncode not in (0, 1056, 1062):  # 1056 already running, 1062 not started
+            return (r.stdout + r.stderr).strip().splitlines()[-1] if (r.stdout + r.stderr).strip() else f"code {r.returncode}"
+        if cmd[1] == "stop":  # wait until it has stopped before starting it again
+            for _ in range(60):
+                if service_state(name) == "stopped":
+                    break
+                time.sleep(1)
+    if not denied:
+        return ""
+    if not elevate:
+        return "Windows needs admin rights to start Bambuddy — press Start in SnapSTL and allow the prompt"
+    verb = "Start-Service" if action == "start" else "Restart-Service -Force"
+    try:
+        subprocess.Popen(["powershell", "-NoProfile", "-Command",
+                          f"Start-Process powershell -Verb RunAs -WindowStyle Hidden -ArgumentList "
+                          f"'-NoProfile -Command {verb} -Name {name}'"], creationflags=NO_WINDOW)
+    except OSError as e:
+        return str(e)
+    return ""
+
+
+def docker_cli() -> str | None:
+    """The docker command (Docker Desktop's, when it isn't on PATH yet)."""
+    import shutil
+
+    found = shutil.which("docker")
+    if found:
+        return found
+    if WINDOWS:
+        p = Path(os.environ.get("ProgramFiles") or "C:/Program Files") / "Docker" / "Docker" / "resources" / "bin" / "docker.exe"
+        if p.is_file():
+            return str(p)
+    return None
+
+
+def docker_desktop() -> Path | None:
+    if WINDOWS:
+        p = Path(os.environ.get("ProgramFiles") or "C:/Program Files") / "Docker" / "Docker" / "Docker Desktop.exe"
+        return p if p.is_file() else None
+    return None
+
+
+def start_docker_desktop() -> bool:
+    """Open Docker Desktop (its engine starts with it); False = not installed."""
+    exe = docker_desktop()
+    if exe is None:
+        return False
+    subprocess.Popen([str(exe)], creationflags=NO_WINDOW | 0x00000008 | 0x00000200, close_fds=True)
+    return True
+
+
+def run_quiet(cmd: list[str], timeout: float = 60, cwd: Path | None = None, env: dict | None = None):
+    """A command with no console window: (exit code, output)."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd, creationflags=NO_WINDOW,
+                           env={**os.environ, **(env or {})}, encoding="utf-8", errors="replace")
+        return r.returncode, (r.stdout + r.stderr).strip()
+    except subprocess.TimeoutExpired:
+        return 124, "timed out"
+    except OSError as e:
+        return 127, str(e)
 
 
 def restart_service() -> None:

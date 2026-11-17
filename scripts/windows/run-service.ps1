@@ -4,6 +4,7 @@ $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $PSScriptRoot "common.ps1")
 New-Item -ItemType Directory -Force $DataDir | Out-Null
 $env:SNAPSTL_SERVICE = "1"
+Repair-SnapSTLTask $Root   # older installs: no visible window from the next start on
 Set-Location $Root
 while ($true) {
   $Uv = Find-Uv

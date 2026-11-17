@@ -707,21 +707,23 @@ def test_any_bambuddy_profile_and_nothing_kept_by_snapstl(client, bb):
     kept = json.loads(farm.CONFIG_PATH.read_text())
     assert "slicer" not in kept and "orca_presets_by_model" not in kept and not (app_dir() / "slicer-presets").exists()
 
-    # every tier Bambuddy lists can be picked: yours, Orca cloud, Bambu cloud, standard
+    # only Bambuddy's local and standard profiles can be picked — never cloud ones (ARCHITECTURE #62)
     bb.presets["cloud"] = {"filament": [{"id": "PFUS1", "name": "My Silk PLA", "source": "cloud"}]}
     bb.presets["orca_cloud"] = {"process": [{"id": "oc9", "name": "Orca fine", "source": "orca_cloud"}]}
     bb.presets["cloud_status"] = "ok"
-    bb.presets["orca_cloud_status"] = "not_authenticated"
     client.get("/api/farm")
     p = client.get("/api/makeit/presets?printer=1&refresh=1").json()
     assert bb.preset_reads[-1].endswith("?refresh=true") and p["error"] == ""
-    assert {x["source"] for sl in p["available"].values() for x in sl} == {"local", "orca_cloud", "cloud", "standard"}
-    assert p["status"] == {"cloud_status": "ok", "orca_cloud_status": "not_authenticated"}
-    keys = {"printer_id": 1, "printer": "standard:Bambu Lab A1 0.4 nozzle", "process": "orca_cloud:oc9", "filament": "cloud:PFUS1"}
+    assert {x["source"] for sl in p["available"].values() for x in sl} == {"local", "standard"}
+    assert p["cloud_problem"] == ""
+    cloudy = {"printer_id": 1, "printer": "standard:Bambu Lab A1 0.4 nozzle", "process": "local:7", "filament": "cloud:PFUS1"}
+    assert client.put("/api/makeit/presets", json=cloudy).status_code == 400
+    keys = {"printer_id": 1, "printer": "standard:Bambu Lab A1 0.4 nozzle", "process": "local:7",
+            "filament": "standard:Bambu PLA Basic @BBL A1"}
     assert client.put("/api/makeit/presets", json=keys).json()["names"] == {
-        "printer": "Bambu Lab A1 0.4 nozzle", "process": "Orca fine", "filament": "My Silk PLA"}
+        "printer": "Bambu Lab A1 0.4 nozzle", "process": "Organizer 0.24mm", "filament": "Bambu PLA Basic @BBL A1"}
     # only references to Bambuddy's profiles are kept — never their content
-    assert farm.load_config()["presets_by_printer"]["1"]["filament"] == {"source": "cloud", "id": "PFUS1", "name": "My Silk PLA"}
+    assert farm.load_config()["presets_by_printer"]["1"]["process"] == {"source": "local", "id": "7", "name": "Organizer 0.24mm"}
     # a profile that isn't in Bambuddy can't be picked
     bad = client.put("/api/makeit/presets", json={**keys, "process": "local:999"})
     assert bad.status_code == 400 and "from Bambuddy's list" in bad.json()["detail"]
@@ -786,27 +788,12 @@ def test_a_spool_can_print_as_another_colour(client, bb):
     assert p4()["colors"] == ["pink"]
 
 
-def test_why_bambu_cloud_profiles_are_missing(client, bb):
-    """Slicing lists only what Bambuddy has; when Bambu Cloud's are missing it says exactly why."""
+def test_snapstl_key_never_asks_for_cloud(client, bb):
+    """SnapSTL uses no cloud profiles, so its key never asks for cloud access."""
     farm.update_config(api_key="")
-    assert client.post("/api/farm/connect", json={}).status_code == 200  # login off: SnapSTL makes its key …
-    assert "can_access_cloud" not in bb.key_requests[-1]  # … without the flag Bambuddy would refuse
-    bb.presets["cloud_status"] = "ok"
-    assert client.get("/api/makeit/presets").json()["cloud_problem"] == ""
-    bb.presets["cloud_status"] = "not_authenticated"  # login off, Bambuddy not signed in
-    assert "isn't signed in to Bambu Cloud" in client.get("/api/makeit/presets").json()["cloud_problem"]
-    bb.presets["cloud_status"] = "expired"
-    assert "expired" in client.get("/api/makeit/presets").json()["cloud_problem"]
-
-    bb.auth_enabled = True  # login on, a key pasted without "Allow cloud access"
-    bb.keys.append("bb_no_cloud")
-    assert client.post("/api/farm/connect", json={"api_key": "bb_no_cloud"}).status_code == 200
-    bb.presets["cloud_status"] = "not_authenticated"
-    why = client.get("/api/makeit/presets").json()["cloud_problem"]
-    assert "Allow cloud access" in why and "API Keys" in why
-    bb.cloud_keys.append("bb_no_cloud")  # cloud access on, but its owner isn't signed in to Bambu Cloud
-    bb.cloud_signed_in = False
-    assert "owns SnapSTL's API key isn't signed in" in client.get("/api/makeit/presets").json()["cloud_problem"]
-    bb.cloud_signed_in = True
-    bb.presets["cloud_status"] = "ok"
-    assert client.get("/api/makeit/presets").json()["cloud_problem"] == ""
+    assert client.post("/api/farm/connect", json={}).status_code == 200  # login off: SnapSTL makes its key
+    assert "can_access_cloud" not in bb.key_requests[-1]
+    bb.auth_enabled = True
+    farm.update_config(api_key="")
+    r = client.post("/api/farm/connect", json={})
+    assert r.status_code == 400 and "not Allow cloud access" in r.json()["detail"]
