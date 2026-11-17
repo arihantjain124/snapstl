@@ -155,6 +155,7 @@ MIGRATIONS = [
     ("slices", "engine", "TEXT"),           # "orca" (OrcaSlicer on this computer) | "bambuddy"
     ("slices", "sliced_path", "TEXT"),      # OrcaSlicer's sliced file (batch folder / Sliced/<model>/…)
     ("files", "sent", "INTEGER"),           # 1 = in the shared records' report_uploads
+    ("print_jobs", "ams_tray", "INTEGER"),  # filament slot it prints from (Bambu global tray id: AMS n·4+slot, 254 external)
 ]
 
 # Bookkeeping for the shared records, kept by triggers so no code path can forget it:

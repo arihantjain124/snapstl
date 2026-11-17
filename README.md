@@ -514,12 +514,11 @@ next to SnapSTL keeps running until you remove it.
 | Adding a printer in Bambuddy fails | Check the IP, serial and access code, and that LAN Only Mode **and** Developer Mode are on |
 | A plate shows **Slicing failed** | Read the message. "Bambuddy's slicer isn't running" → in Bambuddy: Settings → Slicer → **Use Slicer API** on, and the slicer container running and reachable from Bambuddy. "isn't made for the printer preset" → pick a process profile made for that printer profile in **Slicing**. Then click **Slice** again |
 | A plate shows **No profiles for** a printer | **Slicing → Bambuddy profiles per printer**: pick that printer, then its printer, process and filament profiles → **Save** |
-| A printer has the right filament but Print says it has another colour | **Printers** → that spool → **prints as …**: pick the order colour it prints. It resets by itself when another spool is loaded in that slot |
 | Slicing lists none of my profiles / a picked profile is "no longer in Bambuddy" | SnapSTL lists Bambuddy's **local** profiles and the slicer's standard ones (no cloud profiles). Import yours in Bambuddy (**Profiles → Local Profiles → Import Profiles**: a Bambu Studio export, `.json` or `.zip`), then **Reload from Bambuddy** |
 | Slicing fails with **'NoneType' object has no attribute 'get'** | Bambuddy fails reading Bambu Cloud's profile list (a Bambuddy bug). SnapSTL uses no cloud profiles: in Bambuddy sign out of Bambu Cloud (**Settings → Bambu Cloud**), import your profiles under **Profiles → Local Profiles → Import**, pick them in **Slicing**, then **Slice** again |
 | A terminal window opens with SnapSTL, and closing it stops SnapSTL | Fixed in 0.22.19: SnapSTL's background task runs with no window. An install made as administrator keeps the old window until you run the install command again (as administrator); others switch by themselves at their next start |
 | A plate stays **Slicing** | It's stopped after 20 minutes without progress, with a message. Check Bambuddy → Settings → Slicer, then **Slice** again |
-| A printer is greyed out in Print | It's offline, or that colour isn't loaded (white for bases) — load the spool; the Printers page shows what Bambuddy sees |
+| Print suggests the wrong filament slot / an old spool | Printers → **Refresh from Bambuddy** (every printer reports its filament again), then choose the slot under the plate's printer — any printer and any loaded slot can be chosen |
 | A pushed plate waits in Bambuddy | Its printer is busy or waiting for the bed to be cleared: **Clear plate** |
 | SnapSTL doesn't open | Run the install command again; it repairs and restarts SnapSTL |
 | Database getting big | Settings → Maintenance → **Clean up** (orders already made are kept) |

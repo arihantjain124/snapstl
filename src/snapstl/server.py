@@ -1044,7 +1044,8 @@ def makeit_board():
 
 @app.post("/api/makeit/start")
 async def makeit_start(req: Request):
-    """Start print — a person's click: {batch_id, file, printer_id, options, force}."""
+    """Start print — a person's click: {batch_id, file, printer_id, tray, options, force} (tray = filament slot,
+    a global tray id from the plate's printer choices; missing = SnapSTL's best colour fit)."""
     b = await req.json()
     if not b.get("printer_id"):
         raise HTTPException(400, "Choose a printer")
@@ -1053,7 +1054,7 @@ async def makeit_start(req: Request):
         prs = await run_in_threadpool(farm.printers)
         return await run_in_threadpool(makeit.start_print, int(b["batch_id"]), str(b.get("file", "")),
                                        int(b["printer_id"]), b.get("options") or {}, prs, bool(b.get("force")),
-                                       str(b.get("speed") or ""))
+                                       str(b.get("speed") or ""), b.get("tray"))
     except farm.StartBlocked as e:
         raise HTTPException(409, str(e)) from e
     except farm.FarmError as e:
@@ -1289,16 +1290,16 @@ async def farm_connect(req: Request):
         raise _farm_err(e) from e
 
 
-@app.put("/api/farm/printers/{pid}/color")
-async def farm_color_override(pid: int, req: Request):
-    """Printers → a spool's "Counts as": {key: "<slot>|<hex>", color} ("" = Bambuddy's name)."""
-    b = await req.json()
+@app.post("/api/farm/refresh")
+def farm_refresh():
+    """Printers → Refresh from Bambuddy: every printer reports its status and filament again (e.g. after a
+    filament change), and SnapSTL forgets what it had cached."""
     try:
-        out = farm.set_color_override(pid, str(b.get("key") or ""), str(b.get("color") or ""))
+        out = farm.refresh_from_bambuddy()
     except farm.FarmError as e:
         raise _farm_err(e) from e
     _health_stale()
-    return {"overrides": out}
+    return out
 
 
 @app.post("/api/farm/printers/{pid}/clear-plate")
@@ -1376,13 +1377,15 @@ def print_jobs(batch_id: int | None = None):
 
 @app.post("/api/print-jobs/{job_id}/print")
 async def print_job_print(job_id: int, req: Request):
-    """Printers page → Print: {printer_id, options: {bed_levelling, flow_cali, timelapse}}."""
+    """Printers page → Print: {printer_id, tray, options: {bed_levelling, flow_cali, timelapse}} (tray = filament
+    slot; missing = the best colour fit)."""
     b = await req.json()
     if not b.get("printer_id"):
         raise HTTPException(400, "Choose a printer")
     try:
         prs = await run_in_threadpool(farm.printers)
-        return await run_in_threadpool(farm.print_job, job_id, int(b["printer_id"]), b.get("options") or {}, prs)
+        return await run_in_threadpool(lambda: farm.print_job(job_id, int(b["printer_id"]), b.get("options") or {}, prs,
+                                                              tray=b.get("tray")))
     except farm.FarmError as e:
         raise _farm_err(e) from e
 

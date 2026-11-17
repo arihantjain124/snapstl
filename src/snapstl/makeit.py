@@ -84,8 +84,8 @@ def available(printer: dict, load: int) -> bool:
 
 
 def choose(plates: list[dict], prs: list[dict], active: dict[int, int]) -> dict[str, int | None]:
-    """Pre-selected printer per plate: only an *available* printer that fits; exact colour first, then
-    the most filament left. Each pick makes that printer busy for
+    """Pre-selected printer per plate: an *available* printer whose loaded filament fits the colour best
+    (exact, then same family, then nearest), then the most filament left. Each pick makes that printer busy for
     the next plate, so plates spread over the free printers."""
     load = {p["id"]: active.get(p["id"], 0) for p in prs}
     out: dict[str, int | None] = {}
@@ -93,12 +93,17 @@ def choose(plates: list[dict], prs: list[dict], active: dict[int, int]) -> dict[
         if pl.get("job_active"):
             continue
         need = farm.needed_color(pl)
-        ok = [p for p in prs if p.get("active", True) and not farm.eligible(pl, p) and available(p, load[p["id"]])]
+        ok = [p for p in prs if p.get("active", True) and available(p, load[p["id"]])]
         if not ok:
             out[pl["file"]] = None
             continue
-        best = min(ok, key=lambda p: (-farm.color_match(need, p.get("colors") or [])[0], -spool_left(p, need),
-                                      p["name"]))
+
+        def fit(p, need=need):  # how well its best slot fits the colour
+            t = farm.best_tray(need, p)
+            sp = next((x for x in p.get("spools") or [] if x["tray"] == t), None)
+            return farm.tray_score(need, sp) if sp else (-1, -10 ** 7)
+
+        best = min(ok, key=lambda p: (-fit(p)[0], -fit(p)[1], -spool_left(p, need), p["name"]))
         out[pl["file"]] = best["id"]
         load[best["id"]] += 1
     return out
@@ -144,9 +149,11 @@ def board(prs: list[dict] | None = None) -> dict:
     pending = [r for r in rows if not r["done"]]
     active_jobs = farm.active_counts()
     for r in pending:
-        r["choices"] = [{"id": p["id"], "name": p["name"], "why_not": farm.eligible(r, p), "note": farm.match_note(r, p),
+        r["choices"] = [{"id": p["id"], "name": p["name"], "why_not": "", "note": farm.match_note(r, p),
                          "available": available(p, active_jobs.get(p["id"], 0)), "left": spool_left(p, r["need"]),
-                         "state": (p.get("status") or {}).get("state", "")} for p in prs]
+                         "online": bool((p.get("status") or {}).get("connected")),
+                         "state": (p.get("status") or {}).get("state", ""),
+                         "trays": farm.tray_choices(r["need"], p), "best_tray": farm.best_tray(r["need"], p)} for p in prs]
     pick = choose(pending, prs, active_jobs) if prs else {}
     keys: dict = {}
     for r in pending:
@@ -175,7 +182,8 @@ def _job(j: dict | None) -> dict | None:
     return {"id": j["id"], "state": j["state"], "printer_id": j["printer_id"], "printer_name": j["printer_name"],
             "held": bool(j.get("held")), "progress": j.get("progress"), "error": j.get("error"),
             "updated_at": j.get("updated_at"), "options": json.loads(j.get("options") or "{}"),
-            "speed": {v: k for k, v in farm.SPEEDS_SET.items()}.get(j.get("speed") or 0, "")}
+            "speed": {v: k for k, v in farm.SPEEDS_SET.items()}.get(j.get("speed") or 0, ""),
+            "ams_tray": j.get("ams_tray")}
 
 
 # ---------------- actions (each one a person's click) ----------------
@@ -207,7 +215,7 @@ def waiting_plates(prs: list[dict] | None = None) -> list[dict]:
 
 
 def start_print(batch_id: int, file: str, printer_id: int, options: dict | None, prs: list[dict],
-                force: bool = False, speed: str = "") -> dict:
+                force: bool = False, speed: str = "", tray: int | None = None) -> dict:
     """Start print (a person's click): the only way a Make It plate gets printed.
     Not sent yet / failed / cancelled / reprint → sent to that printer and started once queued.
     Waiting held in Bambuddy → moved to that printer if changed, then started."""
@@ -223,16 +231,14 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
     printer = next((p for p in prs if p["id"] == int(printer_id)), None)
     if printer is None:
         raise farm.FarmError("Choose a printer")
-    why = farm.eligible(plate, printer)
-    if why:
-        raise farm.FarmError(f"{printer['name']} {why}")
+    tray = farm.pick_tray(plate, printer, tray)  # the filament slot it prints from (any loaded one)
     missing = farm.missing_presets(printer["id"])
     if missing:
         raise farm.FarmError(f"Pick the slicing profiles for {missing} in Slicing first")
     j = _latest(batch_id, file)
     if j and j["state"] == "sent" and j.get("held"):
-        if j["printer_id"] != printer["id"] or opts:
-            farm.print_job(j["id"], printer["id"], opts, prs)  # move / options while still held
+        if j["printer_id"] != printer["id"] or opts or tray != j.get("ams_tray"):
+            farm.print_job(j["id"], printer["id"], opts, prs, tray=tray)  # move / options / slot while still held
         if spd:
             farm._set(j["id"], speed=spd, speed_set=0, speed_tries=0)
         farm.start_job(j["id"], force=force)
@@ -245,9 +251,9 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
     with db.tx() as con:
         cur = con.execute(
             "INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,options,autostart,speed,"
-            "created_at,updated_at,computer_id) VALUES (?,?,?,?,?,?,'queued',?,1,?,?,?,?)",
+            "ams_tray,created_at,updated_at,computer_id) VALUES (?,?,?,?,?,?,'queued',?,1,?,?,?,?,?)",
             (batch_id, file, plate["kind"], (plate.get("colors") or [""])[0], printer["id"], printer["name"],
-             json.dumps(opts), spd, now, now, computer.ID))
+             json.dumps(opts), spd, tray, now, now, computer.ID))
     farm.WORKER.kick()
     return {"job_id": int(cur.lastrowid), "started": False}
 

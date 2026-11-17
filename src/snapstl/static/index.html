@@ -249,11 +249,11 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="msgs" id="mkmsgs"></div><div class="hint" id="slp_allmsg"></div>
     <div class="chips" id="mktabs"></div>
     <div id="mk-bases" class="mkpane">
-      <p class="hint">Base plates of your built batches, printed in white. A printer is pre-selected — the next <b>available</b> one with white loaded and the most filament left. <b>Slice</b> shows if the plate is sliced for that printer's model. <b>Options</b> start from the printer's print defaults (Slicing); change them for one plate here. Nothing prints until you press <b>Start print</b>.</p>
+      <p class="hint">Base plates of your built batches, printed in white. A printer is pre-selected — the next <b>available</b> one whose loaded filament is closest to white, with the most left — and under it the <b>filament slot</b> it prints from (✓ same colour, ≈ close). You can pick any printer and any loaded slot. <b>Slice</b> shows if the plate is sliced for that printer's model. <b>Options</b> start from the printer's print defaults (Slicing); change them for one plate here. Nothing prints until you press <b>Start print</b>.</p>
       <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mkbases"></tbody></table></div>
     </div>
     <div id="mk-names" class="mkpane" hidden>
-      <p class="hint">Name plates, one colour each. Only printers with that colour loaded (read from Bambuddy) can be chosen; one is pre-selected when it's available. Nothing prints until you press <b>Start print</b>.</p>
+      <p class="hint">Name plates, one colour each. A printer is pre-selected (available, best colour match), and under it the <b>filament slot</b> it prints from, best match first (✓ same colour, ≈ close). You can pick any printer and any slot loaded in it; after a spool change use Printers → <b>Refresh from Bambuddy</b>. Nothing prints until you press <b>Start print</b>.</p>
       <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mknames"></tbody></table></div>
     </div>
     <div id="mk-completed" class="mkpane" hidden>
@@ -334,8 +334,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <div class="card">
     <div class="toolbar"><h2 style="margin:0">Printers</h2><span class="grow hint" id="psinfo"></span>
       <label class="check" style="margin:0"><input type="checkbox" id="psauto" checked> Auto-refresh</label>
-      <button class="small" id="psrefresh">Refresh</button><a class="btn small" id="psdl" href="/api/printer-status?download=1">Download JSON</a><a class="btn small" id="bbopen2" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
-    <p class="hint">Live from Bambuddy: what each printer is doing, its temperatures, the filament in every slot and its queue. Printers and spools are managed in Bambuddy — load a spool and it shows up here. <b>Clear plate</b> tells Bambuddy the bed is empty, so the next started print can begin. <b>All fields</b> shows everything Bambuddy reports; access codes and keys are never shown.</p>
+      <button class="small" id="psrefresh" title="Ask every printer (through Bambuddy) to report its status and filament again — e.g. after changing a spool">Refresh from Bambuddy</button><a class="btn small" id="psdl" href="/api/printer-status?download=1">Download JSON</a><a class="btn small" id="bbopen2" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
+    <p class="hint">Live from Bambuddy: what each printer is doing, its temperatures, the filament in every slot and its queue. Printers and spools are managed in Bambuddy — load a spool and it shows up here; after a filament change press <b>Refresh from Bambuddy</b>. The colour each print uses is chosen per print in <b>Print</b> (its filament slot). <b>Clear plate</b> tells Bambuddy the bed is empty, so the next started print can begin. <b>All fields</b> shows everything Bambuddy reports; access codes and keys are never shown.</p>
     <div class="msgs" id="psmsg"></div>
     <div class="prgrid" id="pslist"></div>
     <details class="kvd" style="margin-top:12px"><summary><b>Farm activity</b> <span class="hint">sending, starting and slicing, newest last</span></summary><div class="log" id="farmlog" style="margin-top:6px"></div></details>
@@ -648,7 +648,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Filament</b> is read from Bambuddy: every AMS slot and external spool with Bambu's colour name (<i>Hot Pink</i>, <i>Jade White</i>). Nothing to type in SnapSTL — load the spool and it shows up.</li>
       <li><b>Slicing</b>: pick the Bambuddy profiles for each printer (see Slicing below).</li>
     </ol>
-    <p><b>Print</b> (sidebar) has four lists. <b>Bases</b>: every base plate still to print, with the next <b>available</b> printer that has white loaded and the most filament left already chosen. <b>Names</b>: every name plate with its colour — only printers with that colour loaded can be chosen; one is pre-selected when available. <b>Completed</b>: printed plates, with <b>Reprint</b> only for a failed print. <b>Removed</b>: plates taken off the lists (e.g. printed by hand), with <b>Put back</b>.</p>
+    <p><b>Print</b> (sidebar) has four lists. <b>Bases</b>: every base plate still to print, with the next <b>available</b> printer and its best-matching filament slot already chosen. <b>Names</b>: every name plate with its colour; a printer and the slot closest to that colour are pre-selected. Any printer and any loaded slot can be chosen — the slot is what the print uses. <b>Completed</b>: printed plates, with <b>Reprint</b> only for a failed print. <b>Removed</b>: plates taken off the lists (e.g. printed by hand), with <b>Put back</b>.</p>
     <p>Each plate shows whether it's <b>sliced</b> for its printer (<i>Sliced</i>, <i>Slicing</i>, <i>Slicing failed</i> with the reason, or <i>No profiles for A1</i> → Slicing). <b>Options</b> start from the printer's print defaults (Slicing → Print defaults); change speed, bed levelling, flow calibration or timelapse for that plate only.</p>
     <p><b>Nothing prints until you click Start print</b> on a plate: that click slices it if needed, sends it to the chosen printer and starts it. Bambuddy prints it as soon as the printer is free and its bed has been cleared (<b>Clear plate</b> on the Printers page, or in Bambuddy). If Bambuddy warns (e.g. too little filament), SnapSTL asks before starting anyway. A printed plate moves to <b>Completed</b>; once an order's base and name are both printed it shows in <b>Orders → Ready to ship</b>.</p>
   </div>
@@ -715,7 +715,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <tr><td>Queue download says "Add the license password"</td><td>Settings → Product → License password → Save settings.</td></tr>
       <tr><td>Bambuddy isn't answering</td><td>Run the SnapSTL install command again (it starts Bambuddy, and never replaces one you already had). Log: <code>~/Library/Logs/Bambuddy</code> (Mac), <code>%LOCALAPPDATA%\SnapSTL</code> (Windows).</td></tr>
       <tr><td>No profiles for <i>printer name</i></td><td>Slicing → <b>Bambuddy profiles per printer</b>: pick that printer, then its printer, process and filament profile → <b>Save</b>.</td></tr>
-      <tr><td>A printer has the right filament but Print says it has another colour</td><td>Printers → the spool → <b>prints as …</b>: choose the order colour it prints (e.g. Bambuddy calls it <i>Sakura Pink</i>, your orders say <i>pink</i>). It resets by itself when another spool is loaded in that slot.</td></tr>
+      <tr><td>A spool was changed but Print / Printers still show the old one</td><td>Printers → <b>Refresh from Bambuddy</b>: every printer reports its filament again. In Print, choose the plate's <b>filament slot</b> under its printer — any loaded slot can be used.</td></tr>
       <tr><td>Slicing failed</td><td>"Bambuddy's slicer isn't running" → in Bambuddy: Settings → Slicer → <b>Use Slicer API</b> on, and its slicer container running. "isn't made for the printer preset" → pick a process profile made for that printer profile in Slicing. "no longer in Bambuddy" → the profile was deleted there: pick another. Then <b>Slice</b> again in Print.</td></tr>
       <tr><td>A started plate stays "Started · in queue"</td><td>Its printer is busy or waiting for the bed to be cleared: Printers → <b>Clear plate</b>.</td></tr>
       <tr><td>Can't copy text in the window</td><td>Quit and reopen SnapSTL.app.</td></tr>
@@ -949,14 +949,8 @@ const JST={queued:['Waiting to send','info'],slicing:['Slicing','info'],uploadin
 const jobPill=j=>{if(!j)return '<span class="hint">not pushed</span>';const st=j.state==='sent'?(j.held?['Waiting for Start','warn']:['Started · in queue','info']):(JST[j.state]||[j.state,'']);
   return `<span class="pill ${st[1]}">${st[0]}${j.state==='printing'&&j.progress!=null?' '+Math.round(j.progress)+'%':''}</span> <span class="hint">${esc(j.printer_name||'')}</span>${j.error?`<div class="reason">${esc(j.error)}</div>`:''}`};
 const fmtMin=m=>m>=60?`${Math.floor(m/60)} h ${Math.round(m%60)} min`:`${Math.round(m)} min`;
-function spoolRow(x,pid){const name=x.name||(x.approx?`≈ ${x.approx}`:(x.hex||'unknown colour'));
-  const opts=[...new Set([...Object.keys(COLORS),...((FACETS&&FACETS.colors)||[]),x.color].filter(Boolean))].sort();
-  const pick=META.local&&pid&&x.key?` <select class="small" data-spk="${esc(x.key)}" data-spp="${pid}" title="The order colour this spool prints. Change it when Bambuddy's name doesn't match your orders; it resets by itself when another spool is loaded here.">
-    <option value="">${x.auto?`prints as ${esc(x.auto)} (Bambuddy)`:'— colour? —'}</option>${opts.map(c=>`<option value="${esc(c)}" ${x.mapped&&c===x.color?'selected':''}>prints as ${esc(c)}</option>`).join('')}</select>${x.mapped?' <span class="pill info">set by you</span>':''}`
-    :(x.color?` <span class="hint">→ ${esc(x.color)}</span>`:'');
-  return `<div class="spool"><span class="slot">${esc(x.slot)}</span><span class="dot" style="background:${esc(x.hex||'transparent')}"></span><span>${esc(name)}</span><span class="hint">${esc(x.material||'')}${x.remain!=null?` · ${x.remain}%`:''}</span>${pick}</div>`}
-document.addEventListener('change',async e=>{const t=e.target;if(!t.dataset||!t.dataset.spk)return;t.disabled=true;
-  try{await putJSON(`/api/farm/printers/${t.dataset.spp}/color`,{key:t.dataset.spk,color:t.value});loadStatusAll();loadHealth()}catch(err){alert(err.message)}finally{t.disabled=false}});
+function spoolRow(x){const name=x.name||(x.approx?`≈ ${x.approx}`:(x.hex||'unknown colour'));
+  return `<div class="spool"><span class="slot">${esc(x.slot)}</span><span class="dot" style="background:${esc(x.hex||'transparent')}"></span><span>${esc(name)}</span><span class="hint">${esc(x.material||'')}${x.remain!=null?` · ${x.remain}%`:''}</span></div>`}
 const optVal=v=>v===true?'on':v===false?'off':String(v);
 const cap=s=>s?s[0].toUpperCase()+s.slice(1):s;
 const setVal=v=>v!==''&&v!=null;
@@ -987,9 +981,14 @@ function sliceCell(r,sel){const sl=r.slice,k=esc(mkKey(r));
   if(sl&&sl.state==='failed')return `<span class="pill err">Slicing failed</span> ${btn}<div class="reason">${esc(sl.error||'')}</div>`;
   return `<span class="pill">Not sliced</span> ${btn}${other}`}
 function mkStatus(r){const j=r.job;if(!j||j.state==='reprint')return `<span class="hint">${j?'reprint — choose a printer':'not started'}</span>`;return jobPill(j)}
-function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={printer:String(r.suggested??(r.job&&r.job.printer_id?r.job.printer_id:'')),options:{...((r.job&&r.job.options)||{})},speed:(r.job&&r.job.speed)||''});
+const trayLbl=t=>`${t.slot} — ${t.name||t.color||t.hex||'?'}${t.material?' '+t.material:''}${t.remain!=null?' · '+t.remain+'%':''}${t.match===2?' ✓':t.match===1?' ≈':''}`;
+function mkTrays(r,sel){const c=r.choices.find(x=>String(x.id)===sel.printer);return c?(c.trays||[]):[]}
+function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={printer:String(r.suggested??(r.job&&r.job.printer_id?r.job.printer_id:'')),options:{...((r.job&&r.job.options)||{})},speed:(r.job&&r.job.speed)||'',tray:(r.job&&r.job.ams_tray!=null)?String(r.job.ams_tray):''});
+  const ch=r.choices.find(x=>String(x.id)===sel.printer),trays=mkTrays(r,sel);
+  if(ch&&!trays.some(t=>String(t.tray)===sel.tray))sel.tray=ch.best_tray!=null?String(ch.best_tray):'';
   const j=r.job,busy=r.job_active&&!(j&&j.state==='sent'&&j.held),d=mkPrinter(sel.printer).defaults||{};
-  const opts='<option value="">— choose a printer —</option>'+r.choices.map(c=>`<option value="${c.id}" ${String(c.id)===sel.printer?'selected':''} ${c.why_not?'disabled':''}>${esc(c.name)}${c.why_not?' · '+esc(c.why_not):[c.available?'available':(c.state?c.state.toLowerCase():'busy'),c.left>=0?c.left+'% left':'',c.note].filter(Boolean).map(esc).join(' · ').replace(/^/,' · ')}</option>`).join('');
+  const opts='<option value="">— choose a printer —</option>'+r.choices.map(c=>`<option value="${c.id}" ${String(c.id)===sel.printer?'selected':''}>${esc(c.name)} · ${[!c.online?'offline':c.available?'available':(c.state?c.state.toLowerCase():'busy'),c.note].filter(Boolean).map(esc).join(' · ')}</option>`).join('');
+  const traySel=sel.printer?(trays.length?`<select data-mktray="${esc(k)}" ${busy?'disabled':''} title="The filament slot this plate prints from (✓ same colour, ≈ close) — any loaded slot can be chosen" style="margin-top:4px">${trays.map(t=>`<option value="${t.tray}" ${String(t.tray)===sel.tray?'selected':''}>${esc(trayLbl(t))}</option>`).join('')}</select>${(()=>{const t=trays.find(x=>String(x.tray)===sel.tray);return t&&t.hex?` <span class="dot" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;background:${esc(t.hex)}"></span>`:''})()}`:'<div class="hint">No filament reported — Bambuddy picks the slot</div>'):'';
   const dflt=v=>`<option value="">Printer default${setVal(v)?' ('+esc(v)+')':''}</option>`;
   const speedSel=`<label style="margin:4px 0 2px">Print speed</label><select data-mkspeed="${esc(k)}">${dflt(d.speed?cap(d.speed):'')}${(MK.speeds||[]).map(v=>`<option value="${v}" ${sel.speed===v?'selected':''}>${cap(v)}</option>`).join('')}</select>`;
   const optSel=(kk,vals)=>`<label style="margin:4px 0 2px">${OPTLBL[kk]}</label><select data-mkopt="${esc(k)}" data-k="${kk}">${dflt(setVal(d[kk])?optVal(d[kk]):'')}${vals.map(v=>`<option value="${v}" ${setVal(sel.options[kk])&&String(sel.options[kk])===String(v)?'selected':''}>${optVal(v)}</option>`).join('')}</select>`;
@@ -997,7 +996,7 @@ function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={pri
   const btn=busy?'':`<button class="small primary" data-mkstart="${esc(k)}" title="Send to this printer and start printing (once its bed is cleared)">${held?'Start print':(j&&['failed','cancelled'].includes(j.state)?'Start print again':'Start print')}</button>`;
   const plate=`<div class="fn">${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>`;
   return `<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td>${withColour?`<td style="white-space:nowrap">${sw(r.colors[0]||'')}</td>`:''}<td>${plate}</td>
-    <td><select data-mkpr="${esc(k)}" ${busy?'disabled':''}>${opts}</select></td>
+    <td><select data-mkpr="${esc(k)}" ${busy?'disabled':''}>${opts}</select>${traySel}</td>
     <td>${sliceCell(r,sel)}</td>
     <td>${busy?`<span class="hint">${esc(optSummary(j&&j.options,j&&j.speed))}</span>`:`<details><summary class="hint" style="cursor:pointer">${esc(optSummary(sel.options,sel.speed,d))}</summary>${speedSel}${Object.entries(MK.options).map(([kk,v])=>optSel(kk,v)).join('')}<div class="hint" style="margin-top:4px">For this plate only. Each printer's defaults: <a href="#" data-go="slicing">Slicing</a>.</div></details>`}</td>
     <td>${mkStatus(r)}</td><td style="white-space:nowrap">${btn}${busy?'':` <button class="small" data-mkrm="${esc(k)}" title="Take it off this list (e.g. printed by hand) — Put back in Removed">Remove</button>`}</td></tr>`}
@@ -1019,15 +1018,16 @@ function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(
     try{await post('/api/makeit/remove',{batch_id:r.batch_id,file:r.file})}catch(e){alert(e.message)}loadMakeIt()});
   document.querySelectorAll('[data-mkback]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkback);
     try{await post('/api/makeit/remove',{batch_id:r.batch_id,file:r.file,put_back:true})}catch(e){alert(e.message)}loadMakeIt()});
-  document.querySelectorAll('[data-mkpr]').forEach(x=>x.onchange=()=>{MKSEL[x.dataset.mkpr].printer=x.value;x.blur();mkRender(true)});
+  document.querySelectorAll('[data-mkpr]').forEach(x=>x.onchange=()=>{const m=MKSEL[x.dataset.mkpr];m.printer=x.value;m.tray='';x.blur();mkRender(true)});
+  document.querySelectorAll('[data-mktray]').forEach(x=>x.onchange=()=>{MKSEL[x.dataset.mktray].tray=x.value;x.blur();mkRender(true)});
   document.querySelectorAll('[data-mkspeed]').forEach(x=>x.onchange=()=>{MKSEL[x.dataset.mkspeed].speed=x.value});
   document.querySelectorAll('[data-mkopt]').forEach(x=>x.onchange=()=>{const v=x.value;MKSEL[x.dataset.mkopt].options[x.dataset.k]=v===''?'':v==='true'?true:v==='false'?false:v});
   document.querySelectorAll('.mktable details').forEach(d=>d.ontoggle=()=>{if(!d.open){const s=d.querySelector('[data-mkopt]');if(s){const k=s.dataset.mkopt,m=MKSEL[k];d.querySelector('summary').textContent=optSummary(m.options,m.speed,mkPrinter(m.printer).defaults)}}});
   document.querySelectorAll('[data-mkstart]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkstart),sel=MKSEL[x.dataset.mkstart];
     if(!sel.printer){alert('Choose a printer');return}
-    const pr=r.choices.find(c=>String(c.id)===sel.printer);
-    if(!confirm(`Start printing ${r.kind==='bases'?'this base plate':'this '+(r.colors[0]||'')+' name plate'} on ${pr?pr.name:'that printer'}?\n\n${optSummary(sel.options,sel.speed,mkPrinter(sel.printer).defaults)}\n\nIt prints as soon as the printer is free and its bed has been cleared.`))return;
-    x.disabled=true;const body={batch_id:r.batch_id,file:r.file,printer_id:+sel.printer,options:sel.options,speed:sel.speed||''};
+    const pr=r.choices.find(c=>String(c.id)===sel.printer),tr=mkTrays(r,sel).find(t=>String(t.tray)===sel.tray);
+    if(!confirm(`Start printing ${r.kind==='bases'?'this base plate':'this '+(r.colors[0]||'')+' name plate'} on ${pr?pr.name:'that printer'}?\n\nFilament: ${tr?trayLbl(tr):'Bambuddy picks the slot'}\n${optSummary(sel.options,sel.speed,mkPrinter(sel.printer).defaults)}\n\nIt prints as soon as the printer is free and its bed has been cleared.`))return;
+    x.disabled=true;const body={batch_id:r.batch_id,file:r.file,printer_id:+sel.printer,tray:sel.tray===''?null:+sel.tray,options:sel.options,speed:sel.speed||''};
     try{await post('/api/makeit/start',body)}catch(e){if(/anyway|filament|warn/i.test(e.message)&&confirm(e.message+'\n\nStart anyway?')){try{await post('/api/makeit/start',{...body,force:true})}catch(e2){alert(e2.message)}}else alert(e.message)}
     document.activeElement&&document.activeElement.blur();loadMakeIt()});
   document.querySelectorAll('[data-mkre]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkre);
@@ -1179,7 +1179,7 @@ function statusCard(p){const m=p.summary||{};const raw=p.status||{};
     :`<div class="line hint">${m.connected?'Not printing':'—'}</div>`);
   const tp=m.temps||{};h+=`<h4>Temperatures</h4><div class="line">Nozzle ${T(tp.nozzle,tp.nozzle_target)} · Bed ${T(tp.bed,tp.bed_target)}${tp.chamber!=null?` · Chamber ${T(tp.chamber)}`:''}</div>`;
   const f=m.fans||{};const fans=[f.part!=null?`part ${f.part}%`:'',f.aux!=null?`aux ${f.aux}%`:'',f.heatbreak!=null?`hotend ${f.heatbreak}%`:''].filter(Boolean);if(fans.length)h+=`<div class="line hint">Fans: ${fans.join(' · ')}</div>`;
-  h+=`<h4>Filament</h4><div class="spools">${(m.spools||[]).length?m.spools.map(x=>spoolRow(x,p.id)).join(''):'<span class="hint">No filament reported</span>'}</div>`;
+  h+=`<h4>Filament</h4><div class="spools">${(m.spools||[]).length?m.spools.map(x=>spoolRow(x)).join(''):'<span class="hint">No filament reported</span>'}</div>`;
   for(const u of (m.ams_units||[]).filter(u=>u.humidity!=null||u.temp!=null||u.drying))h+=`<div class="line hint">${esc(u.name)}: ${u.humidity!=null?`humidity level ${u.humidity}`:''}${u.temp!=null?` · ${Math.round(u.temp)}°`:''}${u.drying?` · drying, ${u.dry_minutes_left} min left`:''}</div>`;
   h+='<h4>Problems</h4>'+((m.errors||[]).length?m.errors.map(e=>`<div class="line reason">${esc(e.severity)} · code ${esc(e.code)}${e.actions&&e.actions.length?` · ${esc(e.actions.join(', ').toLowerCase().replace(/_/g,' '))}`:''}</div>`).join(''):(m.print_error?`<div class="line reason">Print error ${esc(m.print_error)}</div>`:'<div class="line hint">None</div>'));
   const facts=[m.nozzles&&m.nozzles.length?'Nozzle '+m.nozzles.join(', '):'',m.network?(m.network.wired?'Ethernet':(m.network.wifi_dbm!=null?`Wi-Fi ${m.network.wifi_dbm} dBm${m.network.wifi_dbm>-60?' (good)':m.network.wifi_dbm>-75?' (fair)':' (weak)'}`:'')):'',m.sdcard===false?'No SD card':m.sdcard?'SD card in':'',m.door_open?'Door open':'',m.camera?'Camera on':'',m.timelapse?'Timelapse on':'',m.firmware?'Firmware '+m.firmware:'',m.developer_mode===false?'Developer Mode OFF (Bambuddy can\'t control it)':''].filter(Boolean);
@@ -1197,7 +1197,10 @@ async function loadStatusAll(){$('psinfo').textContent='Loading…';let r;try{r=
   $('pssys').innerHTML=kvDetails('Bambuddy system info',r.system||{},'system');
   document.querySelectorAll('[data-pclear]').forEach(x=>x.onclick=async()=>{if(!confirm('Is the bed of this printer empty and clean? Its next started print begins then.'))return;try{await post(`/api/farm/printers/${x.dataset.pclear}/clear-plate`)}catch(e){alert(e.message)}loadStatusAll()});
   document.querySelectorAll('#t-printers details.kvd').forEach(d=>d.ontoggle=()=>{d.open?PSOPEN.add(d.dataset.path):PSOPEN.delete(d.dataset.path)})}
-$('psrefresh').onclick=()=>loadStatusAll();
+async function refreshFromBambuddy(btn,after){const t=btn.textContent;btn.disabled=true;btn.textContent='Refreshing…';
+  try{const r=await post('/api/farm/refresh');if(r.failed&&r.failed.length)alert('Some printers didn\'t answer:\n'+r.failed.join('\n'))}catch(e){alert(e.message)}
+  finally{btn.disabled=false;btn.textContent=t}after();loadHealth()}
+$('psrefresh').onclick=()=>refreshFromBambuddy($('psrefresh'),loadStatusAll);
 
 // ---------- sidebar status ----------
 let HEALTH=null;
