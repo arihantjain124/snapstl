@@ -1038,7 +1038,7 @@ def makeit_board():
         p["defaults"] = farm.print_defaults(p["id"], cfg)
     return {"status": st, "printers": prs, **makeit.board(prs),
             "options": {k: list(v) for k, v in farm.OPTIONS.items()},
-            "speeds": list(farm.SPEEDS_SET), "auto_slice": bool(cfg.get("auto_slice", True)),
+            "speeds": list(farm.SPEEDS_SET),
             "worker": {"log": farm.WORKER.log[-20:]}}
 
 
@@ -1078,7 +1078,7 @@ def makeit_presets(printer: int = 0, refresh: int = 0):
     base = {"printer": printer, "set_for": set_for,
             "printers": [{"id": p["id"], "name": p["name"], "model": p.get("model") or "",
                           "defaults": farm.print_defaults(p["id"], cfg)} for p in prs],
-            "auto_slice": bool(cfg.get("auto_slice", True)), "bambuddy_url": cfg.get("bambuddy_url") or "",
+            "bambuddy_url": cfg.get("bambuddy_url") or "",
             "speeds": list(farm.SPEEDS_SET), "options": {k: list(v) for k, v in farm.OPTIONS.items()},
             "plates": list(farm.PLATE_TYPES), "activity": makeit.slicing_summary()}
     chosen = farm.chosen_presets(printer, cfg)
@@ -1124,23 +1124,11 @@ async def makeit_print_defaults(req: Request):
         raise _farm_err(e) from e
 
 
-@app.put("/api/makeit/settings")
-async def makeit_settings(req: Request):
-    """Automatic slicing on / off."""
-    b = await req.json()
-    changes = {}
-    if "auto_slice" in b:
-        changes["auto_slice"] = bool(b["auto_slice"])
-    cfg = farm.update_config(**changes)
-    _health_stale()
-    farm.WORKER.kick()
-    return {"auto_slice": cfg["auto_slice"]}
-
-
 @app.post("/api/makeit/slice")
 async def makeit_slice(req: Request):
-    """Slice plates: {plates: [{batch_id, file, printer_id}], again} — each with the presets of the printer
-    chosen for it (none = the default presets). Runs in the background."""
+    """Slice plates: {plates: [{batch_id, file, printer_id}], again} — each with the Bambuddy profiles of the
+    printer chosen for it in Print (required: there is no default printer). Runs in the background, one
+    at a time. Plates are sliced only from here (Slice / Slice all) or at Start print — never by themselves."""
     b = await req.json()
     todo, pids = [], []
     for p in [p for p in b.get("plates", []) if isinstance(p, dict)][:500]:
@@ -1150,8 +1138,10 @@ async def makeit_slice(req: Request):
             _, plate = makeit._plate(bid, file)
         except farm.FarmError as e:
             raise _farm_err(e) from e
+        if not p.get("printer_id"):
+            raise HTTPException(400, "Choose the printer to slice for — a plate is sliced with its printer's profiles")
         todo.append((bid, file, plate["kind"], (plate.get("colors") or [""])[0]))
-        pids.append(int(p["printer_id"]) if p.get("printer_id") else None)
+        pids.append(int(p["printer_id"]))
     if not todo:
         raise HTTPException(400, "Choose the plates to slice")
     n = 0

@@ -156,20 +156,28 @@ def board(prs: list[dict] | None = None) -> dict:
                          "trays": farm.tray_choices(r["need"], p), "best_tray": farm.best_tray(r["need"], p)} for p in prs]
     pick = choose(pending, prs, active_jobs) if prs else {}
     keys: dict = {}
+
+    def slice_state(r: dict, pid) -> dict | None:
+        """This plate's slice for a printer's profiles (None = not sliced for it yet)."""
+        if not pid:
+            return None
+        if pid not in keys:
+            keys[pid] = (farm.target(pid)[0], farm.missing_presets(pid))
+        key, missing = keys[pid]
+        if missing:
+            return {"state": "needs_presets", "printer": missing}
+        x = farm.slice_for(slices, r["batch_id"], r["file"], key)
+        return {"state": x["state"], "progress": x["progress"], "error": x["error"]} if x else None
+
     for r in pending:
         r["suggested"] = pick.get(r["file"])
-        # sliced with the presets of the printer this plate goes to: its job's printer, else the pre-selected one
+        for c in r["choices"]:  # the slice for each printer: the row shows the one for the printer selected
+            c["slice"] = slice_state(r, c["id"])
+        # its job's printer, else the pre-selected one (what the row shows before a printer is picked)
         pid = ((r["job"] or {}).get("printer_id") if r["job_active"] else None) or r["suggested"]
-        if pid not in keys:
-            keys[pid] = farm.target(pid)[0]
         r["slice_for"] = pid
-        missing = farm.missing_presets(pid) if pid else None
-        if missing:
-            r["slice"] = {"state": "needs_presets", "printer": missing}
-        else:
-            x = farm.slice_for(slices, r["batch_id"], r["file"], keys[pid])
-            r["slice"] = {"state": x["state"], "progress": x["progress"], "error": x["error"]} if x else None
-            r["sliced"] = bool(x and x["state"] == "done")
+        r["slice"] = slice_state(r, pid)
+        r["sliced"] = bool(r["slice"] and r["slice"]["state"] == "done")
     done = sorted([r for r in rows if r["done"]], key=lambda r: -(r["job"] or {}).get("updated_at", 0))[:300]
     return {"bases": [r for r in pending if r["kind"] == "bases"],
             "names": [r for r in pending if r["kind"] == "names"],
@@ -205,13 +213,6 @@ def _latest(batch_id: int, file: str) -> dict | None:
         j = con.execute("SELECT * FROM print_jobs WHERE batch_id=? AND plate=? AND computer_id=? ORDER BY id DESC LIMIT 1",
                         (batch_id, file, computer.ID)).fetchone()
     return dict(j) if j else None
-
-
-def waiting_plates(prs: list[dict] | None = None) -> list[dict]:
-    """Plates in Bases / Names with no print on its way, with their pre-selected printer (automatic
-    slicing works through these)."""
-    b = board(prs)
-    return [r for r in b["bases"] + b["names"] if not r["job_active"]]
 
 
 def start_print(batch_id: int, file: str, printer_id: int, options: dict | None, prs: list[dict],

@@ -76,6 +76,17 @@ runs on Mac and Windows computers alike and connects to it over the network.
    - Optional, recommended when others share your network: turn on Bambuddy's login (**Settings →
      Authentication**) and give each SnapSTL an API key (**Settings → API keys**: Queue, Read status,
      Library, Control printer — not Allow cloud access: SnapSTL uses no cloud profiles).
+6. **Remote access with OctoEverywhere** (optional, free): the script also installs the
+   **OctoEverywhere Plugin Manager** from the Microsoft Store (it runs OctoEverywhere's plugins in the
+   same Docker Desktop). Once:
+   - Start menu → **OctoEverywhere Plugin Manager** → **Create New Plugin Instance** for each printer:
+     type **Bambu Lab**, then its IP address, access code and serial number (Bambuddy → **Printers**
+     shows them). Click the button to **link it to your OctoEverywhere account** in the browser.
+   - Then turn on Bambuddy remote access at <https://octoeverywhere.com/bambuddy> with Bambuddy's
+     address from step 4.
+   - Keep Bambuddy's login on (step 5) once it's reachable from outside your network: remote access
+     can start prints. The plugins keep running while Docker Desktop runs; opening the Plugin Manager
+     updates them. SnapSTL itself still talks only to Bambuddy on your network.
 
 **Running it again** changes nothing that's installed: it only applies settings (Bambuddy's slicer
 settings, firewall) and downloads only what's missing. Settings are remembered in
@@ -85,6 +96,7 @@ settings, firewall) and downloads only what's missing. Settings are remembered i
 |---|---|
 | `$env:BAMBUDDY_SLICER="orcaslicer"` | Bambuddy slices with OrcaSlicer (`"bambu_studio"` = back to Bambu Studio) |
 | `$env:BAMBUDDY_UPGRADE="1"` | Also moves Bambuddy and the slicer service to the version a newer SnapSTL was tested with (printers, profiles and history are kept) |
+| `$env:BAMBUDDY_OCTOEVERYWHERE="0"` | Don't install the OctoEverywhere Plugin Manager (`"1"` = install it again if missing; it's never uninstalled by the script) |
 
 Already installed Bambuddy yourself on that PC? The script uses it as it is (never reinstalls, upgrades
 or stops it) and adds the slicer service. Ran the earlier 0.22.0 script, which put Bambuddy itself in
@@ -338,8 +350,9 @@ Bambuddy**). SnapSTL only reads them.
      says, often Cool Plate), speed (Silent / Standard / Sport / Ludicrous), bed levelling, flow
      calibration and timelapse each printer uses at Start print. *Bambuddy's default* leaves it to
      Bambuddy.
-   - **Slice new plates automatically** (on by default) slices each new plate for the printer
-     pre-selected for it. **Slicing activity** lists what was sliced, what's waiting and what failed.
+   - **Nothing is sliced by itself** (since 0.22.22): plates are sliced only when you press **Slice**
+     in Print (or Start print slices first). **Slicing activity** lists what was sliced, what's
+     waiting and what failed.
 
 **Print** (sidebar) is where plates are printed. It has four lists:
 
@@ -354,11 +367,14 @@ Bambuddy**). SnapSTL only reads them.
 - **Removed**: plates you took off Bases or Names with **Remove** (for example printed by hand).
   Nothing is deleted. **Put back** returns a plate.
 
-Each plate row shows its **Slice** state for the chosen printer's model (*Sliced*, *Waiting to
-slice*, *Slicing %*, *Slicing failed* with the reason, or *No profiles for A1*), a **Slice** button,
-and **Options**, which start from the printer's print defaults and can be changed for that plate
-only. **Slice all waiting** (top) slices every plate that isn't sliced yet. A slice that makes no
-progress for 20 minutes is stopped with a message, so nothing stays stuck.
+Each plate row shows its **Slice** state for the printer selected on that row (*Sliced*, *Waiting to
+slice*, *Slicing %*, *Slicing failed* with the reason, or *No profiles for A1*, with *for <printer>*
+under it), a **Slice** button, and **Options**, which start from the printer's print defaults and can
+be changed for that plate only. **Slice** puts the plate in the slicing queue with the profiles of the
+printer selected for it — choose the printer first; there is no default printer. Change the printer and
+the row shows the slice for that one. **Slice all waiting** (top) queues every plate that has a printer
+chosen and isn't sliced for it yet. Plates are sliced one at a time; a slice that makes no progress for
+20 minutes is stopped with a message, so nothing stays stuck. Nothing is sliced by itself.
 
 **Nothing prints until you click Start print.** That click sends the plate, sliced for the model of
 the printer you chose (sliced first if needed), and starts it. Bambuddy prints it as soon as the
