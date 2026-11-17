@@ -262,7 +262,7 @@ CREATE VIEW snapstl.orders_full WITH (security_invoker = true) AS
 COMMENT ON TABLE snapstl.report_rows IS 'Webstore report columns for each Magicians_35 order (one row per order_id), from the newest uploaded report. Join with order_records on order_id, or read orders_full. Read-only for anyone but SnapSTL.';
 COMMENT ON TABLE snapstl.report_uploads IS 'Every report uploaded on any SnapSTL computer: when, by which computer, and how recent the file is (as_of = newest date/time in it).';
 COMMENT ON VIEW snapstl.orders_full IS 'Each order (order_records: tab, ready_type, who is making it, name, colour …) with its report columns (report_rows). The easiest table to query.';
-COMMENT ON COLUMN snapstl.report_rows.status_at IS 'How recent this row is: event date | newest entry in its file | upload time (a newer file replaces it; blanks never erase).';
+COMMENT ON COLUMN snapstl.report_rows.status_at IS 'How recent this row is: @newest entry in its file | event date | upload time (a newer file replaces it; blanks never erase).';
 COMMENT ON COLUMN snapstl.report_rows.channel IS 'Channel — Sales channel';
 COMMENT ON COLUMN snapstl.report_rows.product_code IS 'Product Code — Webstore product code';
 COMMENT ON COLUMN snapstl.report_rows.address_line IS 'Address — Delivery address line (city, state and pincode are separate)';
@@ -541,7 +541,7 @@ INSERT INTO shop.glossary(term, kind, meaning) VALUES
   ('clubbed', 'ready_type', 'Ready order shipped together with others (same clubbed_id)'),
   ('adhoc', 'ready_type', 'Ready order typed in by hand in SnapSTL (sku Adhoc)'),
   ('Magicians_35', 'sku', 'The name organizer SnapSTL makes; the only product in shop.production'),
-  ('status_at', 'column', 'How recent a row is: event date | newest entry in its report file | upload time. A newer file wins.'),
+  ('status_at', 'column', 'How recent a row is: @newest entry in its report file | event date | upload time. A newer file wins.'),
   ('orders_full', 'table', 'snapstl.orders_full: SnapSTL''s order with its report columns (Magicians_35 only)'),
   ('shop.orders', 'table', 'Every webstore order of every product, one row per order_id. Join customers, order_finance, shipments on order_id / customer_id.')
 ON CONFLICT (term, kind) DO UPDATE SET meaning = EXCLUDED.meaning;
@@ -752,6 +752,30 @@ BEGIN
     REVOKE ALL ON SCHEMA shop FROM anon, authenticated;
     REVOKE ALL ON ALL TABLES IN SCHEMA shop FROM anon, authenticated;
   END IF;
+END $$;
+CREATE OR REPLACE FUNCTION snapstl.stamp_v2(s text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE WHEN s IS NULL OR s LIKE '@%' OR s NOT LIKE '%|%|%' THEN s
+    ELSE '@' || split_part(s, '|', 2) || '|' || split_part(s, '|', 1) || '|' || split_part(s, '|', 3) END $$;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM snapstl.order_records WHERE status_at LIKE '%|%|%' AND status_at NOT LIKE '@%')
+     OR EXISTS (SELECT 1 FROM snapstl.report_rows WHERE status_at LIKE '%|%|%' AND status_at NOT LIKE '@%')
+     OR EXISTS (SELECT 1 FROM shop.report_lines WHERE status_at LIKE '%|%|%' AND status_at NOT LIKE '@%') THEN
+    ALTER TABLE snapstl.order_records DISABLE TRIGGER shop_bridge;
+    ALTER TABLE snapstl.report_rows DISABLE TRIGGER shop_bridge;
+    ALTER TABLE shop.report_lines DISABLE TRIGGER report_lines_apply;
+    UPDATE snapstl.order_records SET status_at = snapstl.stamp_v2(status_at)
+     WHERE status_at LIKE '%|%|%' AND status_at NOT LIKE '@%';
+    UPDATE snapstl.report_rows SET status_at = snapstl.stamp_v2(status_at)
+     WHERE status_at LIKE '%|%|%' AND status_at NOT LIKE '@%';
+    UPDATE shop.report_lines SET status_at = snapstl.stamp_v2(status_at)
+     WHERE status_at LIKE '%|%|%' AND status_at NOT LIKE '@%';
+    ALTER TABLE snapstl.order_records ENABLE TRIGGER shop_bridge;
+    ALTER TABLE snapstl.report_rows ENABLE TRIGGER shop_bridge;
+    ALTER TABLE shop.report_lines ENABLE TRIGGER report_lines_apply;
+  END IF;
+EXCEPTION WHEN others THEN  -- never block the sync: the stamps are only compared, and merge upgrades them too
+  RAISE WARNING 'SnapSTL: status stamps not rewritten: %', SQLERRM;
 END $$;
 INSERT INTO snapstl.meta(key, value) VALUES ('schema_version', '1')
     ON CONFLICT (key) DO NOTHING;

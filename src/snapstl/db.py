@@ -189,6 +189,30 @@ CREATE TRIGGER IF NOT EXISTS batches_unsynced AFTER UPDATE OF status, summary, o
 """
 
 
+STAMP = "@"  # status_at since 0.22.21: "@<file as of>|<row event date>|<upload>" ('@' sorts above older stamps)
+
+
+def upgrade_stamp(s: str | None) -> str | None:
+    """A status stamp from before 0.22.21 ("event|file|upload") in today's order ("@file|event|upload"):
+    the newest export wins, then the row's own event date."""
+    if not s or s.startswith(STAMP) or s.count("|") < 2:
+        return s
+    event, file, upload = s.split("|", 2)
+    return f"{STAMP}{file}|{event}|{upload}"
+
+
+def _upgrade_stamps(con) -> None:
+    """Once: every stored status stamp in today's order (changed orders go to the shared records again)."""
+    if con.execute("SELECT 1 FROM sync_state WHERE key='stamps_v2'").fetchone():
+        return
+    for table in ("orders", "report_rows", "shop_lines"):
+        old = con.execute(f"SELECT order_id, status_at FROM {table} WHERE status_at LIKE '%|%|%' "
+                          f"AND status_at NOT LIKE '{STAMP}%'").fetchall()
+        con.executemany(f"UPDATE {table} SET status_at=? WHERE order_id=?",
+                        [(upgrade_stamp(s), oid) for oid, s in old])
+    con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('stamps_v2', '1')")
+
+
 def connect(path: Path | None = None) -> sqlite3.Connection:
     p = path or DB_PATH
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -216,6 +240,7 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
                 "batch_computer_id=COALESCE(orders.batch_computer_id, b.computer_id) FROM batches b "
                 "WHERE b.id=orders.batch_id AND orders.batch_uid IS NULL "
                 "AND orders.state IN ('in_batch','bundled','printed')")
+    _upgrade_stamps(con)
     con.commit()
     return con
 

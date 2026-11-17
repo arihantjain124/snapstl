@@ -112,3 +112,45 @@ def test_newest_entry_in_the_file_dates_its_statuses(tmp_path):
         assert con.execute("SELECT source_status FROM orders WHERE order_id='T1'").fetchone()[0] == "RTO"
     # a stamp from before 0.22.8 (day only) ranks below the same day with a time
     assert "2026-11-15|2026-11-15~10:00:00|x" > "2026-11-15|2026-11-15|y"
+
+
+def _dated(rows):
+    """(order_id, created, status, delivered) rows of a report without a Date Range line."""
+    f = io.StringIO()
+    w = csv.writer(f)
+    w.writerow(HEAD + ["Delivered Date"])
+    for oid, created, status, delivered in rows:
+        w.writerow([oid, "", created, status, "Magicians_35", 1, "Private Person",
+                    "Enter Your First Name: Asha\nColor: Pink\n", delivered])
+    return f.getvalue().encode()
+
+
+def test_newer_export_updates_every_order_in_it(tmp_path):
+    """The export holds every order's status as of its newest order: a newer file updates an order even
+    when its row has no event date and the stored status had one (0.22.21); an older file never does."""
+    p = tmp_path / "t.db"
+    ingest(_dated([("E1", "01-11-2026 09:00:00", "DELIVERED", "10/11/2026"),
+                   ("E2", "12-11-2026 10:00:00", "PRINT", "")]), "a.csv", p)
+    s = ingest(_dated([("E1", "01-11-2026 09:00:00", "RTO_INITIATED", ""),
+                       ("E3", "16-11-2026 18:30:00", "PRINT", "")]), "b.csv", p)
+    assert s.as_of == "2026-11-16~18:30:00" and s.kept_newer_status == 0
+    with db.tx(p) as con:
+        assert con.execute("SELECT source_status FROM orders WHERE order_id='E1'").fetchone()[0] == "RTO_INITIATED"
+    old = ingest(_dated([("E1", "01-11-2026 09:00:00", "DELIVERED", "10/11/2026")]), "a2.csv", p)
+    assert old.kept_newer_status == 1
+    with db.tx(p) as con:
+        assert con.execute("SELECT source_status FROM orders WHERE order_id='E1'").fetchone()[0] == "RTO_INITIATED"
+
+
+def test_old_status_stamps_are_rewritten_once(tmp_path):
+    assert db.upgrade_stamp("2026-11-10|2026-11-12~09:00:00|u") == "@2026-11-12~09:00:00|2026-11-10|u"
+    assert db.upgrade_stamp("@x|y|z") == "@x|y|z" and db.upgrade_stamp(None) is None
+    p = tmp_path / "t.db"
+    ingest(_dated([("U1", "01-11-2026 09:00:00", "PRINT", "")]), "a.csv", p)
+    with db.tx(p) as con:  # as written by SnapSTL before 0.22.21
+        con.execute("UPDATE orders SET status_at='2026-11-10|2026-11-12|u'")
+        con.execute("UPDATE report_rows SET status_at='2026-11-10|2026-11-12|u'")
+        con.execute("DELETE FROM sync_state WHERE key='stamps_v2'")
+    with db.tx(p) as con:
+        assert con.execute("SELECT status_at FROM orders").fetchone()[0] == "@2026-11-12|2026-11-10|u"
+        assert con.execute("SELECT status_at FROM report_rows").fetchone()[0] == "@2026-11-12|2026-11-10|u"

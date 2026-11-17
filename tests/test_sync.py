@@ -617,3 +617,44 @@ def test_review_state_survives_clock_noise(two):
         ok(sync.sync_now())
         r = remote("N1")
         assert r["app_state"] == "needs_review" and r["tab"] == "needs_review" and "space" in r["review_reason"]
+
+
+def test_skip_approve_and_ready_to_ship_reach_every_computer(two):
+    """Skip / Make anyway / Approve and Ready to ship pressed on one computer show on the others, and a
+    computer that hadn't heard of a skip can't undo it in the shared records."""
+    from snapstl import batches as B
+
+    pc = two
+    data = report([("V1", "PRINT", "Asha", ""), ("V2", "PRINT", "Anu Sharma", ""), ("V3", "PRINT", "Ravi", "")])
+    for name in ("A", "B"):
+        with pc(name):
+            ingest.ingest(data, "r.csv")
+            ok(sync.sync_now())
+    with pc("A"):  # Skip V1, approve V2 as it is
+        with db.tx() as con:
+            con.execute("UPDATE orders SET state='skipped' WHERE order_id='V1'")
+        ingest.set_name("V2", order("V2")["name"])
+        ok(sync.sync_now())
+        assert remote("V1")["tab"] == "skipped" and remote("V2")["tab"] == "ready"
+    with pc("B"):
+        # B uploads a newer report before it pulls: its older "ready" doesn't undo A's skip
+        ingest.ingest(report([("V1", "PRINT", "Asha", "")], range_end="15/11/2026"), "new.csv")
+        ok(sync.sync_now())
+        assert remote("V1")["app_state"] == "skipped"
+        assert order("V1")["state"] == "skipped"
+        assert order("V2")["state"] == "ready" and order("V2")["review_reason"] is None
+        ingest.reset_to_ready("V1")  # Make anyway on B
+        ok(sync.sync_now())
+    with pc("A"):
+        ok(sync.sync_now())
+        assert order("V1")["state"] == "ready" and remote("V1")["tab"] == "ready"
+        # A makes V3; base and name printed → Ready to ship on B too
+        a = B.create_batch(["V3"], Settings())
+        with db.tx() as con:
+            db.finish_batch(con, a["batch_id"], "done", {"label": "Batch 1"}, ["V3"])
+            con.execute("UPDATE orders SET made_at=? WHERE order_id='V3'", (db.now(),))
+        ok(sync.sync_now())
+        assert remote("V3")["tab"] == "ready_to_ship"
+    with pc("B"):
+        ok(sync.sync_now())
+        assert order("V3")["state"] == "bundled" and order("V3")["made_at"]

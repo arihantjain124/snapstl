@@ -171,7 +171,7 @@ CREATE VIEW {schema}.orders_full WITH (security_invoker = true) AS
 COMMENT ON TABLE {schema}.report_rows IS 'Webstore report columns for each Magicians_35 order (one row per order_id), from the newest uploaded report. Join with order_records on order_id, or read orders_full. Read-only for anyone but SnapSTL.';
 COMMENT ON TABLE {schema}.report_uploads IS 'Every report uploaded on any SnapSTL computer: when, by which computer, and how recent the file is (as_of = newest date/time in it).';
 COMMENT ON VIEW {schema}.orders_full IS 'Each order (order_records: tab, ready_type, who is making it, name, colour …) with its report columns (report_rows). The easiest table to query.';
-COMMENT ON COLUMN {schema}.report_rows.status_at IS 'How recent this row is: event date | newest entry in its file | upload time (a newer file replaces it; blanks never erase).';
+COMMENT ON COLUMN {schema}.report_rows.status_at IS 'How recent this row is: @newest entry in its file | event date | upload time (a newer file replaces it; blanks never erase).';
 {comments}
 """
 
