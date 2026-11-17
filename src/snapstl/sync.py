@@ -54,15 +54,43 @@ REMOTE_STATES = ("in_batch", "bundled", "printed", "released")
 _COLS = ("order_id", "clubbed_id", "order_date", "sku", "quantity", "customer_name", "phone", "address",
          "raw_name", "raw_color", "special_request", "name", "color", "source_status", "status_at",
          "state", "state_at", "batch_uid", "batch_label", "computer_id", "computer_name", "bundled_at",
-         "printed_at", "app_state", "review_reason", "made_at", "updated_by")
+         "printed_at", "app_state", "review_reason", "made_at", "updated_by", "first_status", "print_started_at",
+         *db.GROUP_COLS)
 
 from .ingest import PRINT_STATUSES as _PS  # noqa: E402
 
 PRINT_SQL = ", ".join(f"'{x}'" for x in sorted(_PS))
 from . import report as _report  # noqa: E402
+from . import tabs as _tabs  # noqa: E402
 
 REPORT_SQL = _report.setup_sql(SCHEMA).strip() + "\n"
 _REPORT_UPSERT = _report.upsert_sql(SCHEMA)
+_PG_TYPE = {"REAL": "double precision", "TEXT": "text"}
+_NEW_COLS = (("first_status", "TEXT",
+              "Webstore status when SnapSTL first saw the order (first seen past PRINT = history, never flagged)."),
+             ("print_started_at", "REAL", "When a plate holding the order was first started (epoch seconds) → Printing."),
+             *((c, db._GROUP_TYPES.get(c, "TEXT"), None) for g in db.FIELD_GROUPS.values() for c in g),
+             *((f"{g}_changed", "REAL", f"Last change of {', '.join(cs)} (epoch seconds): the newest change wins.")
+               for g, cs in db.FIELD_GROUPS.items()))
+_COL_COMMENTS = {
+    "label_at": "Label Generated pressed on the logistics page (epoch seconds) → Label done – ship it; NULL = no label yet.",
+    "label_by": "Who pressed Label Generated (e.g. logistics).",
+    "label_note": "Shown with the label, e.g. 'Label expired – make a new label' (AWB EXPIRED clears label_at).",
+    "express_by": "Express: date the customer needs it by (YYYY-MM-DD); NULL = not express.",
+    "express_note": "Express: note from the customer call.",
+    "flag": "Why the order is in Problems – check: " + " | ".join(db.FLAGS) + "; NULL = none.",
+    "flag_note": "Words shown with the flag.",
+    "name_change_reason": "Why the name / colour was changed after confirming with the customer.",
+    "name_confirmed_at": "When that change was confirmed with the customer (epoch seconds).",
+    "remake_at": "Remake requested (epoch seconds); NULL = none.",
+    "remake_reason": "Why a remake was requested.",
+    "reuse_of": "This order is sent with the returned (RTO) piece of that order.",
+    "reused_by": "This returned (RTO) piece went to that order (each piece is used once).",
+}
+_NEW_COLS_SQL = "".join(
+    f"ALTER TABLE {SCHEMA}.order_records ADD COLUMN IF NOT EXISTS {c} {_PG_TYPE[t]};\n" for c, t, _ in _NEW_COLS) + "".join(
+    f"COMMENT ON COLUMN {SCHEMA}.order_records.{c} IS '{(d or _COL_COMMENTS[c]).replace(chr(39), chr(39) * 2)}';\n"
+    for c, _, d in _NEW_COLS if d or c in _COL_COMMENTS)
 _SETUP_SQL = f"""
 CREATE SCHEMA IF NOT EXISTS {SCHEMA};
 CREATE TABLE IF NOT EXISTS {SCHEMA}.order_records (
@@ -121,25 +149,18 @@ ALTER TABLE {SCHEMA}.order_records ADD COLUMN IF NOT EXISTS review_reason text;
 ALTER TABLE {SCHEMA}.order_records ADD COLUMN IF NOT EXISTS made_at double precision;
 ALTER TABLE {SCHEMA}.order_records ADD COLUMN IF NOT EXISTS tab text;
 ALTER TABLE {SCHEMA}.order_records ADD COLUMN IF NOT EXISTS ready_type text;
-CREATE INDEX IF NOT EXISTS order_records_tab ON {SCHEMA}.order_records (tab, ready_type);
+{_NEW_COLS_SQL}CREATE INDEX IF NOT EXISTS order_records_tab ON {SCHEMA}.order_records (tab, ready_type);
 CREATE INDEX IF NOT EXISTS order_records_club ON {SCHEMA}.order_records (clubbed_id);
 CREATE OR REPLACE FUNCTION {SCHEMA}.set_tab() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE st text := upper(coalesce(NEW.source_status, ''));
+DECLARE s text;  -- the app state: who's making it, else the app's own view (older SnapSTL: from the status)
 BEGIN
-  NEW.tab := CASE
-    WHEN NEW.state = 'in_batch' THEN 'in_batch'
-    WHEN NEW.state = 'bundled' AND NEW.made_at IS NOT NULL THEN 'ready_to_ship'
-    WHEN NEW.state = 'bundled' THEN 'bundled'
-    WHEN NEW.state = 'printed' THEN 'printed'
-    WHEN NEW.app_state IN ('ready', 'needs_review', 'skipped') THEN NEW.app_state
-    WHEN NEW.app_state IS NULL AND st IN ({PRINT_SQL}) THEN 'ready'
-    WHEN st = 'DELIVERED' THEN 'delivered'
-    WHEN st LIKE 'RTO%' THEN 'rto'
-    WHEN replace(replace(st, '_', '-'), ' ', '-') = 'IN-TRANSIT' THEN 'in_transit'
-    WHEN st LIKE 'CANCEL%' THEN 'cancelled'
-    ELSE 'others' END;
+  s := CASE WHEN NEW.state IN ('in_batch', 'bundled', 'printed') THEN NEW.state
+            WHEN NEW.app_state IN ('ready', 'needs_review', 'skipped', 'not_needed') THEN NEW.app_state
+            WHEN upper(coalesce(NEW.source_status, '')) IN ({PRINT_SQL}) THEN 'ready'
+            ELSE 'not_needed' END;
+  NEW.tab := {_tabs.case_sql(lambda c: "NEW." + c, state="s")};  -- tabs.py: the Orders page's rule
   NEW.ready_type := CASE
-    WHEN NEW.tab <> 'ready' THEN NULL
+    WHEN NEW.tab <> 'to_make' THEN NULL
     WHEN NEW.sku = 'Adhoc' THEN 'adhoc'
     WHEN coalesce(NEW.clubbed_id, '') <> '' AND (SELECT count(*) FROM {SCHEMA}.order_records o
          WHERE o.clubbed_id = NEW.clubbed_id AND o.order_id <> NEW.order_id) > 0 THEN 'clubbed'
@@ -153,20 +174,21 @@ CREATE OR REPLACE FUNCTION {SCHEMA}.retab_club() RETURNS trigger LANGUAGE plpgsq
 BEGIN
   IF coalesce(NEW.clubbed_id, '') <> '' THEN
     UPDATE {SCHEMA}.order_records SET ready_type = ready_type
-     WHERE clubbed_id = NEW.clubbed_id AND order_id <> NEW.order_id AND tab = 'ready' AND ready_type IS DISTINCT FROM 'clubbed';
+     WHERE clubbed_id = NEW.clubbed_id AND order_id <> NEW.order_id AND tab = 'to_make' AND ready_type IS DISTINCT FROM 'clubbed';
   END IF;
   RETURN NULL;
 END $$;
 CREATE OR REPLACE TRIGGER order_records_retab_club AFTER INSERT ON {SCHEMA}.order_records
     FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.retab_club();
-UPDATE {SCHEMA}.order_records SET tab = tab WHERE tab IS NULL;
+-- rows without a tab, or with a tab from before 0.23: work it out again (once; updated_at is kept)
+UPDATE {SCHEMA}.order_records SET tab = tab WHERE tab IS NULL OR tab NOT IN ({", ".join(f"'{k}'" for k in _tabs.KEYS)});
 COMMENT ON TABLE {SCHEMA}.order_records IS 'SnapSTL orders shared by every computer (one row per webstore order ID). Read-only for anyone but SnapSTL. Never deleted.';
-COMMENT ON COLUMN {SCHEMA}.order_records.tab IS 'Orders page tab: ready | needs_review | in_batch | bundled | ready_to_ship | printed | skipped | delivered | rto | in_transit | cancelled | others (the last five are orders that need no making, by webstore status). Set by a trigger.';
-COMMENT ON COLUMN {SCHEMA}.order_records.ready_type IS 'For tab = ready: single | clubbed (several orders share clubbed_id) | adhoc (typed in by hand, sku Adhoc); NULL otherwise. Set by a trigger.';
+COMMENT ON COLUMN {SCHEMA}.order_records.tab IS 'Orders page tab (0.23, tabs.py): {" | ".join(_tabs.KEYS)}. Make: to_make, check_name, ready_to_print, printing; pack & ship: pack_it (printed), ship_it (label done or PACK / HANDOVER); records: on_the_way, delivered, rto, cancelled, problems (see flag), skipped. Set by a trigger.';
+COMMENT ON COLUMN {SCHEMA}.order_records.ready_type IS 'For tab = to_make: single | clubbed (several orders share clubbed_id) | adhoc (typed in by hand, sku Adhoc); NULL otherwise. Set by a trigger.';
 COMMENT ON COLUMN {SCHEMA}.order_records.state IS 'Who is making it: in_batch | bundled | printed (computer_name has it) | released (nobody yet — see tab).';
 COMMENT ON COLUMN {SCHEMA}.order_records.app_state IS 'SnapSTL''s own state on the computer that last wrote the row: ready | needs_review | in_batch | bundled | printed | skipped | not_needed.';
 COMMENT ON COLUMN {SCHEMA}.order_records.review_reason IS 'Why the order needs a person to check it (tab = needs_review), e.g. a name with a space or a special request.';
-COMMENT ON COLUMN {SCHEMA}.order_records.made_at IS 'When base and name were both printed (epoch seconds) → tab ready_to_ship.';
+COMMENT ON COLUMN {SCHEMA}.order_records.made_at IS 'When base and name were both printed (epoch seconds) → tab pack_it.';
 COMMENT ON COLUMN {SCHEMA}.order_records.source_status IS 'Webstore order status from the newest uploaded report (status_at says how recent).';
 COMMENT ON COLUMN {SCHEMA}.order_records.name IS 'Name to print (cleaned or corrected); raw_name is what the customer typed.';
 CREATE OR REPLACE FUNCTION {SCHEMA}.refuse_delete() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -181,13 +203,44 @@ CREATE OR REPLACE TRIGGER batch_records_no_delete BEFORE DELETE ON {SCHEMA}.batc
     FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.refuse_delete();
 CREATE OR REPLACE TRIGGER batch_records_no_truncate BEFORE TRUNCATE ON {SCHEMA}.batch_records
     FOR EACH STATEMENT EXECUTE FUNCTION {SCHEMA}.refuse_delete();
+CREATE TABLE IF NOT EXISTS {SCHEMA}.order_notes (
+    uid       text PRIMARY KEY,
+    order_id  text NOT NULL,
+    at        double precision NOT NULL,
+    text      text NOT NULL,
+    author    text,
+    computer  text,
+    stored_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX IF NOT EXISTS order_notes_order ON {SCHEMA}.order_notes (order_id, at);
+CREATE INDEX IF NOT EXISTS order_notes_stored ON {SCHEMA}.order_notes (stored_at);
+COMMENT ON TABLE {SCHEMA}.order_notes IS 'Call notes on an order (logistics page); `at` = epoch seconds. Never edited or deleted.';
+CREATE TABLE IF NOT EXISTS {SCHEMA}.usage_counts (
+    computer_id   text NOT NULL,
+    computer_name text,
+    day           text NOT NULL,
+    feature       text NOT NULL,
+    count         integer NOT NULL,
+    updated_at    timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (computer_id, day, feature)
+);
+COMMENT ON TABLE {SCHEMA}.usage_counts IS 'How often each SnapSTL feature was used, per computer per day (feature names only, no customer data).';
+CREATE OR REPLACE TRIGGER order_notes_no_delete BEFORE DELETE ON {SCHEMA}.order_notes
+    FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.refuse_delete();
+CREATE OR REPLACE TRIGGER order_notes_no_truncate BEFORE TRUNCATE ON {SCHEMA}.order_notes
+    FOR EACH STATEMENT EXECUTE FUNCTION {SCHEMA}.refuse_delete();
+CREATE OR REPLACE TRIGGER usage_counts_no_delete BEFORE DELETE ON {SCHEMA}.usage_counts
+    FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.refuse_delete();
+CREATE OR REPLACE TRIGGER usage_counts_no_truncate BEFORE TRUNCATE ON {SCHEMA}.usage_counts
+    FOR EACH STATEMENT EXECUTE FUNCTION {SCHEMA}.refuse_delete();
 {REPORT_SQL}-- Only SnapSTL (the database owner, through the connection string) reads or writes these tables.
 -- Row level security with no policies refuses everyone else, and Supabase's API roles get no access
 -- even if the schema is ever exposed in the Data API settings. The owner bypasses RLS.
 DO $$
 DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['order_records', 'batch_records', 'meta', 'report_rows', 'report_uploads'] LOOP
+  FOREACH t IN ARRAY ARRAY['order_records', 'batch_records', 'meta', 'report_rows', 'report_uploads',
+                           'order_notes', 'usage_counts'] LOOP
     IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = format('{SCHEMA}.%I', t)::regclass) THEN
       EXECUTE format('ALTER TABLE {SCHEMA}.%I ENABLE ROW LEVEL SECURITY', t);
     END IF;
@@ -231,7 +284,8 @@ EXCEPTION WHEN others THEN  -- never block the sync: the stamps are only compare
   RAISE WARNING 'SnapSTL: status stamps not rewritten: %', SQLERRM;
 END $$;
 """
-SCHEMA_VERSION = 1  # of the shared records; a newer one makes older apps stop syncing (update them)
+SCHEMA_VERSION = 2  # of the shared records; a newer one makes older apps stop syncing (update them)
+# 2 (0.23): order flow + logistics fields, order_notes, usage_counts: older SnapSTLs must not write
 
 
 def schema_sql() -> str:
@@ -253,11 +307,16 @@ _WIN = """(EXCLUDED.state_at >= r.state_at - 0.001 AND (  -- 1 ms: local clocks 
         OR (EXCLUDED.state = 'bundled'  AND r.state = 'printed')
         OR (EXCLUDED.state = 'released' AND r.state IN ('bundled', 'printed'))))"""
 _STATE_GROUP = ("state", "state_at", "batch_uid", "batch_label", "computer_id", "computer_name", "bundled_at",
-                "printed_at", "made_at")
+                "printed_at", "made_at", "print_started_at")
 # The app's own view of an order nobody makes yet (ready / needs review / not needed, and why) — the newest
 # one sent applies, whatever the state rules say (they are about who makes it).
 _VIEW = ("app_state", "review_reason")
-_KEEP_FIRST = ("clubbed_id", "order_date", "sku", "quantity", "raw_name", "raw_color", "special_request")
+_KEEP_FIRST = ("clubbed_id", "order_date", "sku", "quantity", "raw_name", "raw_color", "special_request",
+               "first_status")
+# Things people set on an order (db.FIELD_GROUPS): per group, the newest `<group>_changed` wins, whoever sent it.
+_GROUPS_SQL = ", " + ", ".join(
+    f"{c} = CASE WHEN COALESCE(EXCLUDED.{g}_changed, 0) > COALESCE(r.{g}_changed, 0) THEN EXCLUDED.{c} ELSE r.{c} END"
+    for g, cs in db.FIELD_GROUPS.items() for c in (*cs, f"{g}_changed"))
 _UPSERT = (
     f"INSERT INTO {SCHEMA}.order_records AS r ({', '.join(_COLS)}) "
     f"VALUES ({', '.join('%(' + c + ')s' for c in _COLS)}) ON CONFLICT (order_id) DO UPDATE SET "
@@ -274,7 +333,7 @@ _UPSERT = (
     + ", ".join(f"{c} = COALESCE(NULLIF(EXCLUDED.{c}, ''), r.{c})" for c in ("customer_name", "phone", "address"))
     + ", source_status = CASE WHEN COALESCE(EXCLUDED.status_at, '') > COALESCE(r.status_at, '') "
       "THEN EXCLUDED.source_status ELSE r.source_status END"
-    + ", status_at = GREATEST(r.status_at, EXCLUDED.status_at)"
+    + ", status_at = GREATEST(r.status_at, EXCLUDED.status_at)" + _GROUPS_SQL
     + ", updated_at = clock_timestamp(), updated_by = EXCLUDED.updated_by "
     "RETURNING *"
 )
@@ -286,7 +345,7 @@ _CLAIM = (
     + ", ".join(f"{c} = EXCLUDED.{c}" for c in _STATE_GROUP + _VIEW + ("name", "color"))
     + ", source_status = CASE WHEN COALESCE(EXCLUDED.status_at, '') > COALESCE(r.status_at, '') "
       "THEN EXCLUDED.source_status ELSE r.source_status END"
-    + ", status_at = GREATEST(r.status_at, EXCLUDED.status_at)"
+    + ", status_at = GREATEST(r.status_at, EXCLUDED.status_at)" + _GROUPS_SQL
     + ", updated_at = clock_timestamp(), updated_by = EXCLUDED.updated_by "
     "WHERE r.state = 'released' OR (r.state = 'in_batch' AND r.computer_id = %(actor)s "
     "AND NOT (r.batch_uid = ANY(%(live_uids)s))) RETURNING order_id"
@@ -302,7 +361,7 @@ _OFFER = (
     + ", review_reason = CASE WHEN r.app_state IS NULL THEN EXCLUDED.review_reason ELSE r.review_reason END"
     + ", source_status = CASE WHEN COALESCE(EXCLUDED.status_at, '') > COALESCE(r.status_at, '') "
       "THEN EXCLUDED.source_status ELSE r.source_status END"
-    + ", status_at = GREATEST(r.status_at, EXCLUDED.status_at)"
+    + ", status_at = GREATEST(r.status_at, EXCLUDED.status_at)" + _GROUPS_SQL
     + ", updated_at = clock_timestamp(), updated_by = EXCLUDED.updated_by "
     "RETURNING *"
 )
@@ -395,6 +454,8 @@ def _payload(o: dict) -> dict:
         "computer_name": o.get("batch_computer") if own else None,
         "bundled_at": o.get("bundled_at"), "printed_at": o.get("printed_at") if st == "printed" else None,
         "app_state": o.get("state"), "review_reason": o.get("review_reason"), "made_at": o.get("made_at"),
+        "first_status": o.get("first_status"), "print_started_at": o.get("print_started_at") if own else None,
+        **{c: o.get(c) for c in db.GROUP_COLS},
         "updated_by": computer.NAME, "actor": computer.ID,
     }
 
@@ -481,14 +542,19 @@ def merge(con, r: dict, force: bool = False) -> str | None:
             "INSERT INTO orders(order_id,clubbed_id,sku,order_date,source_status,quantity,raw_name,raw_color,"
             "special_request,name,color,review_reason,state,batch_id,first_file,last_file,first_seen,updated_at,"
             "customer_name,phone,address,state_at,status_at,in_remote,batch_uid,batch_label,batch_computer,"
-            "batch_computer_id,printed_at,bundled_at,made_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?)",
+            "batch_computer_id,printed_at,bundled_at,made_at,first_status,print_started_at,"
+            f"{','.join(db.GROUP_COLS)}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?"
+            f"{',?' * len(db.GROUP_COLS)})",
             (oid, r.get("clubbed_id"), r.get("sku") or "Magicians_35", r.get("order_date"), r.get("source_status"),
              r.get("quantity") or 1, r.get("raw_name"), r.get("raw_color"), r.get("special_request"), r.get("name"),
              r.get("color"), review, state, local_batch, "shared records", "shared records", db.now(), db.now(),
              r.get("customer_name"), r.get("phone"), r.get("address"), r["state_at"], r.get("status_at"),
              r.get("batch_uid") if state in ("in_batch", "bundled", "printed") else None, r.get("batch_label"),
              r.get("computer_name"), r.get("computer_id"), r.get("printed_at"), r.get("bundled_at"),
-             r.get("made_at") if state in ("bundled", "printed") else None))
+             r.get("made_at") if state in ("bundled", "printed") else None,
+             r.get("first_status") or (r.get("source_status") or "").upper(),
+             r.get("print_started_at") if state in ("in_batch", "bundled", "printed") else None,
+             *(r.get(c) for c in db.GROUP_COLS)))
         return oid if stale else None
 
     sets: dict = {"in_remote": 1}
@@ -496,7 +562,10 @@ def merge(con, r: dict, force: bool = False) -> str | None:
     if (r.get("status_at") or "") > (L.get("status_at") or ""):
         sets["source_status"], sets["status_at"] = r.get("source_status"), r.get("status_at")
         if L["state"] in ("ready", "needs_review", "not_needed"):
-            sets["state"] = _evaluate(L, r.get("source_status"))
+            from .ingest import status_state  # the same rules as an uploaded report (never backwards)
+
+            sets["state"] = status_state(L["state"], L.get("source_status"), r.get("source_status"),
+                                         _evaluate(L, "PRINT"), bool(L.get("batch_id")))
     # who's making it: the newer change wins (unless this computer has its own change on the way)
     pending = con.execute("SELECT 1 FROM sync_outbox WHERE order_id=?", (oid,)).fetchone() is not None
     # a name / colour fixed on another computer (not yet made anywhere)
@@ -519,7 +588,7 @@ def merge(con, r: dict, force: bool = False) -> str | None:
             if making:
                 sets.update(state=_evaluate(L, status), batch_id=None, batch_uid=None, batch_label=None,
                             batch_computer=None, batch_computer_id=None, printed_at=None, made_at=None,
-                            state_at=r["state_at"])
+                            print_started_at=None, state_at=r["state_at"])
             if making or sets.get("state", L["state"]) in ("ready", "needs_review", "not_needed", "skipped"):
                 # Skip / Make anyway / Approve pressed on another computer
                 v = _view({**L, **sets}, r, status)
@@ -540,6 +609,16 @@ def merge(con, r: dict, force: bool = False) -> str | None:
     if ((force or not pending) and final in ("bundled", "printed") and r.get("state") == final
             and r.get("made_at") != L.get("made_at")):
         sets["made_at"] = r.get("made_at")
+    # Printing started: also worked out by the batch's computer
+    if ((force or not pending) and final in ("in_batch", "bundled", "printed") and r.get("state") == final
+            and r.get("print_started_at") != L.get("print_started_at")):
+        sets["print_started_at"] = r.get("print_started_at")
+    if not L.get("first_status") and r.get("first_status"):
+        sets["first_status"] = r["first_status"]
+    # Things people set (Label Generated, Express, flags, …): the newest change of each group wins
+    for g, cols in db.FIELD_GROUPS.items():
+        if float(r.get(f"{g}_changed") or 0) > float(L.get(f"{g}_changed") or 0):
+            sets.update({c: r.get(c) for c in cols}, **{f"{g}_changed": r.get(f"{g}_changed")})
     cols = ", ".join(f"{k}=?" for k in sets)
     con.execute(f"UPDATE orders SET {cols} WHERE order_id=?", (*sets.values(), oid))
     return stale
@@ -702,6 +781,52 @@ def _push_lines(rc) -> int:
     return total
 
 
+def _push_notes(rc) -> int:
+    """Call notes and usage counts of this computer not in the shared records yet."""
+    with db.tx() as con:
+        notes = db.rows(con, f"SELECT * FROM order_notes WHERE COALESCE(sent,0)=0 LIMIT {PUSH_BATCH}")
+        usage = db.rows(con, "SELECT * FROM usage_counts WHERE COALESCE(sent,0)=0")
+    _many(rc, f"INSERT INTO {SCHEMA}.order_notes(uid, order_id, at, text, author, computer) "
+              "VALUES (%(uid)s, %(order_id)s, %(at)s, %(text)s, %(author)s, %(computer)s) "
+              "ON CONFLICT (uid) DO NOTHING RETURNING uid",
+          [{**n, "computer": computer.NAME} for n in notes])
+    _many(rc, f"INSERT INTO {SCHEMA}.usage_counts(computer_id, computer_name, day, feature, count) "
+              "VALUES (%(cid)s, %(cname)s, %(day)s, %(feature)s, %(count)s) ON CONFLICT (computer_id, day, feature) "
+              "DO UPDATE SET count = GREATEST(EXCLUDED.count, usage_counts.count), computer_name = EXCLUDED.computer_name, "
+              "updated_at = clock_timestamp() RETURNING day",
+          [{**u, "cid": computer.ID, "cname": computer.NAME} for u in usage])
+    with db.tx() as con:
+        con.executemany("UPDATE order_notes SET sent=1 WHERE uid=?", [(n["uid"],) for n in notes])
+        for u in usage:  # only if it wasn't used again meanwhile
+            con.execute("UPDATE usage_counts SET sent=1 WHERE day=? AND feature=? AND count=?",
+                        (u["day"], u["feature"], u["count"]))
+    return len(notes)
+
+
+def _pull_notes(rc) -> int:
+    with db.tx() as con:
+        r = con.execute("SELECT value FROM sync_state WHERE key='notes_pulled_until'").fetchone()
+    q = f"SELECT *, stored_at::text AS stored_text FROM {SCHEMA}.order_notes"
+    rows = (rc.execute(q + f" WHERE stored_at > %s::timestamptz - interval '{PULL_OVERLAP_S} seconds' "
+                           "ORDER BY stored_at", (r[0],)) if r else rc.execute(q + " ORDER BY stored_at")).fetchall()
+    with db.tx() as con:
+        con.executemany("INSERT OR IGNORE INTO order_notes(uid, order_id, at, text, author, sent) VALUES (?,?,?,?,?,1)",
+                        [(n["uid"], n["order_id"], n["at"], n["text"], n["author"]) for n in rows])
+        if rows:
+            con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('notes_pulled_until', ?)",
+                        (rows[-1]["stored_text"],))
+    return len(rows)
+
+
+def usage(days: int = 30) -> list[dict]:
+    """Settings → Usage: every computer's feature counts of the last `days` days, most used first."""
+    since = time.strftime("%Y-%m-%d", time.localtime(time.time() - days * 86400))
+    with _remote() as rc:
+        return rc.execute(f"SELECT feature, SUM(count)::int AS count, COUNT(DISTINCT day)::int AS days "
+                          f"FROM {SCHEMA}.usage_counts WHERE day >= %s GROUP BY feature ORDER BY 2 DESC, 1",
+                          (since,)).fetchall()
+
+
 def _pull(rc) -> int:
     with db.tx() as con:
         r = con.execute("SELECT value FROM sync_state WHERE key='pulled_until'").fetchone()
@@ -771,8 +896,10 @@ def sync_now() -> dict:
                 _push_batches(rc)
                 _push_reports(rc)
                 _push_lines(rc)
+                _push_notes(rc)
             with _remote() as rc:  # pushes are committed before pulling
                 STATUS.pulled = _pull(rc)
+                _pull_notes(rc)
             with _remote() as rc:  # stale claims released while pulling
                 STATUS.pushed += _push(rc)
             STATUS.last_ok = time.time()
@@ -788,7 +915,8 @@ def sync_now() -> dict:
 
 def pending() -> int:
     with db.tx() as con:
-        return con.execute("SELECT COUNT(*) FROM sync_outbox").fetchone()[0]
+        return (con.execute("SELECT COUNT(*) FROM sync_outbox").fetchone()[0]
+                + con.execute("SELECT COUNT(*) FROM order_notes WHERE COALESCE(sent,0)=0").fetchone()[0])
 
 
 class _Loop:
@@ -869,13 +997,15 @@ def _save_copy(rc, dest) -> dict:
     reports = rc.execute(f"SELECT * FROM {SCHEMA}.report_rows ORDER BY order_id").fetchall()
     uploads = rc.execute(f"SELECT * FROM {SCHEMA}.report_uploads ORDER BY uid").fetchall()
     lines = rc.execute("SELECT * FROM shop.report_lines ORDER BY order_id").fetchall()
+    notes = rc.execute(f"SELECT * FROM {SCHEMA}.order_notes ORDER BY stored_at").fetchall()
+    usage_rows = rc.execute(f"SELECT * FROM {SCHEMA}.usage_counts ORDER BY day, feature").fetchall()
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump({"saved_at": time.time(), "by": computer.NAME, "order_records": orders,
                    "batch_records": batches, "report_rows": reports, "report_uploads": uploads,
-                   "shop_report_lines": lines},
+                   "shop_report_lines": lines, "order_notes": notes, "usage_counts": usage_rows},
                   f, default=str, indent=1)
     os.replace(tmp, dest)
     return {"orders": len(orders), "batches": len(batches)}

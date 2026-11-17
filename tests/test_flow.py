@@ -216,30 +216,36 @@ def test_other_computers_need_portal_and_login(client, monkeypatch):
     monkeypatch.setattr(logistics, 'PORT', 0)  # disposable port; never collide with the owner's listener
     remote = TestClient(server.app, base_url='http://192.168.1.20:8317', client=('192.168.1.50', 50001))
     staff = TestClient(logistics.app, base_url='http://192.168.1.20:8002', client=('192.168.1.50', 50001))
-    assert staff.get('/api/orders').status_code == 403
+    assert staff.get('/api/logistics/orders').status_code == 403
     r = client.post('/api/portal', json={'enabled': True, 'password': 'portal-pass-123'})
     assert r.status_code == 200 and r.json()['listening_on_network']
     assert not r.json()['restarting']
     try:
         assert remote.get('/api/state').status_code == 403
         assert remote.post('/api/login', json={'password': 'portal-pass-123'}).status_code == 403
-        assert staff.get('/api/orders').status_code == 401
+        assert staff.get('/api/logistics/orders').status_code == 401
         assert staff.post('/api/login', json={'password': 'wrong'}).status_code == 401
         assert staff.post('/api/login', json={'password': 'portal-pass-123'}).status_code == 200
         page = staff.get('/')
         assert page.status_code == 200 and 'const LOGISTICS=true;' in page.text
-        assert 'id="pagenumber"' in page.text
-        assert staff.get('/api/orders?tab=all&limit=25').status_code == 200
-        assert staff.get('/api/orders/facets').status_code == 200
-        for path in ['/api/settings', '/api/state', '/api/farm/printers', '/api/helper/next']:
-            assert staff.get(path).status_code == 403
-        for path in ['/api/sync', '/api/orders/printed', '/api/ingest', '/api/batches', '/api/portal']:
-            assert staff.post(path, json={}).status_code == 403
-        assert staff.get('/api/orders', headers={'Origin': 'http://evil.example'}).status_code == 403
+        assert 'id="t-desk"' in page.text
+        for path in ['/api/logistics/orders?view=labels', '/api/logistics/counts', '/api/logistics/meta',
+                     '/api/logistics/orders.csv?view=labels']:
+            assert staff.get(path).status_code == 200, path
+        # 0.23: only the logistics lists and its own actions; nothing else of the app
+        for path in ['/api/settings', '/api/state', '/api/farm/printers', '/api/helper/next', '/api/orders',
+                     '/api/orders/facets', '/api/orders.csv', '/api/usage']:
+            assert staff.get(path).status_code == 403, path
+        for path in ['/api/sync', '/api/orders/printed', '/api/ingest', '/api/batches', '/api/portal',
+                     '/api/orders/X1/skip', '/api/orders/X1/reset', '/api/orders/X1/clear-flag', '/api/orders/X1/name']:
+            assert staff.post(path, json={}).status_code == 403, path
+        assert staff.post('/api/logistics/order/nope/label', json={}).status_code == 404  # allowed path, no order
+        assert staff.post('/api/usage', json={'feature': 'open_page'}).status_code == 200
+        assert staff.get('/api/logistics/counts', headers={'Origin': 'http://evil.example'}).status_code == 403
         assert client.get('/api/state').status_code == 200
     finally:
         client.post('/api/portal', json={'enabled': False})
-    assert staff.get('/api/orders').status_code == 403
+    assert staff.get('/api/logistics/orders').status_code == 403
 
 
 def _req(path, origin=None, host="127.0.0.1:8317", client_ip="127.0.0.1"):
@@ -354,21 +360,21 @@ def test_tabs_filters_clubbed_and_customer_fields(client):
     assert client.post("/api/ingest", files={"file": ("r.csv", data, "text/csv")}).status_code == 200
     client.post("/api/orders/T9/skip")
     ids = lambda tab, **f: sorted(o["order_id"] for o in client.get("/api/orders", params={"tab": tab, **f}).json()["orders"])  # noqa: E731
-    assert ids("ready") == ["T1", "T2", "T3"]
-    assert ids("ready_single") == ["T1"] and ids("ready_clubbed") == ["T2", "T3"]
+    assert ids("to_make") == ["T1", "T2", "T3"]
+    assert ids("to_make_single") == ["T1"] and ids("to_make_clubbed") == ["T2", "T3"]
     assert ids("skipped") == ["T9"]
-    assert ids("delivered") == ["T4"] and ids("rto") == ["T5"] and ids("in_transit") == ["T6"]
-    assert ids("cancelled") == ["T7"] and ids("others") == ["T8"]
+    assert ids("delivered") == ["T4"] and ids("rto") == ["T5"] and ids("on_the_way") == ["T6"]
+    assert ids("cancelled") == ["T7"] and ids("ship_it") == ["T8"]  # PACK: label done on the website
     # per-column filters combine (AND)
-    assert ids("ready", f_color="pink") == ["T1", "T2"]
-    assert ids("ready", f_color="pink", f_customer="ravi") == ["T2"]
+    assert ids("to_make", f_color="pink") == ["T1", "T2"]
+    assert ids("to_make", f_color="pink", f_customer="ravi") == ["T2"]
     assert ids("all", f_phone="0004") == ["T4"]
     assert ids("all", f_address="pune", f_status="PACK") == ["T8"]
-    assert client.get("/api/orders/ids", params={"tab": "ready", "f_color": "pink"}).json() == ["T1", "T2"]
-    o = client.get("/api/orders", params={"tab": "ready_single"}).json()["orders"][0]
+    assert client.get("/api/orders/ids", params={"tab": "to_make", "f_color": "pink"}).json() == ["T1", "T2"]
+    o = client.get("/api/orders", params={"tab": "to_make_single"}).json()["orders"][0]
     assert o["customer_name"] == "Asha K" and o["phone"] == "9000000001" and o["address"] == "12 Main Rd, Pune, MH, 411001"
     facets = client.get("/api/orders/facets", params={"tab": "all"}).json()
-    assert facets["tabs"]["ready_clubbed"] == 2 and "PACK" in facets["statuses"] and "pink" in facets["colors"]
+    assert facets["tabs"]["to_make_clubbed"] == 2 and "PACK" in facets["statuses"] and "pink" in facets["colors"]
 
 
 # ---------------- license password + watermark ----------------
@@ -483,18 +489,18 @@ def test_printed_tab_and_report_dates(client):
         con.execute("UPDATE orders SET state='bundled', batch_id=7, batch_label='Batch 1 - 2026-11-16' WHERE order_id='PR1'")
     assert client.post("/api/orders/printed", json={"order_ids": ["PR1"]}).json()["changed"] == 1
     ids = lambda tab: [o["order_id"] for o in client.get("/api/orders", params={"tab": tab}).json()["orders"]]  # noqa: E731
-    assert ids("printed") == ["PR1"] and ids("bundled") == []
-    o = client.get("/api/orders", params={"tab": "printed"}).json()["orders"][0]
+    assert ids("pack_it") == ["PR1"] and ids("ready_to_print") == []  # marked printed by hand (before 0.23)
+    o = client.get("/api/orders", params={"tab": "pack_it"}).json()["orders"][0]
     assert o["batch_id"] == 7 and o["batch_label"] == "Batch 1 - 2026-11-16" and o["printed_at"]
     # a newer report updates the status (state stays Printed); an older one doesn't undo it
     newer = dated_report([("PR1", "DELIVERED", "Lina", "15/11/2026")], range_end="15/11/2026")
     assert client.post("/api/ingest", files={"file": ("n.csv", newer, "text/csv")}).json()["updated"] == 1
     older = dated_report([("PR1", "PRINT", "Lina", "")], range_end="12/11/2026")
     assert client.post("/api/ingest", files={"file": ("o.csv", older, "text/csv")}).json()["kept_newer_status"] == 1
-    o = client.get("/api/orders", params={"tab": "printed"}).json()["orders"][0]
-    assert o["source_status"] == "DELIVERED" and o["state"] == "printed"
+    o = client.get("/api/orders", params={"tab": "delivered"}).json()["orders"][0]
+    assert o["source_status"] == "DELIVERED" and o["state"] == "printed" and o["tab"] == "delivered"
     assert client.post("/api/orders/printed", json={"order_ids": ["PR1"], "printed": False}).json()["changed"] == 1
-    assert ids("bundled") == ["PR1"]
+    assert ids("delivered") == ["PR1"]
     assert report_end_date([["Date Range: 30/10/2026 to 14/11/2026"], ["Order ID"]], 1) == "2026-11-14"
     assert status_stamp("2026-11-15", "2026-11-14", "u2") > status_stamp("", "2026-11-14", "u9")
     # without shared records set up, Sync now explains what to do
@@ -541,9 +547,9 @@ def test_adhoc_orders_are_added_by_hand_and_batched_like_any_order(client):
     assert o["order_date"] == time.strftime("%Y-%m-%d") and o["added_at"] and o["special_request"] == "for the school fair"
 
     client.post("/api/ingest", files={"file": ("r.csv", report([("J1", "PRINT", "Magicians_35", "Ishita", "Orange", 1)]), "text/csv")})
-    tabs = client.get("/api/orders/facets?tab=ready").json()["tabs"]
-    assert (tabs["ready"], tabs["ready_adhoc"], tabs["ready_single"]) == (2, 1, 1)
-    assert [x["order_id"] for x in client.get("/api/orders?tab=ready_adhoc").json()["orders"]] == [o["order_id"]]
+    tabs = client.get("/api/orders/facets?tab=to_make").json()["tabs"]
+    assert (tabs["to_make"], tabs["to_make_adhoc"], tabs["to_make_single"]) == (2, 1, 1)
+    assert [x["order_id"] for x in client.get("/api/orders?tab=to_make_adhoc").json()["orders"]] == [o["order_id"]]
     assert "Adhoc" in client.get("/api/orders.csv?tab=all").text
 
     bid = client.post("/api/batches", json={"order_ids": [o["order_id"], "J1"]}).json()["batch_id"]

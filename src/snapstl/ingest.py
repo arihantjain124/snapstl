@@ -19,7 +19,7 @@ from pathlib import Path
 
 from datetime import datetime, timezone
 
-from . import db, report, shop
+from . import db, report, shop, tabs
 
 SKU = "magicians_35"
 PRINT_STATUSES = {"PRINT"}
@@ -42,6 +42,7 @@ class IngestSummary:
     needs_review_new: int = 0
     became_not_needed: int = 0
     kept_newer_status: int = 0  # the database already had a newer webstore status for these orders
+    flagged: int = 0            # orders sent to Problems – check (0.23)
     report_date: str = ""       # end of the report's "Date Range" (YYYY-MM-DD), if it has one
     as_of: str = ""             # the newest date/time in the file (its range end or any row's dates)
     warnings: list[str] = field(default_factory=list)
@@ -304,11 +305,11 @@ def _upsert(con, s: IngestSummary, filename: str, o: dict) -> None:
         con.execute(
             """INSERT INTO orders(order_id,clubbed_id,sku,order_date,source_status,quantity,raw_name,raw_color,
                special_request,name,color,review_reason,state,first_file,last_file,first_seen,updated_at,
-               customer_name,phone,address,status_at,state_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               customer_name,phone,address,status_at,state_at,first_status)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (o["order_id"], o["clubbed_id"], "Magicians_35", o["order_date"], o["source_status"], o["quantity"],
              raw_name, raw_color, special, name, color, review, state, filename, filename, t, t,
-             o["customer_name"], o["phone"], o["address"], o["status_at"], t),
+             o["customer_name"], o["phone"], o["address"], o["status_at"], t, o["source_status"]),
         )
         s.new += 1
         if state == "ready":
@@ -328,11 +329,12 @@ def _upsert(con, s: IngestSummary, filename: str, o: dict) -> None:
     changed = cur["source_status"] != o["source_status"]
     state = cur["state"]
     review = cur["review_reason"]
-    if state in ("ready", "needs_review") and o["source_status"] not in PRINT_STATUSES:
-        state = "not_needed"
+    state = status_state(state, cur["source_status"], o["source_status"], "needs_review" if review else "ready",
+                         bool(cur["batch_id"]))
+    if state == "not_needed" and cur["state"] in ("ready", "needs_review"):
         s.became_not_needed += 1
-    elif state == "not_needed" and o["source_status"] in PRINT_STATUSES and not cur["batch_id"]:
-        state = "needs_review" if review else "ready"
+    if changed:
+        _status_flags(con, s, dict(cur), o["source_status"])
     con.execute(
         "UPDATE orders SET source_status=?, status_at=?, clubbed_id=?, quantity=?, state=?, last_file=?, updated_at=?, "
         "customer_name=COALESCE(NULLIF(?,''),customer_name), phone=COALESCE(NULLIF(?,''),phone), "
@@ -344,6 +346,62 @@ def _upsert(con, s: IngestSummary, filename: str, o: dict) -> None:
         s.updated += 1
     else:
         s.unchanged += 1
+
+
+# ---------------- webstore status changes (0.23) ----------------
+# PACK onwards: the website has a label (or more) for it.
+_PAST_PRINT = ("PACK", "HANDOVER", "IN-TRANSIT", "DELIVERED")
+_SHIPPED = ("IN-TRANSIT", "DELIVERED")
+
+
+def _past_print(st: str) -> bool:
+    return st in _PAST_PRINT or st.startswith("RTO")
+
+
+def status_state(state: str, old: str | None, new: str | None, back: str, in_batch: bool) -> str:
+    """The app state of an order nobody is making after its webstore status changes old → new.
+    `back` = ready or needs_review (its name check). A report never moves an order backwards:
+    * ready / needs review stay to make on PRINT and AWB EXPIRED (label expired before it was made);
+      any other status → not needed;
+    * not needed → back to making only on PRINT, and never after the website had a label for it
+      (PACK onwards): that's flagged instead (`_status_flags`, back_to_print)."""
+    n, o = tabs.norm_status(new), tabs.norm_status(old)
+    if state in ("ready", "needs_review"):
+        return state if (n in PRINT_STATUSES or n == "AWB-EXPIRED") else "not_needed"
+    if state == "not_needed" and n in PRINT_STATUSES and not in_batch and not (_past_print(o) or o == "AWB-EXPIRED"):
+        return back
+    return state
+
+
+def _status_flags(con, s: IngestSummary, cur: dict, new: str) -> None:
+    """Flags (Problems – check) and the label note when an order's webstore status changes."""
+    n, o = tabs.norm_status(new), tabs.norm_status(cur.get("source_status"))
+    state = cur["state"]
+    made = cur.get("made_at") is not None or state == "printed" or cur.get("reuse_of") is not None
+    making = state in tabs.MAKING
+    oid = cur["order_id"]
+
+    def flag(code: str, note: str) -> None:
+        db.set_group(con, oid, "flag", flag=code, flag_note=note)
+        s.flagged += 1
+
+    if n == "AWB-EXPIRED" and (made or making or cur.get("label_at") is not None):
+        db.set_group(con, oid, "label", label_note="Label expired – make a new label")
+    if n.startswith("CANCEL"):
+        if (made or making) and o not in _SHIPPED and not o.startswith("RTO"):
+            flag("cancelled_in_production", "Cancelled – don't pack")
+        return
+    if made or making:
+        if _past_print(n) and not made and o in ("PRINT", "AWB-EXPIRED") and cur.get("sku") != ADHOC_SKU \
+                and (cur.get("first_status") or "PRINT") == "PRINT":
+            flag("past_print_not_made", f"Website says {new} but SnapSTL hasn't printed it")
+        return
+    if state in ("ready", "needs_review"):
+        if _past_print(n) and cur.get("sku") != ADHOC_SKU and (cur.get("first_status") or "PRINT") == "PRINT":
+            flag("past_print_not_made", f"Website says {new} but SnapSTL hasn't made it")
+        return
+    if state == "not_needed" and (n in PRINT_STATUSES or n == "AWB-EXPIRED") and o in ("PACK", "HANDOVER"):
+        flag("back_to_print", f"Back to {new} after it was packed outside SnapSTL – check whether it is made")
 
 
 # ---------------- review actions ----------------
@@ -391,7 +449,8 @@ def reset_to_ready(order_id: str, db_path: Path | None = None) -> None:
         state = "needs_review" if cur["review_reason"] else "ready"
         con.execute(
             "UPDATE orders SET state=?, batch_id=NULL, batch_uid=NULL, batch_label=NULL, batch_computer=NULL, "
-            "batch_computer_id=NULL, printed_at=NULL, made_at=NULL, updated_at=? WHERE order_id=?",
+            "batch_computer_id=NULL, printed_at=NULL, made_at=NULL, print_started_at=NULL, updated_at=? "
+            "WHERE order_id=?",
             (state, db.now(), order_id),
         )
 
@@ -429,8 +488,8 @@ def add_adhoc(name: str, phone: str, color: str, quantity: int = 1, note: str = 
         con.execute(
             """INSERT INTO orders(order_id,clubbed_id,sku,order_date,source_status,quantity,raw_name,raw_color,
                special_request,name,color,name_edited,review_reason,state,first_file,last_file,first_seen,updated_at,
-               customer_name,phone,address,status_at,state_at)
-               VALUES (?,'',?,?,?,?,?,?,?,?,?,0,NULL,'ready','added by hand','added by hand',?,?,?,?,'',?,?)""",
+               customer_name,phone,address,status_at,state_at,first_status)
+               VALUES (?,'',?,?,?,?,?,?,?,?,?,0,NULL,'ready','added by hand','added by hand',?,?,?,?,'',?,?,'PRINT')""",
             (oid, ADHOC_SKU, now.date().isoformat(), "PRINT", qty, raw_name, raw_color, note, clean, col,
              t, t, raw_name, phone, stamp, t),
         )

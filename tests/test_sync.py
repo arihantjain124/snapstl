@@ -247,7 +247,8 @@ def test_only_snapstl_reaches_the_records(two):
         with psycopg.connect(url, autocommit=True) as c:
             rls = dict(c.execute("SELECT relname, relrowsecurity FROM pg_class WHERE relnamespace = "
                                  "'snapstl'::regnamespace AND relkind = 'r'").fetchall())
-            assert rls == {"order_records": True, "batch_records": True, "meta": True, "report_rows": True, "report_uploads": True}
+            assert rls == {"order_records": True, "batch_records": True, "meta": True, "report_rows": True,
+                           "report_uploads": True, "order_notes": True, "usage_counts": True}
             c.execute("SET ROLE anon")
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 c.execute("SELECT * FROM snapstl.order_records")
@@ -431,33 +432,33 @@ def test_shared_records_carry_the_orders_page_tab(two):
         ingest.ingest(f.getvalue().encode(), "r.csv")
         ad = ingest.add_adhoc("Kiara", "98765 43210", "pink")
         ok(sync.sync_now())
-        assert tab("T1") == ("ready", "single")
-        assert tab("T2") == ("ready", "clubbed") and tab("T3") == ("ready", "clubbed")
-        assert tab("T4") == ("needs_review", None) and "space" in remote("T4")["review_reason"]
+        assert tab("T1") == ("to_make", "single")
+        assert tab("T2") == ("to_make", "clubbed") and tab("T3") == ("to_make", "clubbed")
+        assert tab("T4") == ("check_name", None) and "space" in remote("T4")["review_reason"]
         assert tab("T5") == ("delivered", None) and tab("T6") == ("rto", None)
-        assert tab(ad["order_id"]) == ("ready", "adhoc")
+        assert tab(ad["order_id"]) == ("to_make", "adhoc")
         assert remote("T1")["app_state"] == "ready"
 
         ingest.set_name("T4", "Anu")  # reviewed → Ready
         a = B.create_batch(["T1"], Settings())
         ok(sync.sync_now())
-        assert tab("T4") == ("ready", "single") and tab("T1") == ("in_batch", None)
+        assert tab("T4") == ("to_make", "single") and tab("T1") == ("ready_to_print", None)
         with db.tx() as con:
             db.finish_batch(con, a["batch_id"], "done", {"label": "Batch 1 - 2026-11-16"}, ["T1"])
         ok(sync.sync_now())
-        assert tab("T1") == ("bundled", None)
+        assert tab("T1") == ("ready_to_print", None)
         with db.tx() as con:  # base and name both printed (Print) → Ready to ship
             con.execute("UPDATE orders SET made_at=? WHERE order_id='T1'", (db.now(),))
         ok(sync.sync_now())
-        assert tab("T1") == ("ready_to_ship", None)
+        assert tab("T1") == ("pack_it", None)
         ingest.set_printed(["T1"])
         ok(sync.sync_now())
-        assert tab("T1") == ("printed", None)
+        assert tab("T1") == ("pack_it", None)
 
         # a row written by an older SnapSTL (no app_state) still gets a tab from its status
         with sync._remote() as rc:
             rc.execute("UPDATE snapstl.order_records SET app_state=NULL, review_reason=NULL WHERE order_id IN ('T2','T5')")
-        assert tab("T2") == ("ready", "clubbed") and tab("T5") == ("delivered", None)
+        assert tab("T2") == ("to_make", "clubbed") and tab("T5") == ("delivered", None)
         # first sync after updating sends every order once, so the records get the app's own state
         with db.tx() as con:
             con.execute("DELETE FROM sync_state WHERE key=?", (sync.TABS_SENT,))
@@ -465,7 +466,7 @@ def test_shared_records_carry_the_orders_page_tab(two):
         assert remote("T2")["app_state"] == "ready" and remote("T5")["app_state"] == "not_needed"
     with two("B"):  # another computer reads the same tabs
         ok(sync.sync_now())
-        assert order("T4")["name"] == "Anu" and tab("T4") == ("ready", "single")
+        assert order("T4")["name"] == "Anu" and tab("T4") == ("to_make", "single")
 
 
 def test_report_columns_reach_the_shared_records(two):
@@ -494,7 +495,7 @@ def test_report_columns_reach_the_shared_records(two):
             assert r["awb"] == "AWB1" and "TXN-SECRET" not in str(r)  # transaction IDs aren't kept
             assert rc.execute("SELECT 1 FROM snapstl.report_rows WHERE order_id='R9'").fetchone() is None  # Magicians_35 only
             f = rc.execute("SELECT * FROM snapstl.orders_full WHERE order_id='R1'").fetchone()
-            assert f["tab"] == "ready" and f["city"] == "Pune"
+            assert f["tab"] == "to_make" and f["city"] == "Pune"
         # a newer file: delivered, AWB blank (kept), city changed
         ingest.ingest(rep([("R1", "Magicians_35", "DELIVERED", "Mumbai", "COD", "1299", "", "16/11/2026")],
                           "16/11/2026"), "new.csv")
@@ -509,7 +510,10 @@ def test_report_columns_reach_the_shared_records(two):
             ups = rc.execute("SELECT filename, magicians_rows, computer_name FROM snapstl.report_uploads "
                              "ORDER BY uploaded_at").fetchall()
             assert [u["filename"] for u in ups] == ["old.csv", "new.csv", "older.csv"] and ups[0]["computer_name"] == "PC A"
-            assert rc.execute("SELECT tab FROM snapstl.orders_full WHERE order_id='R1'").fetchone()["tab"] == "delivered"
+            # listed to make, never made, now delivered: flagged (0.23)
+            full = rc.execute("SELECT tab, flag FROM snapstl.order_records WHERE order_id='R1'").fetchone()
+            assert (full["tab"], full["flag"]) == ("problems", "past_print_not_made")
+            assert rc.execute("SELECT tab FROM snapstl.orders_full WHERE order_id='R1'").fetchone()["tab"] == "problems"
         with pytest.raises(sync.SyncError, match="never deleted"):
             with sync._remote() as rc:
                 rc.execute("DELETE FROM snapstl.report_rows")
@@ -573,8 +577,8 @@ def test_shop_schema_holds_the_whole_report(two):
                 "Magicians_35": True, "Magicians_77": False, "Stickers_006": False}
             assert "TXN-SECRET" not in str(q("SELECT data FROM shop.report_lines"))
             p = q("SELECT * FROM shop.production WHERE order_id='W1'")[0]  # what the app shows
-            assert p["tab"] == "needs_review" and p["tab"] == order("W1")["state"] and "space" in p["review_reason"]
-            assert q("SELECT orders FROM shop.production_queue WHERE tab='needs_review'")[0]["orders"] == 1
+            assert p["tab"] == "check_name" and order("W1")["state"] == "needs_review" and "space" in p["review_reason"]
+            assert q("SELECT orders FROM shop.production_queue WHERE tab='check_name'")[0]["orders"] == 1
             assert q("SELECT * FROM shop.cod_outstanding")[0]["order_id"] == "W2"
             assert q("SELECT term FROM shop.glossary WHERE term='partial_cod'")
             assert q("SELECT shop.status_group('handover') AS g")[0]["g"] == "in_transit"
@@ -593,7 +597,7 @@ def test_shop_schema_holds_the_whole_report(two):
         ingest.set_name("W1", "Anu")
         ok(sync.sync_now())
         with sync._remote() as rc:
-            assert rc.execute("SELECT tab FROM shop.production WHERE order_id='W1'").fetchone()["tab"] == "ready"
+            assert rc.execute("SELECT tab FROM shop.production WHERE order_id='W1'").fetchone()["tab"] == "to_make"
         # Clear empties shop too, and every computer follows
         sync.clear("CLEAR")
         ok(sync.sync_now())
@@ -616,7 +620,7 @@ def test_review_state_survives_clock_noise(two):
             con.execute("INSERT OR REPLACE INTO sync_outbox(order_id, queued_at) VALUES ('N1', ?)", (db.now(),))
         ok(sync.sync_now())
         r = remote("N1")
-        assert r["app_state"] == "needs_review" and r["tab"] == "needs_review" and "space" in r["review_reason"]
+        assert r["app_state"] == "needs_review" and r["tab"] == "check_name" and "space" in r["review_reason"]
 
 
 def test_skip_approve_and_ready_to_ship_reach_every_computer(two):
@@ -635,7 +639,7 @@ def test_skip_approve_and_ready_to_ship_reach_every_computer(two):
             con.execute("UPDATE orders SET state='skipped' WHERE order_id='V1'")
         ingest.set_name("V2", order("V2")["name"])
         ok(sync.sync_now())
-        assert remote("V1")["tab"] == "skipped" and remote("V2")["tab"] == "ready"
+        assert remote("V1")["tab"] == "skipped" and remote("V2")["tab"] == "to_make"
     with pc("B"):
         # B uploads a newer report before it pulls: its older "ready" doesn't undo A's skip
         ingest.ingest(report([("V1", "PRINT", "Asha", "")], range_end="15/11/2026"), "new.csv")
@@ -647,14 +651,106 @@ def test_skip_approve_and_ready_to_ship_reach_every_computer(two):
         ok(sync.sync_now())
     with pc("A"):
         ok(sync.sync_now())
-        assert order("V1")["state"] == "ready" and remote("V1")["tab"] == "ready"
+        assert order("V1")["state"] == "ready" and remote("V1")["tab"] == "to_make"
         # A makes V3; base and name printed → Ready to ship on B too
         a = B.create_batch(["V3"], Settings())
         with db.tx() as con:
             db.finish_batch(con, a["batch_id"], "done", {"label": "Batch 1"}, ["V3"])
             con.execute("UPDATE orders SET made_at=? WHERE order_id='V3'", (db.now(),))
         ok(sync.sync_now())
-        assert remote("V3")["tab"] == "ready_to_ship"
+        assert remote("V3")["tab"] == "pack_it"
     with pc("B"):
         ok(sync.sync_now())
         assert order("V3")["state"] == "bundled" and order("V3")["made_at"]
+
+
+def test_people_set_fields_reach_every_computer(two):
+    """0.23: Label Generated, Express, flags … set on one computer reach the others; per group the
+    newest change wins, so an older one sent later can't undo it."""
+    pc = two
+    data = report([("P1", "PRINT", "Asha", ""), ("P2", "DELIVERED", "Ravi", "02/11/2026")])
+    for name in ("A", "B"):
+        with pc(name):
+            ingest.ingest(data, "r.csv")
+            ok(sync.sync_now())
+    with pc("A"):
+        with db.tx() as con:
+            db.set_group(con, "P1", "express", express_by="2026-11-25", express_note="birthday")
+            db.set_group(con, "P1", "label", label_at=db.now(), label_by="logistics")
+        ok(sync.sync_now())
+        r = remote("P1")
+        assert (r["express_by"], r["express_note"], r["label_by"]) == ("2026-11-25", "birthday", "logistics")
+        assert r["first_status"] == "PRINT" and remote("P2")["first_status"] == "DELIVERED"
+    with pc("B"):
+        ok(sync.sync_now())
+        o = order("P1")
+        assert (o["express_by"], o["express_note"], o["label_by"]) == ("2026-11-25", "birthday", "logistics")
+        with db.tx() as con:  # B undoes Label Generated (a newer change)
+            db.set_group(con, "P1", "label")
+        ok(sync.sync_now())
+        assert remote("P1")["label_at"] is None
+    with pc("A"):
+        # A sends its older label again (e.g. it hadn't pulled yet): the newer undo stays
+        with db.tx() as con:
+            con.execute("INSERT OR REPLACE INTO sync_outbox(order_id, queued_at) VALUES ('P1', ?)", (db.now(),))
+        ok(sync.sync_now())
+        assert remote("P1")["label_at"] is None and order("P1")["label_at"] is None
+        assert order("P1")["express_by"] == "2026-11-25"
+
+
+def test_print_started_reaches_every_computer(two):
+    from snapstl import batches as B
+
+    pc = two
+    data = report([("S1", "PRINT", "Asha", "")])
+    for name in ("A", "B"):
+        with pc(name):
+            ingest.ingest(data, "r.csv")
+            ok(sync.sync_now())
+    with pc("A"):
+        a = B.create_batch(["S1"], Settings())
+        with db.tx() as con:
+            db.finish_batch(con, a["batch_id"], "done", {"label": "Batch 1"}, ["S1"])
+            con.execute("UPDATE orders SET print_started_at=? WHERE order_id='S1'", (db.now(),))
+        ok(sync.sync_now())
+        assert remote("S1")["print_started_at"]
+    with pc("B"):
+        ok(sync.sync_now())
+        assert order("S1")["state"] == "bundled" and order("S1")["print_started_at"]
+
+
+def test_call_notes_and_usage_reach_the_shared_records(two):
+    pc = two
+    with pc("A"):
+        ingest.ingest(report([("C1", "PRINT", "Asha", "")]), "r.csv")
+        with db.tx() as con:
+            db.add_note(con, "C1", "Customer called, wants it by Friday", "logistics")
+            db.count_usage(con, "copy_tracking_link")
+            db.count_usage(con, "copy_tracking_link")
+        ok(sync.sync_now())
+        assert sync.pending() == 0
+        with db.tx() as con:
+            db.count_usage(con, "copy_tracking_link")
+        ok(sync.sync_now())
+    with pc("B"):
+        ok(sync.sync_now())
+        with db.tx() as con:
+            notes = db.rows(con, "SELECT order_id, text, author FROM order_notes")
+        assert notes == [{"order_id": "C1", "text": "Customer called, wants it by Friday", "author": "logistics"}]
+        assert sync.usage() == [{"feature": "copy_tracking_link", "count": 3, "days": 1}]
+    with sync._remote() as rc:  # never deleted
+        import psycopg
+        with pytest.raises(psycopg.Error):
+            rc.execute("DELETE FROM snapstl.order_notes")
+
+
+def test_older_snapstl_cannot_write_after_the_upgrade(two, monkeypatch):
+    with two("A"):
+        ok(sync.sync_now())
+        with sync._remote() as rc:
+            assert rc.execute("SELECT value FROM snapstl.meta WHERE key='schema_version'").fetchone()["value"] \
+                == str(sync.SCHEMA_VERSION)
+        monkeypatch.setattr(sync, "SCHEMA_VERSION", sync.SCHEMA_VERSION - 1)  # an older SnapSTL
+        monkeypatch.setattr(sync, "_setup_done", "")
+        st = sync.sync_now()
+        assert "newer SnapSTL" in st["error"]

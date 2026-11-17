@@ -35,7 +35,7 @@ def _batch_orders(con, b: dict) -> list[dict]:
     ids = json.loads(b.get("order_ids") or "[]")
     if not ids:
         return []
-    return db.rows(con, f"SELECT order_id, name, color, state, quantity, made_at FROM orders "
+    return db.rows(con, f"SELECT order_id, name, color, state, quantity, made_at, express_by FROM orders "
                         f"WHERE order_id IN ({','.join('?' * len(ids))})", *ids)
 
 
@@ -124,6 +124,7 @@ def board(prs: list[dict] | None = None) -> dict:
             plates = summ.get("plates") or []
             orders = _batch_orders(con, b)
             state_of = {o["order_id"]: o["state"] for o in orders}
+            express_of = {o["order_id"]: o.get("express_by") for o in orders if o.get("express_by")}
             on = plate_order_ids(plates, orders)
             for p in plates:
                 j = latest.get((b["id"], p["file"]))
@@ -144,9 +145,13 @@ def board(prs: list[dict] | None = None) -> dict:
                     "order_ids": ids, "sliced": False, "slice": None,
                     "job": _job(j), "job_active": active, "done": done,
                     "need": farm.needed_color(p),
+                    # earliest Express needed-by date of its orders still to finish (None = not express)
+                    "express_by": min((express_of[i] for i in open_orders if i in express_of), default=None),
                 })
     prs = prs or []
-    pending = [r for r in rows if not r["done"]]
+    # plates holding an Express order first (earliest needed-by date), the rest as before; free printers
+    # are pre-selected for them first
+    pending = sorted([r for r in rows if not r["done"]], key=lambda r: (r["express_by"] is None, r["express_by"] or ""))
     active_jobs = farm.active_counts()
     for r in pending:
         r["choices"] = [{"id": p["id"], "name": p["name"], "why_not": "", "note": farm.match_note(r, p),
@@ -243,6 +248,7 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
         if spd:
             farm._set(j["id"], speed=spd, speed_set=0, speed_tries=0)
         farm.start_job(j["id"], force=force)
+        update_made(batch_id)  # its orders → Printing
         return {"job_id": j["id"], "started": True}
     if j and j["state"] in farm.ACTIVE:
         raise farm.FarmError(f"Already on its way ({j['state']}) on {j['printer_name']}")
@@ -255,6 +261,7 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
             "ams_tray,created_at,updated_at,computer_id) VALUES (?,?,?,?,?,?,'queued',?,1,?,?,?,?,?)",
             (batch_id, file, plate["kind"], (plate.get("colors") or [""])[0], printer["id"], printer["name"],
              json.dumps(opts), spd, tray, now, now, computer.ID))
+    update_made(batch_id)  # its orders → Printing
     farm.WORKER.kick()
     return {"job_id": int(cur.lastrowid), "started": False}
 
@@ -368,8 +375,24 @@ def queues(recent: int = 15) -> dict:
                        "printing": sum(1 for r in pj if r["state"] in farm.ACTIVE)}}
 
 
+def backfill_started() -> int:
+    """Once after updating to 0.23: Printing / made for orders of this computer's built batches from the
+    print jobs they already have. Returns how many batches were checked."""
+    with db.tx() as con:
+        if con.execute("SELECT 1 FROM sync_state WHERE key='started_v1'").fetchone():
+            return 0
+        ids = [b["id"] for b in _batches(con)]
+    for bid in ids:
+        update_made(bid)
+    with db.tx() as con:
+        con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('started_v1', '1')")
+    return len(ids)
+
+
 def update_made(batch_id: int) -> None:
-    """Orders whose every base plate and name plate is printed → Ready to ship (made_at); else not."""
+    """Orders whose every base plate and name plate is printed → made (made_at: Printed – pack it); else
+    not. Orders with a plate that a person started (any print job of it, except Removed) → Printing
+    (print_started_at, set once, kept)."""
     with db.tx() as con:
         b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
         if b is None:
@@ -381,6 +404,16 @@ def update_made(batch_id: int) -> None:
         done = {r["plate"] for r in db.rows(
             con, "SELECT j.plate FROM print_jobs j WHERE j.batch_id=? AND j.id = (SELECT MAX(id) FROM print_jobs k "
                  "WHERE k.batch_id=j.batch_id AND k.plate=j.plate) AND j.state='done'", batch_id)}
+        started = {r["plate"] for r in db.rows(
+            con, "SELECT j.plate FROM print_jobs j WHERE j.batch_id=? AND j.id = (SELECT MAX(id) FROM print_jobs k "
+                 "WHERE k.batch_id=j.batch_id AND k.plate=j.plate) AND j.state<>'removed'", batch_id)}
+        now = db.now()
+        for p in plates:
+            if p["file"] in started:
+                for oid in on.get(p["file"], []):
+                    con.execute("UPDATE orders SET print_started_at=?, updated_at=? WHERE order_id=? "
+                                "AND print_started_at IS NULL AND state IN ('in_batch','bundled','printed')",
+                                (now, now, oid))
         kinds: dict[str, dict[str, bool]] = {}
         for p in plates:
             for oid in on.get(p["file"], []):

@@ -122,7 +122,9 @@ Snapstl/
 │   ├── dbtool.py             `snapstl-db check | sync | export | schema`
 │   ├── updater.py            Settings → Updates (git fetch / pull --ff-only / uv sync)
 │   ├── watermark.py, render.py   watermark detection; plate / object pictures
-│   ├── logistics.py          optional Mac/Windows port-8002 read-only orders listener
+│   ├── logistics.py          optional Mac/Windows port-8002 listener: the logistics page (READS / WRITES)
+│   ├── logistics_api.py      logistics page: lists, search, order panel, its actions, usage (0.23)
+│   ├── tabs.py               the Orders tab rule (Python + SQL), 0.23
 │   ├── server.py             FastAPI app: every HTTP endpoint (§11), access control (§13), tab/filter SQL
 │   ├── settings.py           dataclasses + defaults (§12); APP_DIR, CACHE_DIR, output path, MakerWorld URL
 │   ├── db.py                 local SQLite schema + MIGRATIONS + sync triggers, tx(), quiet(), batch helpers
@@ -180,6 +182,13 @@ columns — the owner's order history lives here.
 | `status_at` | how recent `source_status` is: `@newest entry in the file|event date|upload time` (`ingest.status_stamp`; before 0.22.21 `event|file|upload`, rewritten once by `db.upgrade_stamp`) |
 | `in_remote`, `batch_uid`, `batch_label`, `batch_computer`, `batch_computer_id`, `bundled_at`, `printed_at` | shared order records: its batch (also on other computers), when bundled / printed |
 | `made_at` | base and name both printed in Print (`makeit.update_made`) → tab **Ready to ship** (`state='bundled' AND made_at IS NOT NULL`; **Bundled** = not made yet). Set by the batch's computer, mirrored on the others through the shared records (0.22.21) |
+| `first_status` | webstore status when SnapSTL first saw the order (0.23; older orders filled once: PRINT if listed to make, else their status). First seen past PRINT = history, never flagged |
+| `print_started_at` | first time a plate holding the order was started (0.23) → tab *Printing*. Like `made_at`: set by the batch's computer, mirrored on the others |
+| field groups (`db.FIELD_GROUPS`, 0.23) | things people set, each group with its own `<group>_changed` time; the newest change of a group wins on every computer, whatever the state: **label** (`label_at`, `label_by`: Label Generated), **express** (`express_by` date, `express_note`), **flag** (`flag` ∈ `db.FLAGS`, `flag_note`: Problems – check), **name_note** (`name_change_reason`, `name_confirmed_at`), **remake** (`remake_at`, `remake_reason`), **reuse** (`reuse_of`, `reused_by`: returned RTO piece). Written only through `db.set_group` |
+
+**order_notes** (0.23) — call notes: `uid`, `order_id`, `at`, `text`, `author`, `sent`. Append-only,
+shared (`snapstl.order_notes`). **usage_counts** — `day`, `feature`, `count`, `sent`: feature use on
+this computer (`db.count_usage`), shared per computer (`snapstl.usage_counts`, read by `sync.usage`).
 
 **batches** — `id`, `created_at`, `status` (§8), `order_ids` (JSON), `settings` (JSON snapshot at
 creation), `out_dir`, `summary` (JSON: plates + previews, errors, warnings, `folder`, `label`),
@@ -240,6 +249,31 @@ or a special request → review.
 
 *Single* = the order's clubbed ID has only this line (ad-hoc orders excluded); *Clubbed* = one clubbed ID with
 several lines; *Ad-hoc* = `sku = 'Adhoc'`.
+
+**New Orders tabs (0.23, `tabs.py`)** — one rule, written once as Python (`tabs.tab_of`) and once as SQL
+(`tabs.case_sql`, used for SQLite and by Supabase's `set_tab()`); `tests/test_tabs.py` checks they
+always agree. First match wins: skipped → **problems** (any `flag`) → **cancelled** (CANCEL…) →
+**delivered** / **rto** / **on_the_way** (IN-TRANSIT) → **ship_it** (`label_at`, or PACK / HANDOVER) →
+**pack_it** (`made_at`, state `printed`, or `reuse_of`) → **printing** (in a batch + `print_started_at`)
+→ **ready_to_print** (in a batch) → **check_name** (`needs_review`) → **to_make** (`ready`) → else
+**problems**. Report statuses 4–7 are ignored while a remake is pending (`remake_at` newer than
+`label_at`). The Orders page (`server.TABS`, 0.23 phase 3) uses the same rule: one key per tab plus
+`to_make_single` / `_clubbed` / `_adhoc` / `_returned` (a returned RTO piece with exactly the same name,
+case-sensitive, and colour, not used yet), `express` and `all`; rows sorted Express first
+(`server._ORDER`). Only `to_make` orders can be ticked / batched (`batches.create_batch` also skips
+flagged and reused ones). Mark printed / Back to Bundled buttons are gone (the endpoint stays for old
+data).
+
+**Report rules (0.23, `ingest.status_state` / `_status_flags`; `sync.merge` uses `status_state` too)**:
+a report never moves an order backwards. Ready / needs review stay to make on PRINT and AWB EXPIRED;
+not needed goes back to making only on PRINT and never after PACK / HANDOVER / IN-TRANSIT /
+DELIVERED / RTO / AWB EXPIRED. Flags (`db.set_group(..., "flag")`, only by the uploading computer):
+`past_print_not_made` (listed to make or in a batch, not made, report moves past PRINT; not for
+history or ad-hoc), `cancelled_in_production` (cancelled while in a batch or made, before it shipped),
+`back_to_print` (packed outside SnapSTL, then AWB EXPIRED / PRINT). AWB EXPIRED on a made / in-batch /
+labelled order clears `label_at` with `label_note` "Label expired – make a new label" → pack_it.
+Printing: `makeit.update_made` also sets `print_started_at` for orders on any plate with a print job
+(not Removed); called from Start print; `makeit.backfill_started` once at startup (`started_v1`).
 The Orders table offers browser-local saved views (column visibility, tab and filters) and a selectable page size; these preferences do not change order records. Tab SQL lives in `server.TABS`; column filters in `server.FILTERS` (text = contains; status, colour,
 qty = exact; combined with AND; also used by *Select all matching* and *Export CSV*).
 
@@ -423,7 +457,7 @@ the files. Clashing file names get ` (2)`; names over 200 characters are shorten
 | Pages | `GET /`, `GET /login` |
 | Auth (optional) | `POST /api/login`, `POST /api/logout`, `GET /api/auth-check` |
 | State | `GET /api/meta`, `GET /api/state` (counts, downloader, queue, builder log) |
-| Orders | `POST /api/ingest` (multipart `file`), `GET /api/orders`, `GET /api/orders/ids`, `GET /api/orders/facets`, `GET /api/orders.csv`, `POST /api/orders/adhoc` `{name,phone,color,quantity?,note?}`, `POST /api/orders/{id}/name` `{name,color}`, `POST /api/orders/{id}/reset`, `POST /api/orders/{id}/skip` |
+| Orders | `POST /api/ingest` (multipart `file`), `GET /api/orders`, `GET /api/orders/ids`, `GET /api/orders/facets`, `GET /api/orders.csv`, `POST /api/orders/adhoc` `{name,phone,color,quantity?,note?}`, `POST /api/orders/{id}/name` `{name,color}`, `POST /api/orders/{id}/reset` (Remake / Make anyway; records a remake when the webstore status would keep it elsewhere), `POST /api/orders/{id}/skip`, `POST /api/orders/{id}/clear-flag`, `POST /api/orders/{id}/use-returned` `{rto_order_id}`, `POST /api/orders/{id}/undo-returned` |
 | Batches | `POST /api/batches` `{order_ids}`, `POST /api/batches/{id}/download` (`{force:true}` = Re-download), `POST /api/batches/{id}/build` (also Rebuild), `POST /api/batches/{id}/cancel`, `GET /api/batches`, `GET /api/batches/{id}`, `GET /api/batches/{id}/file?path=`, `POST /api/batches/{id}/reveal` (local only), `GET /api/batches/{id}/zip` |
 | Downloads | `GET /api/downloads` (queue + Downloads folder stats), `POST /api/downloads/retry`, `POST /api/downloads/reveal` (local only), `POST /api/downloader/pause`, `POST /api/downloader/resume` |
 | Helper | `GET /api/helper/config`, `GET /api/helper/next`, `POST /api/helper/ping`, `POST /api/helper/jobs/{id}/result`, `…/fail`, `…/release`, `GET /api/helper.zip` |
@@ -451,6 +485,7 @@ f_status f_name f_color f_qty`, `q`, `limit`, `offset`.
 | plate | `bed_x/y/z`, `margin`, `gap`, `max_names_per_plate`, `bases_per_plate`, `rotations` | 256, 5, 5, 3, 3, [0, 180] |
 | top level | `output_dir`, `downloads_dir`, `makerworld_url`, `license_passwords` (editable on this Mac only), `delay_between_downloads_s` | ~/SnapSTL/output, ~/SnapSTL/Downloads, MakerWorld model link, {}, 3 |
 | top level | `lan_access` (changed only via `/api/portal`) | false |
+| logistics (0.23, Settings → Logistics) | `tracking_url` (`https://`, with `{awb}` and/or `{order_id}`; empty = no button), `late_days`, `express_red_days`, `stuck_days` (0–60), `messages` (name → text, ≤ 20; `{customer}` `{order_id}` `{name}` `{colour}` `{tracking}` `{address}` `{needed_by}`; empty → defaults) | ClickPost link, 7, 3, 5, 5 messages |
 
 Unknown keys are ignored on load, so older settings files keep working.
 
@@ -613,6 +648,12 @@ snapstl.server:app --port 8320`.
 | 68 | **External services in Settings** (0.22.23, owner request): *This Bambuddy computer — external services* checks and restarts Bambuddy, Docker Desktop (`platform_os.restart_docker_desktop`: `docker desktop restart`, else close + open), the slicer service and OctoEverywhere (containers of image `octoeverywhere/octoeverywhere`, `bambuddy_host.octo_plugins`; `docker restart`; Plugin Manager installed/open via `platform_os.octoeverywhere_manager`, *Open Plugin Manager*). `POST /api/bambuddy-host/{restart-octoeverywhere, restart-docker, restart-all, open-octoeverywhere}`. **Restart all** = Bambuddy (only if SnapSTL's script installed it) + slicer + OctoEverywhere, never Docker. Keep running also starts stopped OctoEverywhere plugins (start, never restart). SnapSTL and the database (Supabase) are not on this card | one place to check and fix every outside service |
 | 67 | **Slicing only on a person's click, for the chosen printer** (0.22.22, owner decision): automatic slicing (`auto_slice`, #36) removed — it sliced only plates with a pre-selected (free) printer, so with printers waiting for Clear plate most plates never sliced. **Slice** / **Slice all waiting** require the printer selected on the row. A **Queues** panel (Print, bottom right, hideable) shows downloading / building / slicing / printing from `GET /api/queues` (`POST /api/makeit/slice` refuses a plate without `printer_id`; no default printer); each printer choice in `GET /api/makeit` carries its own `slice`, and the row shows the selected printer's. Start print still slices first when needed. **OctoEverywhere** (remote access to Bambuddy): `bambuddy-server.ps1` installs the OctoEverywhere Plugin Manager (Microsoft Store `9N9JNFCTJP7L`, via winget; `BAMBUDDY_OCTOEVERYWHERE=0` = skip); plugin instances and account linking are done by the owner in its UI. SnapSTL never talks to OctoEverywhere | owner wants to decide what is sliced and for which printer; remote access to the farm |
 | 66 | **The newest export wins for every order in it** (0.22.21): `status_at` puts the file's moment (`file_as_of`: newest order / date in the file) before the row's event date (`@file|event|upload`); old stamps rewritten once locally and in Supabase. Also: once after updating, each computer sends **every** order again and reads every record (`sync.VIEW_SENT`); `_VIEW` (`app_state`, `review_reason`) now follows only the newer change (`_WIN`) or fills a record that has none | owner: some orders kept an old status after uploading a newer ShopDeck export (their row had no event date while the stored one did), and the host's changes had to reach Supabase and every computer |
+| 69 | **Order-flow data, phase 1** (0.23, owner-approved plan `docs/build-plan-order-flow-and-logistics.md`): orders get `first_status`, `print_started_at` and the field groups (`db.FIELD_GROUPS`, each with `<group>_changed`; newest change per group wins locally in `sync.merge` and in Supabase via `_GROUPS_SQL` in `_UPSERT` / `_CLAIM` / `_OFFER`); new shared tables `order_notes` (append-only) and `usage_counts` (per computer/day/feature), both with RLS and no-delete triggers. The outbox trigger is now `orders_outbox_upd3` (also watches the new columns). `SCHEMA_VERSION` 2: an older SnapSTL stops syncing (update every computer the same day). No screen change yet | per-field change times keep people's actions (label, express, flags) independent of the who-makes-it state rules (`_WIN`) |
+| 70 | **One tab rule, report rules, Printing** (0.23 phase 2): `tabs.py` holds the new 12 tabs as Python and as one SQL CASE shared by SQLite and the Supabase `set_tab()` trigger (old `tab` values are worked out again once at setup; the shop glossary keeps the old names marked "before 0.23"). Ingest flags problems instead of guessing (see §6); AWB EXPIRED clears a label; `print_started_at` from print jobs. Label group gets `label_note`; flag `back_to_print` added. `db.connect` tolerates a column added by another thread at the same moment (first start after updating). Dry run on the owner's database: all 1,670 orders in exactly one tab, none in Problems | owner's process: To make → Ready to print → Printing → Printed – pack it → Label done – ship it; a report must never undo work done in the app |
+| 71 | **Production Orders page** (0.23 phase 3): 12 tabs in Make / Pack & ship / Records groups, Stage column with the tab's words, Express badge (red ≤ 3 days) and Express-first sorting (Orders and Print: `makeit.board` sorts plates by their orders' earliest `express_by`, so free printers are pre-selected for them first), returned-piece highlight + Use / Undo, Clear flag, reasons shown in words (flag, label expired, name change, remake). Saved views moved to `snapstl-order-views-v2` (old tab names). Make anyway on a delivered order records a remake so it shows in New orders | owner: simple words for staff, express orders prioritised, reuse returned pieces |
+| 72 | **Logistics page** (0.23 phase 4, owner decision): port 8002 no longer shows the Orders page read-only; it serves the label / customer-care page and allows exactly the writes in `logistics.WRITES` (was: order reads only). Label Generated lives only there (production sees the result). WhatsApp opens `wa.me` in the person's own browser with the text filled in; SnapSTL sends nothing. Copy buttons fall back to `execCommand` because port 8002 is plain HTTP (no clipboard API) | the team that talks to customers needs to act, not just read; one place for labels, Express and customer questions |
+| 73 | **Settings → Usage** (0.23 phase 5): counts per feature for the last 7 / 30 / 90 / 365 days from `GET /api/usage` (all computers via Supabase `usage_counts`, else this computer), in words (`FEATWORD` in `index.html`). Counted: every logistics screen, search, copy and WhatsApp click and action; production Use / Undo returned piece and Clear flag. Feature names only | owner: reorganise the layout later from real usage |
+| 74 | **Logistics settings, 0.23.0** (phase 6): Settings → Logistics edits the tracking link, the red limits and the ready-made messages (saved with Save settings, per computer: the logistics host's apply to its page); the Orders page's Express badge uses the same `express_red_days`. Version 0.23.0; shared-records schema 2 (older SnapSTLs stop syncing) | owner can change wording and limits without a release |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -828,7 +869,22 @@ installs the new packages before starting, since Windows can't replace files Pyt
 `.gitattributes` keeps `.sh` files LF and `.ps1` files CRLF.
 
 
-### Read-only logistics (Mac or Windows host)
+### Logistics page (0.23)
+
+`logistics_api.py`: lists (`VIEWS`: labels, ship_it, check_name, problems, remakes, being_made,
+on_the_way, delivered, rto, cancelled), search (order ID, customer, phone by its last 10 digits), order
+detail (notes, clubbed group, the customer's other orders, returned pieces), CSV with the page's columns
+only, and the actions (label, express, name, note, cancel-request, remake; use / undo returned piece via
+`/api/orders/{id}/…`). Label Generated covers the whole clubbed group and is refused until every order of
+it is printed; Express applies to the group's unshipped orders. `view_of` adds words for the phone
+(`words`), the tracking link (`settings.logistics.tracking_url` with `{awb}` / `{order_id}`), and red
+flags (late: `late_days` since ordering and not labelled; stuck: On the way `stuck_days` after pickup;
+Express red `express_red_days` before). Every action counts itself in `usage_counts`; the page counts
+screens and copy / WhatsApp clicks via `POST /api/usage`. `logistics.py` serves the page (`#t-desk`) and
+only `READS` / `WRITES`; writes need the shared records online. The main app registers the same routes
+(local use) plus `GET /api/usage` (Settings → Usage).
+
+### Logistics host (Mac or Windows)
 
 The full app now listens only on localhost on Mac and Windows. On Mac or Windows, open Settings → Connections → Logistics access, enable hosting, set a password and press Save. Save starts or stops the listener immediately without restarting the app. Employees open `http://HOST-IP:8002` and sign in. Permit TCP 8002 for the local subnet in Windows Firewall if needed. This supersedes the former remote-control portal.
 

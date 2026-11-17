@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import auth, bambuddy_host, cache, computer, config, db, farm, makeit, platform_os, sync, updater
+from . import auth, bambuddy_host, cache, computer, config, db, farm, makeit, platform_os, sync, tabs, updater
 from .ingest import add_adhoc, ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
 from . import maintenance as M
@@ -40,6 +40,10 @@ async def _lifespan(_app):
     MANAGER.output_dir = SETTINGS.output_dir
     cache.set_root(SETTINGS.downloads_dir)  # downloaded models: visible folder, kept until deleted in Finder
     cache.migrate_old_cache()               # one-time move from the old hidden cache folder
+    try:
+        makeit.backfill_started()           # one-time (0.23): Printing for orders whose plates were started
+    except Exception as e:  # noqa: BLE001  (never block starting the app)
+        print(f"SnapSTL: Printing backfill skipped: {e}")
     MANAGER.start()  # builds batches once their models arrive
     DOWNLOADER.pause_s = SETTINGS.delay_between_downloads_s
     DOWNLOADER.start()  # re-queues names that were mid-download when the app stopped
@@ -54,6 +58,10 @@ async def _lifespan(_app):
 
 
 app = FastAPI(title="SnapSTL", docs_url=None, redoc_url=None, openapi_url=None, lifespan=_lifespan)
+from . import logistics_api  # noqa: E402  (the logistics page: also usable on this computer)
+
+logistics_api.register(app)
+app.add_api_route("/api/usage", logistics_api.usage, methods=["GET"])  # Settings → Usage
 
 OPEN_PATHS = {"/login", "/api/login", "/api/auth-check", "/favicon.ico"}
 
@@ -341,32 +349,34 @@ def _order_view(r: dict) -> dict:
         "clubbed": bool(r.get("club_size", 1) > 1),
         "target": [min(band.length, SETTINGS.scaling.max_length), band.height] if band else None,
         "compartments": compartments_for(letters, SETTINGS) if letters else None,
+        # 0.23 order flow
+        "tab": tabs.tab_of(r), "first_status": r.get("first_status"), "print_started_at": r.get("print_started_at"),
+        **{c: r.get(c) for g, cs in db.FIELD_GROUPS.items() for c in cs},
+        "returned": r.get("_returned") or [],
     }
 
 
-# Order tabs. "Not needed" orders are split by their webstore report status.
+# Order tabs (0.23): one rule, tabs.py. Sub-tabs of New orders and the Express list on top.
 _CLUB = ("(CASE WHEN COALESCE(clubbed_id,'')='' THEN 1 ELSE "
          "(SELECT COUNT(*) FROM orders o2 WHERE o2.clubbed_id=orders.clubbed_id) END)")
-_NN = "state='not_needed' AND "
-TABS = {
-    "ready": "state='ready'",
-    "ready_single": f"state='ready' AND {_CLUB} <= 1 AND sku<>'Adhoc'",
-    "ready_clubbed": f"state='ready' AND {_CLUB} > 1",
-    "ready_adhoc": "state='ready' AND sku='Adhoc'",  # typed in by hand (ingest.add_adhoc)
-    "needs_review": "state='needs_review'",
-    "in_batch": "state='in_batch'",
-    "bundled": "state='bundled' AND made_at IS NULL",
-    "ready_to_ship": "state='bundled' AND made_at IS NOT NULL",  # base and name both printed (Make It)
-    "printed": "state='printed'",
-    "skipped": "state='skipped'",
-    "delivered": _NN + "UPPER(source_status)='DELIVERED'",
-    "rto": _NN + "UPPER(source_status) LIKE 'RTO%'",
-    "in_transit": _NN + "REPLACE(REPLACE(UPPER(source_status),'_','-'),' ','-')='IN-TRANSIT'",
-    "cancelled": _NN + "UPPER(source_status) LIKE 'CANCEL%'",
-    "others": _NN + "NOT (UPPER(source_status)='DELIVERED' OR UPPER(source_status) LIKE 'RTO%' OR "
-              "REPLACE(REPLACE(UPPER(source_status),'_','-'),' ','-')='IN-TRANSIT' OR UPPER(source_status) LIKE 'CANCEL%')",
+_T = tabs.TAB_SQL
+# a returned (RTO) piece with exactly the same name (same letter case) and colour, not used yet
+_RTO = "REPLACE(UPPER(COALESCE({t}.source_status,'')),'_','-') LIKE 'RTO-%'"
+_RETURNED = (f"EXISTS (SELECT 1 FROM orders rt WHERE rt.order_id<>orders.order_id AND rt.name=orders.name "
+             f"AND COALESCE(rt.color,'')=COALESCE(orders.color,'') AND {_RTO.format(t='rt')} AND rt.reused_by IS NULL "
+             "AND COALESCE(orders.name,'')<>'')")
+_MAKING_TABS = "('to_make','check_name','ready_to_print','printing','pack_it')"
+TABS = {k: f"{_T}='{k}'" for k in tabs.KEYS}
+TABS.update({
+    "to_make_single": f"{_T}='to_make' AND {_CLUB} <= 1 AND sku<>'Adhoc'",
+    "to_make_clubbed": f"{_T}='to_make' AND {_CLUB} > 1",
+    "to_make_adhoc": f"{_T}='to_make' AND sku='Adhoc'",  # typed in by hand (ingest.add_adhoc)
+    "to_make_returned": f"{_T}='to_make' AND {_RETURNED}",  # a returned piece could be sent instead
+    "express": f"express_by IS NOT NULL AND {_T} IN {_MAKING_TABS}",
     "all": "1=1",
-}
+})
+# Express orders first (earliest needed-by date first), then as before
+_ORDER = "ORDER BY (express_by IS NULL), express_by, order_date DESC, COALESCE(clubbed_id,''), order_id"
 # Per-column filters: name → (SQL expression, exact match?)
 FILTERS = {
     "order": ("order_id || ' ' || COALESCE(clubbed_id,'')", False),
@@ -378,6 +388,7 @@ FILTERS = {
     "name": ("COALESCE(name,'') || ' ' || COALESCE(raw_name,'')", False),
     "color": ("color", True),
     "qty": ("CAST(quantity AS TEXT)", True),
+    "express": ("CASE WHEN express_by IS NULL THEN '' ELSE 'yes' END", True),
 }
 
 
@@ -403,34 +414,53 @@ def _where(request: Request, tab: str) -> tuple[str, list]:
 
 
 @app.get("/api/orders")
-def list_orders(request: Request, tab: str = "ready", limit: int = 200, offset: int = 0):
+def list_orders(request: Request, tab: str = "to_make", limit: int = 200, offset: int = 0):
     w, args = _where(request, tab)
     limit = max(1, min(limit, 1000))
     with db.tx() as con:
         total = con.execute(f"SELECT COUNT(*) FROM orders WHERE {w}", args).fetchone()[0]
-        rs = db.rows(con, f"SELECT *, {_CLUB} AS club_size FROM orders WHERE {w} "
-                          "ORDER BY order_date DESC, COALESCE(clubbed_id,''), order_id LIMIT ? OFFSET ?",
+        rs = db.rows(con, f"SELECT *, {_CLUB} AS club_size FROM orders WHERE {w} {_ORDER} LIMIT ? OFFSET ?",
                      *args, limit, offset)
+        for r in rs:
+            if r["state"] in ("ready", "needs_review") and r.get("name"):
+                r["_returned"] = returned_pieces(con, r)
     return {"total": total, "orders": [_order_view(r) for r in rs]}
 
 
+def returned_pieces(con, o: dict) -> list[dict]:
+    """Returned (RTO) orders with exactly this order's name (same letter case) and colour whose piece
+    isn't used yet: back with us (RTO_DELIVERED) first."""
+    if not o.get("name") or o.get("reuse_of"):
+        return []
+    rs = db.rows(con, f"SELECT order_id, source_status FROM orders rt WHERE rt.order_id<>? AND rt.name=? "
+                      f"AND COALESCE(rt.color,'')=? AND {_RTO.format(t='rt')} AND rt.reused_by IS NULL",
+                 o["order_id"], o["name"], o.get("color") or "")
+    out = [{"order_id": r["order_id"], "status": r["source_status"],
+            "back": tabs.norm_status(r["source_status"]) == "RTO-DELIVERED"} for r in rs]
+    return sorted(out, key=lambda x: (not x["back"], x["order_id"]))
+
+
 @app.get("/api/orders/ids")
-def order_ids(request: Request, tab: str = "ready", state: str = "ready"):
-    """All selectable order IDs matching the current tab + filters ('Select all matching'):
-    ready ones (Create batch), bundled ones (Mark printed) or printed ones (Back to Bundled)."""
-    if state not in ("ready", "bundled", "printed"):
+def order_ids(request: Request, tab: str = "to_make", state: str = "ready"):
+    """All selectable order IDs matching the current tab + filters ('Select all matching'): orders that
+    can go into a batch (Create batch)."""
+    if state != "ready":
         raise HTTPException(400, "Unknown state")
     w, args = _where(request, tab)
     with db.tx() as con:
-        rs = db.rows(con, f"SELECT order_id FROM orders WHERE {w} AND state=? ORDER BY order_date, order_id", *args, state)
+        rs = db.rows(con, f"SELECT order_id FROM orders WHERE {w} AND {_T}='to_make' "
+                          "ORDER BY order_date, order_id", *args)
     return [r["order_id"] for r in rs]
 
 
 @app.get("/api/orders/facets")
-def order_facets(request: Request, tab: str = "ready"):
+def order_facets(request: Request, tab: str = "to_make"):
     """Tab counts plus the values offered in the status / colour filter dropdowns."""
     with db.tx() as con:
-        counts = {k: con.execute(f"SELECT COUNT(*) FROM orders WHERE {v}").fetchone()[0] for k, v in TABS.items()}
+        counts = {k: 0 for k in TABS}
+        counts.update({r[0]: r[1] for r in con.execute(f"SELECT {_T}, COUNT(*) FROM orders GROUP BY 1")})
+        for k in ("to_make_single", "to_make_clubbed", "to_make_adhoc", "to_make_returned", "express", "all"):
+            counts[k] = con.execute(f"SELECT COUNT(*) FROM orders WHERE {TABS[k]}").fetchone()[0]
         w = TABS.get(tab, "1=1")
         statuses = [r["v"] for r in db.rows(con, f"SELECT DISTINCT source_status v FROM orders WHERE {w} ORDER BY v")]
         colors = [r["v"] for r in db.rows(con, f"SELECT DISTINCT COALESCE(color,'') v FROM orders WHERE {w} ORDER BY v")]
@@ -478,10 +508,64 @@ async def edit_name(order_id: str, req: Request):
 
 @app.post("/api/orders/{order_id}/reset")
 def reset_order(order_id: str):
+    """Remake / Make anyway: back to New orders. When the webstore status would keep it in another tab
+    (e.g. Delivered), a remake is recorded so the first parcel's statuses are ignored until a new label."""
     try:
         reset_to_ready(order_id)
     except KeyError as e:
         raise HTTPException(404, "No such order") from e
+    with db.tx() as con:
+        o = dict(con.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone())
+        if o.get("reuse_of"):  # made again: no longer sent with a returned piece
+            db.set_group(con, order_id, "reuse")
+            o["reuse_of"] = None
+        if tabs.tab_of(o) not in ("to_make", "check_name") and o.get("flag") is None:
+            db.set_group(con, order_id, "remake", remake_at=db.now(), remake_reason="Made again (Remake)")
+    sync.LOOP.kick()
+    return {"ok": True}
+
+
+@app.post("/api/orders/{order_id}/clear-flag")
+def clear_flag(order_id: str):
+    """Problems – check: a person handled it. The order goes to the tab its state says."""
+    with db.tx() as con:
+        if not db.set_group(con, order_id, "flag"):
+            raise HTTPException(404, "No such order")
+        db.count_usage(con, "clear_flag")
+    sync.LOOP.kick()
+    return {"ok": True}
+
+
+@app.post("/api/orders/{order_id}/use-returned")
+async def use_returned(order_id: str, req: Request):
+    """Send this order with a returned (RTO) piece of the same name and colour instead of making it:
+    it goes straight to Printed – pack it; the piece is marked used (never matched again)."""
+    rto = str((await req.json()).get("rto_order_id") or "")
+    with db.tx() as con:
+        cur = con.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
+        if cur is None:
+            raise HTTPException(404, "No such order")
+        o = dict(cur)
+        if o["state"] not in ("ready", "needs_review") or o.get("reuse_of"):
+            raise HTTPException(409, "Only an order waiting to be made can use a returned piece")
+        if rto not in {x["order_id"] for x in returned_pieces(con, o)}:
+            raise HTTPException(409, "That returned piece doesn't match this order (or is already used)")
+        db.set_group(con, order_id, "reuse", reuse_of=rto)
+        db.set_group(con, rto, "reuse", reused_by=order_id)
+        db.count_usage(con, "use_returned")
+    sync.LOOP.kick()
+    return {"ok": True}
+
+
+@app.post("/api/orders/{order_id}/undo-returned")
+def undo_returned(order_id: str):
+    with db.tx() as con:
+        cur = con.execute("SELECT reuse_of FROM orders WHERE order_id=?", (order_id,)).fetchone()
+        if cur is None or not cur["reuse_of"]:
+            raise HTTPException(409, "This order doesn't use a returned piece")
+        db.set_group(con, order_id, "reuse")
+        db.set_group(con, cur["reuse_of"], "reuse")
+        db.count_usage(con, "undo_returned")
     sync.LOOP.kick()
     return {"ok": True}
 

@@ -11,7 +11,9 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
    decision log (§16: things that were tried and **don't work**) and *How to extend safely* (§18).
 2. `docs/scaling-rules-v1.1-handoff.md` — the business's scaling spec.
 3. `README.md` — how the owner installs and uses it.
-4. The files you'll touch. Read them fully before editing.
+4. `documentation.md` — the running log of discussions with the owner: current understanding of the
+   Order Reconciliation Report (webstore statuses and what they mean), app states, and open questions.
+5. The files you'll touch. Read them fully before editing.
 
 ## 2. Binding rules (change only if the owner explicitly asks)
 
@@ -53,7 +55,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 - The app accepts extension calls **only** on `/api/helper/*` from 127.0.0.1. Don't widen that.
 - The helper must keep checking, before every name, that its working tab is on the configured model
   page (designId); the app must never hand out work when `on_page` is false.
-- The full app is localhost only. Optional Mac/Windows logistics listener on port 8002 requires `lan_access` + password and permits only authenticated order reads. Never expose editing, helper, settings, batches or printer controls there.
+- The full app is localhost only. Optional Mac/Windows logistics listener on port 8002 requires `lan_access` + password. It permits only the logistics page's reads (`logistics.READS`) and, since 0.23 (owner decision), exactly these changes (`logistics.WRITES`, only while the shared records are reachable): Label Generated / Undo, Express, name change confirmed with the customer (before a batch only), call notes, customer wants to cancel, remake request, use / undo a returned piece, usage counts. Don't add more without the owner asking. Never expose editing, helper, settings, batches or printer controls there.
 - Installers must **never run a second Bambuddy or stop one they didn't install**: detect an existing
   Bambuddy (service, data folder, launchd job, or the port answering) and use it; stop only processes
   started from SnapSTL's own Bambuddy folder; never delete Bambuddy data.
@@ -73,8 +75,12 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   `BAMBUDDY_OCTOEVERYWHERE=0` skips it); never uninstall it, and never script its plugin setup or account
   linking (the owner does that in its UI). SnapSTL itself never talks to OctoEverywhere. Slicing on this computer is gone for good (#43).
 - Database: add columns **only** via `MIGRATIONS` in `db.py`; never drop/rename columns or tables.
+- **The tab rule lives only in `tabs.py`** (0.23): `tab_of` (Python) and `case_sql` (SQL, used for the
+  Orders page and by Supabase's `set_tab()` trigger) must stay identical — `tests/test_tabs.py` checks
+  every combination. A report never moves an order backwards (`ingest.status_state`); doubtful cases
+  get a flag (Problems – check) instead of a guess.
 - `order_records.tab` / `ready_type` are set by the `set_tab()` trigger from the row (state, app_state,
-  made_at, source_status, clubbed_id, sku): when the Orders page's tabs (`server.TABS`) change, change
+  made_at, source_status, clubbed_id, sku, and the 0.23 fields): when the Orders page's tabs change, change
   that trigger the same way, and keep the column `COMMENT`s true — other agents read the table by them.
 - Shared-records schema changes go in `sync._SETUP_SQL`; regenerate `docs/supabase-schema.sql`
   (`uv run snapstl-db schema > docs/supabase-schema.sql`) — a test checks they match.
@@ -136,7 +142,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | In-app Help page | `<section id="t-help">` in `index.html` (update with README when behaviour changes) |
 | Fit check | `scaling.fit_metrics` / `fit_problems`, `pipeline.build`, `export.write_plate` |
 | New order field / column | `db.py` (MIGRATIONS) → `ingest.py` → `server._order_view` / `FILTERS` → `index.html` |
-| Order tabs & filters | `server.TABS`, `server.FILTERS` (+ `TABS` array in `index.html`) |
+| Order tabs & filters | `tabs.py` (the rule, 0.23), `server.TABS`, `server.FILTERS` (+ `TABS` array in `index.html`) |
+| Report status rules, Problems flags, label expired | `ingest.status_state`, `ingest._status_flags`; tests in `tests/test_tabs.py` |
 | New setting / default | `settings.py` (+ `fillSettings` / `readSettings` in `index.html`) |
 | Scaling targets / compartments | `settings.default_bands()`; math in `scaling.py` |
 | Plate grouping / packing | `grouping.py`, `packing.py` |
@@ -148,6 +155,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Watermark check / license confirmation | `watermark.py`, `batches.check_license` / `store_result`, `helper/content.js` (`runJob`), `helper/inject.js` |
 | Plate / object pictures | `render.py`, `pipeline._plate_picture`, `server.model_view` |
 | Updates (git pull, helper self-reload) | `updater.py`, `server.update_*`, `scripts/update.sh`, `helper/background.js` (`reloadIfUpdated`) |
+| Logistics page (label + customer-care team): lists, search, actions, tracking link, messages | `logistics_api.py` (`VIEWS`, `ROUTES`), `logistics.py` (`READS` / `WRITES`), `settings.LogisticsSettings`, `<section id="t-desk">` + `dLoad` / `dOpen` in `index.html`; `tests/test_logistics_page.py` |
 | Access control / other computers | `server._blocked`, `server.access_control`, `/api/portal`, `__init__.serve` (bind address) |
 | Download queue + folder (on Batches) | `<section id="t-batches">` in `index.html`; `cache.py` for the folder |
 | MakerWorld page interaction | `helper/content.js`, `helper/inject.js` (bump `helper/manifest.json` version; reload extension) |
@@ -158,15 +166,16 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Report columns kept for other agents (Supabase `report_rows`, `report_uploads`, `orders_full`) | `report.py` (`COLUMNS`: add a report column there, with its type and description); `ingest.ingest` stores rows; `sync._push_reports` |
 | Shared order records (Supabase): connection in Settings, sync, claims | `sync.py`, `config.py`, `computer.py`, `server.shared_records_*`, `server.setup_status`, `dbtool.py` (`snapstl-db`), triggers in `db.POST_SCHEMA` |
 | Print farm: Bambuddy connection, printers, Push to queue, slicing | `farm.py` (+ `/api/farm*`, `/api/batches/{id}/plates` and `/push`, `/api/print-jobs` in `server.py`); Printers page + Push to queue panel in `index.html`; `tests/test_farm.py` |
-| Print tab (Bases / Names / Completed / Removed), Ready to ship | `makeit.py`, `/api/makeit*` in `server.py`, `server.TABS` (`ready_to_ship`), `<section id="t-makeit">` in `index.html`; `tests/test_farm.py` |
+| Print tab (Bases / Names / Completed / Removed), Printing / Printed – pack it, Express plates first | `makeit.py` (`board`, `update_made`), `/api/makeit*` in `server.py`, `tabs.py` (`printing`, `pack_it`), `<section id="t-makeit">` in `index.html`; `tests/test_farm.py` |
 | Slicing tab (Bambuddy profiles and print defaults per printer) | `farm.py` (`bambuddy_presets`, `chosen_presets`, `set_presets`, `missing_presets`, `target`, `print_defaults`, `forget_local_slicing`), `/api/makeit/presets` `/print-defaults`; `<section id="t-slicing">`; `tests/test_farm.py` |
 | Printers page, sidebar status | `farm.everything` / `summarize`, `/api/printer-status`, `/api/health`; `<section id="t-printers">`, `loadHealth` in `index.html` |
-| Settings sections (Setup · Product · Plates · Folders · Connections · Maintenance) | `data-sec` blocks + `setSec` in `index.html`; checklist from `/api/setup` |
+| Settings sections (Setup · Product · Plates · Folders · Connections · Maintenance · Usage) | `data-sec` blocks + `setSec` in `index.html`; checklist from `/api/setup` |
 | Bambuddy computer run from SnapSTL — external services: Bambuddy, Docker, slicer, OctoEverywhere (status, Start / Restart / Restart all, Keep running) | `bambuddy_host.py`, `platform_os` (services, Docker Desktop, OctoEverywhere Plugin Manager), `/api/bambuddy-host*` in `server.py`, `#hostcard` in `index.html`; `tests/test_bambuddy_host.py` |
 | Bambuddy computer (Docker: Bambuddy + slicer sidecars) | `scripts/windows/bambuddy-server.ps1`, `scripts/bambuddy-docker/docker-compose.yml`, `scripts/bambuddy-version.txt` |
 | SnapSTL installers and Bambuddy (`SNAPSTL_BAMBUDDY`, `SNAPSTL_BAMBUDDY_URL`) | `scripts/windows/common.ps1` (`Install-Bambuddy`, `Connect-Bambuddy`), `scripts/make_app.sh` (Mac: connect only); older native install (Windows): `scripts/windows/bambuddy.ps1`, `platform_os.update_bambuddy` |
 | Sidebar "This computer" address | `server._network` (in `/api/health`), `platform_os.lan_ips`, `#hip` in `index.html` |
-| Printed tab / report status timestamps | `ingest.set_printed`, `ingest.status_stamp`, `server.TABS`, `index.html` (`SELKIND`) |
+| Report status timestamps | `ingest.status_stamp`, `ingest.file_as_of` (Mark printed / `set_printed` stays only for old data, no button) |
+| Logistics settings (tracking link, red limits, messages), Usage screen | `settings.LogisticsSettings`, `data-sec="logistics"` / `"usage"` + `lgMsgs` / `loadUsage` in `index.html` |
 
 ## 4. How to work
 
@@ -209,5 +218,15 @@ git switch main && git merge --no-ff change/<short-name> && git branch -d change
   (§12), decision log (§16) when a decision changes.
 - `README.md` and the in-app **Help** page — when the owner's steps or the output change.
 - `AGENTS.md` — when rules or workflow change.
+- `documentation.md` — at the end of every session with the owner that explains, clarifies or decides
+  something (not only code changes):
+  - Add a short dated entry under **Log**: what was asked, what was found, what was decided, what is
+    still open. A few bullets, not a transcript; newest at the bottom.
+  - Keep **Current understanding** true: webstore status meanings, how the report is read, app states
+    and Orders tabs. Change it in the same commit as code that changes any of them.
+  - Mark open questions **Open** and resolve them in a later entry when the owner answers. Never
+    assume a status meaning the owner hasn't confirmed: ask.
+  - The repository is public: counts, column and status names only, never customer names, phones,
+    addresses or order IDs.
 
 Orders pagination includes a Page selector to jump directly to any page. Logistics uses the same control. Logistics hosting is available on both Mac and Windows; Settings reports whether port 8002 is actually listening. Allow incoming connections in the host firewall for LAN access. The UTF-8 interface is decoded explicitly on Windows.

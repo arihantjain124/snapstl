@@ -92,7 +92,8 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
         raise ValueError("Select at least one order")
     with db.tx() as con:
         q = ",".join("?" * len(order_ids))
-        rows = db.rows(con, f"SELECT * FROM orders WHERE state='ready' AND order_id IN ({q}) ORDER BY order_date, order_id", *order_ids)
+        rows = db.rows(con, f"SELECT * FROM orders WHERE state='ready' AND reuse_of IS NULL AND flag IS NULL "
+                            f"AND order_id IN ({q}) ORDER BY order_date, order_id", *order_ids)
     if not rows:
         raise ValueError("None of the selected orders are ready (they may need review or be in another batch)")
     uid = uuid.uuid4().hex
