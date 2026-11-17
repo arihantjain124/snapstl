@@ -1254,7 +1254,8 @@ def bambuddy_host_status():
 @app.post("/api/bambuddy-host/{action}")
 async def bambuddy_host_action(action: str, req: Request):
     """start (what is down; may ask Windows for admin rights) · restart-bambuddy · restart-slicer ·
-    keep-running {on}. Only from a person's click; nothing running is stopped otherwise."""
+    restart-octoeverywhere · restart-docker · restart-all (Bambuddy, slicer, OctoEverywhere) ·
+    open-octoeverywhere (its Plugin Manager) · keep-running {on}. Only from a person's click; nothing running is stopped otherwise."""
     if not bambuddy_host.is_here():
         raise HTTPException(400, "Bambuddy isn't set up on this computer — run scripts/windows/bambuddy-server.ps1 once")
     if action == "keep-running":
@@ -1263,7 +1264,11 @@ async def bambuddy_host_action(action: str, req: Request):
     try:
         fn = {"start": lambda: bambuddy_host.HOST.start(elevate=True),
               "restart-bambuddy": bambuddy_host.HOST.restart_bambuddy,
-              "restart-slicer": bambuddy_host.HOST.restart_slicer}.get(action)
+              "restart-slicer": bambuddy_host.HOST.restart_slicer,
+              "restart-octoeverywhere": bambuddy_host.HOST.restart_octoeverywhere,
+              "restart-docker": bambuddy_host.HOST.restart_docker,
+              "restart-all": bambuddy_host.HOST.restart_all,
+              "open-octoeverywhere": bambuddy_host.HOST.open_octoeverywhere}.get(action)
         if fn is None:
             raise HTTPException(404, "Unknown action")
         started = fn()

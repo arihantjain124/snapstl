@@ -1,5 +1,10 @@
-"""The Bambuddy computer, run from SnapSTL (Windows only): Bambuddy's Windows service and its slicer
-service in Docker (scripts/windows/bambuddy-server.ps1 installs them once).
+"""The Bambuddy computer, run from SnapSTL (Windows only): Bambuddy's Windows service, Docker Desktop, its
+slicer service in Docker and OctoEverywhere's plugins in Docker (remote access; set up in the
+OctoEverywhere Plugin Manager) — scripts/windows/bambuddy-server.ps1 installs them once.
+
+Settings → Connections checks each one and has a Restart button per service plus **Restart all**
+(Bambuddy, slicer, OctoEverywhere — not Docker itself, which has its own button). All restarts are a
+person's click.
 
 Settings → Connections shows whether each part is up; **Start** starts what is down (a click may ask
 Windows for admin rights to start Bambuddy), and with "Keep running" on SnapSTL checks every minute and
@@ -24,7 +29,8 @@ PROJECT = "snapstl-bambuddy"
 SIDECARS = ("snapstl-bambu-studio-api", "snapstl-orca-slicer-api")
 SLICER_HEALTH = "http://127.0.0.1:3001/health"
 BAMBUDDY_HEALTH = "http://127.0.0.1:8000/api/v1/auth/status"
-CHECK_S = 60          # Keep running: how often SnapSTL looks
+OCTO_IMAGE = "octoeverywhere/octoeverywhere"  # the image the Plugin Manager runs, one container per printer
+CHECK_S = 60         # Keep running: how often SnapSTL looks
 DOCKER_WAIT_S = 6 * 60  # Docker Desktop's engine can take minutes to come up after sign-in
 
 
@@ -98,6 +104,22 @@ def sidecars() -> list[dict]:
     return [found.get(n, {"name": n, "state": "missing", "health": "", "status": ""}) for n in SIDECARS]
 
 
+def octo_plugins() -> list[dict]:
+    """OctoEverywhere's plugin containers (one per printer, made in its Plugin Manager): [{name, state, status}]."""
+    docker = platform_os.docker_cli()
+    if not docker:
+        return []
+    code, out = platform_os.run_quiet([docker, "ps", "-a", "--format", "{{.Names}}\t{{.Image}}\t{{.State}}\t{{.Status}}"],
+                                      timeout=20)
+    found = []
+    if code == 0:
+        for line in out.splitlines():
+            parts = line.split("\t")
+            if len(parts) == 4 and parts[1].split(":")[0].endswith(OCTO_IMAGE):
+                found.append({"name": parts[0], "state": parts[2], "status": parts[3]})
+    return found
+
+
 class Host:
     """Status, Start / Restart and the Keep running check (one action at a time, in the background)."""
 
@@ -123,9 +145,11 @@ class Host:
                          "ours": ours(), "version": version()},
             "docker": {"installed": bool(platform_os.docker_cli() or platform_os.docker_desktop()), "running": dock},
             "slicer": {"containers": sidecars() if dock else [], "answering": _answers(SLICER_HEALTH)},
+            "octoeverywhere": {**platform_os.octoeverywhere_manager(), "plugins": octo_plugins() if dock else []},
         })
         out["ok"] = (svc == "running" and out["bambuddy"]["answering"] and dock
-                     and all(c["state"] == "running" for c in out["slicer"]["containers"]))
+                     and all(c["state"] == "running" for c in out["slicer"]["containers"])
+                     and all(c["state"] == "running" for c in out["octoeverywhere"]["plugins"]))
         return out
 
     # ---- actions (background) ----
@@ -159,6 +183,30 @@ class Host:
     def restart_slicer(self) -> bool:
         return self._run("Restarting the slicer service", self._restart_slicer)
 
+    def restart_octoeverywhere(self) -> bool:
+        return self._run("Restarting OctoEverywhere", self._restart_octo)
+
+    def restart_docker(self) -> bool:
+        return self._run("Restarting Docker Desktop", self._restart_docker)
+
+    def restart_all(self) -> bool:
+        """Bambuddy (if SnapSTL's script installed it), the slicer service and OctoEverywhere's plugins."""
+        def go():
+            if ours():
+                self._restart_bambuddy()
+            else:
+                self._log("Bambuddy: not restarted (not installed by SnapSTL) — restart it in Windows Services")
+            self._restart_slicer()
+            self._restart_octo()
+        return self._run("Restarting everything", go)
+
+    def open_octoeverywhere(self) -> bool:
+        if not platform_os.open_octoeverywhere_manager():
+            raise PermissionError("The OctoEverywhere Plugin Manager isn't installed — run "
+                                  "scripts\\windows\\bambuddy-server.ps1 again or get it from the Microsoft Store")
+        self._log("OctoEverywhere Plugin Manager: opened (it updates its plugins when it opens)")
+        return True
+
     def _start(self, elevate: bool) -> None:
         if not is_here():
             self._log("Bambuddy isn't set up on this computer (scripts\\windows\\bambuddy-server.ps1)")
@@ -182,6 +230,7 @@ class Host:
                     return
                 time.sleep(5)
             self._log("Docker Desktop: running")
+        self._start_octo()
         if all(c["state"] == "running" for c in sidecars()):
             return
         cmd = compose_cmd()
@@ -191,6 +240,40 @@ class Host:
         base, cwd, env = cmd
         code, out = platform_os.run_quiet(base + ["up", "-d"], timeout=20 * 60, cwd=cwd, env=env)
         self._log("Slicer service: started" if code == 0 else f"Slicer service didn't start: {out[-300:]}")
+
+    def _start_octo(self) -> None:
+        """Start OctoEverywhere plugins that have stopped (never one that runs)."""
+        docker = platform_os.docker_cli()
+        down = [c["name"] for c in octo_plugins() if c["state"] != "running"]
+        if docker and down:
+            code, out = platform_os.run_quiet([docker, "start", *down], timeout=120)
+            self._log(f"OctoEverywhere: started {', '.join(down)}" if code == 0 else f"OctoEverywhere didn't start: {out[-300:]}")
+
+    def _restart_octo(self) -> None:
+        if not docker_running():
+            self._start_slicer()  # brings Docker Desktop up first
+        docker = platform_os.docker_cli()
+        names = [c["name"] for c in octo_plugins()]
+        if not docker or not names:
+            self._log("OctoEverywhere: no plugin set up yet — open the Plugin Manager and create one per printer")
+            return
+        code, out = platform_os.run_quiet([docker, "restart", *names], timeout=180)
+        self._log(f"OctoEverywhere: restarted {', '.join(names)}" if code == 0 else f"OctoEverywhere didn't restart: {out[-300:]}")
+
+    def _restart_docker(self) -> None:
+        if not platform_os.restart_docker_desktop():
+            self._log("Docker Desktop isn't installed — run scripts\\windows\\bambuddy-server.ps1 once")
+            return
+        self._log("Docker Desktop: restarting (the slicer and OctoEverywhere are away for a few minutes)")
+        time.sleep(10)
+        deadline = time.time() + DOCKER_WAIT_S
+        while not docker_running():
+            if time.time() > deadline:
+                self._log("Docker Desktop didn't come back — open it and finish any screens it shows")
+                return
+            time.sleep(5)
+        self._log("Docker Desktop: running")
+        self._start_slicer()
 
     def _restart_bambuddy(self) -> None:
         err = platform_os.control_service("restart", elevate=True)
@@ -215,7 +298,8 @@ class Host:
         self.last_check = time.time()
         svc = platform_os.service_state()
         dock = docker_running()
-        down = svc in ("stopped", "paused") or not dock or any(c["state"] != "running" for c in sidecars())
+        down = (svc in ("stopped", "paused") or not dock or any(c["state"] != "running" for c in sidecars())
+                or any(c["state"] != "running" for c in octo_plugins()))
         if down:
             self._log("Keep running: something had stopped — starting it")
             self.start(elevate=False)
