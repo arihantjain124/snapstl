@@ -151,6 +151,20 @@ function Invoke-BambuddyServerSetup {
   }
   if ($Bb -and $Bb.Service -and $Bb.Service.Status -ne "Running") { Start-Service -Name "Bambuddy" -ErrorAction SilentlyContinue }
 
+  # ---- 3b. this Windows user may start / restart the Bambuddy service (SnapSTL's Start button and its
+  #          Keep running check, which run without admin rights); nothing else about the service changes ----
+  if ($Bb -and $Bb.Service) {
+    $Sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $Sd = ((sc.exe sdshow Bambuddy) -join "").Trim()
+    if ($Sd -like "D:*" -and $Sd -notlike "*;;;$Sid)*") {
+      $Ace = "(A;;RPWPLCRC;;;$Sid)"   # start, stop, query status, read permissions
+      $i = $Sd.IndexOf("S:")
+      $NewSd = if ($i -ge 0) { $Sd.Insert($i, $Ace) } else { $Sd + $Ace }
+      sc.exe sdset Bambuddy $NewSd | Out-Null
+      Write-Host "SnapSTL (as $env:USERNAME) may now start Bambuddy without an admin prompt."
+    }
+  }
+
   # ---- 4. slicer service: compose file + .env; images downloaded only when missing ----
   if ($LocalCompose -and (Test-Path $LocalCompose)) { $Compose = Get-Content $LocalCompose -Raw }
   else { $Compose = (Invoke-WebRequest -UseBasicParsing "$Raw/scripts/bambuddy-docker/docker-compose.yml").Content }

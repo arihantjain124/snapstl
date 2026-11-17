@@ -466,6 +466,15 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <div class="toolbar" style="margin-top:10px"><button id="bbconnect">Connect</button><span class="hint grow" id="bbmsg"></span></div>
         <p class="hint">Bambuddy runs on one Windows computer for all SnapSTL computers (as a service, with its slicer service in Docker) — set it up there with <code>scripts\windows\bambuddy-server.ps1</code>; at the end it prints the address to enter here. On the Bambuddy computer itself, the sidebar's <b>IP address</b> line shows (and copies) that address. Add printers in Bambuddy; SnapSTL reads them and their filament.</p>
       </div>
+      <div class="card" id="hostcard" hidden>
+        <h2>This Bambuddy computer</h2>
+        <p class="hint">Bambuddy (a Windows service) and its slicer service (Docker Desktop) run on this computer. If either stops, press <b>Start</b> — no script to run again. With <b>Keep running</b> on, SnapSTL checks every minute and starts what has stopped (it never restarts anything that's running).</p>
+        <div id="hostparts" class="hint"></div>
+        <div class="toolbar" style="margin-top:10px"><button id="hoststart" class="primary">Start</button><button id="hostrbb">Restart Bambuddy</button><button id="hostrsl">Restart slicer</button>
+          <label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="hostkeep" style="width:auto"> Keep running</label><span class="hint grow" id="hostmsg"></span></div>
+        <p class="hint">Starting Bambuddy may show a Windows prompt asking to allow changes — choose Yes. Restarting Bambuddy doesn't stop prints already on the printers.</p>
+        <pre class="hint" id="hostlog" style="white-space:pre-wrap;margin:6px 0 0" hidden></pre>
+      </div>
       <div class="card" id="sharedcard">
         <h2>Shared order records <span class="hint">(optional)</span></h2>
         <p class="hint">Only for <b>several SnapSTL computers</b>: they share the records of every order taken into a batch, bundled or printed (in your Supabase project), so no order is made twice. Each computer still keeps its own database. Skip this with one computer.</p>
@@ -632,6 +641,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <div class="card" id="h-printers">
     <h2>Print (print farm)</h2>
     <p><b>Bambuddy</b>, the open-source print-farm manager, runs on one Windows computer (as a service, with only its slicer service in Docker), for every SnapSTL computer (set up with <code>bambuddy-server.ps1</code>). Each SnapSTL connects to it in <b>Settings → Connections</b> with that computer's address, e.g. <code>http://192.168.1.50:8000</code> — the sidebar's <b>IP address</b> line on the Bambuddy computer shows and copies it. Bambuddy is connected to your Bambu printers and keeps a queue per printer.</p>
+    <p>If Bambuddy or its slicer service stops, open SnapSTL on the Bambuddy computer: <b>Settings → Connections → This Bambuddy computer → Start</b> starts whatever is down (choose Yes if Windows asks). <b>Keep running</b> (on by default) does that by itself every minute; it never restarts anything that's running.</p>
     <ol>
       <li><b>On each printer:</b> Settings → Network → <b>LAN Only Mode</b> on, then <b>Developer Mode</b> on. Developer Mode disconnects the printer from Bambu Cloud and the Handy app.</li>
       <li><b>In Bambuddy</b> (Printers → <b>Open Bambuddy</b>): add each printer. Any printer can print bases or names — it only needs the right filament loaded.</li>
@@ -746,7 +756,7 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   for(const s of PAGES)$('t-'+s).hidden=s!==t;
-  if(t==='orders')loadOrders(); if(t==='batches'){loadBatches();loadQueue()} if(t==='makeit')loadMakeIt(); if(t==='printers')loadStatusAll(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
+  if(t==='orders')loadOrders(); if(t==='batches'){loadBatches();loadQueue()} if(t==='makeit')loadMakeIt(); if(t==='printers')loadStatusAll(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
 const PAGES=['orders','batches','makeit','printers','slicing','settings','help'];
 const OLD_PAGES={downloads:'batches',pstatus:'printers'};  // pages merged in 0.19
 
@@ -1121,6 +1131,28 @@ async function loadFarmSettings(){if(!META.local){$('farmsetcard').hidden=true;r
 }
 $('bbconnect').onclick=async()=>{$('bbmsg').textContent='Connecting…';$('bbmsg').style.color='';
   try{await post('/api/farm/connect',{url:$('bburl').value.trim(),api_key:$('bbkey').value.trim()});$('bbkey').value='';$('bbmsg').textContent='Connected.';loadFarmSettings();loadSetup();loadHealth()}catch(e){$('bbmsg').textContent=e.message;$('bbmsg').style.color='var(--err)'}};
+
+// ---------- this Bambuddy computer (Windows): start / restart Bambuddy and the slicer service ----------
+let HOSTPOLL=null;
+async function loadHost(){let h;try{h=await api('/api/bambuddy-host')}catch{return}
+  $('hostcard').hidden=!h.here||!META.local;if($('hostcard').hidden)return;
+  const ok=v=>v?'<b style="color:var(--ok)">running</b>':'<b style="color:var(--err)">stopped</b>';
+  const bb=h.bambuddy,dk=h.docker,sl=h.slicer;
+  const cs=(sl.containers||[]).map(c=>`${esc(c.name.replace('snapstl-',''))}: ${c.state==='running'?'<b style="color:var(--ok)">running</b>'+(c.health?' ('+esc(c.health)+')':''):'<b style="color:var(--err)">'+esc(c.state)+'</b>'}`).join(' · ');
+  $('hostparts').innerHTML=`Bambuddy ${esc(bb.version||'')}: ${ok(bb.service==='running'&&bb.answering)}${bb.service!=='running'?' (service '+esc(bb.service)+')':!bb.answering?' (not answering yet)':''}<br>`
+    +`Docker Desktop: ${dk.installed?ok(dk.running):'<b style="color:var(--err)">not installed</b> — run <code>scripts\\windows\\bambuddy-server.ps1</code> once'}<br>`
+    +`Slicer service: ${dk.running?(cs||'—'):'waits for Docker'}${sl.answering?'':' · <span style="color:var(--err)">not answering on 127.0.0.1:3001</span>'}`;
+  $('hostkeep').checked=!!h.keep_running;$('hostrbb').hidden=!bb.ours;
+  ['hoststart','hostrbb','hostrsl'].forEach(id=>$(id).disabled=!!h.busy);
+  $('hostmsg').textContent=h.busy?h.busy+'…':h.ok?'All running.':'';$('hostmsg').style.color='';
+  $('hostlog').hidden=!(h.log||[]).length;$('hostlog').textContent=(h.log||[]).join('\n');
+  clearTimeout(HOSTPOLL);if(h.busy||!h.ok)HOSTPOLL=setTimeout(()=>{if(!$('hostcard').closest('[data-sec]').hidden)loadHost()},h.busy?3000:15000)}
+async function hostAct(action,confirmText){if(confirmText&&!confirm(confirmText))return;
+  try{await post('/api/bambuddy-host/'+action,{});$('hostmsg').textContent='Working…';setTimeout(loadHost,800)}catch(e){$('hostmsg').textContent=e.message;$('hostmsg').style.color='var(--err)'}}
+$('hoststart').onclick=()=>hostAct('start');
+$('hostrbb').onclick=()=>hostAct('restart-bambuddy','Restart Bambuddy? Prints already running on the printers continue; Bambuddy is away for about a minute.');
+$('hostrsl').onclick=()=>hostAct('restart-slicer','Restart the slicer service? A slice in progress fails and has to be sliced again.');
+$('hostkeep').onchange=async()=>{try{await post('/api/bambuddy-host/keep-running',{on:$('hostkeep').checked});loadHost()}catch(e){$('hostmsg').textContent=e.message;$('hostmsg').style.color='var(--err)'}};
 
 // ---------- Printers (everything from Bambuddy, read only) ----------
 const PSOPEN=new Set();

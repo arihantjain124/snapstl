@@ -70,6 +70,8 @@ DEFAULTS = {
     "color_overrides": {},
     "auto_slice": True,           # slice new plates by themselves (printing still needs Start print)
     "print_defaults": {},         # Bambuddy printer id (str) → {speed, bed_levelling, flow_cali, timelapse, plate_type}
+    # on the Windows Bambuddy computer: start Bambuddy / Docker / the slicer service when they stop (bambuddy_host)
+    "keep_bambuddy_running": True,
 }
 PRESET_SLOTS = ("printer", "process", "filament")
 SPEEDS_SET = {"silent": 1, "standard": 2, "sport": 3, "ludicrous": 4}  # print speed per job (Make It)
@@ -498,7 +500,13 @@ def bambuddy_presets(cfg: dict | None = None, refresh: bool = False, status: dic
     {printer|process|filament: [{key: "source:id", name, source}]}, in Bambuddy's order (yours in Bambuddy,
     Orca cloud, Bambu cloud, the slicer's standard ones). `refresh` makes Bambuddy read its cloud lists
     again; `status` (if given) gets why a cloud tier is empty."""
-    r = api("GET", "/slicer/presets" + ("?refresh=true" if refresh else ""), cfg=cfg, timeout=30) or {}
+    try:
+        r = api("GET", "/slicer/presets" + ("?refresh=true" if refresh else ""), cfg=cfg, timeout=30) or {}
+    except FarmError as e:
+        if "internal server error" in str(e).lower():  # Bambuddy's own crash (its log has why); usually CLOUD_LIST_BUG
+            raise FarmError(f"Bambuddy failed listing its profiles ({e}). If Bambuddy is signed in to Bambu Cloud, "
+                            f"this is likely the known Bambuddy bug: {CLOUD_LIST_HINT}") from e
+        raise
     if not isinstance(r, dict):
         raise FarmError("Bambuddy's list of slicer profiles came back in an unexpected form — is Bambuddy up to date?")
     out: dict[str, list[dict]] = {"printer": [], "process": [], "filament": []}
@@ -734,9 +742,22 @@ def _percent(snap) -> float | None:
     return None
 
 
+# Bambuddy ≤ 1.3.2 crashes reading Bambu Cloud's profile list when a section of it comes back empty (null):
+# `raw.get("print", {}).get("private")` in its slicer_presets.py. Every slice loads that list, so while Bambuddy
+# is signed in to Bambu Cloud every slice fails with this — whatever profiles are picked.
+CLOUD_LIST_BUG = "'nonetype' object has no attribute 'get'"
+CLOUD_LIST_HINT = ("Bambuddy couldn't read the profile list Bambu Cloud sent (a known Bambuddy bug when Bambu Cloud "
+                   "returns an empty section), so no plate can be sliced while Bambuddy is signed in to Bambu Cloud. "
+                   "Fix: update Bambuddy to a version that handles it, or in Bambuddy sign out of Bambu Cloud "
+                   "(Settings → Bambu Cloud), then pick the same profiles from the standard list in Slicing "
+                   "and slice again.")
+
+
 def slicer_hint(err: str) -> str:
     """Plain English for Bambuddy's slicer errors."""
     low = (err or "").lower()
+    if CLOUD_LIST_BUG in low:
+        return f"{CLOUD_LIST_HINT} Details: {err}"
     if "unreachable" in low or "sidecar" in low or "connection refused" in low:
         return ("Bambuddy's slicer isn't running: in Bambuddy open Settings → Slicer, start its slicer service "
                 "(Docker) and turn on Use Slicer API. Details: " + err)
