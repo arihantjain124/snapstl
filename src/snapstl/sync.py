@@ -233,7 +233,10 @@ _UPSERT = (
     f"INSERT INTO {SCHEMA}.order_records AS r ({', '.join(_COLS)}) "
     f"VALUES ({', '.join('%(' + c + ')s' for c in _COLS)}) ON CONFLICT (order_id) DO UPDATE SET "
     + ", ".join(f"{c} = CASE WHEN {_WIN} THEN EXCLUDED.{c} ELSE r.{c} END" for c in _STATE_GROUP) + ", "
-    + ", ".join(f"{c} = CASE WHEN {_WIN} OR (r.state = 'released' AND EXCLUDED.state = 'released') "
+    # Skip / Make anyway are a person's choice: only a newer change (_WIN) may set or undo a skip, so a
+    # computer that hasn't heard of the skip yet can't overwrite it with its older "ready"
+    + ", ".join(f"{c} = CASE WHEN {_WIN} OR (r.state = 'released' AND EXCLUDED.state = 'released' "
+                "AND 'skipped' NOT IN (COALESCE(r.app_state, ''), COALESCE(EXCLUDED.app_state, ''))) "
                 f"THEN EXCLUDED.{c} ELSE r.{c} END" for c in _VIEW) + ", "
     + ", ".join(f"{c} = CASE WHEN {_WIN} THEN COALESCE(EXCLUDED.{c}, r.{c}) ELSE r.{c} END" for c in ("name", "color"))
     + ", "
@@ -388,6 +391,22 @@ def _review(r: dict) -> tuple[str, str | None]:
     return judge(r.get("name") or "", r.get("color") or "", review, (r.get("source_status") or "").upper())
 
 
+_VIEW_STATES = ("ready", "needs_review", "skipped")
+
+
+def _view(L: dict, r: dict, status: str | None) -> dict:
+    """Local changes for an order nobody makes, from the app state another computer last sent
+    (`app_state`): Skip → skipped; Make anyway / Approve → ready or needs review (by its review reason
+    and the webstore status). Empty when the record carries no such state (older SnapSTL, not needed)."""
+    app = r.get("app_state")
+    if app not in _VIEW_STATES:
+        return {}
+    if app == "skipped":
+        return {"state": "skipped"}
+    review = r.get("review_reason")
+    return {"state": _evaluate({**L, "review_reason": review}, status), "review_reason": review}
+
+
 def _many(rc, sql: str, params: list[dict]) -> list[dict]:
     """One statement per params, sent together (pipelined); the RETURNING row of each, in order."""
     if not params:
@@ -420,6 +439,9 @@ def merge(con, r: dict, force: bool = False) -> str | None:
         review = None
         if state == "released" or stale:
             state, review = _review(r)
+            if r.get("app_state") in _VIEW_STATES:  # skipped / approved on another computer
+                v = _view({"color": r.get("color")}, r, r.get("source_status"))
+                state, review = v["state"], v.get("review_reason", r.get("review_reason"))
         local_batch = None
         if mine and r.get("batch_uid") in uids:
             row = con.execute("SELECT id FROM batches WHERE uid=?", (r["batch_uid"],)).fetchone()
@@ -428,13 +450,14 @@ def merge(con, r: dict, force: bool = False) -> str | None:
             "INSERT INTO orders(order_id,clubbed_id,sku,order_date,source_status,quantity,raw_name,raw_color,"
             "special_request,name,color,review_reason,state,batch_id,first_file,last_file,first_seen,updated_at,"
             "customer_name,phone,address,state_at,status_at,in_remote,batch_uid,batch_label,batch_computer,"
-            "batch_computer_id,printed_at,bundled_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?)",
+            "batch_computer_id,printed_at,bundled_at,made_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?)",
             (oid, r.get("clubbed_id"), r.get("sku") or "Magicians_35", r.get("order_date"), r.get("source_status"),
              r.get("quantity") or 1, r.get("raw_name"), r.get("raw_color"), r.get("special_request"), r.get("name"),
              r.get("color"), review, state, local_batch, "shared records", "shared records", db.now(), db.now(),
              r.get("customer_name"), r.get("phone"), r.get("address"), r["state_at"], r.get("status_at"),
              r.get("batch_uid") if state in ("in_batch", "bundled", "printed") else None, r.get("batch_label"),
-             r.get("computer_name"), r.get("computer_id"), r.get("printed_at"), r.get("bundled_at")))
+             r.get("computer_name"), r.get("computer_id"), r.get("printed_at"), r.get("bundled_at"),
+             r.get("made_at") if state in ("bundled", "printed") else None))
         return oid if stale else None
 
     sets: dict = {"in_remote": 1}
@@ -460,10 +483,17 @@ def merge(con, r: dict, force: bool = False) -> str | None:
         if st == "in_batch" and mine and not own_live:
             stale = oid  # this computer's claim, but the batch is gone here: release it
         elif st == "released":
-            if L["state"] in ("in_batch", "bundled", "printed") and not (L["state"] == "in_batch" and L["batch_id"]):
-                sets.update(state=_evaluate(L, sets.get("source_status", L.get("source_status"))), batch_id=None,
-                            batch_uid=None, batch_label=None, batch_computer=None, batch_computer_id=None,
-                            printed_at=None, state_at=r["state_at"])
+            status = sets.get("source_status", L.get("source_status"))
+            making = L["state"] in ("in_batch", "bundled", "printed") and not (L["state"] == "in_batch" and L["batch_id"])
+            if making:
+                sets.update(state=_evaluate(L, status), batch_id=None, batch_uid=None, batch_label=None,
+                            batch_computer=None, batch_computer_id=None, printed_at=None, made_at=None,
+                            state_at=r["state_at"])
+            if making or sets.get("state", L["state"]) in ("ready", "needs_review", "not_needed", "skipped"):
+                # Skip / Make anyway / Approve pressed on another computer
+                v = _view({**L, **sets}, r, status)
+                if v and (v["state"] != L["state"] or v.get("review_reason", L["review_reason"]) != L["review_reason"]):
+                    sets.update(v, state_at=r["state_at"])
         elif not (L["state"] == "in_batch" and L["batch_id"] and not mine):  # never pull out of a live local batch
             local_batch = L["batch_id"] if own_live else None
             if own_live and local_batch is None:
@@ -473,6 +503,12 @@ def merge(con, r: dict, force: bool = False) -> str | None:
                         batch_label=r.get("batch_label"), batch_computer=r.get("computer_name"),
                         batch_computer_id=r.get("computer_id"), printed_at=r.get("printed_at"),
                         bundled_at=r.get("bundled_at"), state_at=r["state_at"])
+    # Ready to ship (base and name printed) is worked out by the batch's computer; others mirror it.
+    # It doesn't change state_at, so it's taken whenever both sides agree on the state.
+    final = sets.get("state", L["state"])
+    if ((force or not pending) and final in ("bundled", "printed") and r.get("state") == final
+            and r.get("made_at") != L.get("made_at")):
+        sets["made_at"] = r.get("made_at")
     cols = ", ".join(f"{k}=?" for k in sets)
     con.execute(f"UPDATE orders SET {cols} WHERE order_id=?", (*sets.values(), oid))
     return stale
@@ -517,6 +553,7 @@ def claim(orders: list[dict], batch_uid: str) -> tuple[list[str], float]:
 
 # ---------------- push / pull ----------------
 TABS_SENT = "tabs_v1"  # sync_state key: every order sent once with app_state / review_reason / made_at
+VIEW_SENT = "view_v1"  # sync_state key: skips sent again + one full pull, since merge applies app_state / made_at
 
 
 def _push(rc) -> int:
@@ -527,6 +564,13 @@ def _push(rc) -> int:
             con.execute("INSERT OR IGNORE INTO sync_outbox(order_id, queued_at) SELECT order_id, ? FROM orders "
                         "WHERE COALESCE(in_remote,0)=1", (db.now(),))
             con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES (?, '1')", (TABS_SENT,))
+        if not con.execute("SELECT 1 FROM sync_state WHERE key=?", (VIEW_SENT,)).fetchone():
+            # before 0.22.21 Skip / Make anyway / Approve and Ready to ship stayed on the computer they were
+            # pressed on: send this computer's skips again and read every record once more
+            con.execute("INSERT OR IGNORE INTO sync_outbox(order_id, queued_at) SELECT order_id, ? FROM orders "
+                        "WHERE state='skipped' AND COALESCE(in_remote,0)=1", (db.now(),))
+            con.execute("DELETE FROM sync_state WHERE key='pulled_until'")
+            con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES (?, '1')", (VIEW_SENT,))
         con.execute("INSERT OR IGNORE INTO sync_outbox(order_id, queued_at) SELECT order_id, ? FROM orders "
                     "WHERE COALESCE(in_remote,0)=0", (db.now(),))
         queued = db.rows(con, "SELECT o.*, q.queued_at FROM sync_outbox q JOIN orders o USING(order_id) "
@@ -535,7 +579,10 @@ def _push(rc) -> int:
                                              "(SELECT order_id FROM orders)")]
         if orphans:
             con.execute(f"DELETE FROM sync_outbox WHERE order_id IN ({','.join('?' * len(orphans))})", orphans)
-    offers = [o for o in queued if not o.get("in_remote") and o["state"] not in ("in_batch", "bundled", "printed")]
+    # a skip is a person's choice, not just a report's order: it goes by the normal rules (_UPSERT), so it
+    # also reaches a record another computer offered first
+    offers = [o for o in queued if not o.get("in_remote")
+              and o["state"] not in ("in_batch", "bundled", "printed", "skipped")]
     changes = [o for o in queued if o not in offers]
     results = []
     for group, sql in ((offers, _OFFER), (changes, _UPSERT)):

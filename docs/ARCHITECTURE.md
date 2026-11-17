@@ -177,7 +177,7 @@ columns — the owner's order history lives here.
 | `state_at` | when `state` last changed (trigger) |
 | `status_at` | how recent `source_status` is: `event date|newest entry in the file|upload time` (`ingest.status_stamp`) |
 | `in_remote`, `batch_uid`, `batch_label`, `batch_computer`, `batch_computer_id`, `bundled_at`, `printed_at` | shared order records: its batch (also on other computers), when bundled / printed |
-| `made_at` | base and name both printed in Print (`makeit.update_made`) → tab **Ready to ship** (`state='bundled' AND made_at IS NOT NULL`; **Bundled** = not made yet). Local only |
+| `made_at` | base and name both printed in Print (`makeit.update_made`) → tab **Ready to ship** (`state='bundled' AND made_at IS NOT NULL`; **Bundled** = not made yet). Set by the batch's computer, mirrored on the others through the shared records (0.22.21) |
 
 **batches** — `id`, `created_at`, `status` (§8), `order_ids` (JSON), `settings` (JSON snapshot at
 creation), `out_dir`, `summary` (JSON: plates + previews, errors, warnings, `folder`, `label`),
@@ -607,6 +607,7 @@ snapstl.server:app --port 8320`.
 | 62 | **No cloud profiles** (0.22.19): since 17 Nov 2026 Bambu Cloud's profile *list* answers with an empty (null) printer section; Bambuddy 1.3.1 crashes on it (`'NoneType' object has no attribute 'get'`) in its profile list and in slices with a Bambu Cloud process profile. Owner decision: no Bambu Cloud / Orca Cloud in SnapSTL — `farm.PRESET_TIERS` lists only Bambuddy's local and standard profiles, `cloud_problem` is gone, SnapSTL's key never asks for cloud access. Printers slice with self-contained "SnapSTL …" profiles built from the local Bambu Studio's system profiles (P1S: GM014 / GP004 / GFSA00_34, A1: GM030 / GP079 / GFSA00_04; inherits + includes resolved) and imported by the owner in Bambuddy → Local Profiles. Bambuddy stays the unmodified release (a local patch was tried and reverted at the owner's request); with its cloud sign-in on, its own profile list still fails — sign Bambuddy out of Bambu Cloud | slicing must not depend on Bambu Cloud |
 | 63 | **The SnapSTL task runs with no window** (0.22.19): the task starts `conhost.exe --headless powershell … run-service.ps1` (`Register-SnapSTLTask` in `common.ps1`). On Windows 11 consoles open in Windows Terminal, which ignores `-WindowStyle Hidden`: a terminal stayed open and closing it stopped SnapSTL (task result 0xC000013A). Older installs switch at their next start (`Repair-SnapSTLTask` in run-service / update) | owner saw a terminal open with the app; closing it took SnapSTL down |
 | 64 | **Filament slot per print, any printer** (0.22.20): Print lists every printer (none greyed out by colour) and, under the chosen one, its loaded slots best fit first (`farm.tray_choices`: exact colour name, then same family, then nearest hex; then most filament left). The chosen slot (Bambu global tray id: AMS n·4+slot, AMS HT id, 254 external) is stored in `print_jobs.ams_tray` and sent as Bambuddy's `ams_mapping` (queue item create / PATCH). The Printers page's "prints as …" mapping (`color_overrides`, #0.22.7) is removed; **Refresh from Bambuddy** (`POST /api/farm/refresh`) asks each printer for a full status report (`/printers/{id}/refresh-status`) and clears SnapSTL's caches | owner: pick the colour by AMS slot at print time, any printer allowed |
+| 65 | **Skip, Make anyway, Approve and Ready to ship reach every computer** (0.22.21): `sync.merge` applies the record's `app_state` / `review_reason` (newer `state_at` wins) and `made_at`; `_UPSERT` keeps a skip unless a newer change undoes it; Remake clears `made_at`; once after updating each computer re-sends its skips and pulls every record again (`sync.VIEW_SENT`) | owner: orders skipped or bundled/ready to ship on one computer stayed that way only on that computer — Supabase had the skip (tab) but other computers never applied it, and could overwrite it |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -771,6 +772,11 @@ in `APP_DIR/shared-records.json` (mode 600, never returned in full). Without it 
   `bundled` or `printed` with `batch_id NULL` plus `batch_label` and `batch_computer`. A claim of
   this computer whose batch is gone (e.g. after a reset) is released. An order with a pending local
   change keeps it until the push has run.
+  Since 0.22.21 a merge also takes `app_state` / `review_reason` of an order nobody makes (Skip,
+  Make anyway, Approve pressed on another computer, newer `state_at` wins; `sync._view`) and `made_at`
+  (Ready to ship, worked out by the batch's computer) whenever both sides agree on the state. In
+  `_UPSERT` a skip is set or undone only by a newer change, so a computer that hasn't pulled the skip
+  can't overwrite it; a local skip the records lack goes through `_UPSERT`, not `_OFFER`.
 - **When it runs:** `sync.LOOP` runs every 60 s and is woken right after batches finish, orders are
   marked printed, reset or skipped, and after a report upload. An upload syncs before ingesting too.
   **Settings → Connections → Sync now** runs `/api/sync`. `GET /api/shared-records?check=1` adds

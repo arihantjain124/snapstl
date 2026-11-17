@@ -388,7 +388,7 @@ def reset_to_ready(order_id: str, db_path: Path | None = None) -> None:
         state = "needs_review" if cur["review_reason"] else "ready"
         con.execute(
             "UPDATE orders SET state=?, batch_id=NULL, batch_uid=NULL, batch_label=NULL, batch_computer=NULL, "
-            "batch_computer_id=NULL, printed_at=NULL, updated_at=? WHERE order_id=?",
+            "batch_computer_id=NULL, printed_at=NULL, made_at=NULL, updated_at=? WHERE order_id=?",
             (state, db.now(), order_id),
         )
 
