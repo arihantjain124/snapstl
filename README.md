@@ -426,7 +426,8 @@ The bottom of the sidebar shows at a glance whether the **Helper**, **Bambuddy**
      piece, then **Use returned piece** sends it instead of making a new one (**Undo returned piece**
      to make it after all).
    - Type in the boxes under the column names to filter. Choose columns under **Choose columns**; **Save current view** remembers the columns, category and filters in this browser. Use the controls below the table to change pages and rows per page.
-   - In **Check name first**, fix the name or colour and click **Approve**.
+   - In **Check name first**, fix the name or colour and click **Approve**. Names starting with a small
+     letter (e.g. *riya*) land here too: usually a typing slip, so check it with the customer.
 3. **Make a batch.** In **New orders – to make**, tick orders (or **Select all matching**), then click
    **Create batch**. They move to **Ready to print**.
 4. **Download the models.** Go to **Batches → Queue download**. The helper makes each name in your

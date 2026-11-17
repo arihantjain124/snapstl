@@ -44,6 +44,11 @@ async def _lifespan(_app):
         makeit.backfill_started()           # one-time (0.23): Printing for orders whose plates were started
     except Exception as e:  # noqa: BLE001  (never block starting the app)
         print(f"SnapSTL: Printing backfill skipped: {e}")
+    try:
+        from .ingest import recheck_small_first
+        recheck_small_first()               # one-time (0.23.1): waiting names with a small first letter → Check name
+    except Exception as e:  # noqa: BLE001
+        print(f"SnapSTL: name re-check skipped: {e}")
     MANAGER.start()  # builds batches once their models arrive
     DOWNLOADER.pause_s = SETTINGS.delay_between_downloads_s
     DOWNLOADER.start()  # re-queues names that were mid-download when the app stopped

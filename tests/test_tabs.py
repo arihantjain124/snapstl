@@ -179,3 +179,24 @@ def test_starting_a_plate_moves_its_orders_to_printing(tmp_path, monkeypatch):
     sql(db.DB_PATH, "UPDATE orders SET print_started_at=NULL")
     assert makeit.backfill_started() >= 1 and get(db.DB_PATH, "S2")["print_started_at"]
     assert makeit.backfill_started() == 0
+
+
+def test_a_name_starting_with_a_small_letter_is_checked_first(tmp_path):
+    """0.23.1: "riya" is almost always a typing slip — Check name first; the name still prints as typed."""
+    from snapstl.ingest import SMALL_FIRST, clean_name, recheck_small_first
+
+    assert clean_name("riya") == ("riya", SMALL_FIRST)
+    assert clean_name("Riya") == ("Riya", None)
+    assert clean_name("❤️ riya")[1] == SMALL_FIRST  # after the heart is dropped
+    p = tmp_path / "t.db"
+    ingest(report([("L1", "PRINT")]), "a.csv", p)
+    with db.tx(p) as con:  # as orders from before 0.23.1: lower-case names already Ready
+        con.execute("INSERT INTO orders(order_id, sku, source_status, name, raw_name, color, state, first_status) VALUES "
+                    "('L2','Magicians_35','PRINT','riya','riya','pink','ready','PRINT'), "
+                    "('L3','Magicians_35','PRINT','meera','meera','pink','ready','PRINT')")
+        con.execute("UPDATE orders SET name_edited=1 WHERE order_id='L3'")  # a person already approved it
+    assert recheck_small_first(p) == 1
+    l2 = get(p, "L2")
+    assert (l2["state"], tab(p, "L2"), l2["review_reason"]) == ("needs_review", "check_name", SMALL_FIRST)
+    assert get(p, "L3")["state"] == "ready" and get(p, "L1")["state"] == "ready"
+    assert recheck_small_first(p) == 0  # only once

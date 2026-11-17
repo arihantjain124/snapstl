@@ -92,6 +92,26 @@ def _is_emoji_or_symbol(ch: str) -> bool:
     return cat.startswith("S") or cat in ("Mn", "Me", "Cf", "Co", "Cs") or ord(ch) in (0xFE0F, 0x200D)
 
 
+SMALL_FIRST = "Name starts with a small letter — check it with the customer"
+
+
+def recheck_small_first(db_path: Path | None = None) -> int:
+    """Once after updating to 0.23.1: orders still waiting to be made (Ready, name not checked by a person)
+    whose name starts with a small letter go to Check name first. Returns how many moved."""
+    with db.tx(db_path) as con:
+        if con.execute("SELECT 1 FROM sync_state WHERE key='small_first_v1'").fetchone():
+            return 0
+        rows = db.rows(con, "SELECT order_id, name, review_reason FROM orders WHERE state='ready' "
+                            "AND COALESCE(name_edited,0)=0 AND COALESCE(name,'')<>'' AND reuse_of IS NULL")
+        moved = [r for r in rows if r["name"][0].islower()]
+        for r in moved:
+            reason = "; ".join(x for x in [r["review_reason"], SMALL_FIRST] if x)
+            con.execute("UPDATE orders SET state='needs_review', review_reason=?, updated_at=? WHERE order_id=?",
+                        (reason, db.now(), r["order_id"]))
+        con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('small_first_v1', '1')")
+    return len(moved)
+
+
 def clean_name(raw: str) -> tuple[str, str | None]:
     """Return (name_to_print, review_reason or None)."""
     s = unicodedata.normalize("NFC", (raw or "").strip())
@@ -112,6 +132,8 @@ def clean_name(raw: str) -> tuple[str, str | None]:
         reasons.append("Removed " + " ".join(repr(c) for c in dict.fromkeys(dropped_other)))
     if not name:
         return "", "Name has no letters"
+    if name[0].islower():  # 0.23.1: almost always a typing slip (owner); the name prints as typed
+        reasons.append(SMALL_FIRST)
     if " " in name:
         reasons.append("Name has a space — confirm the text to print")
     if any(ord(c) > 0x24F for c in name if c.isalpha()):
