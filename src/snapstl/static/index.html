@@ -38,6 +38,18 @@ nav#tabs .ic{width:18px;text-align:center;font-size:15px}
 .help h2{font-size:15px}.help p,.help li{font-size:13.5px;line-height:1.6}.help ol,.help ul{padding-left:20px;margin:6px 0}
 .help code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12px}
 .help .toc{display:flex;gap:6px;flex-wrap:wrap}.help .toc a{font-size:12px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;text-decoration:none}
+.qpanel{position:fixed;right:16px;bottom:16px;z-index:20;width:400px;max-width:calc(100vw - 32px);background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);display:flex;flex-direction:column;max-height:55vh;font-size:13px}
+.qpanel .qhead{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.qpanel .qhead b{flex:1}
+.qpanel .qtabs{display:flex;gap:4px;padding:6px 8px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.qpanel .qtabs button{padding:3px 9px;font-size:12px;border-radius:999px}
+.qpanel .qtabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.qpanel .qlist{overflow:auto;padding:4px 10px 8px}
+.qpanel .qrow{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-top:1px solid var(--line)}
+.qpanel .qrow:first-child{border-top:0}
+.qpanel .qrow .qm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qpanel .qrow .qs{white-space:nowrap}
+.qpanel.min{width:auto}.qpanel.min .qtabs,.qpanel.min .qlist{display:none}.qpanel.min .qhead{border-bottom:0}
 button,.btn{font:inherit;padding:6px 12px;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer;white-space:nowrap}
 button:hover{border-color:var(--muted)}
 button.primary,.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -245,7 +257,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 
 <section id="t-makeit" hidden>
   <div class="card">
-    <div class="toolbar"><h2 style="margin:0">Print</h2><span class="grow hint" id="mkinfo"></span><button class="small" id="slp_all" title="Slice every waiting plate now, each for its chosen printer">Slice all waiting</button><button class="small" id="mkrefresh">Refresh</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
+    <div class="toolbar"><h2 style="margin:0">Print</h2><span class="grow hint" id="mkinfo"></span><button class="small" id="slp_all" title="Queue every waiting plate for slicing, each with the profiles of the printer chosen for it">Slice all waiting</button><button class="small" id="mkrefresh">Refresh</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
     <div class="msgs" id="mkmsgs"></div><div class="hint" id="slp_allmsg"></div>
     <div class="chips" id="mktabs"></div>
     <div id="mk-bases" class="mkpane">
@@ -265,6 +277,11 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Removed</th><th></th></tr></thead><tbody id="mkremoved"></tbody></table></div>
     </div>
   </div>
+  <div class="qpanel" id="qpanel">
+    <div class="qhead"><b>Queues</b><span class="hint" id="qsum"></span><button class="small" id="qtoggle" title="Hide or show the queue panel">Hide</button></div>
+    <div class="qtabs" id="qtabs"></div>
+    <div class="qlist" id="qlist"></div>
+  </div>
 </section>
 
 <section id="t-slicing" hidden>
@@ -279,8 +296,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="card">
       <h2>Bambuddy's slicer</h2>
       <p class="hint under" id="slp_bbmsg"></p>
-      <label class="check"><input type="checkbox" id="slp_auto"> <b>Slice new plates automatically</b></label>
-      <p class="hint under">Each new plate is sliced for the printer pre-selected for it in Print, so it's ready when you press Start print. Off: a plate is sliced when you press Slice or Start print.</p>
+      <p class="hint under">Nothing is sliced by itself: press <b>Slice</b> (or <b>Slice all waiting</b>) in Print to queue a plate for the printer chosen for it, or <b>Start print</b> slices it first if needed.</p>
     </div>
     <div class="card" id="slp_presetcard">
       <h2>Bambuddy profiles per printer</h2>
@@ -313,7 +329,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <ul class="hint" style="padding-left:18px;margin:4px 0">
         <li>The process profile must be made for that printer profile; otherwise Bambuddy's slicer fails and the plate says why.</li>
         <li>Name plates are sliced in their colour, bases in white — one filament profile per model is enough.</li>
-        <li>Picking other profiles slices that model's plates again (automatically or at Start print); plates already printed aren't touched.</li>
+        <li>Picking other profiles means a new slice for that printer's plates (press <b>Slice</b> again, or Start print slices it); plates already printed aren't touched.</li>
         <li>A profile deleted in Bambuddy makes slicing fail for that model until you pick another here.</li>
       </ul>
    </div>
@@ -359,7 +375,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <tr><td class="k">Batches</td><td>Download models from MakerWorld and build plates; the download queue.</td></tr>
         <tr><td class="k">Print</td><td>Send each plate to a printer and start it (Bases / Names / Completed / Removed).</td></tr>
         <tr><td class="k">Printers</td><td>What every printer is doing and the filament loaded, live from Bambuddy.</td></tr>
-        <tr><td class="k">Slicing</td><td>Bambuddy profiles, automatic slicing and print defaults per printer.</td></tr>
+        <tr><td class="k">Slicing</td><td>Bambuddy profiles and print defaults per printer.</td></tr>
         <tr><td class="k">Settings</td><td>This page: the product, plates, folders, connections and maintenance.</td></tr>
       </table>
     </div>
@@ -666,7 +682,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Bambuddy's slicer service</b> — Bambuddy → Settings → Slicer: <b>Use Slicer API</b> on, with the sidecar URL. Its <b>Preferred Slicer</b> decides Bambu Studio or OrcaSlicer.</li>
       <li><b>Plate type per printer</b> (Print defaults) — the build plate on that printer (Textured PEI, Cool, Engineering, High Temp, Supertack, Textured Cool). Its plates are sliced for that plate, so the bed temperature is right and Bambuddy and the printer show the right plate. <i>Profile's plate</i> = what the process profile says (often Cool Plate). Changing it slices that printer's plates again.</li>
       <li><b>Print defaults per printer</b> — speed, bed levelling, flow calibration and timelapse each printer uses at Start print (changeable per plate in Print). The <b>speed</b> is set on the printer once it really prints (after heating and calibration), checked against what the printer reports and sent again if it didn't take; if the printer still won't change, the print says so.</li>
-      <li><b>Slice new plates automatically</b> — each new plate is sliced for its pre-selected printer. A slice with no progress for 20 minutes is stopped with a message; a failed automatic slice isn't retried by itself (<b>Slice</b> again in Print).</li>
+      <li><b>Queues</b> (bottom right of Print) — tabs <b>Downloading</b>, <b>Building</b>, <b>Slicing</b> and <b>Printing</b>: what's running or waiting first, then the last few finished, refreshed every 5 seconds. <b>Hide</b> shrinks it to one line with the counts; <b>Show</b> opens it again (remembered on this computer).</li>
+      <li><b>Slicing only when you ask</b> — nothing is sliced by itself. In Print, choose the printer for a plate and press <b>Slice</b>: it joins the slicing queue (one at a time) with that printer's profiles, and the row shows the slice for the printer selected. <b>Slice all waiting</b> does the same for every plate with a printer chosen. Start print slices first if the plate isn't sliced for that printer yet. A slice with no progress for 20 minutes is stopped with a message.</li>
     </ul>
   </div>
 
@@ -756,7 +773,7 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   for(const s of PAGES)$('t-'+s).hidden=s!==t;
-  if(t==='orders')loadOrders(); if(t==='batches'){loadBatches();loadQueue()} if(t==='makeit')loadMakeIt(); if(t==='printers')loadStatusAll(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
+  if(t==='orders')loadOrders(); if(t==='batches'){loadBatches();loadQueue()} if(t==='makeit'){loadMakeIt();loadQueues()} if(t==='printers')loadStatusAll(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
 const PAGES=['orders','batches','makeit','printers','slicing','settings','help'];
 const OLD_PAGES={downloads:'batches',pstatus:'printers'};  // pages merged in 0.19
 
@@ -972,14 +989,15 @@ function mkChips(){if(!MK)return;const n={bases:MK.bases.length,names:MK.names.l
   $('mktabs').innerHTML=[['bases','Bases'],['names','Names'],['completed','Completed'],['removed','Removed']].map(([k,l])=>`<button data-mk="${k}" class="${MKTAB===k?'on':''}">${l} · ${n[k]}</button>`).join('');
   document.querySelectorAll('[data-mk]').forEach(b=>b.onclick=()=>mkShow(b.dataset.mk))}
 const mkKey=r=>r.batch_id+'|'+r.file;
-function sliceCell(r,sel){const sl=r.slice,k=esc(mkKey(r));
-  const other=r.slice_for&&sel&&sel.printer&&String(r.slice_for)!==sel.printer?`<div class="hint">for ${esc(mkPrinter(r.slice_for).name||'')} — Start print slices it for your choice if needed</div>`:'';
+function sliceCell(r,sel){const k=esc(mkKey(r)),c=sel&&sel.printer?r.choices.find(x=>String(x.id)===sel.printer):null;
+  if(!c)return `<span class="pill">Not sliced</span><div class="hint">Choose a printer — a plate is sliced with its printer's profiles</div>`;
+  const sl=c.slice,who=`<div class="hint">for ${esc(c.name)}</div>`;
   if(sl&&sl.state==='needs_presets')return `<span class="pill warn">No profiles for ${esc(sl.printer)}</span><div class="hint"><a href="#" data-go="slicing">Pick them in Slicing</a></div>`;
-  if(r.sliced)return `<span class="pill ok">Sliced</span> <button class="small" data-mkslice="${k}" data-again="1" title="Slice it again in Bambuddy with the current profiles">↻</button>${other}`;
-  if(sl&&['queued','uploading','slicing'].includes(sl.state))return `<span class="pill info">${sl.state==='queued'?'Waiting to slice':sl.state==='uploading'?'Sending to slicer':'Slicing'+(sl.progress?' '+Math.round(sl.progress)+'%':'')}</span>${other}`;
-  const btn=`<button class="small" data-mkslice="${k}" title="Slice it now for the chosen printer">Slice</button>`;
-  if(sl&&sl.state==='failed')return `<span class="pill err">Slicing failed</span> ${btn}<div class="reason">${esc(sl.error||'')}</div>`;
-  return `<span class="pill">Not sliced</span> ${btn}${other}`}
+  if(sl&&sl.state==='done')return `<span class="pill ok">Sliced</span> <button class="small" data-mkslice="${k}" data-again="1" title="Slice it again in Bambuddy with ${esc(c.name)}'s current profiles">↻</button>${who}`;
+  if(sl&&['queued','uploading','slicing'].includes(sl.state))return `<span class="pill info">${sl.state==='queued'?'Waiting to slice':sl.state==='uploading'?'Sending to slicer':'Slicing'+(sl.progress?' '+Math.round(sl.progress)+'%':'')}</span>${who}`;
+  const btn=`<button class="small" data-mkslice="${k}" title="Queue this plate for slicing with ${esc(c.name)}'s profiles">Slice</button>`;
+  if(sl&&sl.state==='failed')return `<span class="pill err">Slicing failed</span> ${btn}<div class="reason">${esc(sl.error||'')}</div>${who}`;
+  return `<span class="pill">Not sliced</span> ${btn}${who}`}
 function mkStatus(r){const j=r.job;if(!j||j.state==='reprint')return `<span class="hint">${j?'reprint — choose a printer':'not started'}</span>`;return jobPill(j)}
 const trayLbl=t=>`${t.slot} — ${t.name||t.color||t.hex||'?'}${t.material?' '+t.material:''}${t.remain!=null?' · '+t.remain+'%':''}${t.match===2?' ✓':t.match===1?' ≈':''}`;
 function mkTrays(r,sel){const c=r.choices.find(x=>String(x.id)===sel.printer);return c?(c.trays||[]):[]}
@@ -1010,7 +1028,7 @@ function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(
   $('mkremoved').innerHTML=MK.removed.length?MK.removed.map(r=>`<tr><td class="hint">${esc(r.batch)}</td><td>${plateCell(r)}</td><td class="hint">${r.removed_at?new Date(r.removed_at*1000).toLocaleString():''}</td><td><button class="small" data-mkback="${esc(mkKey(r))}">Put back</button></td></tr>`).join(''):'<tr><td colspan="4" class="empty">Nothing removed</td></tr>';
   const all=[...MK.bases,...MK.names,...MK.completed,...MK.removed],find=k=>all.find(r=>mkKey(r)===k);
   document.querySelectorAll('[data-mkslice]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkslice);x.disabled=true;
-    const sel=MKSEL[x.dataset.mkslice];const pid=(sel&&sel.printer)||r.suggested||null;
+    const sel=MKSEL[x.dataset.mkslice];const pid=(sel&&sel.printer)||null;
     if(!pid){alert('Choose a printer first — the plate is sliced with the Bambuddy profiles of its printer');x.disabled=false;return}
     try{await post('/api/makeit/slice',{plates:[{batch_id:r.batch_id,file:r.file,printer_id:+pid}],again:!!x.dataset.again})}catch(e){alert(e.message)}loadMakeIt()});
   document.querySelectorAll('[data-mkrm]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkrm);
@@ -1050,22 +1068,44 @@ async function loadMakeIt(){let r;try{r=await api('/api/makeit')}catch(e){$('mkm
   $('mkinfo').innerHTML=`${r.printers.length} printer${r.printers.length===1?'':'s'} · ${busy} printing${clear?` · <a href="#" data-go="printers">${clear} waiting for the bed to be cleared</a>`:''}`;
   mkShow(MKTAB);mkRender()}
 $('mkrefresh').onclick=()=>loadMakeIt();
-$('slp_all').onclick=async()=>{if(!MK)return;const todo=[...MK.bases,...MK.names].filter(r=>!r.sliced&&!(r.slice&&['queued','uploading','slicing','needs_presets'].includes(r.slice.state)));
-  if(!todo.length){$('slp_allmsg').textContent='Nothing waiting to slice.';return}
-  try{const r=await post('/api/makeit/slice',{plates:todo.map(x=>{const sel=MKSEL[mkKey(x)];const pid=(sel&&sel.printer)||x.suggested||null;return {batch_id:x.batch_id,file:x.file,printer_id:pid?+pid:null}})});$('slp_allmsg').textContent=`${r.queued} plate(s) queued for slicing.`}catch(e){$('slp_allmsg').textContent=e.message}loadMakeIt()};
+// Queue panel (Print page, bottom right): downloading, building, slicing, printing — refreshed every 5 s while shown
+let QTAB='slicing',QMIN=false,QDATA=null,QTIMER=null;
+try{QTAB=localStorage.getItem('qtab')||'slicing';QMIN=localStorage.getItem('qmin')==='1'}catch{}
+const QTABS=[['downloading','Downloading'],['building','Building'],['slicing','Slicing'],['printing','Printing']];
+const QLIVE={downloading:['claimed','queued'],building:['waiting','models_ready','build_requested','building'],slicing:['queued','uploading','slicing'],printing:['queued','slicing','uploading','sent','printing']};
+const QWORD={claimed:'Downloading',queued:'Waiting',failed:'Failed',done:'Done',cancelled:'Cancelled',waiting:'Downloading models',models_ready:'Models ready',build_requested:'Waiting to build',building:'Building',done_with_problems:'Done with problems',uploading:'Sending',slicing:'Slicing',sent:'In Bambuddy queue',printing:'Printing',reprint:'Reprint',removed:'Removed'};
+function qPill(st,pct){const live=Object.values(QLIVE).some(a=>a.includes(st));const cls=st==='failed'?'err':st.startsWith('done')?'ok':live?'info':'';
+  return `<span class="pill ${cls}">${esc(QWORD[st]||st)}${pct?' '+Math.round(pct)+'%':''}</span>`}
+const qName=f=>esc(String(f||'').split('/').pop().replace(/\.3mf$/,''));
+function qRows(t,d){const L=d[t]||[];if(!L.length)return '<div class="hint" style="padding:8px 0">Nothing here.</div>';
+  return L.map(r=>{let m,why=r.error?`<div class="reason">${esc(r.error)}</div>`:'';
+    if(t==='downloading')m=`<b>${esc(r.name)}</b> · ${r.compartments} comp. <span class="hint">${esc(r.batch||'')}</span>`;
+    else if(t==='building')m=`<b>${esc(r.batch)}</b> <span class="hint">${r.models!=null?`${r.ready||0}/${r.models} models${r.failed?` · ${r.failed} failed`:''}`:''}</span>`;
+    else if(t==='slicing')m=`${qName(r.plate)} <span class="hint">${esc(r.batch)} · ${esc((r.presets&&r.presets.printer)||'')}</span>`;
+    else m=`${qName(r.plate)} <span class="hint">${esc(r.printer_name||'')} · ${esc(r.batch)}</span>`;
+    const st=t==='building'?r.status:r.state;
+    return `<div class="qrow"><div class="qm" title="${esc(r.name||r.plate||r.batch||'')}">${m}${why}</div><div class="qs">${qPill(st,r.progress)}</div></div>`}).join('')}
+function qRender(){const p=$('qpanel');p.classList.toggle('min',QMIN);$('qtoggle').textContent=QMIN?'Show':'Hide';
+  const c=(QDATA&&QDATA.counts)||{};
+  $('qsum').textContent=QDATA?QTABS.map(([k,l])=>c[k]?`${c[k]} ${l.toLowerCase()}`:'').filter(Boolean).join(' · ')||'all idle':'';
+  $('qtabs').innerHTML=QTABS.map(([k,l])=>`<button data-qt="${k}" class="${QTAB===k?'on':''}">${l}${c[k]?' · '+c[k]:''}</button>`).join('');
+  document.querySelectorAll('[data-qt]').forEach(b=>b.onclick=()=>{QTAB=b.dataset.qt;try{localStorage.setItem('qtab',QTAB)}catch{}qRender()});
+  $('qlist').innerHTML=QDATA?qRows(QTAB,QDATA):'<div class="hint">Loading…</div>'}
+async function loadQueues(){if(tab!=='makeit')return;try{QDATA=await api('/api/queues')}catch(e){$('qlist').innerHTML=`<div class="reason">${esc(e.message)}</div>`;return}qRender()}
+$('qtoggle').onclick=()=>{QMIN=!QMIN;try{localStorage.setItem('qmin',QMIN?'1':'0')}catch{}qRender();if(!QMIN)loadQueues()};
+qRender();QTIMER=setInterval(()=>{if(tab==='makeit'&&!document.hidden)loadQueues()},5000);
+$('slp_all').onclick=async()=>{if(!MK)return;const rows=[...MK.bases,...MK.names].filter(r=>!r.job_active);
+  const pick=r=>{const sel=MKSEL[mkKey(r)];return sel&&sel.printer?r.choices.find(c=>String(c.id)===sel.printer):null};
+  const none=rows.filter(r=>!pick(r)).length;
+  const todo=rows.filter(r=>{const c=pick(r);return c&&!(c.slice&&['done','queued','uploading','slicing','needs_presets'].includes(c.slice.state))});
+  const skip=none?` ${none} without a printer chosen — choose one to slice them.`:'';
+  if(!todo.length){$('slp_allmsg').textContent='Nothing to slice for the chosen printers.'+skip;return}
+  try{const r=await post('/api/makeit/slice',{plates:todo.map(x=>({batch_id:x.batch_id,file:x.file,printer_id:+pick(x).id}))});$('slp_allmsg').textContent=`${r.queued} plate(s) queued for slicing, each for its chosen printer.`+skip}catch(e){$('slp_allmsg').textContent=e.message}loadMakeIt()};
 
-// ---------- Slicing ----------
-let SLPR=0,SLP=null;try{SLPR=+(localStorage.getItem('slprinter')||0)}catch{}
-const slName=id=>((SLP&&SLP.printers.find(x=>x.id===id))||{}).name||'this printer';
-const SLOTS=['printer','process','filament'];
-const SRC_LABEL={local:'Yours in Bambuddy',orca_cloud:'Orca Cloud',cloud:'Bambu Cloud',standard:"Slicer's standard profiles"};
-const CLOUD_WHY={not_authenticated:'not signed in in Bambuddy',expired:'sign-in expired in Bambuddy',unreachable:"couldn't be reached"};
-const putJSON=(path,b)=>api(path,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
 async function loadPresets(refresh){$('slp_msg').textContent=refresh?'Reading Bambuddy\'s profiles…':'Loading…';$('slp_msg').style.color='';let p;
   const q=new URLSearchParams();if(SLPR)q.set('printer',SLPR);if(refresh)q.set('refresh','1');
   try{p=await api('/api/makeit/presets?'+q)}catch(e){$('slp_msg').textContent=e.message;return}
   SLP=p;SLPR=p.printer||0;$('slp_msg').textContent=refresh&&!p.error?'Profiles read again from Bambuddy.':'';
-  $('slp_auto').checked=p.auto_slice;
   const n=SLOTS.reduce((a,sl)=>a+(p.available[sl]||[]).length,0),ok=!p.error;
   $('slp_bbmsg').innerHTML=ok?`<span style="color:var(--ok)">✓ Connected to Bambuddy</span>${p.bambuddy_url?` · <a href="${esc(p.bambuddy_url)}" target="_blank" rel="noopener">${esc(p.bambuddy_url)}</a>`:''} · ${n} profiles listed. Bambuddy's slicer service must be running (Bambuddy → Settings → Slicer → <b>Use Slicer API</b>); a plate that can't be sliced says why in Print.`
     :`<span style="color:var(--err)">Can't read Bambuddy's profiles:</span> ${esc(p.error)} — connect Bambuddy in <a href="#" data-go="settings:connections">Settings → Connections</a>.`;
@@ -1106,7 +1146,6 @@ function fillPresetSelects(){const p=SLP;if(!p)return;const gone=[];SLSEL={...p.
     +(p.cloud_problem?`<div class="reason" style="margin-top:4px"><b>Bambu Cloud profiles not listed:</b> ${esc(p.cloud_problem)}.</div>`:'')
     +(why.length?`<span class="hint">Cloud profiles not listed (${why.map(esc).join(' · ')}).</span>`:'')}
 $('slp_reload').onclick=()=>loadPresets(true);
-$('slp_auto').onchange=async()=>{try{const r=await putJSON('/api/makeit/settings',{auto_slice:$('slp_auto').checked});$('slp_msg').textContent=r.auto_slice?'New plates are sliced automatically.':'Automatic slicing off — plates are sliced with Slice or at Start print.'}catch(e){$('slp_msg').textContent=e.message}};
 $('slp_save').onclick=async()=>{const body={printer_id:SLPR};for(const sl of SLOTS)body[sl]=$('slp_'+sl).value;
   if(SLOTS.some(sl=>!body[sl])){$('slp_msg').textContent='Choose all three: printer, process and filament profile.';$('slp_msg').style.color='var(--err)';return}
   try{const r=await putJSON('/api/makeit/presets',body);await loadPresets();$('slp_msg').innerHTML=`Saved for <b>${esc(slName(SLPR))}</b>: ${Object.values(r.names).map(esc).join(' · ')}. Its plates are sliced with these from now on.`;$('slp_msg').style.color='var(--ok)';loadHealth()}catch(e){$('slp_msg').textContent=e.message;$('slp_msg').style.color='var(--err)'}};

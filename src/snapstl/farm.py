@@ -65,7 +65,6 @@ DEFAULTS = {
     "presets_by_printer": {},
     # before 0.22.7, per printer model (e.g. "A1"): still used for a printer with no profiles of its own
     "presets_by_model": {},
-    "auto_slice": True,           # slice new plates by themselves (printing still needs Start print)
     "print_defaults": {},         # Bambuddy printer id (str) → {speed, bed_levelling, flow_cali, timelapse, plate_type}
     # on the Windows Bambuddy computer: start Bambuddy / Docker / the slicer service when they stop (bambuddy_host)
     "keep_bambuddy_running": True,
@@ -667,10 +666,11 @@ def slice_for(slices: dict, batch_id: int, plate: str, key: str) -> dict | None:
 
 
 def request_slices(plates: list[tuple[int, str, str, str]], printer_ids: list[int | None] | None = None,
-                   again: bool = False, skip_failed: bool = False) -> int:
-    """Slice these plates [(batch_id, plate, kind, color)] for these printers (their presets; None = the
-    default), one at a time in the background. Skipped: being sliced, already sliced with those presets
-    (unless `again`), failed (with `skip_failed` — automatic slicing never retries a failure by itself)."""
+                   again: bool = False) -> int:
+    """Slice these plates [(batch_id, plate, kind, color)] for these printers (their Bambuddy profiles; a
+    printer without profiles — or None — slices nothing), one at a time in the background. Only a person's
+    Slice / Start print asks for this: nothing is sliced by itself (owner decision 0.22.22). Skipped: being
+    sliced, already sliced with those profiles (unless `again`)."""
     cfg = load_config()
     cur = latest_slices()
     targets = {}
@@ -685,8 +685,7 @@ def request_slices(plates: list[tuple[int, str, str, str]], printer_ids: list[in
         for bid, plate, kind, color in plates:
             for key, presets in targets.items():
                 s = cur.get((bid, plate, key))
-                if s and s["state"] in ("queued", "uploading", "slicing") or (s and s["state"] == "done" and not again) \
-                        or (s and s["state"] == "failed" and skip_failed):
+                if s and s["state"] in ("queued", "uploading", "slicing") or (s and s["state"] == "done" and not again):
                     continue
                 con.execute("INSERT INTO slices(batch_id,plate,kind,color,model,engine,presets,state,created_at,"
                             "updated_at,computer_id) VALUES (?,?,?,?,?,'bambuddy',?,'queued',?,?,?)",
@@ -1015,14 +1014,12 @@ class Worker:
     """Slices / uploads / queues one job at a time, oldest first; follows sent jobs in Bambuddy's queue."""
 
     REFRESH_S = 15
-    AUTO_SLICE_S = 30
 
     def __init__(self) -> None:
         self._wake = threading.Event()
         self._thread: threading.Thread | None = None
         self.current: int | None = None
         self.last_refresh = 0.0
-        self.last_auto = 0.0
         self._models: tuple[float, dict[int, tuple[str, str]]] = (0.0, {})
         self.log: list[str] = []
 
@@ -1049,8 +1046,6 @@ class Worker:
             self._wake.wait(2.0)
             self._wake.clear()
             try:
-                if time.time() - self.last_auto > self.AUTO_SLICE_S:
-                    self.auto_slice()
                 self.poll_slices()
                 self.slice_next()
                 self.check_waiting()
@@ -1157,7 +1152,7 @@ class Worker:
             r = api("POST", f"/library/files/{int(up['id'])}/slice", cfg=cfg, json_body=body, timeout=60)
             _slice_set(s["id"], state="slicing", source_file_id=int(up["id"]), slice_job_id=int(r["job_id"]),
                        progress=0, started_at=db.now())
-            self._log(f"Slicing {src.name} in Bambuddy" + (f" for {s['model']}" if s.get("model") else ""))
+            self._log(f"Slicing {src.name} in Bambuddy with {presets['printer'].get('name') or s.get('model')}")
         except FarmError as e:
             _slice_set(s["id"], state="failed", error=slicer_hint(str(e)))
             self._log(f"Slicing {Path(s['plate']).name}: {e}")
@@ -1230,27 +1225,6 @@ class Worker:
 
     def models(self) -> dict:
         return {pid: v[0] for pid, v in self._printer_info().items()}
-
-    def auto_slice(self) -> None:
-        """Slice new Make It plates for every printer model in the farm (when on). Never retries a failure."""
-        self.last_auto = time.time()
-        cfg = load_config()
-        if not cfg.get("auto_slice", True) or not cfg["api_key"] and not status(cfg)["connected"]:
-            return
-        from . import makeit
-
-        try:
-            prs = printers(cfg)
-        except FarmError:
-            return
-        n = 0
-        for r in makeit.waiting_plates(prs):  # for the printer pre-selected for each plate (or its job's)
-            pid = r.get("suggested") or ((r.get("job") or {}).get("printer_id") or None)
-            if pid:
-                n += request_slices([(r["batch_id"], r["file"], r["kind"], (r["colors"] or [""])[0])], [pid],
-                                    skip_failed=True)
-        if n:
-            self._log(f"Slicing {n} plate(s) automatically for their pre-selected printers")
 
     @staticmethod
     def _apply_speed(j: dict, cfg: dict) -> dict:

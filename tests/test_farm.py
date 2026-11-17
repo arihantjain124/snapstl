@@ -203,7 +203,7 @@ def bb(monkeypatch, tmp_path):
     fake = FakeBambuddy()
     monkeypatch.setattr(farm, "_request", fake)
     farm.CONFIG_PATH.unlink(missing_ok=True)
-    farm.update_config(auto_slice=False, presets_by_model={"A1": STD},  # A1's presets, as set before 0.22.7
+    farm.update_config(presets_by_model={"A1": STD},  # A1's presets, as set before 0.22.7
                        presets_by_printer={}, )
     farm._status_cache.clear()
     monkeypatch.setattr(farm, "_color_map", (0.0, {}))
@@ -638,7 +638,7 @@ def test_no_built_in_presets_each_printer_needs_its_own(client, bb):
     assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink, "printer_id": 2}]}).json()["queued"] == 1
 
 
-def test_presets_per_printer_auto_slice_import_and_speed(client, bb):
+def test_presets_per_printer_manual_slice_import_and_speed(client, bb):
     bb.printers[4] = {"id": 4, "name": "P1S names", "model": "P1S", "serial_number": "S4", "ip_address": "10.0.0.31",
                       "location": "", "is_active": True}
     bb.status[4] = {"connected": True, "state": "IDLE", "ams": [{"id": 0, "tray": [tray(0, "F55A74")]}]}  # Pink
@@ -650,21 +650,26 @@ def test_presets_per_printer_auto_slice_import_and_speed(client, bb):
 
     # the P1S gets its own presets; the A1s keep theirs
     p = client.get("/api/makeit/presets?printer=4").json()
-    assert [x["name"] for x in p["printers"]] == ["Base 1", "Names A", "Names B", "P1S names"] and p["auto_slice"] is False
+    assert [x["name"] for x in p["printers"]] == ["Base 1", "Names A", "Names B", "P1S names"] and "auto_slice" not in p
     assert p["printer"] == 4 and p["set_for"] == {"1": True, "2": True, "3": True, "4": False}
     keys = {slot: f"standard:{v['id']}" for slot, v in STD.items()}
     assert client.put("/api/makeit/presets", json={**keys, "printer_id": 4, "printer": "local:11"}).status_code == 200
     assert client.get("/api/makeit/presets?printer=4").json()["names"]["printer"] == "P1S organizers"
     assert client.get("/api/makeit/presets?printer=1").json()["names"]["printer"] == "Bambu Lab A1 0.4 nozzle"
 
-    # automatic slicing: each waiting plate, for the printer pre-selected for it (and only that one)
-    assert client.put("/api/makeit/settings", json={"auto_slice": True}).json()["auto_slice"] is True
-    farm.WORKER.auto_slice()
-    wait_for(lambda: all(r["sliced"] for r in client.get("/api/makeit").json()["names"] + client.get("/api/makeit").json()["bases"]
-                         if r["suggested"]))
-    n = len(bb.slice_bodies)
-    farm.WORKER.auto_slice()
-    assert len(bb.slice_bodies) == n  # nothing sliced twice
+    # nothing is sliced by itself (owner decision 0.22.22): the worker runs, no slice is asked for
+    farm.WORKER.slice_next()
+    assert bb.slice_bodies == [] and client.put("/api/makeit/settings", json={"auto_slice": True}).status_code in (404, 405)
+    # Slice needs the printer chosen for the plate: no default printer
+    r = client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink}]})
+    assert r.status_code == 400 and "Choose the printer" in r.json()["detail"]
+    # Slice for the P1S queues it with the P1S's profiles only; the row shows each printer's own slice
+    assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink, "printer_id": 4}]}).json()["queued"] == 1
+    wait_for(lambda: next(c for c in makeit_row(client, "names", pink)["choices"] if c["id"] == 4)["slice"]["state"] == "done")
+    row = makeit_row(client, "names", pink)
+    assert [b["printer_preset"]["id"] for _, b in bb.slice_bodies] == ["11"]
+    assert next(c for c in row["choices"] if c["id"] == 1)["slice"] is None  # the A1s' profiles: not sliced
+    assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink, "printer_id": 4}]}).json()["queued"] == 0
 
     # Start print on the P1S with Sport speed: sends the P1S slice; speed applied once printing
     client.post("/api/makeit/start", json={"batch_id": bid, "file": pink, "printer_id": 4, "speed": "sport"})
@@ -699,22 +704,21 @@ def test_presets_per_printer_auto_slice_import_and_speed(client, bb):
     assert client.post("/api/makeit/start", json={"batch_id": bid, "file": base, "printer_id": 1,
                                                   "speed": "warp"}).status_code == 400
 
-    # a failed automatic slice is not retried by itself
+    # a failed slice is not retried by itself
     bb.slicer = "unreachable"
-    farm.request_slices([(bid, base, "bases", "")], [makeit_row(client, "bases", base)["suggested"]], again=True)
-    wait_for(lambda: (makeit_row(client, "bases", base)["slice"] or {}).get("state") == "failed")
-    bases_sliced = lambda: sum(1 for fid, _ in bb.slice_bodies if " - Bases - " in bb.files[fid]["filename"])  # noqa: E731
-    n = bases_sliced()
-    farm.WORKER.auto_slice()
+    farm.request_slices([(bid, base, "bases", "")], [1], again=True)
+    wait_for(lambda: (next(c for c in makeit_row(client, "bases", base)["choices"] if c["id"] == 1)["slice"] or {}).get("state") == "failed")
+    n = len(bb.slice_bodies)
     farm.WORKER.slice_next()
-    assert bases_sliced() == n
+    farm.WORKER.poll_slices()
+    assert len(bb.slice_bodies) == n
 
     # SnapSTL never adds profiles (to Bambuddy or itself), and has no slicer of its own to test or switch to
     r = client.post("/api/makeit/presets/import", data={"kind": "filament"},
                     files={"file": ("Silk PLA.bbsflmt", b"PK\x03\x04 bundle", "application/octet-stream")})
     assert r.status_code in (404, 405) and bb.imports == []
     assert client.post("/api/makeit/test-slice", json={"model": "A1"}).status_code in (404, 405)
-    assert "slicer" not in client.put("/api/makeit/settings", json={"slicer": "orca"}).json()
+    assert client.put("/api/makeit/settings", json={"slicer": "orca"}).status_code in (404, 405)
 
 
 def test_any_bambuddy_profile_and_nothing_kept_by_snapstl(client, bb):
@@ -801,3 +805,20 @@ def test_snapstl_key_never_asks_for_cloud(client, bb):
     farm.update_config(api_key="")
     r = client.post("/api/farm/connect", json={})
     assert r.status_code == 400 and "not Allow cloud access" in r.json()["detail"]
+
+
+def test_queue_panel_lists_downloading_building_slicing_printing(client, bb):
+    bb.slicer = "ok"
+    client.get("/api/farm")
+    bid, folder = built_batch(client, "PQ")
+    pink = "Names/pink/{Ayra,pink}.3mf"
+    q = client.get("/api/queues").json()
+    assert set(q["counts"]) == {"downloading", "building", "slicing", "printing"}
+    assert any(r["state"] == "done" for r in q["downloading"])  # the batch's models, finished
+    assert any(b["id"] == bid and b["status"] == "done" for b in q["building"])
+    client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink, "printer_id": 2}]})
+    wait_for(lambda: any(i["plate"] == pink and i["state"] == "done" for i in client.get("/api/queues").json()["slicing"]))
+    client.post("/api/makeit/start", json={"batch_id": bid, "file": pink, "printer_id": 2})
+    q = wait_for(lambda: (lambda q: q if any(j["plate"] == pink for j in q["printing"]) else None)(client.get("/api/queues").json()))
+    j = next(j for j in q["printing"] if j["plate"] == pink)
+    assert j["printer_name"] == "Names A" and j["batch"]

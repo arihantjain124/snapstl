@@ -68,7 +68,10 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   install keeps being updated on Windows. SnapSTL itself stays Mac + Windows; a Mac only connects
   (`SNAPSTL_BAMBUDDY_URL` / Settings → Connections). Images pinned to `scripts/bambuddy-version.txt` (`bambuddy:X`, `*-api:bambuddy-X`); bump it
   only after checking `farm.py`'s calls against that release. The setup scripts must keep running
-  under `irm … | iex` (Windows PowerShell 5.1, ASCII only, no `exit`). Slicing on this computer is gone for good (#43).
+  under `irm … | iex` (Windows PowerShell 5.1, ASCII only, no `exit`). The Bambuddy computer script also
+  installs the **OctoEverywhere Plugin Manager** (Microsoft Store, remote access to Bambuddy;
+  `BAMBUDDY_OCTOEVERYWHERE=0` skips it); never uninstall it, and never script its plugin setup or account
+  linking (the owner does that in its UI). SnapSTL itself never talks to OctoEverywhere. Slicing on this computer is gone for good (#43).
 - Database: add columns **only** via `MIGRATIONS` in `db.py`; never drop/rename columns or tables.
 - `order_records.tab` / `ready_type` are set by the `set_tab()` trigger from the row (state, app_state,
   made_at, source_status, clubbed_id, sku): when the Orders page's tabs (`server.TABS`) change, change
@@ -116,8 +119,10 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   (owner decision, ARCHITECTURE #43). **No cloud profiles** (owner decision 0.22.19, #62): only
   Bambuddy's local and standard profiles (`farm.PRESET_TIERS`); never patch Bambuddy's program. Profiles are added in Bambuddy, never by SnapSTL.
   Slicing never blocks the worker: one slice at a time, followed by polling, stopped after
-  `SLICE_TIMEOUT_S` without progress. Automatic slicing may run on its own (it never prints) and
-  never retries a failed slice; a print always uses the slice for its printer's model.
+  `SLICE_TIMEOUT_S` without progress. **No automatic slicing** (owner decision 0.22.22): a plate is
+  sliced only when a person presses Slice / Slice all waiting (or Start print), always with the profiles
+  of the printer selected for that plate — never a default or "main" printer; a failed slice is never
+  retried by itself. A print always uses the slice for its printer's profiles.
 - Never weaken the license guard: no download without the model's password, no saving a download the
   helper didn't confirm or that still has the watermark (decision log #18).
 - Never commit customer files (`*.xlsx`, `*.csv` reports), outputs, or anything in

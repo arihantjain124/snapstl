@@ -156,20 +156,28 @@ def board(prs: list[dict] | None = None) -> dict:
                          "trays": farm.tray_choices(r["need"], p), "best_tray": farm.best_tray(r["need"], p)} for p in prs]
     pick = choose(pending, prs, active_jobs) if prs else {}
     keys: dict = {}
+
+    def slice_state(r: dict, pid) -> dict | None:
+        """This plate's slice for a printer's profiles (None = not sliced for it yet)."""
+        if not pid:
+            return None
+        if pid not in keys:
+            keys[pid] = (farm.target(pid)[0], farm.missing_presets(pid))
+        key, missing = keys[pid]
+        if missing:
+            return {"state": "needs_presets", "printer": missing}
+        x = farm.slice_for(slices, r["batch_id"], r["file"], key)
+        return {"state": x["state"], "progress": x["progress"], "error": x["error"]} if x else None
+
     for r in pending:
         r["suggested"] = pick.get(r["file"])
-        # sliced with the presets of the printer this plate goes to: its job's printer, else the pre-selected one
+        for c in r["choices"]:  # the slice for each printer: the row shows the one for the printer selected
+            c["slice"] = slice_state(r, c["id"])
+        # its job's printer, else the pre-selected one (what the row shows before a printer is picked)
         pid = ((r["job"] or {}).get("printer_id") if r["job_active"] else None) or r["suggested"]
-        if pid not in keys:
-            keys[pid] = farm.target(pid)[0]
         r["slice_for"] = pid
-        missing = farm.missing_presets(pid) if pid else None
-        if missing:
-            r["slice"] = {"state": "needs_presets", "printer": missing}
-        else:
-            x = farm.slice_for(slices, r["batch_id"], r["file"], keys[pid])
-            r["slice"] = {"state": x["state"], "progress": x["progress"], "error": x["error"]} if x else None
-            r["sliced"] = bool(x and x["state"] == "done")
+        r["slice"] = slice_state(r, pid)
+        r["sliced"] = bool(r["slice"] and r["slice"]["state"] == "done")
     done = sorted([r for r in rows if r["done"]], key=lambda r: -(r["job"] or {}).get("updated_at", 0))[:300]
     return {"bases": [r for r in pending if r["kind"] == "bases"],
             "names": [r for r in pending if r["kind"] == "names"],
@@ -205,13 +213,6 @@ def _latest(batch_id: int, file: str) -> dict | None:
         j = con.execute("SELECT * FROM print_jobs WHERE batch_id=? AND plate=? AND computer_id=? ORDER BY id DESC LIMIT 1",
                         (batch_id, file, computer.ID)).fetchone()
     return dict(j) if j else None
-
-
-def waiting_plates(prs: list[dict] | None = None) -> list[dict]:
-    """Plates in Bases / Names with no print on its way, with their pre-selected printer (automatic
-    slicing works through these)."""
-    b = board(prs)
-    return [r for r in b["bases"] + b["names"] if not r["job_active"]]
 
 
 def start_print(batch_id: int, file: str, printer_id: int, options: dict | None, prs: list[dict],
@@ -311,6 +312,60 @@ def slicing_summary() -> dict:
                   for pid, p in (cfg.get("presets_by_printer") or {}).items()}
     return {"presets_by_printer": by_printer, "items": items,
             "counts": {st: count(st) for st in ("queued", "uploading", "slicing", "done", "failed")}}
+
+
+def queues(recent: int = 15) -> dict:
+    """The Print page's queue panel: what's waiting / running now (first) and the last few finished, for
+    downloading (models from MakerWorld), building (batches), slicing (Bambuddy's slicer) and printing."""
+    from .batches import ACTIVE as BUILD_ACTIVE
+
+    def label(summary) -> str | None:
+        try:
+            return json.loads(summary or "{}").get("label")
+        except ValueError:
+            return None
+
+    with db.tx() as con:
+        dl = db.rows(con, "SELECT d.id, d.name, d.compartments, d.state, d.error, d.updated_at, d.batch_id, b.summary "
+                          "FROM downloads d LEFT JOIN batches b ON b.id=d.batch_id WHERE d.computer_id=? AND "
+                          "d.state IN ('claimed','queued','failed') ORDER BY CASE d.state WHEN 'claimed' THEN 0 "
+                          "WHEN 'queued' THEN 1 ELSE 2 END, d.id LIMIT 300", computer.ID)
+        dl += db.rows(con, "SELECT d.id, d.name, d.compartments, d.state, d.error, d.updated_at, d.batch_id, b.summary "
+                           "FROM downloads d LEFT JOIN batches b ON b.id=d.batch_id WHERE d.computer_id=? AND "
+                           "d.state='done' ORDER BY d.updated_at DESC LIMIT ?", computer.ID, recent)
+        q = ",".join("?" * len(BUILD_ACTIVE))
+        bl = db.rows(con, f"SELECT id, status, summary, progress, created_at, finished_at FROM batches WHERE "
+                          f"COALESCE(computer_id, ?)=? AND status IN ({q}) ORDER BY id", computer.ID, computer.ID, *BUILD_ACTIVE)
+        bl += db.rows(con, f"SELECT id, status, summary, progress, created_at, finished_at FROM batches WHERE "
+                           f"COALESCE(computer_id, ?)=? AND status NOT IN ({q}, 'created') ORDER BY id DESC LIMIT ?",
+                      computer.ID, computer.ID, *BUILD_ACTIVE, recent)
+        pq = ",".join("?" * len(farm.ACTIVE))
+        pj = db.rows(con, f"SELECT j.id, j.batch_id, j.plate, j.kind, j.color, j.printer_name, j.state, j.progress, "
+                          f"j.error, j.updated_at, b.summary FROM print_jobs j LEFT JOIN batches b ON b.id=j.batch_id "
+                          f"WHERE j.computer_id=? AND j.state IN ({pq}) ORDER BY j.id", computer.ID, *farm.ACTIVE)
+        pj += db.rows(con, f"SELECT j.id, j.batch_id, j.plate, j.kind, j.color, j.printer_name, j.state, j.progress, "
+                           f"j.error, j.updated_at, b.summary FROM print_jobs j LEFT JOIN batches b ON b.id=j.batch_id "
+                           f"WHERE j.computer_id=? AND j.state NOT IN ({pq}) ORDER BY j.updated_at DESC LIMIT ?",
+                      computer.ID, *farm.ACTIVE, recent)
+    for r in dl + pj:
+        r["batch"] = label(r.pop("summary")) or (f"Batch #{r['batch_id']}" if r.get("batch_id") else "")
+    builds = []
+    for b in bl:
+        try:
+            prog = json.loads(b.get("progress") or "{}") or {}
+        except ValueError:
+            prog = {}
+        builds.append({"id": b["id"], "batch": label(b["summary"]) or f"Batch #{b['id']}", "status": b["status"],
+                       "models": prog.get("models"), "ready": prog.get("ready"), "failed": prog.get("failed"),
+                       "at": b["finished_at"] or b["created_at"]})
+    live = ("queued", "uploading", "slicing")
+    sl = slicing_summary()["items"]
+    sl = [i for i in sl if i["state"] in live][::-1] + [i for i in sl if i["state"] not in live][:recent]
+    return {"downloading": dl, "building": builds, "slicing": sl, "printing": pj,
+            "counts": {"downloading": sum(1 for r in dl if r["state"] in ("claimed", "queued")),
+                       "building": sum(1 for b in builds if b["status"] in BUILD_ACTIVE),
+                       "slicing": sum(1 for i in sl if i["state"] in live),
+                       "printing": sum(1 for r in pj if r["state"] in farm.ACTIVE)}}
 
 
 def update_made(batch_id: int) -> None:

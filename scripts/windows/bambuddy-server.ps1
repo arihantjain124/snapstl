@@ -2,6 +2,7 @@
 #   * Bambuddy (print-farm manager) from its own Windows installer: a Windows service that starts with
 #     Windows and finds the printers on the network by itself
 #   * Bambuddy's slicer service in Docker (Bambu Studio + OrcaSlicer sidecars), used by Bambuddy
+#   * the OctoEverywhere Plugin Manager (Microsoft Store) for remote access to Bambuddy; its plugins run in Docker
 #
 # In PowerShell opened with "Run as administrator":
 #   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/arihantjain124/snapstl/main/scripts/windows/bambuddy-server.ps1 | iex"
@@ -11,6 +12,7 @@
 #   $env:BAMBUDDY_SLICER="bambu_studio" | "orcaslicer"   the slicer Bambuddy uses (default bambu_studio)
 #   $env:BAMBUDDY_UPGRADE="1"   also move Bambuddy + the slicer service to the version this SnapSTL was
 #                               tested with (downloads; printers, profiles and history are kept)
+#   $env:BAMBUDDY_OCTOEVERYWHERE="0"   don't install the OctoEverywhere Plugin Manager (default: install it)
 # Clear one again with:  Remove-Item Env:BAMBUDDY_UPGRADE
 # A Bambuddy you installed yourself is used as it is: never reinstalled, upgraded or stopped.
 $ErrorActionPreference = "Stop"
@@ -59,6 +61,9 @@ function Invoke-BambuddyServerSetup {
   if ($env:BAMBUDDY_SLICER) { $Slicer = $env:BAMBUDDY_SLICER.ToLower() } elseif ($Saved -and $Saved.slicer) { $Slicer = [string]$Saved.slicer }
   if ($Slicer -notin @("bambu_studio", "orcaslicer")) { throw "BAMBUDDY_SLICER is bambu_studio or orcaslicer" }
   $Upgrade = ($env:BAMBUDDY_UPGRADE -eq "1")
+  $Octo = $true   # OctoEverywhere Plugin Manager: on unless turned off now or last time
+  if ($env:BAMBUDDY_OCTOEVERYWHERE) { $Octo = ($env:BAMBUDDY_OCTOEVERYWHERE -ne "0") }
+  elseif ($Saved -and ($null -ne $Saved.octoeverywhere)) { $Octo = [bool]$Saved.octoeverywhere }
   $Ours = [bool]($Saved -and $Saved.native_installed_by_snapstl)
 
   # version: the tested one on first setup or upgrade, else the one already set up
@@ -215,8 +220,26 @@ function Invoke-BambuddyServerSetup {
   New-NetFirewallRule -DisplayName "SnapSTL Bambuddy printer discovery (UDP 2021)" -Direction Inbound -Protocol UDP -LocalPort 2021 `
     -Action Allow -RemoteAddress LocalSubnet -Profile Any | Out-Null
 
+  # ---- 6b. OctoEverywhere Plugin Manager (remote access to Bambuddy + AI failure detection), from the
+  #          Microsoft Store; its plugins run in Docker. Installed only if missing; never removed here ----
+  $OctoState = "off (BAMBUDDY_OCTOEVERYWHERE=0)"
+  if ($Octo) {
+    $OctoApp = Get-StartApps | Where-Object { $_.Name -eq "OctoEverywhere Plugin Manager" } | Select-Object -First 1
+    if ($OctoApp) { $OctoState = "installed" }
+    elseif (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+      $OctoState = "not installed - get 'OctoEverywhere Plugin Manager' from the Microsoft Store"
+    } else {
+      Write-Host "Installing the OctoEverywhere Plugin Manager from the Microsoft Store..."
+      $ErrorActionPreference = "Continue"
+      winget install --id 9N9JNFCTJP7L --source msstore --silent --accept-package-agreements --accept-source-agreements | Out-Host
+      $ErrorActionPreference = "Stop"
+      $OctoApp = Get-StartApps | Where-Object { $_.Name -eq "OctoEverywhere Plugin Manager" } | Select-Object -First 1
+      $OctoState = if ($OctoApp) { "installed" } else { "didn't install - get 'OctoEverywhere Plugin Manager' from the Microsoft Store" }
+    }
+  }
+
   # ---- remember the choices ----
-  @{ slicer = $Slicer; version = $Version; native_installed_by_snapstl = $Ours } | ConvertTo-Json |
+  @{ slicer = $Slicer; version = $Version; native_installed_by_snapstl = $Ours; octoeverywhere = $Octo } | ConvertTo-Json |
     Set-Content -Path $SetupFile -Encoding ASCII
 
   # ---- 7. summary ----
@@ -238,6 +261,7 @@ function Invoke-BambuddyServerSetup {
     Write-Host "Slicing:         Bambuddy's login is on - in Bambuddy: Settings -> Slicer -> Use Slicer API on,"
     Write-Host "                 Preferred Slicer $SlicerName, sidecar URL http://localhost:3001 (OrcaSlicer: http://localhost:3003)."
   }
+  Write-Host "OctoEverywhere:  Plugin Manager $OctoState"
   Write-Host "Settings:        $SetupFile - run the same command again to apply changes (nothing is reinstalled)."
   Write-Host ""
   Write-Host "In SnapSTL on every computer: Settings -> Connections -> Bambuddy address:" -ForegroundColor Green
@@ -245,6 +269,13 @@ function Invoke-BambuddyServerSetup {
   Write-Host ""
   Write-Host "Printers: open that address -> Printers -> Add printer; Bambuddy finds them on the network."
   Write-Host "Bambuddy starts with Windows. The slicer service runs while someone is signed in (Docker Desktop)."
+  if ($Octo -and $OctoState -eq "installed") {
+    Write-Host ""
+    Write-Host "Remote access (OctoEverywhere), once: Start menu -> OctoEverywhere Plugin Manager -> Create New Plugin"
+    Write-Host "Instance for each printer (type Bambu Lab; its IP, access code and serial are in Bambuddy -> Printers),"
+    Write-Host "link it to your OctoEverywhere account, then turn on Bambuddy remote access at https://octoeverywhere.com/bambuddy"
+    Write-Host "with Bambuddy's address above. Keep Bambuddy's login on: remote access can start prints."
+  }
 }
 
 Invoke-BambuddyServerSetup
