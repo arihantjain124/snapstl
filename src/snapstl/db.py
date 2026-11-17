@@ -165,7 +165,7 @@ MIGRATIONS = [
 # computers with its own `<group>_changed` time: the newest change of a group wins everywhere, whatever
 # happens to the order's state. Clearing a group sets its fields to NULL and still stamps `_changed`.
 FIELD_GROUPS: dict[str, tuple[str, ...]] = {
-    "label": ("label_at", "label_by"),                          # Label Generated → Label done – ship it
+    "label": ("label_at", "label_by", "label_note"),            # Label Generated → Label done – ship it
     "express": ("express_by", "express_note"),                  # needed-by date (YYYY-MM-DD) + note
     "flag": ("flag", "flag_note"),                              # why it is in Problems – check
     "name_note": ("name_change_reason", "name_confirmed_at"),   # name changed after confirming with the customer
@@ -173,7 +173,7 @@ FIELD_GROUPS: dict[str, tuple[str, ...]] = {
     "reuse": ("reuse_of", "reused_by"),                         # new order ← returned (RTO) piece of another order
 }
 _GROUP_TYPES = {"label_at": "REAL", "name_confirmed_at": "REAL", "remake_at": "REAL"}
-FLAGS = ("past_print_not_made", "cancelled_in_production", "cancel_request", "unknown_status")
+FLAGS = ("past_print_not_made", "cancelled_in_production", "cancel_request", "back_to_print", "unknown_status")
 MIGRATIONS += [("orders", c, _GROUP_TYPES.get(c, "TEXT")) for g in FIELD_GROUPS.values() for c in g]
 MIGRATIONS += [("orders", f"{g}_changed", "REAL") for g in FIELD_GROUPS]
 GROUP_COLS = tuple(c for g, cs in FIELD_GROUPS.items() for c in (*cs, f"{g}_changed"))
@@ -252,7 +252,11 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     for table, col, typ in MIGRATIONS:
         cols = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
         if col not in cols:
-            con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+            try:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+            except sqlite3.OperationalError as e:  # another thread added it a moment ago (first start)
+                if "duplicate column" not in str(e):
+                    raise
     con.executescript(POST_SCHEMA)
     # older rows: everything here is this computer's, and every batch gets a unique id
     con.execute("UPDATE batches SET computer_id=?, computer_name=? WHERE computer_id IS NULL", (computer.ID, computer.NAME))

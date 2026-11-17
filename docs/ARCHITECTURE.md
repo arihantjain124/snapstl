@@ -247,6 +247,27 @@ or a special request → review.
 
 *Single* = the order's clubbed ID has only this line (ad-hoc orders excluded); *Clubbed* = one clubbed ID with
 several lines; *Ad-hoc* = `sku = 'Adhoc'`.
+
+**New Orders tabs (0.23, `tabs.py`)** — one rule, written once as Python (`tabs.tab_of`) and once as SQL
+(`tabs.case_sql`, used for SQLite and by Supabase's `set_tab()`); `tests/test_tabs.py` checks they
+always agree. First match wins: skipped → **problems** (any `flag`) → **cancelled** (CANCEL…) →
+**delivered** / **rto** / **on_the_way** (IN-TRANSIT) → **ship_it** (`label_at`, or PACK / HANDOVER) →
+**pack_it** (`made_at`, state `printed`, or `reuse_of`) → **printing** (in a batch + `print_started_at`)
+→ **ready_to_print** (in a batch) → **check_name** (`needs_review`) → **to_make** (`ready`) → else
+**problems**. Report statuses 4–7 are ignored while a remake is pending (`remake_at` newer than
+`label_at`). Phase 2 only: the Orders page still uses `server.TABS` (old tabs) until phase 3; Supabase
+`tab` already uses the new keys.
+
+**Report rules (0.23, `ingest.status_state` / `_status_flags`; `sync.merge` uses `status_state` too)**:
+a report never moves an order backwards. Ready / needs review stay to make on PRINT and AWB EXPIRED;
+not needed goes back to making only on PRINT and never after PACK / HANDOVER / IN-TRANSIT /
+DELIVERED / RTO / AWB EXPIRED. Flags (`db.set_group(..., "flag")`, only by the uploading computer):
+`past_print_not_made` (listed to make or in a batch, not made, report moves past PRINT; not for
+history or ad-hoc), `cancelled_in_production` (cancelled while in a batch or made, before it shipped),
+`back_to_print` (packed outside SnapSTL, then AWB EXPIRED / PRINT). AWB EXPIRED on a made / in-batch /
+labelled order clears `label_at` with `label_note` "Label expired – make a new label" → pack_it.
+Printing: `makeit.update_made` also sets `print_started_at` for orders on any plate with a print job
+(not Removed); called from Start print; `makeit.backfill_started` once at startup (`started_v1`).
 The Orders table offers browser-local saved views (column visibility, tab and filters) and a selectable page size; these preferences do not change order records. Tab SQL lives in `server.TABS`; column filters in `server.FILTERS` (text = contains; status, colour,
 qty = exact; combined with AND; also used by *Select all matching* and *Export CSV*).
 
@@ -621,6 +642,7 @@ snapstl.server:app --port 8320`.
 | 67 | **Slicing only on a person's click, for the chosen printer** (0.22.22, owner decision): automatic slicing (`auto_slice`, #36) removed — it sliced only plates with a pre-selected (free) printer, so with printers waiting for Clear plate most plates never sliced. **Slice** / **Slice all waiting** require the printer selected on the row. A **Queues** panel (Print, bottom right, hideable) shows downloading / building / slicing / printing from `GET /api/queues` (`POST /api/makeit/slice` refuses a plate without `printer_id`; no default printer); each printer choice in `GET /api/makeit` carries its own `slice`, and the row shows the selected printer's. Start print still slices first when needed. **OctoEverywhere** (remote access to Bambuddy): `bambuddy-server.ps1` installs the OctoEverywhere Plugin Manager (Microsoft Store `9N9JNFCTJP7L`, via winget; `BAMBUDDY_OCTOEVERYWHERE=0` = skip); plugin instances and account linking are done by the owner in its UI. SnapSTL never talks to OctoEverywhere | owner wants to decide what is sliced and for which printer; remote access to the farm |
 | 66 | **The newest export wins for every order in it** (0.22.21): `status_at` puts the file's moment (`file_as_of`: newest order / date in the file) before the row's event date (`@file|event|upload`); old stamps rewritten once locally and in Supabase. Also: once after updating, each computer sends **every** order again and reads every record (`sync.VIEW_SENT`); `_VIEW` (`app_state`, `review_reason`) now follows only the newer change (`_WIN`) or fills a record that has none | owner: some orders kept an old status after uploading a newer ShopDeck export (their row had no event date while the stored one did), and the host's changes had to reach Supabase and every computer |
 | 69 | **Order-flow data, phase 1** (0.23, owner-approved plan `docs/build-plan-order-flow-and-logistics.md`): orders get `first_status`, `print_started_at` and the field groups (`db.FIELD_GROUPS`, each with `<group>_changed`; newest change per group wins locally in `sync.merge` and in Supabase via `_GROUPS_SQL` in `_UPSERT` / `_CLAIM` / `_OFFER`); new shared tables `order_notes` (append-only) and `usage_counts` (per computer/day/feature), both with RLS and no-delete triggers. The outbox trigger is now `orders_outbox_upd3` (also watches the new columns). `SCHEMA_VERSION` 2: an older SnapSTL stops syncing (update every computer the same day). No screen change yet | per-field change times keep people's actions (label, express, flags) independent of the who-makes-it state rules (`_WIN`) |
+| 70 | **One tab rule, report rules, Printing** (0.23 phase 2): `tabs.py` holds the new 12 tabs as Python and as one SQL CASE shared by SQLite and the Supabase `set_tab()` trigger (old `tab` values are worked out again once at setup; the shop glossary keeps the old names marked "before 0.23"). Ingest flags problems instead of guessing (see §6); AWB EXPIRED clears a label; `print_started_at` from print jobs. Label group gets `label_note`; flag `back_to_print` added. `db.connect` tolerates a column added by another thread at the same moment (first start after updating). Dry run on the owner's database: all 1,670 orders in exactly one tab, none in Problems | owner's process: To make → Ready to print → Printing → Printed – pack it → Label done – ship it; a report must never undo work done in the app |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---

@@ -61,6 +61,7 @@ from .ingest import PRINT_STATUSES as _PS  # noqa: E402
 
 PRINT_SQL = ", ".join(f"'{x}'" for x in sorted(_PS))
 from . import report as _report  # noqa: E402
+from . import tabs as _tabs  # noqa: E402
 
 REPORT_SQL = _report.setup_sql(SCHEMA).strip() + "\n"
 _REPORT_UPSERT = _report.upsert_sql(SCHEMA)
@@ -74,6 +75,7 @@ _NEW_COLS = (("first_status", "TEXT",
 _COL_COMMENTS = {
     "label_at": "Label Generated pressed on the logistics page (epoch seconds) → Label done – ship it; NULL = no label yet.",
     "label_by": "Who pressed Label Generated (e.g. logistics).",
+    "label_note": "Shown with the label, e.g. 'Label expired – make a new label' (AWB EXPIRED clears label_at).",
     "express_by": "Express: date the customer needs it by (YYYY-MM-DD); NULL = not express.",
     "express_note": "Express: note from the customer call.",
     "flag": "Why the order is in Problems – check: " + " | ".join(db.FLAGS) + "; NULL = none.",
@@ -150,22 +152,15 @@ ALTER TABLE {SCHEMA}.order_records ADD COLUMN IF NOT EXISTS ready_type text;
 {_NEW_COLS_SQL}CREATE INDEX IF NOT EXISTS order_records_tab ON {SCHEMA}.order_records (tab, ready_type);
 CREATE INDEX IF NOT EXISTS order_records_club ON {SCHEMA}.order_records (clubbed_id);
 CREATE OR REPLACE FUNCTION {SCHEMA}.set_tab() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE st text := upper(coalesce(NEW.source_status, ''));
+DECLARE s text;  -- the app state: who's making it, else the app's own view (older SnapSTL: from the status)
 BEGIN
-  NEW.tab := CASE
-    WHEN NEW.state = 'in_batch' THEN 'in_batch'
-    WHEN NEW.state = 'bundled' AND NEW.made_at IS NOT NULL THEN 'ready_to_ship'
-    WHEN NEW.state = 'bundled' THEN 'bundled'
-    WHEN NEW.state = 'printed' THEN 'printed'
-    WHEN NEW.app_state IN ('ready', 'needs_review', 'skipped') THEN NEW.app_state
-    WHEN NEW.app_state IS NULL AND st IN ({PRINT_SQL}) THEN 'ready'
-    WHEN st = 'DELIVERED' THEN 'delivered'
-    WHEN st LIKE 'RTO%' THEN 'rto'
-    WHEN replace(replace(st, '_', '-'), ' ', '-') = 'IN-TRANSIT' THEN 'in_transit'
-    WHEN st LIKE 'CANCEL%' THEN 'cancelled'
-    ELSE 'others' END;
+  s := CASE WHEN NEW.state IN ('in_batch', 'bundled', 'printed') THEN NEW.state
+            WHEN NEW.app_state IN ('ready', 'needs_review', 'skipped', 'not_needed') THEN NEW.app_state
+            WHEN upper(coalesce(NEW.source_status, '')) IN ({PRINT_SQL}) THEN 'ready'
+            ELSE 'not_needed' END;
+  NEW.tab := {_tabs.case_sql(lambda c: "NEW." + c, state="s")};  -- tabs.py: the Orders page's rule
   NEW.ready_type := CASE
-    WHEN NEW.tab <> 'ready' THEN NULL
+    WHEN NEW.tab <> 'to_make' THEN NULL
     WHEN NEW.sku = 'Adhoc' THEN 'adhoc'
     WHEN coalesce(NEW.clubbed_id, '') <> '' AND (SELECT count(*) FROM {SCHEMA}.order_records o
          WHERE o.clubbed_id = NEW.clubbed_id AND o.order_id <> NEW.order_id) > 0 THEN 'clubbed'
@@ -179,20 +174,21 @@ CREATE OR REPLACE FUNCTION {SCHEMA}.retab_club() RETURNS trigger LANGUAGE plpgsq
 BEGIN
   IF coalesce(NEW.clubbed_id, '') <> '' THEN
     UPDATE {SCHEMA}.order_records SET ready_type = ready_type
-     WHERE clubbed_id = NEW.clubbed_id AND order_id <> NEW.order_id AND tab = 'ready' AND ready_type IS DISTINCT FROM 'clubbed';
+     WHERE clubbed_id = NEW.clubbed_id AND order_id <> NEW.order_id AND tab = 'to_make' AND ready_type IS DISTINCT FROM 'clubbed';
   END IF;
   RETURN NULL;
 END $$;
 CREATE OR REPLACE TRIGGER order_records_retab_club AFTER INSERT ON {SCHEMA}.order_records
     FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.retab_club();
-UPDATE {SCHEMA}.order_records SET tab = tab WHERE tab IS NULL;
+-- rows without a tab, or with a tab from before 0.23: work it out again (once; updated_at is kept)
+UPDATE {SCHEMA}.order_records SET tab = tab WHERE tab IS NULL OR tab NOT IN ({", ".join(f"'{k}'" for k in _tabs.KEYS)});
 COMMENT ON TABLE {SCHEMA}.order_records IS 'SnapSTL orders shared by every computer (one row per webstore order ID). Read-only for anyone but SnapSTL. Never deleted.';
-COMMENT ON COLUMN {SCHEMA}.order_records.tab IS 'Orders page tab: ready | needs_review | in_batch | bundled | ready_to_ship | printed | skipped | delivered | rto | in_transit | cancelled | others (the last five are orders that need no making, by webstore status). Set by a trigger.';
-COMMENT ON COLUMN {SCHEMA}.order_records.ready_type IS 'For tab = ready: single | clubbed (several orders share clubbed_id) | adhoc (typed in by hand, sku Adhoc); NULL otherwise. Set by a trigger.';
+COMMENT ON COLUMN {SCHEMA}.order_records.tab IS 'Orders page tab (0.23, tabs.py): {" | ".join(_tabs.KEYS)}. Make: to_make, check_name, ready_to_print, printing; pack & ship: pack_it (printed), ship_it (label done or PACK / HANDOVER); records: on_the_way, delivered, rto, cancelled, problems (see flag), skipped. Set by a trigger.';
+COMMENT ON COLUMN {SCHEMA}.order_records.ready_type IS 'For tab = to_make: single | clubbed (several orders share clubbed_id) | adhoc (typed in by hand, sku Adhoc); NULL otherwise. Set by a trigger.';
 COMMENT ON COLUMN {SCHEMA}.order_records.state IS 'Who is making it: in_batch | bundled | printed (computer_name has it) | released (nobody yet — see tab).';
 COMMENT ON COLUMN {SCHEMA}.order_records.app_state IS 'SnapSTL''s own state on the computer that last wrote the row: ready | needs_review | in_batch | bundled | printed | skipped | not_needed.';
 COMMENT ON COLUMN {SCHEMA}.order_records.review_reason IS 'Why the order needs a person to check it (tab = needs_review), e.g. a name with a space or a special request.';
-COMMENT ON COLUMN {SCHEMA}.order_records.made_at IS 'When base and name were both printed (epoch seconds) → tab ready_to_ship.';
+COMMENT ON COLUMN {SCHEMA}.order_records.made_at IS 'When base and name were both printed (epoch seconds) → tab pack_it.';
 COMMENT ON COLUMN {SCHEMA}.order_records.source_status IS 'Webstore order status from the newest uploaded report (status_at says how recent).';
 COMMENT ON COLUMN {SCHEMA}.order_records.name IS 'Name to print (cleaned or corrected); raw_name is what the customer typed.';
 CREATE OR REPLACE FUNCTION {SCHEMA}.refuse_delete() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -566,7 +562,10 @@ def merge(con, r: dict, force: bool = False) -> str | None:
     if (r.get("status_at") or "") > (L.get("status_at") or ""):
         sets["source_status"], sets["status_at"] = r.get("source_status"), r.get("status_at")
         if L["state"] in ("ready", "needs_review", "not_needed"):
-            sets["state"] = _evaluate(L, r.get("source_status"))
+            from .ingest import status_state  # the same rules as an uploaded report (never backwards)
+
+            sets["state"] = status_state(L["state"], L.get("source_status"), r.get("source_status"),
+                                         _evaluate(L, "PRINT"), bool(L.get("batch_id")))
     # who's making it: the newer change wins (unless this computer has its own change on the way)
     pending = con.execute("SELECT 1 FROM sync_outbox WHERE order_id=?", (oid,)).fetchone() is not None
     # a name / colour fixed on another computer (not yet made anywhere)

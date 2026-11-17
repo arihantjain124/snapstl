@@ -259,3 +259,18 @@ Every computer must see the same tab for an order (shared records in Supabase).
 - Owner allowed downloading `postgres:16-alpine` for a throwaway test database (Docker, port 54329,
   removed after the run). All 103 tests pass, including the 20 shared-records tests.
 - Phase 1 committed on the work branch (not merged to `main`, not pushed). Next: phase 2 (tab rule).
+
+### 2026-11-18: Phase 2 (one tab rule, report rules, Printing) built and committed
+- One rule decides each order's tab (`tabs.py`), used by the app and by Supabase; tested to agree
+  on every combination.
+- Report rules: never backwards; AWB EXPIRED on a made order clears the label ("Label expired – make a
+  new label") → Printed – pack it; AWB EXPIRED on an order not made yet keeps it to make. Flags:
+  website past PRINT but not made; cancelled while being made; back to PRINT after it was packed
+  outside SnapSTL (new flag `back_to_print`, the agent's addition: otherwise such an order would be
+  made twice). Orders first seen already past PRINT are history and never flagged.
+- A plate started in Print moves its orders to *Printing*; existing batches are filled in once from
+  their print jobs.
+- Dry run on a copy of the owner's database (deleted afterwards): 1,670 orders → New orders 582,
+  Check name 67, Ready to print 2, Printing 20, Printed – pack it 13, Label done – ship it 20, On the
+  way 151, Delivered 767, Coming back 12, Cancelled 27, Problems 0, Skipped 9.
+- 110 tests pass (incl. shared records). The Orders page still shows the old tabs until phase 3.

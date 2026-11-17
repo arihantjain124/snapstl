@@ -40,6 +40,10 @@ async def _lifespan(_app):
     MANAGER.output_dir = SETTINGS.output_dir
     cache.set_root(SETTINGS.downloads_dir)  # downloaded models: visible folder, kept until deleted in Finder
     cache.migrate_old_cache()               # one-time move from the old hidden cache folder
+    try:
+        makeit.backfill_started()           # one-time (0.23): Printing for orders whose plates were started
+    except Exception as e:  # noqa: BLE001  (never block starting the app)
+        print(f"SnapSTL: Printing backfill skipped: {e}")
     MANAGER.start()  # builds batches once their models arrive
     DOWNLOADER.pause_s = SETTINGS.delay_between_downloads_s
     DOWNLOADER.start()  # re-queues names that were mid-download when the app stopped

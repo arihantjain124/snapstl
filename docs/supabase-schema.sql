@@ -62,6 +62,7 @@ ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS first_status text;
 ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS print_started_at double precision;
 ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS label_at double precision;
 ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS label_by text;
+ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS label_note text;
 ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS express_by text;
 ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS express_note text;
 ALTER TABLE snapstl.order_records ADD COLUMN IF NOT EXISTS flag text;
@@ -82,9 +83,10 @@ COMMENT ON COLUMN snapstl.order_records.first_status IS 'Webstore status when Sn
 COMMENT ON COLUMN snapstl.order_records.print_started_at IS 'When a plate holding the order was first started (epoch seconds) → Printing.';
 COMMENT ON COLUMN snapstl.order_records.label_at IS 'Label Generated pressed on the logistics page (epoch seconds) → Label done – ship it; NULL = no label yet.';
 COMMENT ON COLUMN snapstl.order_records.label_by IS 'Who pressed Label Generated (e.g. logistics).';
+COMMENT ON COLUMN snapstl.order_records.label_note IS 'Shown with the label, e.g. ''Label expired – make a new label'' (AWB EXPIRED clears label_at).';
 COMMENT ON COLUMN snapstl.order_records.express_by IS 'Express: date the customer needs it by (YYYY-MM-DD); NULL = not express.';
 COMMENT ON COLUMN snapstl.order_records.express_note IS 'Express: note from the customer call.';
-COMMENT ON COLUMN snapstl.order_records.flag IS 'Why the order is in Problems – check: past_print_not_made | cancelled_in_production | cancel_request | unknown_status; NULL = none.';
+COMMENT ON COLUMN snapstl.order_records.flag IS 'Why the order is in Problems – check: past_print_not_made | cancelled_in_production | cancel_request | back_to_print | unknown_status; NULL = none.';
 COMMENT ON COLUMN snapstl.order_records.flag_note IS 'Words shown with the flag.';
 COMMENT ON COLUMN snapstl.order_records.name_change_reason IS 'Why the name / colour was changed after confirming with the customer.';
 COMMENT ON COLUMN snapstl.order_records.name_confirmed_at IS 'When that change was confirmed with the customer (epoch seconds).';
@@ -92,7 +94,7 @@ COMMENT ON COLUMN snapstl.order_records.remake_at IS 'Remake requested (epoch se
 COMMENT ON COLUMN snapstl.order_records.remake_reason IS 'Why a remake was requested.';
 COMMENT ON COLUMN snapstl.order_records.reuse_of IS 'This order is sent with the returned (RTO) piece of that order.';
 COMMENT ON COLUMN snapstl.order_records.reused_by IS 'This returned (RTO) piece went to that order (each piece is used once).';
-COMMENT ON COLUMN snapstl.order_records.label_changed IS 'Last change of label_at, label_by (epoch seconds): the newest change wins.';
+COMMENT ON COLUMN snapstl.order_records.label_changed IS 'Last change of label_at, label_by, label_note (epoch seconds): the newest change wins.';
 COMMENT ON COLUMN snapstl.order_records.express_changed IS 'Last change of express_by, express_note (epoch seconds): the newest change wins.';
 COMMENT ON COLUMN snapstl.order_records.flag_changed IS 'Last change of flag, flag_note (epoch seconds): the newest change wins.';
 COMMENT ON COLUMN snapstl.order_records.name_note_changed IS 'Last change of name_change_reason, name_confirmed_at (epoch seconds): the newest change wins.';
@@ -101,22 +103,15 @@ COMMENT ON COLUMN snapstl.order_records.reuse_changed IS 'Last change of reuse_o
 CREATE INDEX IF NOT EXISTS order_records_tab ON snapstl.order_records (tab, ready_type);
 CREATE INDEX IF NOT EXISTS order_records_club ON snapstl.order_records (clubbed_id);
 CREATE OR REPLACE FUNCTION snapstl.set_tab() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE st text := upper(coalesce(NEW.source_status, ''));
+DECLARE s text;  -- the app state: who's making it, else the app's own view (older SnapSTL: from the status)
 BEGIN
-  NEW.tab := CASE
-    WHEN NEW.state = 'in_batch' THEN 'in_batch'
-    WHEN NEW.state = 'bundled' AND NEW.made_at IS NOT NULL THEN 'ready_to_ship'
-    WHEN NEW.state = 'bundled' THEN 'bundled'
-    WHEN NEW.state = 'printed' THEN 'printed'
-    WHEN NEW.app_state IN ('ready', 'needs_review', 'skipped') THEN NEW.app_state
-    WHEN NEW.app_state IS NULL AND st IN ('PRINT') THEN 'ready'
-    WHEN st = 'DELIVERED' THEN 'delivered'
-    WHEN st LIKE 'RTO%' THEN 'rto'
-    WHEN replace(replace(st, '_', '-'), ' ', '-') = 'IN-TRANSIT' THEN 'in_transit'
-    WHEN st LIKE 'CANCEL%' THEN 'cancelled'
-    ELSE 'others' END;
+  s := CASE WHEN NEW.state IN ('in_batch', 'bundled', 'printed') THEN NEW.state
+            WHEN NEW.app_state IN ('ready', 'needs_review', 'skipped', 'not_needed') THEN NEW.app_state
+            WHEN upper(coalesce(NEW.source_status, '')) IN ('PRINT') THEN 'ready'
+            ELSE 'not_needed' END;
+  NEW.tab := (CASE WHEN s = 'skipped' THEN 'skipped' WHEN NEW.flag IS NOT NULL THEN 'problems' WHEN REPLACE(REPLACE(UPPER(COALESCE(NEW.source_status, '')), '_', '-'), ' ', '-') LIKE 'CANCEL%' THEN 'cancelled' WHEN (NEW.remake_at IS NULL OR COALESCE(NEW.label_at, 0) >= NEW.remake_at) AND REPLACE(REPLACE(UPPER(COALESCE(NEW.source_status, '')), '_', '-'), ' ', '-') = 'DELIVERED' THEN 'delivered' WHEN (NEW.remake_at IS NULL OR COALESCE(NEW.label_at, 0) >= NEW.remake_at) AND REPLACE(REPLACE(UPPER(COALESCE(NEW.source_status, '')), '_', '-'), ' ', '-') LIKE 'RTO%' THEN 'rto' WHEN (NEW.remake_at IS NULL OR COALESCE(NEW.label_at, 0) >= NEW.remake_at) AND REPLACE(REPLACE(UPPER(COALESCE(NEW.source_status, '')), '_', '-'), ' ', '-') = 'IN-TRANSIT' THEN 'on_the_way' WHEN NEW.label_at IS NOT NULL OR ((NEW.remake_at IS NULL OR COALESCE(NEW.label_at, 0) >= NEW.remake_at) AND REPLACE(REPLACE(UPPER(COALESCE(NEW.source_status, '')), '_', '-'), ' ', '-') IN ('PACK', 'HANDOVER')) THEN 'ship_it' WHEN NEW.made_at IS NOT NULL OR s = 'printed' OR NEW.reuse_of IS NOT NULL THEN 'pack_it' WHEN s IN ('in_batch', 'bundled', 'printed') AND NEW.print_started_at IS NOT NULL THEN 'printing' WHEN s IN ('in_batch', 'bundled', 'printed') THEN 'ready_to_print' WHEN s = 'needs_review' THEN 'check_name' WHEN s = 'ready' THEN 'to_make' ELSE 'problems' END);  -- tabs.py: the Orders page's rule
   NEW.ready_type := CASE
-    WHEN NEW.tab <> 'ready' THEN NULL
+    WHEN NEW.tab <> 'to_make' THEN NULL
     WHEN NEW.sku = 'Adhoc' THEN 'adhoc'
     WHEN coalesce(NEW.clubbed_id, '') <> '' AND (SELECT count(*) FROM snapstl.order_records o
          WHERE o.clubbed_id = NEW.clubbed_id AND o.order_id <> NEW.order_id) > 0 THEN 'clubbed'
@@ -130,20 +125,21 @@ CREATE OR REPLACE FUNCTION snapstl.retab_club() RETURNS trigger LANGUAGE plpgsql
 BEGIN
   IF coalesce(NEW.clubbed_id, '') <> '' THEN
     UPDATE snapstl.order_records SET ready_type = ready_type
-     WHERE clubbed_id = NEW.clubbed_id AND order_id <> NEW.order_id AND tab = 'ready' AND ready_type IS DISTINCT FROM 'clubbed';
+     WHERE clubbed_id = NEW.clubbed_id AND order_id <> NEW.order_id AND tab = 'to_make' AND ready_type IS DISTINCT FROM 'clubbed';
   END IF;
   RETURN NULL;
 END $$;
 CREATE OR REPLACE TRIGGER order_records_retab_club AFTER INSERT ON snapstl.order_records
     FOR EACH ROW EXECUTE FUNCTION snapstl.retab_club();
-UPDATE snapstl.order_records SET tab = tab WHERE tab IS NULL;
+-- rows without a tab, or with a tab from before 0.23: work it out again (once; updated_at is kept)
+UPDATE snapstl.order_records SET tab = tab WHERE tab IS NULL OR tab NOT IN ('to_make', 'check_name', 'ready_to_print', 'printing', 'pack_it', 'ship_it', 'on_the_way', 'delivered', 'rto', 'cancelled', 'problems', 'skipped');
 COMMENT ON TABLE snapstl.order_records IS 'SnapSTL orders shared by every computer (one row per webstore order ID). Read-only for anyone but SnapSTL. Never deleted.';
-COMMENT ON COLUMN snapstl.order_records.tab IS 'Orders page tab: ready | needs_review | in_batch | bundled | ready_to_ship | printed | skipped | delivered | rto | in_transit | cancelled | others (the last five are orders that need no making, by webstore status). Set by a trigger.';
-COMMENT ON COLUMN snapstl.order_records.ready_type IS 'For tab = ready: single | clubbed (several orders share clubbed_id) | adhoc (typed in by hand, sku Adhoc); NULL otherwise. Set by a trigger.';
+COMMENT ON COLUMN snapstl.order_records.tab IS 'Orders page tab (0.23, tabs.py): to_make | check_name | ready_to_print | printing | pack_it | ship_it | on_the_way | delivered | rto | cancelled | problems | skipped. Make: to_make, check_name, ready_to_print, printing; pack & ship: pack_it (printed), ship_it (label done or PACK / HANDOVER); records: on_the_way, delivered, rto, cancelled, problems (see flag), skipped. Set by a trigger.';
+COMMENT ON COLUMN snapstl.order_records.ready_type IS 'For tab = to_make: single | clubbed (several orders share clubbed_id) | adhoc (typed in by hand, sku Adhoc); NULL otherwise. Set by a trigger.';
 COMMENT ON COLUMN snapstl.order_records.state IS 'Who is making it: in_batch | bundled | printed (computer_name has it) | released (nobody yet — see tab).';
 COMMENT ON COLUMN snapstl.order_records.app_state IS 'SnapSTL''s own state on the computer that last wrote the row: ready | needs_review | in_batch | bundled | printed | skipped | not_needed.';
 COMMENT ON COLUMN snapstl.order_records.review_reason IS 'Why the order needs a person to check it (tab = needs_review), e.g. a name with a space or a special request.';
-COMMENT ON COLUMN snapstl.order_records.made_at IS 'When base and name were both printed (epoch seconds) → tab ready_to_ship.';
+COMMENT ON COLUMN snapstl.order_records.made_at IS 'When base and name were both printed (epoch seconds) → tab pack_it.';
 COMMENT ON COLUMN snapstl.order_records.source_status IS 'Webstore order status from the newest uploaded report (status_at says how recent).';
 COMMENT ON COLUMN snapstl.order_records.name IS 'Name to print (cleaned or corrected); raw_name is what the customer typed.';
 CREATE OR REPLACE FUNCTION snapstl.refuse_delete() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -600,14 +596,30 @@ INSERT INTO shop.glossary(term, kind, meaning) VALUES
   ('cod', 'payment_method', 'Cash on delivery'),
   ('partial_cod', 'payment_method', 'Part paid online, the rest cash on delivery'),
   ('prepaid', 'payment_method', 'Prepaid'),
-  ('ready', 'tab', 'SnapSTL: ready to be taken into a batch'),
-  ('needs_review', 'tab', 'SnapSTL: a person must check it first (see review_reason)'),
-  ('in_batch', 'tab', 'SnapSTL: in a batch on some computer (made_on)'),
-  ('bundled', 'tab', 'SnapSTL: plates built, waiting to be printed'),
-  ('ready_to_ship', 'tab', 'SnapSTL: base and name both printed'),
-  ('printed', 'tab', 'SnapSTL: marked printed by a person'),
-  ('skipped', 'tab', 'SnapSTL: skipped by a person'),
-  ('delivered / rto / in_transit / cancelled / others', 'tab', 'SnapSTL: needs no making; grouped by webstore status'),
+  ('to_make', 'tab', 'SnapSTL (New orders – to make): webstore PRINT, ready to be taken into a batch'),
+  ('check_name', 'tab', 'SnapSTL (Check name first): a person must check the name first (see review_reason)'),
+  ('ready_to_print', 'tab', 'SnapSTL (Ready to print): in a batch, no plate of it started yet (made_on)'),
+  ('printing', 'tab', 'SnapSTL (Printing): a plate holding it was started (print_started_at)'),
+  ('pack_it', 'tab', 'SnapSTL (Printed – pack it): base and name printed, no label yet'),
+  ('ship_it', 'tab', 'SnapSTL (Label done – ship it): Label Generated (label_at), or webstore PACK / HANDOVER'),
+  ('on_the_way', 'tab', 'SnapSTL (On the way): webstore IN-TRANSIT'),
+  ('delivered', 'tab', 'SnapSTL (Delivered): webstore DELIVERED'),
+  ('rto', 'tab', 'SnapSTL (Coming back): webstore RTO_*'),
+  ('cancelled', 'tab', 'SnapSTL (Cancelled): webstore CANCELLED*'),
+  ('problems', 'tab', 'SnapSTL (Problems – check): has a flag (see flag, flag_note) or a status SnapSTL doesn''t know'),
+  ('skipped', 'tab', 'SnapSTL (Skipped): skipped by a person'),
+  ('ready', 'tab', 'Before SnapSTL 0.23: now to_make'),
+  ('needs_review', 'tab', 'Before SnapSTL 0.23: now check_name'),
+  ('in_batch', 'tab', 'Before SnapSTL 0.23: now ready_to_print'),
+  ('bundled', 'tab', 'Before SnapSTL 0.23: now ready_to_print or printing'),
+  ('ready_to_ship', 'tab', 'Before SnapSTL 0.23: now pack_it'),
+  ('printed', 'tab', 'Before SnapSTL 0.23: now pack_it'),
+  ('delivered / rto / in_transit / cancelled / others', 'tab', 'Before SnapSTL 0.23: now delivered / rto / on_the_way / cancelled / problems or ship_it'),
+  ('past_print_not_made', 'flag', 'Website moved it past PRINT (PACK …) but SnapSTL hasn''t printed it'),
+  ('cancelled_in_production', 'flag', 'Cancelled while being made or after it was printed: don''t pack'),
+  ('cancel_request', 'flag', 'Customer asked to cancel (logistics page), before the website shows it'),
+  ('back_to_print', 'flag', 'Back to PRINT / AWB EXPIRED after it was packed outside SnapSTL: check whether it is made'),
+  ('unknown_status', 'flag', 'A webstore status SnapSTL doesn''t know'),
   ('single', 'ready_type', 'Ready order on its own'),
   ('clubbed', 'ready_type', 'Ready order shipped together with others (same clubbed_id)'),
   ('adhoc', 'ready_type', 'Ready order typed in by hand in SnapSTL (sku Adhoc)'),

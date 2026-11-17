@@ -75,8 +75,12 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   `BAMBUDDY_OCTOEVERYWHERE=0` skips it); never uninstall it, and never script its plugin setup or account
   linking (the owner does that in its UI). SnapSTL itself never talks to OctoEverywhere. Slicing on this computer is gone for good (#43).
 - Database: add columns **only** via `MIGRATIONS` in `db.py`; never drop/rename columns or tables.
+- **The tab rule lives only in `tabs.py`** (0.23): `tab_of` (Python) and `case_sql` (SQL, used for the
+  Orders page and by Supabase's `set_tab()` trigger) must stay identical — `tests/test_tabs.py` checks
+  every combination. A report never moves an order backwards (`ingest.status_state`); doubtful cases
+  get a flag (Problems – check) instead of a guess.
 - `order_records.tab` / `ready_type` are set by the `set_tab()` trigger from the row (state, app_state,
-  made_at, source_status, clubbed_id, sku): when the Orders page's tabs (`server.TABS`) change, change
+  made_at, source_status, clubbed_id, sku, and the 0.23 fields): when the Orders page's tabs change, change
   that trigger the same way, and keep the column `COMMENT`s true — other agents read the table by them.
 - Shared-records schema changes go in `sync._SETUP_SQL`; regenerate `docs/supabase-schema.sql`
   (`uv run snapstl-db schema > docs/supabase-schema.sql`) — a test checks they match.
@@ -138,7 +142,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | In-app Help page | `<section id="t-help">` in `index.html` (update with README when behaviour changes) |
 | Fit check | `scaling.fit_metrics` / `fit_problems`, `pipeline.build`, `export.write_plate` |
 | New order field / column | `db.py` (MIGRATIONS) → `ingest.py` → `server._order_view` / `FILTERS` → `index.html` |
-| Order tabs & filters | `server.TABS`, `server.FILTERS` (+ `TABS` array in `index.html`) |
+| Order tabs & filters | `tabs.py` (the rule, 0.23), `server.TABS`, `server.FILTERS` (+ `TABS` array in `index.html`) |
+| Report status rules, Problems flags, label expired | `ingest.status_state`, `ingest._status_flags`; tests in `tests/test_tabs.py` |
 | New setting / default | `settings.py` (+ `fillSettings` / `readSettings` in `index.html`) |
 | Scaling targets / compartments | `settings.default_bands()`; math in `scaling.py` |
 | Plate grouping / packing | `grouping.py`, `packing.py` |
