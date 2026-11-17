@@ -322,3 +322,28 @@ Every computer must see the same tab for an order (shared records in Supabase).
 - Version 0.23.0. Docs (README, ARCHITECTURE, AGENTS, Help) brought up to date.
 - Next: phase 7 — practice run on a copy of the database with the reference report, then the update
   day (backups, every computer updated together, 30-day report uploaded).
+
+### 2026-11-18: Phase 7, practice run (passed)
+Run on copies only (this computer's database + its computer ID as "A", an empty second computer "B")
+and a throwaway Postgres in place of Supabase; copies deleted afterwards.
+1. Today's version (0.22.23) on A filled the shared records: 1,670 orders, schema 1.
+2. A updated to 0.23.0: schema 2, every record's tab worked out again, Printing filled from the print
+   jobs of 25 batches. A: New orders 582, Check name 67, Ready to print 2, Printing 19, Printed – pack
+   it 14, Label done – ship it 20, On the way 151, Delivered 767, Coming back 12, Cancelled 27,
+   Problems 0, Skipped 9. Old tabs: Bundled → Printing 19 / pack it 14 / ship it 17 / On the way 12;
+   In a batch → Ready to print 2.
+3. B (0.23.0) joined: all 1,670 orders, every one in the same tab as on A and in the shared records,
+   same batch owner for every order.
+4. A uploaded the reference report (30 days): nothing lost, nothing flagged, no order went back to
+   New orders, B and the shared records still identical to A.
+5. A computer still on 0.22.23 is refused: "The shared records were set up by a newer SnapSTL —
+   update this computer (Settings → Updates)".
+- Found while setting up: a database copy that remembers the real Supabase empties itself against a
+  fresh database (the existing "Supabase was cleared" safety, working as designed). Not a problem for
+  the real update (same Supabase), only for test copies.
+- Printing 19 / pack it 14 here vs 20 / 13 in the earlier dry run: production marked 2 orders printed
+  on the real computer in between (live work), not a difference in the new version.
+- Not covered by this run: a report with *new* statuses (the reference file was already uploaded);
+  those rules are covered by the automated tests (AWB EXPIRED, flags, never backwards).
+- **Next (needs the owner's go-ahead): update day** — merge to main and push, back up every computer,
+  update all computers the same day, upload a 30-day report.
