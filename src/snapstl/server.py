@@ -531,6 +531,7 @@ def clear_flag(order_id: str):
     with db.tx() as con:
         if not db.set_group(con, order_id, "flag"):
             raise HTTPException(404, "No such order")
+        db.count_usage(con, "clear_flag")
     sync.LOOP.kick()
     return {"ok": True}
 
@@ -551,6 +552,7 @@ async def use_returned(order_id: str, req: Request):
             raise HTTPException(409, "That returned piece doesn't match this order (or is already used)")
         db.set_group(con, order_id, "reuse", reuse_of=rto)
         db.set_group(con, rto, "reuse", reused_by=order_id)
+        db.count_usage(con, "use_returned")
     sync.LOOP.kick()
     return {"ok": True}
 
@@ -563,6 +565,7 @@ def undo_returned(order_id: str):
             raise HTTPException(409, "This order doesn't use a returned piece")
         db.set_group(con, order_id, "reuse")
         db.set_group(con, cur["reuse_of"], "reuse")
+        db.count_usage(con, "undo_returned")
     sync.LOOP.kick()
     return {"ok": True}
 

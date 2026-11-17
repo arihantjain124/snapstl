@@ -307,3 +307,9 @@ Every computer must see the same tab for an order (shared records in Supabase).
   afterwards; no password typed (a script-made sign-in). AGENTS.md rule for port 8002 updated.
 - Open for phase 5/6: Settings → Usage screen; Settings fields for the tracking link, day limits and
   message texts (defaults are in place).
+
+### 2026-11-18: Phase 5 (Settings → Usage) built and committed
+- Settings has a new **Usage** section: each feature in words, times used and on how many days, for
+  the last 7 / 30 / 90 days or a year, all computers together (from Supabase; this computer only if
+  it can't be reached). Production's Use / Undo returned piece and Clear flag are counted too.
+- Checked in the browser on a fresh throwaway instance with sample counts (no customer data).

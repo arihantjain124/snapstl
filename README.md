@@ -634,8 +634,9 @@ Open `http://HOST-IP:8002` and sign in with the logistics password.
     customer* and say why), Express (needed-by date + note; red from 3 days before), Customer wants to
     cancel (production sees it at once in Problems), Remake request (arrived broken …), Use returned piece;
   - **Notes:** call notes, shared with everyone.
-- Nothing else of SnapSTL can be changed from this page. Every button is counted per day
-  (Settings → Usage) so the layout can be improved later.
+- Nothing else of SnapSTL can be changed from this page. Every button is counted per day: see
+  **Settings → Usage** on any SnapSTL computer (all computers together, last 7 / 30 / 90 days), to
+  improve the layout later.
 
 ### Logistics host (Mac or Windows)
 

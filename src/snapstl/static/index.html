@@ -631,6 +631,16 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     </div>
   </div>
 
+  <div class="sec" data-sec="usage" hidden>
+    <p class="intro">How often each feature is used, per day, on every computer (the logistics page and the main buttons). Only feature names are counted — never customer details. Use it to move the most-used things to the front later.</p>
+    <div class="card">
+      <div class="toolbar"><h2 style="margin:0">Usage</h2><span class="grow hint" id="usagefrom"></span>
+        <label for="usagedays">Last</label><select id="usagedays"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">year</option></select>
+        <button id="usagerefresh" class="small">Refresh</button></div>
+      <div class="tw"><table><thead><tr><th>Where</th><th>Feature</th><th style="text-align:right">Times used</th><th style="text-align:right">Days used</th></tr></thead><tbody id="usagerows"></tbody></table></div>
+    </div>
+  </div>
+
   <div class="savebar" id="savebar" hidden><span class="hint grow" id="savehint">Changes here are kept when you press <b>Save settings</b>.</span><button id="reset" title="Product, plate and folder settings back to SnapSTL's defaults">Restore defaults</button><button id="save" class="primary">Save settings</button></div>
 </section>
 
@@ -1403,11 +1413,11 @@ $('portalpwshow').onclick=()=>{const show=$('portalpw').type==='password';$('por
 $('portalsave').onclick=async()=>{const b=$('portalsave');b.disabled=true;try{await post('/api/portal',{enabled:$('lan').checked,password:$('portalpw').value});$('portalpw').value='';await loadPortal()}catch(e){$('portalinfo').textContent=e.message;$('portalinfo').style.color='var(--err)'}finally{b.disabled=false}};
 
 // ---------- settings sections ----------
-const SETSECS=[['setup','Setup'],['product','Product'],['plates','Plates'],['folders','Folders'],['connections','Connections'],['maintenance','Maintenance']];
+const SETSECS=[['setup','Setup'],['product','Product'],['plates','Plates'],['folders','Folders'],['connections','Connections'],['maintenance','Maintenance'],['usage','Usage']];
 let SETSEC='setup';try{SETSEC=localStorage.getItem('setsec')||'setup'}catch{}
 function setSec(sec){if(!SETSECS.some(x=>x[0]===sec))sec='setup';SETSEC=sec;try{localStorage.setItem('setsec',sec)}catch{}
   document.querySelectorAll('#t-settings [data-sec]').forEach(d=>d.hidden=d.dataset.sec!==sec);
-  $('savebar').hidden=!['product','plates','folders'].includes(sec);
+  $('savebar').hidden=!['product','plates','folders'].includes(sec);if(sec==='usage')loadUsage();
   $('setchips').innerHTML=SETSECS.map(([k,l])=>`<button data-ss="${k}" class="${k===sec?'on':''}">${l}</button>`).join('');
   document.querySelectorAll('[data-ss]').forEach(b=>b.onclick=()=>setSec(b.dataset.ss))}
 // ---------- setup checklist ----------
@@ -1540,6 +1550,22 @@ async function refresh(){try{const st=await api('/api/state');showShared(st.shar
   const log=$('log');const atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-4;log.textContent=st.log.join('\n');if(atEnd)log.scrollTop=log.scrollHeight;
 }catch(e){}}
 function refreshAll(){lastKey='';refresh()}
+// ---------- Settings → Usage (0.23) ----------
+const FEATWORD={open_page:['Logistics','Opened the page'],search:['Logistics','Search'],open_order:['Logistics','Opened an order'],
+  copy_tracking_link:['Logistics','Copy tracking link'],copy_message:['Logistics','Copy message'],whatsapp:['Logistics','WhatsApp'],
+  copy_order_ids:['Logistics','Copy order IDs'],download_csv:['Logistics','Download (CSV)'],label_generated:['Logistics','Label Generated'],
+  label_undo:['Logistics','Undo Label Generated'],express_set:['Logistics','Express set or changed'],express_clear:['Logistics','Express removed'],
+  name_changed:['Logistics','Name changed with the customer'],note_added:['Logistics','Note added'],cancel_request:['Logistics','Customer wants to cancel'],
+  remake_request:['Logistics','Remake request'],use_returned:['Both','Use returned piece'],undo_returned:['Both','Undo returned piece'],
+  clear_flag:['Production','Clear flag']};
+const featWord=f=>f.startsWith('view_')?['Logistics','List: '+(DTITLE[f.slice(5)]||f.slice(5))]:(FEATWORD[f]||['—',f]);
+async function loadUsage(){try{const r=await api('/api/usage?days='+$('usagedays').value);
+    $('usagefrom').textContent=r.shared?'All computers (shared records)':'This computer only (shared records not reachable)';
+    $('usagerows').innerHTML=r.rows.length?r.rows.map(x=>{const [w,l]=featWord(x.feature);return `<tr><td>${esc(w)}</td><td>${esc(l)}</td><td style="text-align:right">${x.count}</td><td style="text-align:right">${x.days}</td></tr>`}).join('')
+      :'<tr><td colspan="4" class="empty">Nothing used yet in this period</td></tr>'}
+  catch(e){$('usagerows').innerHTML=`<tr><td colspan="4" class="empty">${esc(e.message)}</td></tr>`}}
+$('usagedays').onchange=loadUsage;$('usagerefresh').onclick=loadUsage;
+
 // ---------- logistics page (label and customer-care team, 0.23) ----------
 const DMENU=[['Labels',[['labels','Labels to make'],['ship_it','Label done – ship it']]],
   ['Customer help',[['check_name','Check name first'],['problems','Cancel requests & problems'],['remakes','Remake requests']]],

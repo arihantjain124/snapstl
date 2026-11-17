@@ -58,6 +58,8 @@ def test_clear_flag(client):
     assert client.post("/api/orders/F1/clear-flag").status_code == 200
     assert ids(client, "problems") == [] and ids(client, "ship_it") == ["F1"]
     assert client.post("/api/orders/nope/clear-flag").status_code == 404
+    used = {r["feature"]: r["count"] for r in client.get("/api/usage", params={"days": 7}).json()["rows"]}
+    assert used["clear_flag"] == 1  # Settings → Usage
 
 
 def test_flagged_or_reused_orders_never_go_into_a_batch(client):
