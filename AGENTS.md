@@ -166,7 +166,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Report columns kept for other agents (Supabase `report_rows`, `report_uploads`, `orders_full`) | `report.py` (`COLUMNS`: add a report column there, with its type and description); `ingest.ingest` stores rows; `sync._push_reports` |
 | Shared order records (Supabase): connection in Settings, sync, claims | `sync.py`, `config.py`, `computer.py`, `server.shared_records_*`, `server.setup_status`, `dbtool.py` (`snapstl-db`), triggers in `db.POST_SCHEMA` |
 | Print farm: Bambuddy connection, printers, Push to queue, slicing | `farm.py` (+ `/api/farm*`, `/api/batches/{id}/plates` and `/push`, `/api/print-jobs` in `server.py`); Printers page + Push to queue panel in `index.html`; `tests/test_farm.py` |
-| Print tab (Bases / Names / Completed / Removed), Ready to ship | `makeit.py`, `/api/makeit*` in `server.py`, `server.TABS` (`ready_to_ship`), `<section id="t-makeit">` in `index.html`; `tests/test_farm.py` |
+| Print tab (Bases / Names / Completed / Removed), Printing / Printed – pack it, Express plates first | `makeit.py` (`board`, `update_made`), `/api/makeit*` in `server.py`, `tabs.py` (`printing`, `pack_it`), `<section id="t-makeit">` in `index.html`; `tests/test_farm.py` |
 | Slicing tab (Bambuddy profiles and print defaults per printer) | `farm.py` (`bambuddy_presets`, `chosen_presets`, `set_presets`, `missing_presets`, `target`, `print_defaults`, `forget_local_slicing`), `/api/makeit/presets` `/print-defaults`; `<section id="t-slicing">`; `tests/test_farm.py` |
 | Printers page, sidebar status | `farm.everything` / `summarize`, `/api/printer-status`, `/api/health`; `<section id="t-printers">`, `loadHealth` in `index.html` |
 | Settings sections (Setup · Product · Plates · Folders · Connections · Maintenance · Usage) | `data-sec` blocks + `setSec` in `index.html`; checklist from `/api/setup` |
@@ -174,7 +174,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Bambuddy computer (Docker: Bambuddy + slicer sidecars) | `scripts/windows/bambuddy-server.ps1`, `scripts/bambuddy-docker/docker-compose.yml`, `scripts/bambuddy-version.txt` |
 | SnapSTL installers and Bambuddy (`SNAPSTL_BAMBUDDY`, `SNAPSTL_BAMBUDDY_URL`) | `scripts/windows/common.ps1` (`Install-Bambuddy`, `Connect-Bambuddy`), `scripts/make_app.sh` (Mac: connect only); older native install (Windows): `scripts/windows/bambuddy.ps1`, `platform_os.update_bambuddy` |
 | Sidebar "This computer" address | `server._network` (in `/api/health`), `platform_os.lan_ips`, `#hip` in `index.html` |
-| Printed tab / report status timestamps | `ingest.set_printed`, `ingest.status_stamp`, `server.TABS`, `index.html` (`SELKIND`) |
+| Report status timestamps | `ingest.status_stamp`, `ingest.file_as_of` (Mark printed / `set_printed` stays only for old data, no button) |
+| Logistics settings (tracking link, red limits, messages), Usage screen | `settings.LogisticsSettings`, `data-sec="logistics"` / `"usage"` + `lgMsgs` / `loadUsage` in `index.html` |
 
 ## 4. How to work
 

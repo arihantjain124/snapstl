@@ -313,3 +313,12 @@ Every computer must see the same tab for an order (shared records in Supabase).
   the last 7 / 30 / 90 days or a year, all computers together (from Supabase; this computer only if
   it can't be reached). Production's Use / Undo returned piece and Clear flag are counted too.
 - Checked in the browser on a fresh throwaway instance with sample counts (no customer data).
+
+### 2026-11-18: Phase 6 (Logistics settings, version 0.23.0) built and committed
+- Settings → **Logistics**: tracking link (must start with https:// and contain {awb} or {order_id};
+  empty hides the button), the three red limits (0–60 days) and the ready-made messages (add, edit,
+  remove; up to 20). Saved with Save settings on the computer that hosts the logistics page. The
+  production Express badge follows the same "red N days before" setting.
+- Version 0.23.0. Docs (README, ARCHITECTURE, AGENTS, Help) brought up to date.
+- Next: phase 7 — practice run on a copy of the database with the reference report, then the update
+  day (backups, every computer updated together, 30-day report uploaded).

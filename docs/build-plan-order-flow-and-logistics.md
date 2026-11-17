@@ -1,6 +1,7 @@
 # Build plan: new order flow, logistics page, Express, reuse of returned pieces (0.23.0)
 
-Agreed with the owner on 2026-11-18 (discussion: `documentation.md`). Nothing here is built yet.
+Agreed with the owner on 2026-11-18 (discussion: `documentation.md`). **Status:** phases 1–6 built and
+committed on the work branch (0.23.0); phase 7 (practice run, update day) is next.
 Each phase ends with passing tests and can be committed on its own. Phases 1–2 change no screen;
 the owner sees the change from phase 3.
 

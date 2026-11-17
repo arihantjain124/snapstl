@@ -638,6 +638,10 @@ Open `http://HOST-IP:8002` and sign in with the logistics password.
   **Settings → Usage** on any SnapSTL computer (all computers together, last 7 / 30 / 90 days), to
   improve the layout later.
 
+**Settings → Logistics** (on the computer that hosts the logistics page): the tracking link (the
+webstore's page with `{awb}` or `{order_id}`), after how many days an order turns red (not labelled,
+Express, stuck On the way) and the ready-made messages. Press **Save settings**.
+
 ### Logistics host (Mac or Windows)
 
 The full app now listens only on localhost on Mac and Windows. On Mac or Windows, open Settings → Connections → Logistics access, enable hosting, set a password and press Save. Save starts or stops the listener immediately without restarting the app. Employees open `http://HOST-IP:8002` and sign in. Permit TCP 8002 for the local subnet in Windows Firewall if needed. This supersedes the former remote-control portal.

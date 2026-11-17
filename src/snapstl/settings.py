@@ -196,8 +196,14 @@ class Settings:
                                     and ("{awb}" in lg.tracking_url or "{order_id}" in lg.tracking_url)):
             errs.append("Tracking link must start with https:// and contain {awb} or {order_id}")
         for k in ("late_days", "express_red_days", "stuck_days"):
-            if not (0 <= int(getattr(lg, k)) <= 60):
-                errs.append("Logistics day limits must be 0–60")
+            v = getattr(lg, k)
+            if not isinstance(v, int) or isinstance(v, bool) or not (0 <= v <= 60):
+                errs.append("Logistics day limits must be whole numbers 0–60")
+                break
+        if not isinstance(lg.messages, dict) or len(lg.messages) > 20 or not all(
+                isinstance(k, str) and isinstance(v, str) and 0 < len(k) <= 40 and len(v) <= 1000
+                for k, v in lg.messages.items()):
+            errs.append("Messages: at most 20, each with a name (up to 40 letters) and text (up to 1000)")
         bands = sorted(self.scaling.bands, key=lambda b: b.min_letters)
         if not bands:
             errs.append("Scaling table is empty")

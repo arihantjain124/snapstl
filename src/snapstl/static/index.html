@@ -631,6 +631,26 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     </div>
   </div>
 
+  <div class="sec" data-sec="logistics" hidden>
+    <p class="intro">The logistics page (labels and customer questions) served from this computer on port 8002. Changes here apply when you press <b>Save settings</b>.</p>
+    <div class="card">
+      <h2>Tracking link</h2>
+      <label>Webstore tracking page<input id="lg_track" placeholder="https://shopdeck.clickpost.ai/en?waybill={awb}&amp;cp_id=105"></label>
+      <p class="hint" id="lg_trackhint">Use <code>{awb}</code> for the courier tracking number (AWB) and/or <code>{order_id}</code> for the order ID. Leave empty to hide the button.</p>
+      <h2 style="margin-top:14px">When an order turns red</h2>
+      <div class="grid2">
+        <label>Not labelled after (days since the order)<input id="lg_late" type="number" min="0" max="60" step="1"></label>
+        <label>Express: red this many days before the date<input id="lg_exp" type="number" min="0" max="60" step="1"></label>
+        <label>On the way: stuck after (days since pickup)<input id="lg_stuck" type="number" min="0" max="60" step="1"></label>
+      </div>
+    </div>
+    <div class="card">
+      <div class="toolbar"><h2 style="margin:0">Ready-made messages</h2><span class="grow"></span><button id="lg_add" class="small">Add message</button></div>
+      <p class="hint">Copied or sent by WhatsApp from the logistics page. Filled in from the order: <code>{customer}</code> (first name) <code>{order_id}</code> <code>{name}</code> <code>{colour}</code> <code>{tracking}</code> <code>{address}</code> <code>{needed_by}</code>.</p>
+      <div id="lg_msgs"></div>
+    </div>
+  </div>
+
   <div class="sec" data-sec="usage" hidden>
     <p class="intro">How often each feature is used, per day, on every computer (the logistics page and the main buttons). Only feature names are counted — never customer details. Use it to move the most-used things to the front later.</p>
     <div class="card">
@@ -793,6 +813,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Folders</b> — where dated batch folders and downloaded models go; the pause between downloads.</li>
       <li><b>Connections</b> — the Chrome helper, Bambuddy, the shared order records (several computers) and the logistics page (Mac or Windows host).</li>
       <li><b>Maintenance</b> — updates, and the database: back up, clean up old records (orders already made are always kept), or reset. None of these delete files.</li>
+      <li><b>Logistics</b> — for the logistics page: the tracking link, when orders turn red, and the ready-made messages.</li>
+      <li><b>Usage</b> — how often each button and list is used, on every computer.</li>
     </ul>
     <p class="hint">Slicing profiles and print defaults are on the <b>Slicing</b> page.</p>
   </div>
@@ -849,7 +871,8 @@ const FLAGWORD={past_print_not_made:'Website moved it on, but SnapSTL never made
 // Express: "needed by 25 Nov", red from 3 days before
 function expressBadge(d,note){if(!d)return '';const days=Math.ceil((new Date(d+'T23:59:59')-Date.now())/864e5);
   const when=new Date(d+'T12:00:00').toLocaleDateString([], {day:'numeric',month:'short'});
-  return `<span class="pill ${days<=3?'err':'warn'}" title="${esc(note||'Express: the customer needs it by this date')}">EXPRESS · needed by ${esc(when)}${days<0?' (late)':''}</span>`}
+  const lim=(S&&S.logistics&&Number.isInteger(S.logistics.express_red_days))?S.logistics.express_red_days:3;
+  return `<span class="pill ${days<=lim?'err':'warn'}" title="${esc(note||'Express: the customer needs it by this date')}">EXPRESS · needed by ${esc(when)}${days<0?' (late)':''}</span>`}
 let S=null,META=null,filter={tab:'to_make',f:{},offset:0},LIMIT=100,openBatch=null,tab='orders',FACETS=null;
 const SEL=new Set();
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1382,7 +1405,14 @@ function fillSettings(){const m=S.model;
   $('rots').innerHTML=[0,90,180,270].map(r=>`<label style="margin:0;color:var(--text)"><input type="checkbox" value="${r}" ${S.plate.rotations.includes(r)?'checked':''}> ${r}°</label>`).join('');
   $('bands').innerHTML=S.scaling.bands.map((b,i)=>`<tr><td>${b.min_letters}${b.max_letters>=999?'+':b.max_letters!==b.min_letters?'–'+b.max_letters:''}</td><td><input data-b="${i}" data-k="length" type="number" step="0.5" value="${b.length}"></td><td><input data-b="${i}" data-k="height" type="number" step="0.5" value="${b.height}"></td><td><input data-b="${i}" data-k="compartments" type="number" step="1" min="1" max="10" value="${b.compartments}"></td></tr>`).join('');
   $('s_name_z').value=Math.round(S.scaling.name_z_scale*100);$('s_max_length').value=S.scaling.max_length;$('o_delay').value=S.delay_between_downloads_s;$('o_dir').value=S.output_dir;$('o_dir').disabled=!META.local;$('o_dl').value=S.downloads_dir;$('o_dl').disabled=!META.local;
-  $('mw_url').value=S.makerworld_url;mwHint();$('lic').value=(S.license_passwords||{})[designOf(S.makerworld_url)]||''}
+  $('mw_url').value=S.makerworld_url;mwHint();$('lic').value=(S.license_passwords||{})[designOf(S.makerworld_url)]||'';
+  const L=S.logistics||{};$('lg_track').value=L.tracking_url||'';$('lg_late').value=L.late_days;$('lg_exp').value=L.express_red_days;$('lg_stuck').value=L.stuck_days;
+  lgMsgs(Object.entries(L.messages||{}))}
+function lgMsgs(list){$('lg_msgs').innerHTML=list.map(([k,v],i)=>`<div class="lgmsg" style="display:grid;grid-template-columns:180px minmax(0,1fr) auto;gap:8px;align-items:start;margin:8px 0">
+    <input data-mk="${i}" value="${esc(k)}" maxlength="40" aria-label="Message name"><textarea data-mv="${i}" rows="2" maxlength="1000" aria-label="Message text" style="font:inherit">${esc(v)}</textarea>
+    <button class="small" data-mdel="${i}" title="Remove this message">Remove</button></div>`).join('')||'<p class="hint">No messages yet.</p>';
+  document.querySelectorAll('[data-mdel]').forEach(b=>b.onclick=()=>{const l=lgRead();l.splice(+b.dataset.mdel,1);lgMsgs(l)})}
+const lgRead=()=>[...document.querySelectorAll('#lg_msgs .lgmsg')].map(d=>[d.querySelector('[data-mk]').value.trim(),d.querySelector('[data-mv]').value]);
 function readSettings(){const s=structuredClone(S);
   s.model.Font=$('m_Font').value;s.model.Rotate_text=$('m_Rotate_text').value;
   for(const k of ['Font_size','Thickness','Outline'])s.model[k]=parseInt($('m_'+k).value,10);
@@ -1392,7 +1422,11 @@ function readSettings(){const s=structuredClone(S);
   document.querySelectorAll('#bands input').forEach(i=>{const v=parseFloat(i.value);s.scaling.bands[+i.dataset.b][i.dataset.k]=i.dataset.k==='compartments'?Math.round(v):v});
   s.scaling.name_z_scale=parseFloat($('s_name_z').value)/100;s.scaling.max_length=parseFloat($('s_max_length').value);
   s.delay_between_downloads_s=parseFloat($('o_delay').value)||0;s.output_dir=$('o_dir').value.trim();s.downloads_dir=$('o_dl').value.trim();
-  s.makerworld_url=$('mw_url').value.trim();const d=designOf(s.makerworld_url);s.license_passwords={...(S.license_passwords||{})};if(d){s.license_passwords[d]=$('lic').value}return s}
+  s.makerworld_url=$('mw_url').value.trim();const d=designOf(s.makerworld_url);s.license_passwords={...(S.license_passwords||{})};if(d){s.license_passwords[d]=$('lic').value}
+  s.logistics={...(S.logistics||{}),tracking_url:$('lg_track').value.trim(),late_days:parseInt($('lg_late').value,10),
+    express_red_days:parseInt($('lg_exp').value,10),stuck_days:parseInt($('lg_stuck').value,10),
+    messages:Object.fromEntries(lgRead().filter(([k,v])=>k&&v.trim()))};return s}
+$('lg_add').onclick=()=>{const l=lgRead();l.push(['New message','Hello {customer}, about your order {order_id}: ']);lgMsgs(l)};
 $('save').onclick=async()=>{try{S=await api('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(readSettings())});fillSettings();$('savehint').textContent='Saved';$('savehint').style.color='';loadOrders()}catch(e){$('savehint').textContent=e.message;$('savehint').style.color='var(--err)'}};
 $('reset').onclick=async()=>{if(!confirm('Restore default settings?'))return;S=await post('/api/settings/reset');fillSettings();$('savehint').textContent='Defaults restored'};
 function designOf(u){try{const x=new URL(u);return x.hostname.endsWith('makerworld.com')&&x.pathname.includes('/makerlab/parametricModelMaker')?(x.searchParams.get('designId')||''):''}catch{return ''}}
@@ -1413,11 +1447,11 @@ $('portalpwshow').onclick=()=>{const show=$('portalpw').type==='password';$('por
 $('portalsave').onclick=async()=>{const b=$('portalsave');b.disabled=true;try{await post('/api/portal',{enabled:$('lan').checked,password:$('portalpw').value});$('portalpw').value='';await loadPortal()}catch(e){$('portalinfo').textContent=e.message;$('portalinfo').style.color='var(--err)'}finally{b.disabled=false}};
 
 // ---------- settings sections ----------
-const SETSECS=[['setup','Setup'],['product','Product'],['plates','Plates'],['folders','Folders'],['connections','Connections'],['maintenance','Maintenance'],['usage','Usage']];
+const SETSECS=[['setup','Setup'],['product','Product'],['plates','Plates'],['folders','Folders'],['connections','Connections'],['maintenance','Maintenance'],['logistics','Logistics'],['usage','Usage']];
 let SETSEC='setup';try{SETSEC=localStorage.getItem('setsec')||'setup'}catch{}
 function setSec(sec){if(!SETSECS.some(x=>x[0]===sec))sec='setup';SETSEC=sec;try{localStorage.setItem('setsec',sec)}catch{}
   document.querySelectorAll('#t-settings [data-sec]').forEach(d=>d.hidden=d.dataset.sec!==sec);
-  $('savebar').hidden=!['product','plates','folders'].includes(sec);if(sec==='usage')loadUsage();
+  $('savebar').hidden=!['product','plates','folders','logistics'].includes(sec);if(sec==='usage')loadUsage();
   $('setchips').innerHTML=SETSECS.map(([k,l])=>`<button data-ss="${k}" class="${k===sec?'on':''}">${l}</button>`).join('');
   document.querySelectorAll('[data-ss]').forEach(b=>b.onclick=()=>setSec(b.dataset.ss))}
 // ---------- setup checklist ----------

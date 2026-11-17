@@ -145,3 +145,20 @@ def test_usage_counts(client):
     act(client, "U1", "note", {"text": "hi"})
     rows = {r["feature"]: r["count"] for r in client.get("/api/usage").json()["rows"]}
     assert rows["copy_tracking_link"] == 1 and rows["note_added"] == 1
+
+
+def test_logistics_settings(client):
+    from snapstl import server
+
+    s = client.get("/api/settings").json()
+    assert s["logistics"]["tracking_url"].startswith("https://shopdeck.clickpost.ai/") and "Shipped" in s["logistics"]["messages"]
+    good = {**s, "logistics": {**s["logistics"], "tracking_url": "https://store.test/track/{order_id}", "late_days": 5,
+                               "messages": {"Hi": "Hello {customer}"}}}
+    r = client.put("/api/settings", json=good)
+    assert r.status_code == 200, r.text
+    assert server.SETTINGS.logistics.late_days == 5 and server.SETTINGS.logistics.messages == {"Hi": "Hello {customer}"}
+    assert client.get("/api/logistics/meta").json()["late_days"] == 5
+    for bad in ({"tracking_url": "http://store.test/{awb}"}, {"tracking_url": "https://store.test/no-placeholder"},
+                {"late_days": 99}, {"stuck_days": "x"}, {"messages": {"": "text"}}):
+        assert client.put("/api/settings", json={**s, "logistics": {**s["logistics"], **bad}}).status_code == 400, bad
+    assert client.put("/api/settings", json=s).status_code == 200  # back to the defaults
