@@ -111,7 +111,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   settings**: only references (source + id + name) to Bambuddy profiles in `presets_by_printer`
   (`presets_by_model` = fallback from before 0.22.7). Never
   add a slicer on this computer, a preset store/import, or use of hand-made sliced files again
-  (owner decision, ARCHITECTURE #43). Profiles are added in Bambuddy, never by SnapSTL.
+  (owner decision, ARCHITECTURE #43). **No cloud profiles** (owner decision 0.22.19, #62): only
+  Bambuddy's local and standard profiles (`farm.PRESET_TIERS`); never patch Bambuddy's program. Profiles are added in Bambuddy, never by SnapSTL.
   Slicing never blocks the worker: one slice at a time, followed by polling, stopped after
   `SLICE_TIMEOUT_S` without progress. Automatic slicing may run on its own (it never prints) and
   never retries a failed slice; a print always uses the slice for its printer's model.

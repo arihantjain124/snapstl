@@ -126,7 +126,7 @@ def test_endpoints(client, host):
 def test_cloud_list_bug_is_explained():
     raw = "Unexpected error: 'NoneType' object has no attribute 'get'"
     hint = farm.slicer_hint(raw)
-    assert "Bambu Cloud" in hint and "sign out" in hint and raw in hint
+    assert "Bambu Cloud" in hint and "sign out" in hint and "local" in hint and raw in hint
     assert farm.slicer_hint("some other problem") == "some other problem"
 
 
@@ -137,3 +137,4 @@ def test_preset_list_crash_is_explained(monkeypatch):
     monkeypatch.setattr(farm, "api", boom)
     with pytest.raises(farm.FarmError, match="Bambu Cloud"):
         farm.bambuddy_presets({})
+

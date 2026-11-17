@@ -305,8 +305,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <li>In Bambu Studio (or OrcaSlicer) save the printer, process and filament presets you print organizers with, then export them: <b>File → Export → Export Preset Bundle</b> (.bbscfg / .bbsflmt) or a preset's .json.</li>
         <li>In Bambuddy: <b>Profiles → Local Profiles → Import Profiles</b>, and drop the files there. They're listed here under <i>Yours in Bambuddy</i>.</li>
       </ol>
-      <h3>Cloud profiles</h3>
-      <p class="hint">Sign in to Bambu Cloud (or connect Orca Cloud) in Bambuddy; your cloud presets are then listed here too. Everything in the lists comes from Bambuddy — SnapSTL has no profiles of its own. With Bambuddy's <b>login off</b>, Bambuddy's own Bambu Cloud sign-in is used. With the <b>login on</b>, Bambu Cloud sign-ins are per Bambuddy user: create SnapSTL's key (Bambuddy → Settings → API keys) <b>while signed in as the user who is signed in to Bambu Cloud</b>, with <b>Allow cloud access</b> ticked, and paste it in Settings → Connections. If the cloud list is missing, the line under the lists says exactly why.</p>
+      <h3>No cloud profiles</h3>
+      <p class="hint">SnapSTL slices only with profiles stored in Bambuddy itself — <b>Yours in Bambuddy</b> (Profiles → Local Profiles → Import) and the slicer's standard ones — so slicing never depends on Bambu Cloud. Bambu Cloud / Orca Cloud profiles aren't listed.</p>
       <h3>Bambuddy's slicer service</h3>
       <p class="hint">In Bambuddy: <b>Settings → Slicer</b> — turn on <b>Use Slicer API</b> and set the sidecar URL (or the <code>SLICER_API_URL</code> / <code>BAMBU_STUDIO_API_URL</code> settings of its Docker setup). Its <b>Preferred Slicer</b> decides whether Bambu Studio or OrcaSlicer slices.</p>
       <h3>Good to know</h3>
@@ -521,7 +521,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <h2>Updates</h2>
         <p class="hint" id="updinfo">…</p>
         <ul class="hint" id="updlist" style="padding-left:18px;margin:4px 0"></ul>
-        <div class="toolbar" style="margin-top:8px"><button id="updcheck">Check for updates</button><button id="updgo" class="primary" hidden>Update now</button><button id="updrestart" class="primary" hidden>Restart SnapSTL</button></div>
+        <div class="toolbar" style="margin-top:8px"><button id="updcheck">Check for updates</button><button id="updgo" class="primary" hidden>Update now</button><button id="updrestart" title="Restart SnapSTL so changes already in its folder (e.g. git pull) are used">Restart SnapSTL</button></div>
         <p class="hint">Updating fetches the latest SnapSTL, installs it and restarts it (a few seconds); Bambuddy is brought to the tested version too. The Chrome helper reloads itself. Orders, batches, settings and downloaded models are kept.</p>
       </div>
       <div class="card">
@@ -661,7 +661,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <h2>Slicing</h2>
     <p>Every plate is sliced by <b>Bambuddy's slicer</b> (its slicer service, e.g. in Docker on another computer) for the printer it goes to, with the <b>Bambuddy profiles picked for that printer</b> (printers with the same profiles share one slice). SnapSTL has no slicer and keeps no slicing settings: only which Bambuddy profile each printer uses. A printer without picked profiles isn't sliced or printed, and Print says so. (Profiles picked per model before 0.22.7 still apply to its printers until you pick their own.)</p>
     <ul>
-      <li><b>Bambuddy profiles per printer</b> — pick the printer by name, then its printer, process (layer height, walls, infill, speeds) and filament profile. Every profile Bambuddy has is listed: yours in Bambuddy, Orca Cloud, Bambu Cloud and the slicer's standard ones. <b>Reload from Bambuddy</b> reads them again. Each list has a <b>search box</b>: type any words from the profile's name or where it comes from (e.g. <i>a1 0.4</i>, <i>0.20 strength</i>, <i>pla matte</i>, <i>bambu cloud</i>) — Enter picks the first match.</li>
+      <li><b>Bambuddy profiles per printer</b> — pick the printer by name, then its printer, process (layer height, walls, infill, speeds) and filament profile. Listed: yours in Bambuddy (Local Profiles) and the slicer's standard ones — no cloud profiles, so slicing never depends on Bambu Cloud. <b>Reload from Bambuddy</b> reads them again. Each list has a <b>search box</b>: type any words from the profile's name or where it comes from (e.g. <i>a1 0.4</i>, <i>0.20 strength</i>, <i>pla matte</i>, <i>bambu cloud</i>) — Enter picks the first match.</li>
       <li><b>Adding profiles</b> — in Bambuddy, never in SnapSTL: export from Bambu Studio (<b>File → Export → Export Preset Bundle</b>) and import in Bambuddy under <b>Profiles → Local Profiles → Import Profiles</b>; or sign in to Bambu Cloud / Orca Cloud in Bambuddy (the API key needs <b>Allow cloud access</b> for Bambu Cloud presets).</li>
       <li><b>Bambuddy's slicer service</b> — Bambuddy → Settings → Slicer: <b>Use Slicer API</b> on, with the sidecar URL. Its <b>Preferred Slicer</b> decides Bambu Studio or OrcaSlicer.</li>
       <li><b>Plate type per printer</b> (Print defaults) — the build plate on that printer (Textured PEI, Cool, Engineering, High Temp, Supertack, Textured Cool). Its plates are sliced for that plate, so the bed temperature is right and Bambuddy and the printer show the right plate. <i>Profile's plate</i> = what the process profile says (often Cool Plate). Changing it slices that printer's plates again.</li>
@@ -1311,7 +1311,7 @@ $('shareddisc').onclick=async()=>{if(!confirm('Disconnect this computer from the
 async function loadUpdates(fetch=1){if(!META.local){$('updcard').hidden=true;return}
   $('updinfo').textContent='Checking…';
   let u;try{u=await api('/api/update?fetch='+fetch)}catch(e){$('updinfo').textContent=e.message;return}
-  $('updbadge').hidden=!(u.behind>0||u.restart_needed);$('updgo').hidden=!(u.behind>0);$('updrestart').hidden=!u.restart_needed;
+  $('updbadge').hidden=!(u.behind>0||u.restart_needed);$('updgo').hidden=!(u.behind>0);$('updrestart').hidden=false;$('updrestart').className=u.restart_needed?'primary':'';
   $('updlist').innerHTML=(u.changes||[]).map(c=>`<li>${esc(c)}</li>`).join('');
   const ver='SnapSTL '+(u.version||'')+(u.current?` (${esc(u.current.split(' ')[0])})`:'');
   $('updinfo').innerHTML=!u.git?esc(u.error):u.error?`${ver}. ${esc(u.error)}`:u.behind?`${ver}. <b>${u.behind} update${u.behind>1?'s':''} waiting:</b>`:`${ver} — up to date.`;

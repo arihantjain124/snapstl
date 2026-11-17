@@ -1083,16 +1083,11 @@ def makeit_presets(printer: int = 0, refresh: int = 0):
     chosen = farm.chosen_presets(printer, cfg)
     base |= {"chosen": {k: f"{v['source']}:{v['id']}" for k, v in chosen.items()},
              "names": {k: v["name"] for k, v in chosen.items()}}
-    status: dict = {}
-    try:
-        avail = farm.bambuddy_presets(cfg, refresh=bool(refresh), status=status)
+    try:  # local (yours in Bambuddy) + standard profiles only — no cloud (ARCHITECTURE #62)
+        avail = farm.bambuddy_presets(cfg, refresh=bool(refresh))
     except farm.FarmError as e:
         return base | {"available": {sl: [] for sl in farm.PRESET_SLOTS}, "error": str(e), "status": {}}
-    try:  # no Bambu Cloud profiles: say exactly why (key, sign-in, owner) instead of "not signed in"
-        cloud_why = farm.cloud_problem(status.get("cloud_status", ""), cfg)
-    except Exception as e:  # noqa: BLE001  (never break the page over the explanation)
-        cloud_why = str(e)
-    return base | {"available": avail, "error": "", "status": status, "cloud_problem": cloud_why}
+    return base | {"available": avail, "error": "", "status": {}, "cloud_problem": ""}
 
 
 @app.put("/api/makeit/presets")

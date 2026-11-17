@@ -232,9 +232,8 @@ def connect(url: str | None = None, api_key: str | None = None) -> dict:
     elif not cfg["api_key"] or url:
         if st["auth_enabled"]:
             raise FarmError("Bambuddy's login is on: in Bambuddy open Settings → API Keys, create a key "
-                            "(Queue, Read status, Library, Control printer and Allow cloud access — for "
-                            "your Bambu Cloud profiles) while signed in as the user who is signed in to "
-                            "Bambu Cloud, and paste it here")
+                            "(Queue, Read status, Library, Control printer — not Allow cloud access: SnapSTL "
+                            "uses no cloud profiles) and paste it here")
         # Login off: Bambuddy refuses can_access_cloud on such a key ("requires authentication") — and
         # doesn't need it: its own Bambu Cloud sign-in serves every caller, SnapSTL included.
         made = api("POST", "/api-keys/", cfg=cfg, key="", json_body={
@@ -495,63 +494,29 @@ def clear_plate(pid: int) -> None:
 
 
 # ---------------- slicing (Bambuddy's slicer only) ----------------
+PRESET_TIERS = ("local", "standard")  # no cloud profiles (owner decision 0.22.19, ARCHITECTURE #62)
+
+
 def bambuddy_presets(cfg: dict | None = None, refresh: bool = False, status: dict | None = None) -> dict:
-    """Every slicer profile stored in Bambuddy, as its Slice dialog lists them:
-    {printer|process|filament: [{key: "source:id", name, source}]}, in Bambuddy's order (yours in Bambuddy,
-    Orca cloud, Bambu cloud, the slicer's standard ones). `refresh` makes Bambuddy read its cloud lists
-    again; `status` (if given) gets why a cloud tier is empty."""
+    """The slicer profiles SnapSTL may use, as Bambuddy lists them: {printer|process|filament: [{key:
+    "source:id", name, source}]} — yours imported in Bambuddy (Local Profiles) first, then the slicer's
+    standard ones. Bambu Cloud / Orca Cloud profiles are never used (they made slicing depend on the cloud)."""
     try:
         r = api("GET", "/slicer/presets" + ("?refresh=true" if refresh else ""), cfg=cfg, timeout=30) or {}
     except FarmError as e:
         if "internal server error" in str(e).lower():  # Bambuddy's own crash (its log has why); usually CLOUD_LIST_BUG
-            raise FarmError(f"Bambuddy failed listing its profiles ({e}). If Bambuddy is signed in to Bambu Cloud, "
-                            f"this is likely the known Bambuddy bug: {CLOUD_LIST_HINT}") from e
+            raise FarmError(f"Bambuddy failed listing its profiles ({e}). {CLOUD_LIST_HINT}") from e
         raise
     if not isinstance(r, dict):
         raise FarmError("Bambuddy's list of slicer profiles came back in an unexpected form — is Bambuddy up to date?")
     out: dict[str, list[dict]] = {"printer": [], "process": [], "filament": []}
-    for tier in ("local", "orca_cloud", "cloud", "standard"):  # Bambuddy's priority order
+    for tier in PRESET_TIERS:
         for slot in out:
             for p in (r.get(tier) or {}).get(slot) or []:
                 out[slot].append({"key": f"{p.get('source', tier)}:{p['id']}", "name": p.get("name") or p["id"],
                                   "source": p.get("source", tier)})
-    if status is not None:
-        status.update({k: r.get(k) for k in ("cloud_status", "orca_cloud_status") if r.get(k)})
     return out
 
-
-def cloud_problem(cloud_status: str, cfg: dict | None = None) -> str:
-    """Why Bambuddy lists no Bambu Cloud profiles for SnapSTL, in plain words ("" = it does).
-
-    Bambuddy hands cloud profiles only to a caller with a Bambu Cloud sign-in: login off → Bambuddy's own
-    sign-in; login on → the API key needs "Allow cloud access" and an owner, and that owner must be the
-    Bambuddy user signed in to Bambu Cloud (sign-ins are per user)."""
-    if not cloud_status or cloud_status == "ok":
-        return ""
-    if cloud_status == "expired":
-        return "Bambuddy's Bambu Cloud sign-in has expired — sign in again in Bambuddy (Settings → Bambu Cloud)"
-    if cloud_status == "unreachable":
-        return "Bambuddy couldn't reach Bambu Cloud just now — press Reload from Bambuddy in a minute"
-    cfg = cfg or load_config()
-    auth = status(cfg).get("auth_enabled")
-    if not auth:
-        return "Bambuddy isn't signed in to Bambu Cloud — sign in in Bambuddy (Settings → Bambu Cloud), then Reload"
-    try:
-        st = api("GET", "/cloud/status", cfg=cfg, timeout=10) or {}
-    except FarmError as e:
-        if "refused" in str(e):
-            return ("SnapSTL's Bambuddy API key may not use Bambu Cloud. In Bambuddy, signed in as the user who is "
-                    "signed in to Bambu Cloud: Settings → API Keys → create a key with Queue, Read status, Library, "
-                    "Control printer and Allow cloud access, and paste it in SnapSTL (Settings → Connections → "
-                    "Bambuddy). A key without an owner (made before Bambuddy's login was on) can't get it — make a new one")
-        return f"Couldn't ask Bambuddy about Bambu Cloud: {e}"
-    if st.get("sign_in_expired"):
-        return "The Bambu Cloud sign-in of the Bambuddy user who owns SnapSTL's key has expired — sign in again in Bambuddy"
-    if not st.get("is_authenticated"):
-        return ("The Bambuddy user who owns SnapSTL's API key isn't signed in to Bambu Cloud (sign-ins are per user in "
-                "Bambuddy). Sign in to Bambu Cloud as that user, or create the key as the user who is signed in, "
-                "with Allow cloud access, and paste it in Settings → Connections")
-    return ""
 
 
 def chosen_presets(printer_id: int | None, cfg: dict | None = None) -> dict:
@@ -742,15 +707,14 @@ def _percent(snap) -> float | None:
     return None
 
 
-# Bambuddy ≤ 1.3.2 crashes reading Bambu Cloud's profile list when a section of it comes back empty (null):
-# `raw.get("print", {}).get("private")` in its slicer_presets.py. Every slice loads that list, so while Bambuddy
-# is signed in to Bambu Cloud every slice fails with this — whatever profiles are picked.
+# Bambuddy 1.3.1 crashes reading Bambu Cloud's profile list when part of it comes back empty (null, since
+# Nov 2026): its profile list and slices with a Bambu Cloud process profile fail with this. SnapSTL uses no cloud
+# profiles; the list still fails while Bambuddy is signed in to Bambu Cloud and SnapSTL's key may use the cloud.
 CLOUD_LIST_BUG = "'nonetype' object has no attribute 'get'"
-CLOUD_LIST_HINT = ("Bambuddy couldn't read the profile list Bambu Cloud sent (a known Bambuddy bug when Bambu Cloud "
-                   "returns an empty section), so no plate can be sliced while Bambuddy is signed in to Bambu Cloud. "
-                   "Fix: update Bambuddy to a version that handles it, or in Bambuddy sign out of Bambu Cloud "
-                   "(Settings → Bambu Cloud), then pick the same profiles from the standard list in Slicing "
-                   "and slice again.")
+CLOUD_LIST_HINT = ("Bambuddy fails reading Bambu Cloud's profile list (a Bambuddy bug). SnapSTL uses only Bambuddy's "
+                   "local and standard profiles: in Bambuddy sign out of Bambu Cloud (Settings → Bambu Cloud), or give "
+                   "SnapSTL a key without \"Allow cloud access\", then pick local or standard profiles in Slicing and "
+                   "slice again.")
 
 
 def slicer_hint(err: str) -> str:
