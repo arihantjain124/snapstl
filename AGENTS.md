@@ -32,17 +32,18 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   **.3mf** per plate, file names `{name,color},{name2,color2}.3mf`, **never write ZIP files**. Sliced
   plates (print farm) go only in that batch's `Sliced/` folder, same path + `.gcode.3mf`.
 - **Print farm (Bambuddy):** plates reach printers only through Bambuddy on this computer, only after a
-  person presses **Start print** in Print (never automatically after a build), and only on a
-  printer that has the plate's colour loaded (white for bases). Printers have no Bases / Names
+  person presses **Start print** in Print (never automatically after a build). Any printer and any
+  loaded filament slot may be chosen (owner decision 0.22.20): SnapSTL pre-selects the best colour fit
+  (`farm.best_tray`) and sends the chosen slot as Bambuddy's `ams_mapping`; nothing is greyed out by colour. Printers have no Bases / Names
   setting: any printer can print either. Never skip Bambuddy's "Clear plate" step. SnapSTL never talks to printers directly.
 - **No print starts by itself:** every queue item is created with `manual_start: true` (held) and is
   released only by a person's click (**Start print** → `autostart`, or `farm.start_job`). Never create
   a queue item that can start on its own, and never start one from a code path a person didn't click.
   Reprint only after a person confirms a failure.
 - Printers, filament and printer settings are managed in Bambuddy; the Printers page stays read only
-  (no adding printers, filament or roles in SnapSTL). The one exception: a spool's **prints as …**
-  colour (`farm.color_overrides`, owner-requested 0.22.7) — it changes only how SnapSTL reads that
-  spool, is never sent to Bambuddy, and lapses when another spool is loaded in the slot.
+  (no adding printers, filament or roles in SnapSTL). The "prints as …" colour mapping was removed
+  (0.22.20): the colour is chosen per print by its filament slot. **Refresh from Bambuddy**
+  (`farm.refresh_from_bambuddy`) only asks printers to report their status again.
 
 **Technical rules**
 - MakerWorld models come **only** from the SnapSTL Helper (`helper/`) in the user's own Chrome.

@@ -70,6 +70,7 @@ class FakeBambuddy:
         self.colors = {"colors": {"ffffff": "Jade White", "f55a74": "Pink", "f5547c": "Hot Pink", "0a2989": "Blue"},
                        "by_material": {}}
         self.files, self.queue, self.keys, self._unused, self.cleared, self.patches = {}, {}, [], [], [], []
+        self.refreshed = []
         self.short_filament = False
         self.slicer = "unreachable"  # Bambuddy's slicer sidecar: "ok" | "unreachable" | "hang"
         self.slice_jobs, self.slice_bodies, self.imports, self.speeds = {}, [], [], []
@@ -107,9 +108,12 @@ class FakeBambuddy:
             return 200, json.dumps(self.colors).encode()
         if method == "GET" and path == "/api/v1/printers/":
             return 200, json.dumps(list(self.printers.values())).encode()
-        m = re.fullmatch(r"/api/v1/printers/(\d+)(/status|/clear-plate)?", path)
+        m = re.fullmatch(r"/api/v1/printers/(\d+)(/status|/clear-plate|/refresh-status)?", path)
         if m:
             pid = int(m.group(1))
+            if m.group(2) == "/refresh-status":
+                self.refreshed.append(pid)
+                return 200, b'{"success": true}'
             if m.group(2) == "/status":
                 return 200, json.dumps({"id": pid, "name": self.printers[pid]["name"], **self.status[pid]}).encode()
             if m.group(2) == "/clear-plate":
@@ -200,7 +204,7 @@ def bb(monkeypatch, tmp_path):
     monkeypatch.setattr(farm, "_request", fake)
     farm.CONFIG_PATH.unlink(missing_ok=True)
     farm.update_config(auto_slice=False, presets_by_model={"A1": STD},  # A1's presets, as set before 0.22.7
-                       presets_by_printer={}, color_overrides={})
+                       presets_by_printer={}, )
     farm._status_cache.clear()
     monkeypatch.setattr(farm, "_color_map", (0.0, {}))
     monkeypatch.setattr(farm.WORKER, "_models", (0.0, {}))
@@ -259,25 +263,37 @@ def test_printers_page_reads_printers_and_filament_from_bambuddy(client, bb):
     assert client.post("/api/farm/printers/1/clear-plate").status_code == 200 and bb.cleared == [1]
 
 
-def test_colour_matching_by_filament_only():
+def _sp(tray, color, hexv, remain=50):
+    return {"slot": f"AMS 1 · {tray % 4 + 1}" if tray < 254 else "External", "tray": tray, "color": color,
+            "name": color.title(), "hex": hexv, "material": "PLA Basic", "remain": remain}
+
+
+def test_any_printer_and_best_filament_slot():
+    """Nothing is ruled out by colour (owner decision 0.22.20): the slot closest to the colour is suggested."""
     plate_pink = {"kind": "names", "colors": ["pink"], "file": "p"}
     plate_base = {"kind": "bases", "colors": ["pink"], "file": "b"}
     ok = {"connected": True}
-    white = {"id": 1, "name": "B", "colors": ["jade white"], "status": ok}
-    exact = {"id": 2, "name": "N1", "colors": ["blue", "pink"], "status": ok}
-    close = {"id": 3, "name": "N2", "colors": ["hot pink"], "status": ok}
-    mixed = {"id": 4, "name": "Any", "colors": ["jade white", "pink"], "status": ok}
-    assert farm.eligible(plate_base, white) == "" and farm.match_note(plate_base, white) == "loaded: jade white"
-    assert "needs pink" in farm.eligible(plate_pink, white)  # only white loaded
-    assert "needs white" in farm.eligible(plate_base, exact)
-    assert farm.eligible(plate_pink, exact) == "" and farm.match_note(plate_pink, exact) == ""
-    assert farm.eligible(plate_pink, close) == "" and farm.match_note(plate_pink, close) == "loaded: hot pink"
-    assert "needs blue" in farm.eligible({"kind": "names", "colors": ["blue"]}, close)
-    assert farm.eligible(plate_pink, dict(exact, status={"connected": False})) == "offline"
-    # any printer with the filament takes either kind: exact colour first, then the least busy
-    sug = farm.suggest([plate_pink, dict(plate_pink, file="p2"), plate_base, dict(plate_base, file="b2")],
-                       [white, exact, close, mixed], {})
-    assert sug["p"] == 4 and sug["p2"] == 2 and sug["b"] == 1 and sug["b2"] == 4
+    white = {"id": 1, "name": "B", "colors": ["jade white"], "status": ok, "spools": [_sp(254, "jade white", "#FFFFFF")]}
+    exact = {"id": 2, "name": "N1", "colors": ["blue", "pink"], "status": ok,
+             "spools": [_sp(0, "blue", "#0A2989"), _sp(1, "pink", "#F55A74", 20), _sp(2, "pink", "#F55A74", 90)]}
+    close = {"id": 3, "name": "N2", "colors": ["hot pink"], "status": ok, "spools": [_sp(4, "hot pink", "#F5547C")]}
+    red = {"id": 5, "name": "R", "colors": ["red"], "status": ok, "spools": [_sp(0, "red", "#E5534B"), _sp(1, "black", "#000000")]}
+    for pr in (white, exact, close, red, dict(exact, status={"connected": False})):
+        assert farm.eligible(plate_pink, pr) == "" and farm.eligible(plate_base, pr) == ""  # never greyed out
+    assert farm.best_tray("pink", exact) == 2          # exact colour, most filament left
+    assert farm.best_tray("pink", close) == 4 and farm.match_note(plate_pink, close) == "close pink: hot pink loaded"
+    assert farm.best_tray("pink", red) == 0            # no pink: the nearest colour (red, not black)
+    assert farm.match_note(plate_pink, red) == "no pink: red loaded"
+    assert farm.best_tray("white", white) == 254 and farm.match_note(plate_base, white) == "close white: jade white loaded"
+    assert farm.best_tray("pink", {"spools": []}) is None
+    assert [t["tray"] for t in farm.tray_choices("pink", exact)] == [1, 2, 0]  # matches first
+    # a person may pick any loaded slot; one that isn't loaded is refused
+    assert farm.pick_tray(plate_pink, red, "1") == 1 and farm.pick_tray(plate_pink, red, None) == 0
+    with pytest.raises(farm.FarmError, match="no filament in that slot"):
+        farm.pick_tray(plate_pink, red, 7)
+    # global tray ids: AMS n slot k = n*4+k, AMS HT = its id, external = 254
+    assert farm.tray_id({"id": 1}, {"id": 2}) == 6 and farm.tray_id({"id": 128}, {"id": 0}) == 128
+    assert farm.tray_id(None, {"id": 254}) == 254
 
 
 def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
@@ -292,11 +308,8 @@ def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     assert by[base_plate]["need"] == "white" and by[pink]["need"] == "pink"
     assert all(p["sliced"] is None for p in v["plates"])
     ch = {c["name"]: c for c in by[pink]["choices"]}
-    assert ch["Names A"]["why_not"] == "" and ch["Names B"]["note"] == "loaded: hot pink" and "needs pink" in ch["Base 1"]["why_not"]
-
-    # wrong printer for a plate is refused
-    r = client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": blue, "printer_id": 3}]})
-    assert r.status_code == 400 and "needs blue" in r.json()["detail"]
+    assert all(c["why_not"] == "" for c in ch.values())  # any printer may print any plate (0.22.20)
+    assert ch["Names A"]["note"] == "" and ch["Names B"]["note"] == "close pink: hot pink loaded"
 
     # not sliced, and Bambuddy's slicer isn't running: the job fails with what to do (it never hangs)
     r = client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": base_plate, "printer_id": 1}]})
@@ -362,8 +375,9 @@ def test_print_button_moves_reprints_and_sets_options(client, bb):
     assert bb.queue[1]["printer_id"] == 3 and bb.queue[1]["bed_levelling"] == "on" and bb.queue[1]["timelapse"] is True
     j2 = job_of(client, bid, pink)
     assert j2["printer_name"] == "Names B" and j2["options"] == {"bed_levelling": "on", "timelapse": True}
-    # a printer without the colour, a bad option, and a printing job are refused
-    assert "needs pink" in client.post(f"/api/print-jobs/{j['id']}/print", json={"printer_id": 1}).json()["detail"]
+    # a slot with no filament, a bad option, and a printing job are refused
+    assert "no filament in that slot" in client.post(f"/api/print-jobs/{j['id']}/print",
+                                                     json={"printer_id": 1, "tray": 3}).json()["detail"]
     assert client.post(f"/api/print-jobs/{j['id']}/print", json={"printer_id": 2, "options": {"flow_cali": "maybe"}}).status_code == 400
 
     # printed → Print again = a new job with its options, applied after it reaches the queue
@@ -470,8 +484,14 @@ def test_make_it_bases_names_start_completed_ready_to_ship(client, bb):
     assert [r["file"] for r in m["bases"]] == [base] and {r["file"] for r in m["names"]} == {pink, blue}
     assert m["bases"][0]["order_ids"] == ["PM1", "PM2"] and m["completed"] == []
     assert m["bases"][0]["suggested"] == 4  # available base printer with the most white left
-    assert makeit_row(client, "names", pink)["suggested"] == 2 and makeit_row(client, "names", blue)["suggested"] is None
-    # (Names A has blue too, but it's already picked for pink — only *available* printers are pre-selected)
+    assert makeit_row(client, "names", pink)["suggested"] == 2
+    # (Names A has blue too, but it's already picked for pink — another *available* printer is pre-selected,
+    # with its slot closest to blue; nothing is ruled out by colour)
+    blue_row = makeit_row(client, "names", blue)
+    assert blue_row["suggested"] not in (None, 2)
+    ch = {c["id"]: c for c in blue_row["choices"]}
+    assert all(c["why_not"] == "" for c in ch.values()) and ch[2]["best_tray"] == 1  # Names A: blue in AMS 1 slot 2
+    assert [t["tray"] for t in ch[2]["trays"]][0] == 1 and ch[2]["trays"][0]["match"] == 2
 
     # nothing is sent until Start print; then it is sent AND started (that click is the start)
     assert bb.queue == {}
@@ -481,8 +501,10 @@ def test_make_it_bases_names_start_completed_ready_to_ship(client, bb):
     wait_for(lambda: bb.queue and bb.queue[1].get("manual_start") is False)
     assert bb.queue[1]["printer_id"] == 4 and bb.queue[1]["timelapse"] is True
     assert client.post("/api/makeit/start", json={"batch_id": bid, "file": base, "printer_id": 4}).status_code == 400
-    # wrong colour refused
-    assert "needs blue" in client.post("/api/makeit/start", json={"batch_id": bid, "file": blue, "printer_id": 3}).json()["detail"]
+    assert bb.queue[1]["ams_mapping"] == [254]  # the base printer's white spool (external), sent to Bambuddy
+    # a slot that isn't loaded in that printer is refused
+    assert "no filament in that slot" in client.post("/api/makeit/start", json={
+        "batch_id": bid, "file": blue, "printer_id": 3, "tray": 9}).json()["detail"]
 
     # Bambuddy warns on start → stays held; Start print again with force starts it
     bb.short_filament = True
@@ -756,36 +778,18 @@ def test_bambuddy_on_another_computer_and_this_computers_address(client, bb, mon
     assert n["bambuddy_here"] and n["bambuddy_share"] == "http://192.168.1.20:8000"
 
 
-def test_a_spool_can_print_as_another_colour(client, bb):
-    """Printers: a person sets which order colour a loaded spool prints, when Bambuddy's name doesn't match."""
-    bb.printers[4] = {"id": 4, "name": "P1S names", "model": "P1S", "serial_number": "S4", "ip_address": "10.0.0.31",
-                      "location": "", "is_active": True}
-    bb.status[4] = {"connected": True, "state": "IDLE", "ams": [{"id": 0, "tray": [tray(0, "F55A74")]}]}  # Pink
-    p4 = lambda: next(p for p in farm.printers() if p["id"] == 4)  # noqa: E731
-    sp = p4()["spools"][0]
-    assert p4()["colors"] == ["pink"] and sp["key"] == "AMS 1 · 1|f55a74" and not sp["mapped"]
-    pink_plate = {"kind": "names", "colors": ["pink"], "file": "x"}
-    red_plate = {"kind": "names", "colors": ["red"], "file": "y"}
-    assert farm.eligible(pink_plate, p4()) == "" and farm.eligible(red_plate, p4())
-
-    r = client.put("/api/farm/printers/4/color", json={"key": sp["key"], "color": " Red "})
-    assert r.status_code == 200 and r.json()["overrides"] == {sp["key"]: "red"}
-    farm._status_cache.clear()
-    assert p4()["colors"] == ["red"] and p4()["spools"][0]["mapped"] and p4()["spools"][0]["auto"] == "pink"
-    assert farm.eligible(red_plate, p4()) == "" and farm.eligible(pink_plate, p4())
-    st = client.get("/api/printer-status").json()
-    assert next(x for x in st["printers"] if x["id"] == 4)["summary"]["spools"][0]["color"] == "red"
-    assert client.put("/api/farm/printers/4/color", json={"key": sp["key"], "color": "pink!"}).status_code == 400
-
-    bb.status[4] = {"connected": True, "state": "IDLE", "ams": [{"id": 0, "tray": [tray(0, "000000")]}]}  # another spool
-    farm._status_cache.clear()
-    assert p4()["colors"] == ["black"]  # the setting was for the pink spool only
-    bb.status[4] = {"connected": True, "state": "IDLE", "ams": [{"id": 0, "tray": [tray(0, "F55A74")]}]}
-    farm._status_cache.clear()
-    assert p4()["colors"] == ["red"]
-    client.put("/api/farm/printers/4/color", json={"key": sp["key"], "color": ""})  # back to Bambuddy's name
-    farm._status_cache.clear()
-    assert p4()["colors"] == ["pink"]
+def test_refresh_from_bambuddy_and_chosen_slot(client, bb):
+    """Printers → Refresh from Bambuddy asks every printer to report again; Print sends the chosen slot."""
+    farm.printers()
+    bb.status[3] = {"connected": True, "state": "IDLE", "ams": [{"id": 0, "tray": [tray(0, "F5547C"), tray(1, "0A2989")]}]}
+    assert len(next(p for p in farm.printers() if p["id"] == 3)["spools"]) == 1  # still the cached status
+    r = client.post("/api/farm/refresh")
+    assert r.status_code == 200 and r.json() == {"asked": 3, "failed": []}
+    assert sorted(bb.refreshed) == [1, 2, 3]
+    p3 = next(p for p in farm.printers() if p["id"] == 3)
+    assert [(s["slot"], s["tray"], s["color"]) for s in p3["spools"]] == [("AMS 1 · 1", 0, "hot pink"), ("AMS 1 · 2", 1, "blue")]
+    assert "key" not in p3["spools"][0] and "mapped" not in p3["spools"][0]  # no "prints as" mapping any more
+    assert client.put("/api/farm/printers/3/color", json={"key": "x|y", "color": "red"}).status_code in (404, 405)
 
 
 def test_snapstl_key_never_asks_for_cloud(client, bb):
