@@ -1061,6 +1061,12 @@ async def makeit_start(req: Request):
         raise _farm_err(e) from e
 
 
+@app.get("/api/queues")
+def queues():
+    """Print page's queue panel: downloading, building, slicing and printing (this computer)."""
+    return makeit.queues()
+
+
 @app.get("/api/makeit/presets")
 def makeit_presets(printer: int = 0, refresh: int = 0):
     """Slicing: every profile stored in Bambuddy, the ones picked per printer, the farm's printers (with

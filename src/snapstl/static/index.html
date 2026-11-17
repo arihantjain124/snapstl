@@ -38,6 +38,18 @@ nav#tabs .ic{width:18px;text-align:center;font-size:15px}
 .help h2{font-size:15px}.help p,.help li{font-size:13.5px;line-height:1.6}.help ol,.help ul{padding-left:20px;margin:6px 0}
 .help code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12px}
 .help .toc{display:flex;gap:6px;flex-wrap:wrap}.help .toc a{font-size:12px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;text-decoration:none}
+.qpanel{position:fixed;right:16px;bottom:16px;z-index:20;width:400px;max-width:calc(100vw - 32px);background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);display:flex;flex-direction:column;max-height:55vh;font-size:13px}
+.qpanel .qhead{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.qpanel .qhead b{flex:1}
+.qpanel .qtabs{display:flex;gap:4px;padding:6px 8px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.qpanel .qtabs button{padding:3px 9px;font-size:12px;border-radius:999px}
+.qpanel .qtabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.qpanel .qlist{overflow:auto;padding:4px 10px 8px}
+.qpanel .qrow{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-top:1px solid var(--line)}
+.qpanel .qrow:first-child{border-top:0}
+.qpanel .qrow .qm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qpanel .qrow .qs{white-space:nowrap}
+.qpanel.min{width:auto}.qpanel.min .qtabs,.qpanel.min .qlist{display:none}.qpanel.min .qhead{border-bottom:0}
 button,.btn{font:inherit;padding:6px 12px;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer;white-space:nowrap}
 button:hover{border-color:var(--muted)}
 button.primary,.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -264,6 +276,11 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <p class="hint">Plates taken off Bases / Names (for example printed by hand). Nothing was deleted — <b>Put back</b> returns a plate to its list.</p>
       <div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Removed</th><th></th></tr></thead><tbody id="mkremoved"></tbody></table></div>
     </div>
+  </div>
+  <div class="qpanel" id="qpanel">
+    <div class="qhead"><b>Queues</b><span class="hint" id="qsum"></span><button class="small" id="qtoggle" title="Hide or show the queue panel">Hide</button></div>
+    <div class="qtabs" id="qtabs"></div>
+    <div class="qlist" id="qlist"></div>
   </div>
 </section>
 
@@ -665,6 +682,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Bambuddy's slicer service</b> — Bambuddy → Settings → Slicer: <b>Use Slicer API</b> on, with the sidecar URL. Its <b>Preferred Slicer</b> decides Bambu Studio or OrcaSlicer.</li>
       <li><b>Plate type per printer</b> (Print defaults) — the build plate on that printer (Textured PEI, Cool, Engineering, High Temp, Supertack, Textured Cool). Its plates are sliced for that plate, so the bed temperature is right and Bambuddy and the printer show the right plate. <i>Profile's plate</i> = what the process profile says (often Cool Plate). Changing it slices that printer's plates again.</li>
       <li><b>Print defaults per printer</b> — speed, bed levelling, flow calibration and timelapse each printer uses at Start print (changeable per plate in Print). The <b>speed</b> is set on the printer once it really prints (after heating and calibration), checked against what the printer reports and sent again if it didn't take; if the printer still won't change, the print says so.</li>
+      <li><b>Queues</b> (bottom right of Print) — tabs <b>Downloading</b>, <b>Building</b>, <b>Slicing</b> and <b>Printing</b>: what's running or waiting first, then the last few finished, refreshed every 5 seconds. <b>Hide</b> shrinks it to one line with the counts; <b>Show</b> opens it again (remembered on this computer).</li>
       <li><b>Slicing only when you ask</b> — nothing is sliced by itself. In Print, choose the printer for a plate and press <b>Slice</b>: it joins the slicing queue (one at a time) with that printer's profiles, and the row shows the slice for the printer selected. <b>Slice all waiting</b> does the same for every plate with a printer chosen. Start print slices first if the plate isn't sliced for that printer yet. A slice with no progress for 20 minutes is stopped with a message.</li>
     </ul>
   </div>
@@ -755,7 +773,7 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   for(const s of PAGES)$('t-'+s).hidden=s!==t;
-  if(t==='orders')loadOrders(); if(t==='batches'){loadBatches();loadQueue()} if(t==='makeit')loadMakeIt(); if(t==='printers')loadStatusAll(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
+  if(t==='orders')loadOrders(); if(t==='batches'){loadBatches();loadQueue()} if(t==='makeit'){loadMakeIt();loadQueues()} if(t==='printers')loadStatusAll(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
 const PAGES=['orders','batches','makeit','printers','slicing','settings','help'];
 const OLD_PAGES={downloads:'batches',pstatus:'printers'};  // pages merged in 0.19
 
@@ -1050,6 +1068,32 @@ async function loadMakeIt(){let r;try{r=await api('/api/makeit')}catch(e){$('mkm
   $('mkinfo').innerHTML=`${r.printers.length} printer${r.printers.length===1?'':'s'} · ${busy} printing${clear?` · <a href="#" data-go="printers">${clear} waiting for the bed to be cleared</a>`:''}`;
   mkShow(MKTAB);mkRender()}
 $('mkrefresh').onclick=()=>loadMakeIt();
+// Queue panel (Print page, bottom right): downloading, building, slicing, printing — refreshed every 5 s while shown
+let QTAB='slicing',QMIN=false,QDATA=null,QTIMER=null;
+try{QTAB=localStorage.getItem('qtab')||'slicing';QMIN=localStorage.getItem('qmin')==='1'}catch{}
+const QTABS=[['downloading','Downloading'],['building','Building'],['slicing','Slicing'],['printing','Printing']];
+const QLIVE={downloading:['claimed','queued'],building:['waiting','models_ready','build_requested','building'],slicing:['queued','uploading','slicing'],printing:['queued','slicing','uploading','sent','printing']};
+const QWORD={claimed:'Downloading',queued:'Waiting',failed:'Failed',done:'Done',cancelled:'Cancelled',waiting:'Downloading models',models_ready:'Models ready',build_requested:'Waiting to build',building:'Building',done_with_problems:'Done with problems',uploading:'Sending',slicing:'Slicing',sent:'In Bambuddy queue',printing:'Printing',reprint:'Reprint',removed:'Removed'};
+function qPill(st,pct){const live=Object.values(QLIVE).some(a=>a.includes(st));const cls=st==='failed'?'err':st.startsWith('done')?'ok':live?'info':'';
+  return `<span class="pill ${cls}">${esc(QWORD[st]||st)}${pct?' '+Math.round(pct)+'%':''}</span>`}
+const qName=f=>esc(String(f||'').split('/').pop().replace(/\.3mf$/,''));
+function qRows(t,d){const L=d[t]||[];if(!L.length)return '<div class="hint" style="padding:8px 0">Nothing here.</div>';
+  return L.map(r=>{let m,why=r.error?`<div class="reason">${esc(r.error)}</div>`:'';
+    if(t==='downloading')m=`<b>${esc(r.name)}</b> · ${r.compartments} comp. <span class="hint">${esc(r.batch||'')}</span>`;
+    else if(t==='building')m=`<b>${esc(r.batch)}</b> <span class="hint">${r.models!=null?`${r.ready||0}/${r.models} models${r.failed?` · ${r.failed} failed`:''}`:''}</span>`;
+    else if(t==='slicing')m=`${qName(r.plate)} <span class="hint">${esc(r.batch)} · ${esc((r.presets&&r.presets.printer)||'')}</span>`;
+    else m=`${qName(r.plate)} <span class="hint">${esc(r.printer_name||'')} · ${esc(r.batch)}</span>`;
+    const st=t==='building'?r.status:r.state;
+    return `<div class="qrow"><div class="qm" title="${esc(r.name||r.plate||r.batch||'')}">${m}${why}</div><div class="qs">${qPill(st,r.progress)}</div></div>`}).join('')}
+function qRender(){const p=$('qpanel');p.classList.toggle('min',QMIN);$('qtoggle').textContent=QMIN?'Show':'Hide';
+  const c=(QDATA&&QDATA.counts)||{};
+  $('qsum').textContent=QDATA?QTABS.map(([k,l])=>c[k]?`${c[k]} ${l.toLowerCase()}`:'').filter(Boolean).join(' · ')||'all idle':'';
+  $('qtabs').innerHTML=QTABS.map(([k,l])=>`<button data-qt="${k}" class="${QTAB===k?'on':''}">${l}${c[k]?' · '+c[k]:''}</button>`).join('');
+  document.querySelectorAll('[data-qt]').forEach(b=>b.onclick=()=>{QTAB=b.dataset.qt;try{localStorage.setItem('qtab',QTAB)}catch{}qRender()});
+  $('qlist').innerHTML=QDATA?qRows(QTAB,QDATA):'<div class="hint">Loading…</div>'}
+async function loadQueues(){if(tab!=='makeit')return;try{QDATA=await api('/api/queues')}catch(e){$('qlist').innerHTML=`<div class="reason">${esc(e.message)}</div>`;return}qRender()}
+$('qtoggle').onclick=()=>{QMIN=!QMIN;try{localStorage.setItem('qmin',QMIN?'1':'0')}catch{}qRender();if(!QMIN)loadQueues()};
+qRender();QTIMER=setInterval(()=>{if(tab==='makeit'&&!document.hidden)loadQueues()},5000);
 $('slp_all').onclick=async()=>{if(!MK)return;const rows=[...MK.bases,...MK.names].filter(r=>!r.job_active);
   const pick=r=>{const sel=MKSEL[mkKey(r)];return sel&&sel.printer?r.choices.find(c=>String(c.id)===sel.printer):null};
   const none=rows.filter(r=>!pick(r)).length;

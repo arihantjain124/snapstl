@@ -376,6 +376,11 @@ the row shows the slice for that one. **Slice all waiting** (top) queues every p
 chosen and isn't sliced for it yet. Plates are sliced one at a time; a slice that makes no progress for
 20 minutes is stopped with a message, so nothing stays stuck. Nothing is sliced by itself.
 
+The **Queues** panel (bottom right of Print) shows what's going on, in four tabs: **Downloading**
+(models from MakerWorld), **Building** (batches), **Slicing** (with the printer profile each plate is
+sliced with) and **Printing** (with the printer). Running and waiting items come first, then the last
+few finished; it refreshes every 5 seconds. **Hide** shrinks it to one line with the counts.
+
 **Nothing prints until you click Start print.** That click sends the plate, sliced for the model of
 the printer you chose (sliced first if needed), and starts it. Bambuddy prints it as soon as the
 printer is free and its bed has been cleared. If Bambuddy warns, for example about too little

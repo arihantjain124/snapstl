@@ -805,3 +805,20 @@ def test_snapstl_key_never_asks_for_cloud(client, bb):
     farm.update_config(api_key="")
     r = client.post("/api/farm/connect", json={})
     assert r.status_code == 400 and "not Allow cloud access" in r.json()["detail"]
+
+
+def test_queue_panel_lists_downloading_building_slicing_printing(client, bb):
+    bb.slicer = "ok"
+    client.get("/api/farm")
+    bid, folder = built_batch(client, "PQ")
+    pink = "Names/pink/{Ayra,pink}.3mf"
+    q = client.get("/api/queues").json()
+    assert set(q["counts"]) == {"downloading", "building", "slicing", "printing"}
+    assert any(r["state"] == "done" for r in q["downloading"])  # the batch's models, finished
+    assert any(b["id"] == bid and b["status"] == "done" for b in q["building"])
+    client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": pink, "printer_id": 2}]})
+    wait_for(lambda: any(i["plate"] == pink and i["state"] == "done" for i in client.get("/api/queues").json()["slicing"]))
+    client.post("/api/makeit/start", json={"batch_id": bid, "file": pink, "printer_id": 2})
+    q = wait_for(lambda: (lambda q: q if any(j["plate"] == pink for j in q["printing"]) else None)(client.get("/api/queues").json()))
+    j = next(j for j in q["printing"] if j["plate"] == pink)
+    assert j["printer_name"] == "Names A" and j["batch"]
