@@ -411,16 +411,24 @@ The bottom of the sidebar shows at a glance whether the **Helper**, **Bambuddy**
      computers.
    - An older report never undoes a newer status.
    - **Ad-hoc request?** Click **Add ad-hoc order** and type the name to print, mobile and colour
-     (quantity and a note are optional). It goes straight to **Ready → Ad-hoc** with today's date and
+     (quantity and a note are optional). It goes straight to **New orders – to make → Ad-hoc** with today's date and
      time and an `AH-…` order ID, and from there is batched and printed like any other order.
-2. **Check the tabs:**
-   - **Ready** (with sub-tabs **Single**, **Clubbed** and **Ad-hoc**), **Needs review**, **In a batch**,
-     **Bundled** (made into plates, not printed yet), **Ready to ship** (base and name both printed
-     in Print), **Printed**, **Skipped**.
-   - **Delivered**, **RTO**, **In Transit**, **Cancelled**, **Others**, **All**.
+2. **Check the tabs** (three groups; every order is in exactly one tab):
+   - **Make:** **New orders – to make** (sub-tabs **Single**, **Clubbed**, **Ad-hoc**, **Returned piece
+     available**, **Express**), **Check name first**, **Ready to print** (in a batch), **Printing** (a
+     plate of it was started).
+   - **Pack & ship:** **Printed – pack it** (name and base both printed), **Label done – ship it**
+     (the labelling team pressed **Label Generated**, or the website says PACK / HANDOVER).
+   - **Records:** **On the way**, **Delivered**, **Coming back (RTO)**, **Cancelled**, **Problems –
+     check** (something doesn't add up: sort it out, then **Clear flag**), **Skipped**, **All**.
+   - **EXPRESS · needed by …** orders are always at the top (red from 3 days before the date).
+   - **Returned piece available:** a returned order has exactly the same name and colour; check the
+     piece, then **Use returned piece** sends it instead of making a new one (**Undo returned piece**
+     to make it after all).
    - Type in the boxes under the column names to filter. Choose columns under **Choose columns**; **Save current view** remembers the columns, category and filters in this browser. Use the controls below the table to change pages and rows per page.
-   - In **Needs review**, fix the name or colour and click **Approve**.
-3. **Make a batch.** Tick orders (or **Select all matching**), then click **Create batch**.
+   - In **Check name first**, fix the name or colour and click **Approve**.
+3. **Make a batch.** In **New orders – to make**, tick orders (or **Select all matching**), then click
+   **Create batch**. They move to **Ready to print**.
 4. **Download the models.** Go to **Batches → Queue download**. The helper makes each name in your
    MakerWorld tab, one at a time; follow it in the **Download queue** on the Batches page. If MakerWorld shows a security
    check in that tab, complete it and the helper carries on.
@@ -433,13 +441,14 @@ The bottom of the sidebar shows at a glance whether the **Helper**, **Bambuddy**
      now. The **Status** column follows it: *Sending* → *Started · in queue* → *Printing* →
      *Printed*. After each print, clear that printer's bed and click **Clear plate** (in Bambuddy, or
      on the Printers page) so its next plate starts. Printed plates move to **Completed**. If a print
-     failed, click **Reprint** there and start it again from Bases or Names.
+     failed, click **Reprint** there and start it again from Bases or Names. Plates with an
+     **EXPRESS** order are listed first. Starting a plate moves its orders to **Printing**.
    - **By hand:** click **Show in Finder** (Windows: **Show in File Explorer**) and open the plates in
      Bambu Studio. Print bases in white, and names in the colour of their folder.
-8. **Ship and mark them printed.** **Orders → Ready to ship** lists the orders whose base and name are
-   both printed. Tick them (or click **Printed** on a row), then click **Mark printed**. They move to
-   **Printed** and keep their batch for the record. **Back to Bundled** undoes this. Orders printed by
-   hand are marked the same way from the **Bundled** tab.
+8. **Pack and ship.** When an order's base and name are both printed it moves to **Orders → Printed –
+   pack it** by itself. The labelling team makes the label on the website and presses **Label
+   Generated**: the order moves to **Label done – ship it**, then follows the website's statuses
+   (On the way, Delivered …). A report never moves an order backwards.
 
 A finished batch can be redone:
 

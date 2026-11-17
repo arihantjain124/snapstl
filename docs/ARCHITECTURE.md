@@ -255,8 +255,12 @@ always agree. First match wins: skipped → **problems** (any `flag`) → **canc
 **pack_it** (`made_at`, state `printed`, or `reuse_of`) → **printing** (in a batch + `print_started_at`)
 → **ready_to_print** (in a batch) → **check_name** (`needs_review`) → **to_make** (`ready`) → else
 **problems**. Report statuses 4–7 are ignored while a remake is pending (`remake_at` newer than
-`label_at`). Phase 2 only: the Orders page still uses `server.TABS` (old tabs) until phase 3; Supabase
-`tab` already uses the new keys.
+`label_at`). The Orders page (`server.TABS`, 0.23 phase 3) uses the same rule: one key per tab plus
+`to_make_single` / `_clubbed` / `_adhoc` / `_returned` (a returned RTO piece with exactly the same name,
+case-sensitive, and colour, not used yet), `express` and `all`; rows sorted Express first
+(`server._ORDER`). Only `to_make` orders can be ticked / batched (`batches.create_batch` also skips
+flagged and reused ones). Mark printed / Back to Bundled buttons are gone (the endpoint stays for old
+data).
 
 **Report rules (0.23, `ingest.status_state` / `_status_flags`; `sync.merge` uses `status_state` too)**:
 a report never moves an order backwards. Ready / needs review stay to make on PRINT and AWB EXPIRED;
@@ -451,7 +455,7 @@ the files. Clashing file names get ` (2)`; names over 200 characters are shorten
 | Pages | `GET /`, `GET /login` |
 | Auth (optional) | `POST /api/login`, `POST /api/logout`, `GET /api/auth-check` |
 | State | `GET /api/meta`, `GET /api/state` (counts, downloader, queue, builder log) |
-| Orders | `POST /api/ingest` (multipart `file`), `GET /api/orders`, `GET /api/orders/ids`, `GET /api/orders/facets`, `GET /api/orders.csv`, `POST /api/orders/adhoc` `{name,phone,color,quantity?,note?}`, `POST /api/orders/{id}/name` `{name,color}`, `POST /api/orders/{id}/reset`, `POST /api/orders/{id}/skip` |
+| Orders | `POST /api/ingest` (multipart `file`), `GET /api/orders`, `GET /api/orders/ids`, `GET /api/orders/facets`, `GET /api/orders.csv`, `POST /api/orders/adhoc` `{name,phone,color,quantity?,note?}`, `POST /api/orders/{id}/name` `{name,color}`, `POST /api/orders/{id}/reset` (Remake / Make anyway; records a remake when the webstore status would keep it elsewhere), `POST /api/orders/{id}/skip`, `POST /api/orders/{id}/clear-flag`, `POST /api/orders/{id}/use-returned` `{rto_order_id}`, `POST /api/orders/{id}/undo-returned` |
 | Batches | `POST /api/batches` `{order_ids}`, `POST /api/batches/{id}/download` (`{force:true}` = Re-download), `POST /api/batches/{id}/build` (also Rebuild), `POST /api/batches/{id}/cancel`, `GET /api/batches`, `GET /api/batches/{id}`, `GET /api/batches/{id}/file?path=`, `POST /api/batches/{id}/reveal` (local only), `GET /api/batches/{id}/zip` |
 | Downloads | `GET /api/downloads` (queue + Downloads folder stats), `POST /api/downloads/retry`, `POST /api/downloads/reveal` (local only), `POST /api/downloader/pause`, `POST /api/downloader/resume` |
 | Helper | `GET /api/helper/config`, `GET /api/helper/next`, `POST /api/helper/ping`, `POST /api/helper/jobs/{id}/result`, `…/fail`, `…/release`, `GET /api/helper.zip` |
@@ -643,6 +647,7 @@ snapstl.server:app --port 8320`.
 | 66 | **The newest export wins for every order in it** (0.22.21): `status_at` puts the file's moment (`file_as_of`: newest order / date in the file) before the row's event date (`@file|event|upload`); old stamps rewritten once locally and in Supabase. Also: once after updating, each computer sends **every** order again and reads every record (`sync.VIEW_SENT`); `_VIEW` (`app_state`, `review_reason`) now follows only the newer change (`_WIN`) or fills a record that has none | owner: some orders kept an old status after uploading a newer ShopDeck export (their row had no event date while the stored one did), and the host's changes had to reach Supabase and every computer |
 | 69 | **Order-flow data, phase 1** (0.23, owner-approved plan `docs/build-plan-order-flow-and-logistics.md`): orders get `first_status`, `print_started_at` and the field groups (`db.FIELD_GROUPS`, each with `<group>_changed`; newest change per group wins locally in `sync.merge` and in Supabase via `_GROUPS_SQL` in `_UPSERT` / `_CLAIM` / `_OFFER`); new shared tables `order_notes` (append-only) and `usage_counts` (per computer/day/feature), both with RLS and no-delete triggers. The outbox trigger is now `orders_outbox_upd3` (also watches the new columns). `SCHEMA_VERSION` 2: an older SnapSTL stops syncing (update every computer the same day). No screen change yet | per-field change times keep people's actions (label, express, flags) independent of the who-makes-it state rules (`_WIN`) |
 | 70 | **One tab rule, report rules, Printing** (0.23 phase 2): `tabs.py` holds the new 12 tabs as Python and as one SQL CASE shared by SQLite and the Supabase `set_tab()` trigger (old `tab` values are worked out again once at setup; the shop glossary keeps the old names marked "before 0.23"). Ingest flags problems instead of guessing (see §6); AWB EXPIRED clears a label; `print_started_at` from print jobs. Label group gets `label_note`; flag `back_to_print` added. `db.connect` tolerates a column added by another thread at the same moment (first start after updating). Dry run on the owner's database: all 1,670 orders in exactly one tab, none in Problems | owner's process: To make → Ready to print → Printing → Printed – pack it → Label done – ship it; a report must never undo work done in the app |
+| 71 | **Production Orders page** (0.23 phase 3): 12 tabs in Make / Pack & ship / Records groups, Stage column with the tab's words, Express badge (red ≤ 3 days) and Express-first sorting (Orders and Print: `makeit.board` sorts plates by their orders' earliest `express_by`, so free printers are pre-selected for them first), returned-piece highlight + Use / Undo, Clear flag, reasons shown in words (flag, label expired, name change, remake). Saved views moved to `snapstl-order-views-v2` (old tab names). Make anyway on a delivered order records a remake so it shows in New orders | owner: simple words for staff, express orders prioritised, reuse returned pieces |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---

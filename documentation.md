@@ -274,3 +274,16 @@ Every computer must see the same tab for an order (shared records in Supabase).
   Check name 67, Ready to print 2, Printing 20, Printed – pack it 13, Label done – ship it 20, On the
   way 151, Delivered 767, Coming back 12, Cancelled 27, Problems 0, Skipped 9.
 - 110 tests pass (incl. shared records). The Orders page still shows the old tabs until phase 3.
+
+### 2026-11-18: Phase 3 (production Orders page) built and committed
+- Orders page: the 12 tabs in three groups (Make / Pack & ship / Records) with counts; a **Stage**
+  column in plain words; New orders sub-tabs Single, Clubbed, Ad-hoc, **Returned piece available**,
+  **Express**. Mark printed / Back to Bundled removed. Only New orders can be ticked for a batch.
+- Express orders first everywhere (Orders and Print), badge "EXPRESS · needed by …", red from 3 days
+  before. Production can see Express but not change it (logistics sets it, phase 4).
+- Returned piece: green "available" (RTO_DELIVERED) or amber "on its way back"; **Use returned piece**
+  (asks to check the piece) → Printed – pack it; **Undo returned piece**; each piece used once.
+- Problems – check shows the reason in words and **Clear flag**. Remake / Make anyway work from any
+  tab (a delivered order made again shows in New orders).
+- Checked in the browser on a copy of the owner's database (deleted afterwards); 116 tests pass.
+- Not built yet: anything on the logistics page (Label Generated, Express, notes …) = phase 4.

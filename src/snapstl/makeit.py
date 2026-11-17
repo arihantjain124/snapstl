@@ -35,7 +35,7 @@ def _batch_orders(con, b: dict) -> list[dict]:
     ids = json.loads(b.get("order_ids") or "[]")
     if not ids:
         return []
-    return db.rows(con, f"SELECT order_id, name, color, state, quantity, made_at FROM orders "
+    return db.rows(con, f"SELECT order_id, name, color, state, quantity, made_at, express_by FROM orders "
                         f"WHERE order_id IN ({','.join('?' * len(ids))})", *ids)
 
 
@@ -124,6 +124,7 @@ def board(prs: list[dict] | None = None) -> dict:
             plates = summ.get("plates") or []
             orders = _batch_orders(con, b)
             state_of = {o["order_id"]: o["state"] for o in orders}
+            express_of = {o["order_id"]: o.get("express_by") for o in orders if o.get("express_by")}
             on = plate_order_ids(plates, orders)
             for p in plates:
                 j = latest.get((b["id"], p["file"]))
@@ -144,9 +145,13 @@ def board(prs: list[dict] | None = None) -> dict:
                     "order_ids": ids, "sliced": False, "slice": None,
                     "job": _job(j), "job_active": active, "done": done,
                     "need": farm.needed_color(p),
+                    # earliest Express needed-by date of its orders still to finish (None = not express)
+                    "express_by": min((express_of[i] for i in open_orders if i in express_of), default=None),
                 })
     prs = prs or []
-    pending = [r for r in rows if not r["done"]]
+    # plates holding an Express order first (earliest needed-by date), the rest as before; free printers
+    # are pre-selected for them first
+    pending = sorted([r for r in rows if not r["done"]], key=lambda r: (r["express_by"] is None, r["express_by"] or ""))
     active_jobs = farm.active_counts()
     for r in pending:
         r["choices"] = [{"id": p["id"], "name": p["name"], "why_not": "", "note": farm.match_note(r, p),

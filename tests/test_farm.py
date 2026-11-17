@@ -525,16 +525,16 @@ def test_make_it_bases_names_start_completed_ready_to_ship(client, bb):
     m = client.get("/api/makeit").json()
     assert {r["file"] for r in m["completed"]} == {base, pink} and [r["file"] for r in m["names"]] == [blue]
     tab = lambda t: [o["order_id"] for o in client.get(f"/api/orders?tab={t}&limit=50").json()["orders"] if o["order_id"].startswith("PM")]
-    assert tab("ready_to_ship") == ["PM1"] and tab("bundled") == ["PM2"]
+    assert tab("pack_it") == ["PM1"] and tab("printing") == ["PM2"]
     bb.queue[3]["status"] = "completed"
     farm.WORKER.refresh()
-    assert sorted(tab("ready_to_ship")) == ["PM1", "PM2"] and client.get("/api/makeit").json()["names"] == []
+    assert sorted(tab("pack_it")) == ["PM1", "PM2"] and client.get("/api/makeit").json()["names"] == []
 
     # Reprint (after a failure is noticed): back to the queue, its orders leave Ready to ship
     assert client.post("/api/makeit/reprint", json={"batch_id": bid, "file": pink}).status_code == 200
     m = client.get("/api/makeit").json()
     assert [r["file"] for r in m["names"]] == [pink] and m["names"][0]["job"]["state"] == "reprint"
-    assert tab("ready_to_ship") == ["PM2"] and tab("bundled") == ["PM1"]
+    assert tab("pack_it") == ["PM2"] and tab("printing") == ["PM1"]
     assert client.post("/api/makeit/reprint", json={"batch_id": bid, "file": blue}).status_code == 200  # also done
     assert client.post("/api/makeit/reprint", json={"batch_id": bid, "file": pink}).status_code == 400  # not completed
 
