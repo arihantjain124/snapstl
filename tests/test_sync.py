@@ -269,7 +269,7 @@ def test_daily_copy_of_the_shared_records(two):
 
         sync.daily_copy()
         today = sync._daily_path()
-        assert today.exists() and (today.stat().st_mode & 0o777) == 0o600
+        assert today.exists() and (os.name == "nt" or (today.stat().st_mode & 0o777) == 0o600)
         import json
 
         saved = json.loads(today.read_text())

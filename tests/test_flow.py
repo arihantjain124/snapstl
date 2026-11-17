@@ -1,5 +1,6 @@
 """End-to-end: report → select orders → batch → helper downloads → plates → ZIP; plus DB maintenance."""
 import io
+import os
 import time
 import zipfile
 from pathlib import Path
@@ -517,7 +518,8 @@ def test_shared_records_are_set_in_settings(client, monkeypatch):
     config.set_database_url("postgresql://u:secretpw@db.example:5432/p")
     info = client.get("/api/shared-records").json()
     assert info["configured"] and "secretpw" not in str(info) and info["where"] == "u @ db.example"
-    assert oct(config.SECRETS_PATH.stat().st_mode & 0o777) == "0o600"
+    if os.name != "nt":  # Windows has no POSIX modes: the file is private by its folder (%LOCALAPPDATA%)
+        assert oct(config.SECRETS_PATH.stat().st_mode & 0o777) == "0o600"
     client.post("/api/shared-records", json={"disconnect": True})
     assert config.database_url() == ""
     s = client.get("/api/setup").json()

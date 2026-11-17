@@ -21,7 +21,7 @@ def test_password_with_symbols_is_encoded():
 
 def test_schema_file_matches_the_app():
     f = Path(__file__).resolve().parents[1] / "docs" / "supabase-schema.sql"
-    assert f.read_text() == sync.schema_sql(), "run: uv run snapstl-db schema > docs/supabase-schema.sql"
+    assert f.read_text(encoding="utf-8") == sync.schema_sql(), "run: uv run snapstl-db schema > docs/supabase-schema.sql"
 
 
 def test_nothing_changes_without_the_shared_records(monkeypatch):
