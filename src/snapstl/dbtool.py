@@ -15,6 +15,10 @@ from . import computer, sync
 
 def main() -> None:
     cmd = sys.argv[1] if len(sys.argv) > 1 else "check"
+    try:  # Windows consoles default to cp1252 and CRLF: the schema has "→" and docs/supabase-schema.sql is UTF-8, LF
+        sys.stdout.reconfigure(encoding="utf-8", newline="\n")
+    except (AttributeError, ValueError):
+        pass
     if cmd == "schema":
         print(sync.schema_sql(), end="")
         return
