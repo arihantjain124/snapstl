@@ -347,3 +347,12 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
   those rules are covered by the automated tests (AWB EXPIRED, flags, never backwards).
 - **Next (needs the owner's go-ahead): update day** — merge to main and push, back up every computer,
   update all computers the same day, upload a 30-day report.
+
+### 2026-11-18: 0.23.0 shipped; 0.23.1 small-first-letter check
+- 0.23.0 merged and pushed to `main` (merge made without touching the folder the running SnapSTL uses;
+  every computer updates through Settings → Updates).
+- Owner (0.23.1): a name whose first letter is small (e.g. "riya") goes to **Check name first** — it's
+  almost always a typing slip; the name still prints as typed or as approved. New reports and orders
+  from the shared records get the check; once after updating, Ready orders not yet checked by a person
+  are re-checked (5 such orders on the owner's database when this was made). Orders a person already
+  approved or edited are left alone.

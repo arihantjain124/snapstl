@@ -235,7 +235,7 @@ shared records); Clean up removes finished ones, Reset empties it.
   match a webstore Order ID).
 
 Name cleaning (`clean_name`): emoji/symbols dropped silently; other non-letters removed → review;
-spaces → review; non-Latin letters → review; more than 15 letters → review. A missing name/colour
+first letter small (e.g. `riya`, 0.23.1; printed as typed) → review; spaces → review; non-Latin letters → review; more than 15 letters → review. A missing name/colour
 or a special request → review.
 
 | State | Set when | UI tab |
@@ -654,6 +654,7 @@ snapstl.server:app --port 8320`.
 | 72 | **Logistics page** (0.23 phase 4, owner decision): port 8002 no longer shows the Orders page read-only; it serves the label / customer-care page and allows exactly the writes in `logistics.WRITES` (was: order reads only). Label Generated lives only there (production sees the result). WhatsApp opens `wa.me` in the person's own browser with the text filled in; SnapSTL sends nothing. Copy buttons fall back to `execCommand` because port 8002 is plain HTTP (no clipboard API) | the team that talks to customers needs to act, not just read; one place for labels, Express and customer questions |
 | 73 | **Settings → Usage** (0.23 phase 5): counts per feature for the last 7 / 30 / 90 / 365 days from `GET /api/usage` (all computers via Supabase `usage_counts`, else this computer), in words (`FEATWORD` in `index.html`). Counted: every logistics screen, search, copy and WhatsApp click and action; production Use / Undo returned piece and Clear flag. Feature names only | owner: reorganise the layout later from real usage |
 | 74 | **Logistics settings, 0.23.0** (phase 6): Settings → Logistics edits the tracking link, the red limits and the ready-made messages (saved with Save settings, per computer: the logistics host's apply to its page); the Orders page's Express badge uses the same `express_red_days`. Version 0.23.0; shared-records schema 2 (older SnapSTLs stop syncing) | owner can change wording and limits without a release |
+| 75 | **Small first letter → Check name first** (0.23.1, owner): a name starting with a small letter is almost always a typing slip, so it needs a person (`ingest.SMALL_FIRST`); the name is still printed as typed or as approved. Once after updating, `ingest.recheck_small_first` (key `small_first_v1`) moves Ready orders not yet checked by a person to Check name first | real orders rarely start with a small letter |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
