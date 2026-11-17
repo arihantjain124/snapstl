@@ -202,6 +202,35 @@ END $$;
 from . import shop as _shop  # noqa: E402
 
 _SETUP_SQL += _shop.setup_sql()  # the `shop` schema for questions (shop.py) — after snapstl, it reads it
+# Status stamps since 0.22.21 put the file's moment first ("@file|event|upload", ingest.status_stamp).
+# Older ones ("event|file|upload", also from computers not updated yet) are rewritten here; the shop
+# triggers are paused meanwhile (only the stamp's order changes, nothing to tidy again). A failure
+# here only warns.
+_SETUP_SQL += f"""CREATE OR REPLACE FUNCTION {SCHEMA}.stamp_v2(s text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE WHEN s IS NULL OR s LIKE '@%' OR s NOT LIKE '%|%|%' THEN s
+    ELSE '@' || split_part(s, '|', 2) || '|' || split_part(s, '|', 1) || '|' || split_part(s, '|', 3) END $$;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM {SCHEMA}.order_records WHERE status_at LIKE '%|%|%' AND status_at NOT LIKE '@%')
+     OR EXISTS (SELECT 1 FROM {SCHEMA}.report_rows WHERE status_at LIKE '%|%|%' AND status_at NOT LIKE '@%')
+     OR EXISTS (SELECT 1 FROM shop.report_lines WHERE status_at LIKE '%|%|%' AND status_at NOT LIKE '@%') THEN
+    ALTER TABLE {SCHEMA}.order_records DISABLE TRIGGER shop_bridge;
+    ALTER TABLE {SCHEMA}.report_rows DISABLE TRIGGER shop_bridge;
+    ALTER TABLE shop.report_lines DISABLE TRIGGER report_lines_apply;
+    UPDATE {SCHEMA}.order_records SET status_at = {SCHEMA}.stamp_v2(status_at)
+     WHERE status_at LIKE '%|%|%' AND status_at NOT LIKE '@%';
+    UPDATE {SCHEMA}.report_rows SET status_at = {SCHEMA}.stamp_v2(status_at)
+     WHERE status_at LIKE '%|%|%' AND status_at NOT LIKE '@%';
+    UPDATE shop.report_lines SET status_at = {SCHEMA}.stamp_v2(status_at)
+     WHERE status_at LIKE '%|%|%' AND status_at NOT LIKE '@%';
+    ALTER TABLE {SCHEMA}.order_records ENABLE TRIGGER shop_bridge;
+    ALTER TABLE {SCHEMA}.report_rows ENABLE TRIGGER shop_bridge;
+    ALTER TABLE shop.report_lines ENABLE TRIGGER report_lines_apply;
+  END IF;
+EXCEPTION WHEN others THEN  -- never block the sync: the stamps are only compared, and merge upgrades them too
+  RAISE WARNING 'SnapSTL: status stamps not rewritten: %', SQLERRM;
+END $$;
+"""
 SCHEMA_VERSION = 1  # of the shared records; a newer one makes older apps stop syncing (update them)
 
 
@@ -233,10 +262,11 @@ _UPSERT = (
     f"INSERT INTO {SCHEMA}.order_records AS r ({', '.join(_COLS)}) "
     f"VALUES ({', '.join('%(' + c + ')s' for c in _COLS)}) ON CONFLICT (order_id) DO UPDATE SET "
     + ", ".join(f"{c} = CASE WHEN {_WIN} THEN EXCLUDED.{c} ELSE r.{c} END" for c in _STATE_GROUP) + ", "
-    # Skip / Make anyway are a person's choice: only a newer change (_WIN) may set or undo a skip, so a
-    # computer that hasn't heard of the skip yet can't overwrite it with its older "ready"
+    # the app's view (ready / needs review / skipped) follows the newest change (_WIN), so a computer that
+    # hasn't heard of a Skip or Approve yet can't overwrite it with its older view; a record without
+    # any view yet (older SnapSTL) takes the first one sent
     + ", ".join(f"{c} = CASE WHEN {_WIN} OR (r.state = 'released' AND EXCLUDED.state = 'released' "
-                "AND 'skipped' NOT IN (COALESCE(r.app_state, ''), COALESCE(EXCLUDED.app_state, ''))) "
+                "AND r.app_state IS NULL) "
                 f"THEN EXCLUDED.{c} ELSE r.{c} END" for c in _VIEW) + ", "
     + ", ".join(f"{c} = CASE WHEN {_WIN} THEN COALESCE(EXCLUDED.{c}, r.{c}) ELSE r.{c} END" for c in ("name", "color"))
     + ", "
@@ -429,6 +459,7 @@ def merge(con, r: dict, force: bool = False) -> str | None:
     """Bring one shared record into the local database. Returns the order_id if this computer must
     release a stale claim of its own (its batch no longer exists here)."""
     oid = r["order_id"]
+    r = {**r, "status_at": db.upgrade_stamp(r.get("status_at"))}  # written by a SnapSTL before 0.22.21
     cur = con.execute("SELECT * FROM orders WHERE order_id=?", (oid,)).fetchone()
     L = dict(cur) if cur else None
     mine = r.get("computer_id") == computer.ID
@@ -566,9 +597,10 @@ def _push(rc) -> int:
             con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES (?, '1')", (TABS_SENT,))
         if not con.execute("SELECT 1 FROM sync_state WHERE key=?", (VIEW_SENT,)).fetchone():
             # before 0.22.21 Skip / Make anyway / Approve and Ready to ship stayed on the computer they were
-            # pressed on: send this computer's skips again and read every record once more
+            # pressed on: send every order of this computer again (the rules keep newer changes made
+            # elsewhere and bring them back here) and read every record once more
             con.execute("INSERT OR IGNORE INTO sync_outbox(order_id, queued_at) SELECT order_id, ? FROM orders "
-                        "WHERE state='skipped' AND COALESCE(in_remote,0)=1", (db.now(),))
+                        "WHERE COALESCE(in_remote,0)=1", (db.now(),))
             con.execute("DELETE FROM sync_state WHERE key='pulled_until'")
             con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES (?, '1')", (VIEW_SENT,))
         con.execute("INSERT OR IGNORE INTO sync_outbox(order_id, queued_at) SELECT order_id, ? FROM orders "

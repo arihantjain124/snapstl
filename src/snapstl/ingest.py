@@ -128,11 +128,14 @@ def normalise_color(raw: str) -> str:
 
 # ---------------- how recent is a status? ----------------
 # The webstore report has no "generated at" time. A row's status is dated by, in order:
-#   1. the latest of the row's own event dates (pickup, delivered, RTO, return),
-#   2. the end of the report's "Date Range: … to DD/MM/YYYY" line,
-#   3. when the report was uploaded here.
-# These make one sortable text (status_at): a status only replaces a stored one when its stamp is
-# at least as high, so uploading an older report never undoes a newer status.
+#   1. how recent the whole file is (`file_as_of`: its newest order / date in any date column, or the
+#      Date Range end) — the export holds every order's status as of that moment, so a newer export
+#      always updates every order in it, whether or not the row has an event date (0.22.21);
+#   2. the latest of the row's own event dates (pickup, delivered, RTO, return) — same file only;
+#   3. when the report was uploaded here (ties).
+# These make one sortable text (status_at, `@file|event|upload`): a status only replaces a stored one
+# when its stamp is at least as high, so uploading an older report never undoes a newer status.
+# Stamps from before 0.22.21 (`event|file|upload`) are rewritten once (db.upgrade_stamp).
 EVENT_COLUMNS = ("Pickup Date", "Delivered Date", "RTO Initiated Date", "RTO Delivered Date",
                  "Return Created Date", "Return Delivered Date")
 _NO_DATE = "0000-00-00"
@@ -197,7 +200,7 @@ def file_as_of(table: list[list[str]], header_row: int) -> str:
 
 
 def status_stamp(event_date: str, report_date: str, uploaded: str) -> str:
-    return f"{event_date or _NO_DATE}|{report_date or _NO_DATE}|{uploaded}"
+    return f"{db.STAMP}{report_date or _NO_DATE}|{event_date or _NO_DATE}|{uploaded}"
 
 
 # ---------------- ingest ----------------

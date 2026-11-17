@@ -175,7 +175,7 @@ columns — the owner's order history lives here.
 | `batch_id`, `last_error` | this computer's batch (NULL when made on another computer); last download error |
 | `first_file`, `last_file`, `first_seen`, `updated_at` | provenance |
 | `state_at` | when `state` last changed (trigger) |
-| `status_at` | how recent `source_status` is: `event date|newest entry in the file|upload time` (`ingest.status_stamp`) |
+| `status_at` | how recent `source_status` is: `@newest entry in the file|event date|upload time` (`ingest.status_stamp`; before 0.22.21 `event|file|upload`, rewritten once by `db.upgrade_stamp`) |
 | `in_remote`, `batch_uid`, `batch_label`, `batch_computer`, `batch_computer_id`, `bundled_at`, `printed_at` | shared order records: its batch (also on other computers), when bundled / printed |
 | `made_at` | base and name both printed in Print (`makeit.update_made`) → tab **Ready to ship** (`state='bundled' AND made_at IS NOT NULL`; **Bundled** = not made yet). Set by the batch's computer, mirrored on the others through the shared records (0.22.21) |
 
@@ -607,7 +607,8 @@ snapstl.server:app --port 8320`.
 | 62 | **No cloud profiles** (0.22.19): since 17 Nov 2026 Bambu Cloud's profile *list* answers with an empty (null) printer section; Bambuddy 1.3.1 crashes on it (`'NoneType' object has no attribute 'get'`) in its profile list and in slices with a Bambu Cloud process profile. Owner decision: no Bambu Cloud / Orca Cloud in SnapSTL — `farm.PRESET_TIERS` lists only Bambuddy's local and standard profiles, `cloud_problem` is gone, SnapSTL's key never asks for cloud access. Printers slice with self-contained "SnapSTL …" profiles built from the local Bambu Studio's system profiles (P1S: GM014 / GP004 / GFSA00_34, A1: GM030 / GP079 / GFSA00_04; inherits + includes resolved) and imported by the owner in Bambuddy → Local Profiles. Bambuddy stays the unmodified release (a local patch was tried and reverted at the owner's request); with its cloud sign-in on, its own profile list still fails — sign Bambuddy out of Bambu Cloud | slicing must not depend on Bambu Cloud |
 | 63 | **The SnapSTL task runs with no window** (0.22.19): the task starts `conhost.exe --headless powershell … run-service.ps1` (`Register-SnapSTLTask` in `common.ps1`). On Windows 11 consoles open in Windows Terminal, which ignores `-WindowStyle Hidden`: a terminal stayed open and closing it stopped SnapSTL (task result 0xC000013A). Older installs switch at their next start (`Repair-SnapSTLTask` in run-service / update) | owner saw a terminal open with the app; closing it took SnapSTL down |
 | 64 | **Filament slot per print, any printer** (0.22.20): Print lists every printer (none greyed out by colour) and, under the chosen one, its loaded slots best fit first (`farm.tray_choices`: exact colour name, then same family, then nearest hex; then most filament left). The chosen slot (Bambu global tray id: AMS n·4+slot, AMS HT id, 254 external) is stored in `print_jobs.ams_tray` and sent as Bambuddy's `ams_mapping` (queue item create / PATCH). The Printers page's "prints as …" mapping (`color_overrides`, #0.22.7) is removed; **Refresh from Bambuddy** (`POST /api/farm/refresh`) asks each printer for a full status report (`/printers/{id}/refresh-status`) and clears SnapSTL's caches | owner: pick the colour by AMS slot at print time, any printer allowed |
-| 65 | **Skip, Make anyway, Approve and Ready to ship reach every computer** (0.22.21): `sync.merge` applies the record's `app_state` / `review_reason` (newer `state_at` wins) and `made_at`; `_UPSERT` keeps a skip unless a newer change undoes it; Remake clears `made_at`; once after updating each computer re-sends its skips and pulls every record again (`sync.VIEW_SENT`) | owner: orders skipped or bundled/ready to ship on one computer stayed that way only on that computer — Supabase had the skip (tab) but other computers never applied it, and could overwrite it |
+| 65 | **Skip, Make anyway, Approve and Ready to ship reach every computer** (0.22.21): `sync.merge` applies the record's `app_state` / `review_reason` (newer `state_at` wins) and `made_at`; `_UPSERT` keeps a skip unless a newer change undoes it; Remake clears `made_at`; once after updating each computer re-sends its orders and pulls every record again (`sync.VIEW_SENT`, see #66) | owner: orders skipped or bundled/ready to ship on one computer stayed that way only on that computer — Supabase had the skip (tab) but other computers never applied it, and could overwrite it |
+| 66 | **The newest export wins for every order in it** (0.22.21): `status_at` puts the file's moment (`file_as_of`: newest order / date in the file) before the row's event date (`@file|event|upload`); old stamps rewritten once locally and in Supabase. Also: once after updating, each computer sends **every** order again and reads every record (`sync.VIEW_SENT`); `_VIEW` (`app_state`, `review_reason`) now follows only the newer change (`_WIN`) or fills a record that has none | owner: some orders kept an old status after uploading a newer ShopDeck export (their row had no event date while the stored one did), and the host's changes had to reach Supabase and every computer |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -784,14 +785,22 @@ in `APP_DIR/shared-records.json` (mode 600, never returned in full). Without it 
   runs a first sync and reports its error instead of "connected" when it fails. `snapstl-db check | sync` does the same from a
   terminal.
 - **Report timestamps:** the webstore report has no "generated at" time, so
-  `ingest.status_stamp(event, report, upload)` builds a sortable `status_at` from three parts:
-  - the latest of the row's event dates (Pickup / Delivered / RTO Initiated / RTO Delivered /
-    Return Created / Return Delivered);
-  - how recent the whole file is (`ingest.file_as_of`, since 0.22.8): the later of the "Date Range … to
-    DD/MM/YYYY" end above the header and the newest date / date-time in any of its date columns
-    (order created, pickup, delivered, RTO, return …). With a time it's written `YYYY-MM-DD~HH:MM:SS`;
-    `~` sorts after the `|` of older day-only stamps, so they stay comparable;
+  `ingest.status_stamp(event, report, upload)` builds a sortable `status_at`, `@file|event|upload`:
+  - first, how recent the whole file is (`ingest.file_as_of`, since 0.22.8): the later of the "Date
+    Range … to DD/MM/YYYY" end above the header and the newest date / date-time in any of its date
+    columns (the newest order's creation time, pickup, delivered, RTO, return …). The ShopDeck export
+    holds every order's status as of that moment, so since 0.22.21 a newer export updates **every**
+    order in it, also rows without an event date (before, the row's event date came first and a row
+    without one lost to an older file's row that had one). With a time it's written
+    `YYYY-MM-DD~HH:MM:SS`; `~` sorts after `|`, so the same day with a time ranks higher;
+  - then the latest of the row's event dates (Pickup / Delivered / RTO Initiated / RTO Delivered /
+    Return Created / Return Delivered) — only between rows of files with the same moment;
   - the upload time (only breaks ties).
+
+  The leading `@` sorts above every older stamp. Older stamps are rewritten once into this order:
+  locally by `db._upgrade_stamps` (orders, report_rows, shop_lines; key `stamps_v2`), in Supabase by
+  `snapstl.stamp_v2()` in the setup SQL (order_records, report_rows, shop.report_lines; again whenever a
+  not-yet-updated computer writes an old one; a failure only warns) and in `sync.merge` for pulled rows.
 
   An existing order's status changes only if the new stamp is at least as high (`kept_newer_status`
   counts the others), both locally and in the records.

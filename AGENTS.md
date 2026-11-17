@@ -85,7 +85,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   `db.POST_SCHEMA`; writes coming from the records go inside `db.quiet()`. Run the tests with a
   throwaway Postgres too (README → Development) when touching sync, ingest or batch states.
 - A webstore status only replaces a stored one when its `status_at` stamp is at least as high
-  (`ingest.status_stamp`, dated by the newest entry in the file: `ingest.file_as_of`); never let an
+  (`ingest.status_stamp` = `@file moment|event date|upload`; the file moment is the newest entry in the
+  file, `ingest.file_as_of`, and comes first: a newer export updates every order in it); never let an
   older report undo a newer status.
 - **Every computer needs the shared records** (owner decision 0.22.8): with `sync.REQUIRED`, no change
   (non-GET `/api`) is accepted while `sync.online()` is false, except `server.WITHOUT_SHARED`. Don't add

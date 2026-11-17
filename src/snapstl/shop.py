@@ -58,7 +58,7 @@ GLOSSARY = [
     ("clubbed", "ready_type", "Ready order shipped together with others (same clubbed_id)"),
     ("adhoc", "ready_type", "Ready order typed in by hand in SnapSTL (sku Adhoc)"),
     ("Magicians_35", "sku", "The name organizer SnapSTL makes; the only product in shop.production"),
-    ("status_at", "column", "How recent a row is: event date | newest entry in its report file | upload time. A newer file wins."),
+    ("status_at", "column", "How recent a row is: @newest entry in its report file | event date | upload time. A newer file wins."),
     ("orders_full", "table", "snapstl.orders_full: SnapSTL's order with its report columns (Magicians_35 only)"),
     ("shop.orders", "table", "Every webstore order of every product, one row per order_id. Join customers, order_finance, shipments on order_id / customer_id."),
 ]
