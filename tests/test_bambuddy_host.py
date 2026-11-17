@@ -14,7 +14,18 @@ from .test_flow import client  # noqa: F401  (fixture)
 def host(monkeypatch):
     """A fake Bambuddy computer: service + Docker + sidecars, with every action recorded."""
     st = {"service": "running", "docker": True, "containers": {n: "running" for n in H.SIDECARS}, "calls": [],
-          "ours": True}
+          "ours": True, "octo": {"X1": "running"}}
+    monkeypatch.setattr(H, "octo_plugins", lambda: [{"name": n, "state": s, "status": ""} for n, s in st["octo"].items()])
+    monkeypatch.setattr(H.platform_os, "octoeverywhere_manager", lambda: {"installed": True, "running": False})
+    monkeypatch.setattr(H.platform_os, "docker_cli", lambda: "docker")
+    monkeypatch.setattr(H.platform_os, "open_octoeverywhere_manager", lambda: st["calls"].append(("open-octo",)) or True)
+
+    def docker_restart():
+        st["calls"].append(("docker-restart",))
+        return True
+
+    monkeypatch.setattr(H.platform_os, "restart_docker_desktop", docker_restart)
+    monkeypatch.setattr(H.time, "sleep", lambda s: None)
     monkeypatch.setattr(H, "is_here", lambda: True)
     monkeypatch.setattr(H, "ours", lambda: st["ours"])
     monkeypatch.setattr(H.platform_os, "service_state", lambda name="Bambuddy": st["service"])
@@ -34,6 +45,10 @@ def host(monkeypatch):
         return True
 
     def run(cmd, timeout=60, cwd=None, env=None):
+        if cmd[1] in ("start", "restart"):  # docker start / restart <octo plugins>
+            st["calls"].append(("octo", cmd[1], tuple(cmd[2:])))
+            st["octo"] = {n: "running" for n in st["octo"]}
+            return 0, ""
         st["calls"].append(("compose", tuple(cmd[-2:]) if "--force-recreate" not in cmd else ("recreate",)))
         st["containers"] = {n: "running" for n in H.SIDECARS}
         return 0, ""
@@ -138,3 +153,36 @@ def test_preset_list_crash_is_explained(monkeypatch):
     with pytest.raises(farm.FarmError, match="Bambu Cloud"):
         farm.bambuddy_presets({})
 
+
+
+def test_octoeverywhere_checked_started_and_restarted(host):
+    h = host["host"]
+    s = h.status()
+    assert s["octoeverywhere"] == {"installed": True, "running": False, "plugins": [{"name": "X1", "state": "running", "status": ""}]}
+    host["octo"]["X1"] = "exited"
+    assert not h.status()["ok"]
+    h.tick()  # Keep running starts a stopped plugin (start, never restart)
+    _wait(h)
+    assert ("octo", "start", ("X1",)) in host["calls"] and h.status()["ok"]
+    assert h.restart_octoeverywhere()
+    _wait(h)
+    assert ("octo", "restart", ("X1",)) in host["calls"]
+    assert h.open_octoeverywhere() and ("open-octo",) in host["calls"]
+
+
+def test_restart_all_and_docker(client, host):
+    h = host["host"]
+    assert client.post("/api/bambuddy-host/restart-all", json={}).status_code == 200
+    _wait(h)
+    calls = host["calls"]
+    assert ("service", "restart", True) in calls and ("compose", ("recreate",)) in calls
+    assert ("octo", "restart", ("X1",)) in calls and ("docker-restart",) not in calls  # Docker has its own button
+    host["calls"].clear()
+    host["ours"] = False  # a Bambuddy SnapSTL didn't install is never restarted, even by Restart all
+    h.restart_all()
+    _wait(h)
+    assert not any(c[0] == "service" for c in host["calls"]) and "not installed by SnapSTL" in h.log[-3]
+    assert client.post("/api/bambuddy-host/restart-docker", json={}).status_code == 200
+    _wait(h)
+    assert ("docker-restart",) in host["calls"]
+    assert client.post("/api/bambuddy-host/open-octoeverywhere", json={}).status_code == 200

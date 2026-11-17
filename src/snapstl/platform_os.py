@@ -229,6 +229,41 @@ def start_docker_desktop() -> bool:
     return True
 
 
+def restart_docker_desktop() -> bool:
+    """Restart Docker Desktop (its engine and every container with it); False = not installed.
+    Docker Desktop's own `docker desktop restart` when it has it, else close it and open it again."""
+    docker, exe = docker_cli(), docker_desktop()
+    if docker and run_quiet([docker, "desktop", "restart"], timeout=5 * 60)[0] == 0:
+        return True
+    if exe is None:
+        return False
+    run_quiet(["taskkill", "/IM", "Docker Desktop.exe", "/F"], timeout=30)
+    time.sleep(5)
+    return start_docker_desktop()
+
+
+# OctoEverywhere Plugin Manager (Microsoft Store app; its plugins run in Docker)
+OCTO_PACKAGE = "9020QuinnDamerell.1221C557A868_m9y180tpb7212"
+OCTO_EXE = "OctoEverywherePluginManager.exe"
+
+
+def octoeverywhere_manager() -> dict:
+    """{installed, running} for the OctoEverywhere Plugin Manager app (Windows only)."""
+    if not WINDOWS:
+        return {"installed": False, "running": False}
+    installed = (Path(os.environ.get("LOCALAPPDATA") or "") / "Packages" / OCTO_PACKAGE).is_dir()
+    code, out = run_quiet(["tasklist", "/FI", f"IMAGENAME eq {OCTO_EXE}", "/FO", "CSV", "/NH"], timeout=15)
+    return {"installed": installed, "running": code == 0 and OCTO_EXE.lower() in out.lower()}
+
+
+def open_octoeverywhere_manager() -> bool:
+    """Open the OctoEverywhere Plugin Manager (opening it also updates its plugins); False = not installed."""
+    if not octoeverywhere_manager()["installed"]:
+        return False
+    subprocess.Popen(["explorer.exe", "shell:AppsFolder\\" + OCTO_PACKAGE + "!App"], creationflags=NO_WINDOW)
+    return True
+
+
 def run_quiet(cmd: list[str], timeout: float = 60, cwd: Path | None = None, env: dict | None = None):
     """A command with no console window: (exit code, output)."""
     try:

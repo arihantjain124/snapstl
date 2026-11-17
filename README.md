@@ -108,10 +108,15 @@ from boot.
 
 **If Bambuddy or the slicer service stops** (after a restart, Docker Desktop closed, …) you don't need to
 run the script again: in SnapSTL on the Bambuddy computer, **Settings → Connections → This Bambuddy
-computer** shows Bambuddy, Docker Desktop and the slicer service, and **Start** starts whatever is down
-(Windows may ask to allow changes for Bambuddy — choose Yes). With **Keep running** on (default) SnapSTL
-checks every minute and starts what has stopped by itself; it never restarts anything that's running.
-**Restart Bambuddy** / **Restart slicer** are there when one is stuck (prints on the printers keep going).
+computer — external services** checks every outside service SnapSTL relies on: **Bambuddy**, **Docker
+Desktop**, the **slicer service** and **OctoEverywhere** (its plugins, and whether the Plugin Manager is
+installed). **Check now** looks again, **Start** starts whatever is down (Windows may ask to allow changes
+for Bambuddy — choose Yes), each service has its own **Restart**, and **Restart all** restarts Bambuddy,
+the slicer and OctoEverywhere together (not Docker, which has its own Restart: it takes the slicer and
+OctoEverywhere away for a few minutes). **Open Plugin Manager** opens OctoEverywhere's app (it also
+updates its plugins). With **Keep running** on (default) SnapSTL checks every minute and starts what has
+stopped by itself; it never restarts anything that's running. Prints on the printers keep going through
+any restart; a slice in progress fails and has to be sliced again.
 Running the script once more (version 0.22.19 or newer) lets SnapSTL start Bambuddy without the Windows
 prompt.
 

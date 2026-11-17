@@ -107,6 +107,7 @@ iframe{width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;bac
 .pushtable td,.prtable td{vertical-align:middle}.pushtable select{min-width:170px}.prtable input,.prtable select{padding:3px 6px}
 .pushtable .fn{font-size:12px;word-break:break-all}
 .kv{width:100%;border-collapse:collapse;margin:2px 0}.kv td{padding:3px 6px;font-size:12px;border-bottom:1px solid var(--line);vertical-align:top}
+#hostparts td{font-size:13px;vertical-align:middle}#hostparts td.k{font-family:inherit;color:var(--text)}
 .kv td.k{color:var(--muted);white-space:nowrap;width:1%;font-family:ui-monospace,Menlo,monospace}.kv td.v{font-family:ui-monospace,Menlo,monospace;word-break:break-word}
 details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{margin-left:4px}
 .pscard{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--bg)}
@@ -483,12 +484,12 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <p class="hint">Bambuddy runs on one Windows computer for all SnapSTL computers (as a service, with its slicer service in Docker) — set it up there with <code>scripts\windows\bambuddy-server.ps1</code>; at the end it prints the address to enter here. On the Bambuddy computer itself, the sidebar's <b>IP address</b> line shows (and copies) that address. Add printers in Bambuddy; SnapSTL reads them and their filament.</p>
       </div>
       <div class="card" id="hostcard" hidden>
-        <h2>This Bambuddy computer</h2>
-        <p class="hint">Bambuddy (a Windows service) and its slicer service (Docker Desktop) run on this computer. If either stops, press <b>Start</b> — no script to run again. With <b>Keep running</b> on, SnapSTL checks every minute and starts what has stopped (it never restarts anything that's running).</p>
-        <div id="hostparts" class="hint"></div>
-        <div class="toolbar" style="margin-top:10px"><button id="hoststart" class="primary">Start</button><button id="hostrbb">Restart Bambuddy</button><button id="hostrsl">Restart slicer</button>
+        <h2>This Bambuddy computer — external services</h2>
+        <p class="hint">The services SnapSTL uses run on this computer: Bambuddy (a Windows service), Docker Desktop, Bambuddy's slicer service and OctoEverywhere (remote access), both in Docker. <b>Check now</b> looks again; each has its own <b>Restart</b>; <b>Start</b> starts whatever is down. With <b>Keep running</b> on, SnapSTL checks every minute and starts what has stopped (it never restarts anything that's running).</p>
+        <table class="kv" id="hostparts"></table>
+        <div class="toolbar" style="margin-top:10px"><button id="hoststart" class="primary">Start</button><button id="hostcheck">Check now</button><button id="hostrall" title="Restart Bambuddy, the slicer service and OctoEverywhere (not Docker)">Restart all</button>
           <label style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="hostkeep" style="width:auto"> Keep running</label><span class="hint grow" id="hostmsg"></span></div>
-        <p class="hint">Starting Bambuddy may show a Windows prompt asking to allow changes — choose Yes. Restarting Bambuddy doesn't stop prints already on the printers.</p>
+        <p class="hint">Starting or restarting Bambuddy may show a Windows prompt asking to allow changes — choose Yes. Restarting Bambuddy doesn't stop prints already on the printers. Restarting Docker takes the slicer and OctoEverywhere away for a few minutes.</p>
         <pre class="hint" id="hostlog" style="white-space:pre-wrap;margin:6px 0 0" hidden></pre>
       </div>
       <div class="card" id="sharedcard">
@@ -657,7 +658,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <div class="card" id="h-printers">
     <h2>Print (print farm)</h2>
     <p><b>Bambuddy</b>, the open-source print-farm manager, runs on one Windows computer (as a service, with only its slicer service in Docker), for every SnapSTL computer (set up with <code>bambuddy-server.ps1</code>). Each SnapSTL connects to it in <b>Settings → Connections</b> with that computer's address, e.g. <code>http://192.168.1.50:8000</code> — the sidebar's <b>IP address</b> line on the Bambuddy computer shows and copies it. Bambuddy is connected to your Bambu printers and keeps a queue per printer.</p>
-    <p>If Bambuddy or its slicer service stops, open SnapSTL on the Bambuddy computer: <b>Settings → Connections → This Bambuddy computer → Start</b> starts whatever is down (choose Yes if Windows asks). <b>Keep running</b> (on by default) does that by itself every minute; it never restarts anything that's running.</p>
+    <p>If Bambuddy, Docker, the slicer service or OctoEverywhere stops, open SnapSTL on the Bambuddy computer: <b>Settings → Connections → This Bambuddy computer — external services</b> shows each one. <b>Check now</b> looks again, <b>Start</b> starts whatever is down (choose Yes if Windows asks), each has its own <b>Restart</b>, and <b>Restart all</b> restarts Bambuddy, the slicer and OctoEverywhere (Docker has its own Restart). <b>Keep running</b> (on by default) starts what stopped by itself every minute; it never restarts anything that's running.</p>
     <ol>
       <li><b>On each printer:</b> Settings → Network → <b>LAN Only Mode</b> on, then <b>Developer Mode</b> on. Developer Mode disconnects the printer from Bambu Cloud and the Handy app.</li>
       <li><b>In Bambuddy</b> (Printers → <b>Open Bambuddy</b>): add each printer. Any printer can print bases or names — it only needs the right filament loaded.</li>
@@ -1175,22 +1176,38 @@ $('bbconnect').onclick=async()=>{$('bbmsg').textContent='Connecting…';$('bbmsg
 let HOSTPOLL=null;
 async function loadHost(){let h;try{h=await api('/api/bambuddy-host')}catch{return}
   $('hostcard').hidden=!h.here||!META.local;if($('hostcard').hidden)return;
-  const ok=v=>v?'<b style="color:var(--ok)">running</b>':'<b style="color:var(--err)">stopped</b>';
-  const bb=h.bambuddy,dk=h.docker,sl=h.slicer;
-  const cs=(sl.containers||[]).map(c=>`${esc(c.name.replace('snapstl-',''))}: ${c.state==='running'?'<b style="color:var(--ok)">running</b>'+(c.health?' ('+esc(c.health)+')':''):'<b style="color:var(--err)">'+esc(c.state)+'</b>'}`).join(' · ');
-  $('hostparts').innerHTML=`Bambuddy ${esc(bb.version||'')}: ${ok(bb.service==='running'&&bb.answering)}${bb.service!=='running'?' (service '+esc(bb.service)+')':!bb.answering?' (not answering yet)':''}<br>`
-    +`Docker Desktop: ${dk.installed?ok(dk.running):'<b style="color:var(--err)">not installed</b> — run <code>scripts\\windows\\bambuddy-server.ps1</code> once'}<br>`
-    +`Slicer service: ${dk.running?(cs||'—'):'waits for Docker'}${sl.answering?'':' · <span style="color:var(--err)">not answering on 127.0.0.1:3001</span>'}`;
-  $('hostkeep').checked=!!h.keep_running;$('hostrbb').hidden=!bb.ours;
-  ['hoststart','hostrbb','hostrsl'].forEach(id=>$(id).disabled=!!h.busy);
+  const ok=v=>v?'<span class="pill ok">running</span>':'<span class="pill err">stopped</span>';
+  const bb=h.bambuddy,dk=h.docker,sl=h.slicer,oe=h.octoeverywhere||{plugins:[]};
+  const ctr=c=>`${esc(c.name.replace('snapstl-',''))}: ${c.state==='running'?'running'+(c.health?' ('+esc(c.health)+')':''):'<b style="color:var(--err)">'+esc(c.state)+'</b>'}`;
+  const btn=(id,label,dis)=>`<button class="small" id="${id}" ${dis||h.busy?'disabled':''}>${label}</button>`;
+  const row=(name,state,detail,actions)=>`<tr><td class="k">${name}</td><td>${state}</td><td class="hint">${detail}</td><td style="white-space:nowrap;text-align:right">${actions}</td></tr>`;
+  const oeOk=dk.running&&oe.plugins.length&&oe.plugins.every(c=>c.state==='running');
+  $('hostparts').innerHTML=
+     row('Bambuddy '+esc(bb.version||''),ok(bb.service==='running'&&bb.answering),bb.service!=='running'?'service '+esc(bb.service):!bb.answering?'not answering yet':'Windows service · port 8000',
+       bb.ours?btn('hostrbb','Restart'):'<span class="hint">restart in Windows Services</span>')
+    +row('Docker Desktop',dk.installed?ok(dk.running):'<span class="pill err">not installed</span>',dk.installed?'runs the slicer and OctoEverywhere':'run <code>scripts\\windows\\bambuddy-server.ps1</code> once',
+       dk.installed?btn('hostrdk','Restart'):'')
+    +row('Slicer service',dk.running?ok((sl.containers||[]).every(c=>c.state==='running')&&sl.answering):'<span class="pill">waits for Docker</span>',
+       ((sl.containers||[]).map(ctr).join(' · ')||'—')+(sl.answering?'':' · <span style="color:var(--err)">not answering on 127.0.0.1:3001</span>'),btn('hostrsl','Restart'))
+    +row('OctoEverywhere',!oe.installed&&!oe.plugins.length?'<span class="pill">not installed</span>':!dk.running?'<span class="pill">waits for Docker</span>':oe.plugins.length?ok(oeOk):'<span class="pill warn">no plugin yet</span>',
+       (oe.plugins.length?'plugins: '+oe.plugins.map(ctr).join(' · '):'create one plugin per printer in its Plugin Manager')+(oe.installed?` · Plugin Manager ${oe.running?'open':'closed (not needed to run)'}`:''),
+       (oe.plugins.length?btn('hostroe','Restart'):'')+(oe.installed?' '+btn('hostooe','Open Plugin Manager'):''));
+  $('hostkeep').checked=!!h.keep_running;
+  ['hoststart','hostrall'].forEach(id=>$(id).disabled=!!h.busy);
+  const on=(id,fn)=>{if($(id))$(id).onclick=fn};
+  on('hostrbb',()=>hostAct('restart-bambuddy','Restart Bambuddy? Prints already running on the printers continue; Bambuddy is away for about a minute.'));
+  on('hostrsl',()=>hostAct('restart-slicer','Restart the slicer service? A slice in progress fails and has to be sliced again.'));
+  on('hostroe',()=>hostAct('restart-octoeverywhere','Restart the OctoEverywhere plugins? Remote access is away for about a minute.'));
+  on('hostrdk',()=>hostAct('restart-docker','Restart Docker Desktop? The slicer service and OctoEverywhere stop for a few minutes; a slice in progress fails.'));
+  on('hostooe',()=>hostAct('open-octoeverywhere'));
   $('hostmsg').textContent=h.busy?h.busy+'…':h.ok?'All running.':'';$('hostmsg').style.color='';
   $('hostlog').hidden=!(h.log||[]).length;$('hostlog').textContent=(h.log||[]).join('\n');
   clearTimeout(HOSTPOLL);if(h.busy||!h.ok)HOSTPOLL=setTimeout(()=>{if(!$('hostcard').closest('[data-sec]').hidden)loadHost()},h.busy?3000:15000)}
 async function hostAct(action,confirmText){if(confirmText&&!confirm(confirmText))return;
   try{await post('/api/bambuddy-host/'+action,{});$('hostmsg').textContent='Working…';setTimeout(loadHost,800)}catch(e){$('hostmsg').textContent=e.message;$('hostmsg').style.color='var(--err)'}}
 $('hoststart').onclick=()=>hostAct('start');
-$('hostrbb').onclick=()=>hostAct('restart-bambuddy','Restart Bambuddy? Prints already running on the printers continue; Bambuddy is away for about a minute.');
-$('hostrsl').onclick=()=>hostAct('restart-slicer','Restart the slicer service? A slice in progress fails and has to be sliced again.');
+$('hostcheck').onclick=()=>{$('hostmsg').textContent='Checking…';$('hostmsg').style.color='';loadHost()};
+$('hostrall').onclick=()=>hostAct('restart-all','Restart Bambuddy, the slicer service and OctoEverywhere? Prints already on the printers continue; a slice in progress fails. Docker itself is not restarted.');
 $('hostkeep').onchange=async()=>{try{await post('/api/bambuddy-host/keep-running',{on:$('hostkeep').checked});loadHost()}catch(e){$('hostmsg').textContent=e.message;$('hostmsg').style.color='var(--err)'}};
 
 // ---------- Printers (everything from Bambuddy, read only) ----------
