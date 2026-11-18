@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import io
 import json
+import os
 
 import pytest
 import trimesh
 from fastapi.testclient import TestClient
 
-from snapstl import model_studio, server
-from snapstl.settings import FONTS, ModelParams, ScalingSettings
+from snapstl import model_studio, platform_os, server
+from snapstl.settings import FONTS, ModelParams, PlateSettings, ScalingSettings
 
 
 @pytest.fixture
@@ -40,6 +41,26 @@ def test_catalog_reloads_and_rejects_missing_sources(package):
     assert catalog["models"][0]["designs"] == [] and "missing" in catalog["errors"][0]
 
 
+def test_apple_silicon_preflight_blocks_renderer_when_cpu_probe_is_denied(package, monkeypatch):
+    monkeypatch.setattr(platform_os, "MAC", True)
+    monkeypatch.setattr(platform_os.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(platform_os, "openscad_cli", lambda: "/test/OpenSCAD")
+
+    def run_quiet(command, **kwargs):
+        assert command == ["/usr/sbin/sysctl", "-n", "hw.optional.neon"]
+        return 1, "Operation not permitted"
+
+    monkeypatch.setattr(platform_os, "run_quiet", run_quiet)
+    platform_os.openscad_launch_problem.cache_clear()
+    try:
+        catalog = model_studio.catalog()
+        assert not catalog["renderer"] and "CPU feature detection" in catalog["renderer_error"]
+        with pytest.raises(model_studio.ModelError, match="CPU feature detection"):
+            model_studio._engine()
+    finally:
+        platform_os.openscad_launch_problem.cache_clear()
+
+
 def test_preview_serves_validated_stl_and_rejects_stale_requests(package, monkeypatch):
     def export(_binary, _work, _design, params, _part):
         return trimesh.creation.box(extents=(params["width"], 3, 2))
@@ -67,7 +88,8 @@ def test_preview_serves_validated_stl_and_rejects_stale_requests(package, monkey
 
 
 def test_organizer_uses_product_font_options_and_scales_the_same_pair(monkeypatch):
-    model, = model_studio.catalog(ModelParams(Font="DynaPuff", Thickness=65))["models"]
+    model = next(model for model in model_studio.catalog(ModelParams(Font="DynaPuff", Thickness=65))["models"]
+                 if model["id"] == "name-desk-organizer")
     design, = model["designs"]
     controls = {p["id"]: p for p in design["parameters"]}
     assert design["id"] == "letter-contour"
@@ -142,14 +164,9 @@ def test_approval_pins_geometry_and_tolerance_until_reopened(package, tmp_path, 
 
 
 def test_aaliq_rim_matches_reference_height_when_real_cad_is_enabled():
-    import os
-
-    import pytest
-    import trimesh
-
     if os.environ.get("SNAPSTL_TEST_OPENSCAD") != "1":
         pytest.skip("Enable SNAPSTL_TEST_OPENSCAD=1 to check the real OpenSCAD draft")
-    model, = model_studio.catalog()["models"]
+    model = next(model for model in model_studio.catalog()["models"] if model["id"] == "name-desk-organizer")
     design, = model["designs"]
     values = {"text": "AaLiq"}
     req = model_studio.PreviewRequest(model_id=model["id"], design_id=design["id"],
@@ -162,3 +179,68 @@ def test_aaliq_rim_matches_reference_height_when_real_cad_is_enabled():
     top = max(a[2] + (x - a[0]) * (b[2] - a[2]) / (b[0] - a[0])
               for a, b in section if min(a[0], b[0]) < x < max(a[0], b[0]))
     assert top == pytest.approx(58.74, abs=0.04)
+
+
+def test_bookmark_catalog_styles_share_customization_controls():
+    model = next(model for model in model_studio.catalog()["models"] if model["id"] == "personalized-bookmark")
+    designs = model["designs"]
+    assert [design["id"] for design in designs] == ["classic-round", "ribbon-tail", "open-arch", "faceted-tab"]
+    assert all(design["parameters"] == designs[0]["parameters"] for design in designs)
+    for design in designs:
+        plate, = design["parts"]
+        assert plate["id"] == "bookmark"
+
+
+@pytest.mark.parametrize("design_id", ["classic-round", "ribbon-tail", "open-arch", "faceted-tab"])
+def test_bookmark_exports_flat_single_solid_with_a_layer_colour_boundary(design_id, tmp_path):
+    if os.environ.get("SNAPSTL_TEST_OPENSCAD") != "1":
+        pytest.skip("Enable SNAPSTL_TEST_OPENSCAD=1 to check the real OpenSCAD draft")
+    model = next(model for model in model_studio.catalog()["models"] if model["id"] == "personalized-bookmark")
+    design = next(design for design in model["designs"] if design["id"] == design_id)
+    cases = [
+        ({}, [28, 120, 1.6], 1.0),
+        ({"text": "Élodie, just one more page!", "length": 85, "width": 22, "base_thickness": 0.8,
+          "letter_height": 12, "letter_relief": 0.4}, [22, 85, 1.2], 0.8),
+        ({"text": "i", "length": 160, "width": 40, "base_thickness": 1.6,
+          "letter_height": 12, "letter_relief": 0.8, "base_color": "#877802",
+          "letter_color": "#897700"}, [40, 160, 2.4], 1.6),
+    ]
+    for values, dimensions, boundary in cases:
+        request = model_studio.PreviewRequest(model_id=model["id"], design_id=design_id,
+                                              revision=design["revision"], values=values)
+        result = model_studio.preview(request, ScalingSettings())
+        plate, = result["plates"]
+        assert plate["dimensions"] == pytest.approx(dimensions)
+        assert plate["color"] == values.get("base_color", "#305460")
+        assert plate["upper_color"] == values.get("letter_color", "#ffe4b0")
+        assert plate["color_change_at"] == boundary
+        with pytest.raises(model_studio.ModelError, match="set the filament change"):
+            model_studio.write_print_plate(result["key"], "bookmark", PlateSettings(), tmp_path)
+        mesh = model_studio._load_stl(model_studio.artifact(result["key"], "bookmark"), "Bookmark")
+        neighbours = [[] for _ in mesh.faces]
+        for a, b in mesh.face_adjacency:
+            neighbours[a].append(b)
+            neighbours[b].append(a)
+        seen, pending = {0}, [0]
+        while pending:
+            for face in neighbours[pending.pop()]:
+                if face not in seen:
+                    seen.add(face)
+                    pending.append(face)
+        assert len(seen) == len(mesh.faces)
+
+        assert mesh.bounds[0] == pytest.approx([0, 0, 0])
+        assert mesh.is_winding_consistent
+        bed = model_studio._plane(mesh, 2, 0)
+        base_face = model_studio._plane(mesh, 2, boundary)
+        letters = model_studio._plane(mesh, 2, dimensions[2])
+        assert len(bed.interiors) == (1 if design_id == "open-arch" else 0)
+        assert letters.area > 1 and bed.contains(letters)
+        assert base_face.intersection(letters).area < 0.01
+        assert bed.symmetric_difference(base_face.union(letters)).area < 0.01
+        assert all(z == pytest.approx(boundary) or z == pytest.approx(dimensions[2])
+                   for z in mesh.vertices[:, 2] if z > 0.01)
+
+    matching = request.model_copy(update={"values": {"base_color": "#FFE4B0"}})
+    result = model_studio.preview(matching, ScalingSettings())
+    assert model_studio.write_print_plate(result["key"], "bookmark", PlateSettings(), tmp_path)

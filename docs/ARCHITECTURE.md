@@ -714,6 +714,13 @@ The local approval action pins the reviewed source and development values under
 `APP_DIR/model-approvals`. Reopening to Development restores the working source and the tuned
 defaults. Production fields remain editable in either stage.
 
+Generic model parts can declare a second preview colour and a change height in the part's own
+print coordinates. The viewer colours the mesh on either side of that plane. The STL stays a
+single mesh. For different layer colours, Models shows the height and directs the user to set the
+filament change in a slicer. Matching colours can use the single-slot direct print path.
+On Apple silicon, Models checks that the service can read the CPU feature OpenSCAD's Qt build
+requires before launching the CLI. Restricted shells report the renderer as unavailable.
+
 Models → Start print packs and verifies the selected preview as one 3MF in
 `APP_DIR/model-prints`. Standalone print and slice rows use kind `model` and batch ID 0. The
 Bambuddy worker slices with the selected printer's profiles, creates the queued item with

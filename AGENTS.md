@@ -25,8 +25,8 @@ Follow the [Models workflow plan](docs/models-workspace-plan.md) for the common 
 parameter form and 3D viewer. Keep one `DESIGN.md` per model with its named design concepts, reviewed
 revisions, test results and approvals. Write or
 update reusable model-building instructions in the skill when the workflow changes, so Codex and
-Claude Code follow the same process. Keep model development on its separate branch unless the owner
-authorizes a production merge.
+Claude Code follow the same process. Keep all model development on `change/local-parametric-model`.
+Merge that branch into `main` together after the owner has approved all models for production.
 The skill may edit new or Development designs only. A person moves a design from Production back
 to Development before CAD or fit changes. **Move to Production** in Models locks the reviewed
 source and fit settings on this computer. The **Start print** button in Models uses the same

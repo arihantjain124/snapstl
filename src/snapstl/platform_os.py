@@ -5,10 +5,12 @@ The rest of SnapSTL calls these functions and never checks the operating system 
 from __future__ import annotations
 
 import os
+import platform
 import socket
 import subprocess
 import sys
 import time
+from functools import lru_cache
 from pathlib import Path
 
 WINDOWS = sys.platform == "win32"
@@ -258,6 +260,17 @@ def openscad_cli() -> str | None:
     path = (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "OpenSCAD" / "openscad.com"
             if WINDOWS else Path("/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"))
     return str(path) if path.is_file() else None
+
+
+@lru_cache(maxsize=1)
+def openscad_launch_problem() -> str | None:
+    """Check the CPU feature that Qt requires before launching OpenSCAD on Apple silicon."""
+    if MAC and platform.machine() == "arm64":
+        code, neon = run_quiet(["/usr/sbin/sysctl", "-n", "hw.optional.neon"], timeout=2)
+        if code or neon != "1":
+            return ("OpenSCAD cannot start in this environment because macOS CPU feature detection is unavailable. "
+                    "Open Models in the desktop SnapSTL app or a local development server outside the restricted shell.")
+    return None
 
 
 def docker_desktop() -> Path | None:

@@ -1,0 +1,367 @@
+{
+  "schema_version": 1,
+  "id": "personalized-bookmark",
+  "title": "Personalized Bookmark",
+  "designs": [
+    {
+      "id": "classic-round",
+      "label": "Classic Round",
+      "description": "A simple rounded rectangle with all four corners softened.",
+      "source": "classic-round.scad",
+      "assets": [
+        "bookmark.scad",
+        "fonts/Chewy-Regular.ttf",
+        "fonts/Chewy-LICENSE.txt"
+      ],
+      "parameters": [
+        {
+          "id": "text",
+          "label": "Inscription",
+          "type": "text",
+          "default": "Chapter One",
+          "max_length": 28
+        },
+        {
+          "id": "length",
+          "label": "Length",
+          "type": "integer",
+          "default": 120,
+          "minimum": 85,
+          "maximum": 160,
+          "unit": "mm"
+        },
+        {
+          "id": "width",
+          "label": "Width",
+          "type": "integer",
+          "default": 28,
+          "minimum": 22,
+          "maximum": 40,
+          "unit": "mm"
+        },
+        {
+          "id": "base_thickness",
+          "label": "Base thickness",
+          "type": "number",
+          "default": 1.0,
+          "minimum": 0.8,
+          "maximum": 1.6,
+          "step": 0.2,
+          "unit": "mm"
+        },
+        {
+          "id": "letter_height",
+          "label": "Maximum letter height",
+          "type": "integer",
+          "default": 7,
+          "minimum": 4,
+          "maximum": 12,
+          "unit": "mm"
+        },
+        {
+          "id": "base_color",
+          "label": "Base colour",
+          "type": "color",
+          "default": "#305460"
+        },
+        {
+          "id": "letter_color",
+          "label": "Letter colour",
+          "type": "color",
+          "default": "#ffe4b0"
+        },
+        {
+          "id": "letter_relief",
+          "label": "Raised letter height",
+          "type": "number",
+          "group": "development",
+          "default": 0.6,
+          "minimum": 0.4,
+          "maximum": 0.8,
+          "step": 0.2,
+          "unit": "mm"
+        }
+      ],
+      "parts": [
+        {
+          "id": "bookmark",
+          "label": "Bookmark plate",
+          "color": "#305460",
+          "color_parameter": "base_color",
+          "upper_color_parameter": "letter_color",
+          "color_change_at": "base_thickness"
+        }
+      ]
+    },
+    {
+      "id": "ribbon-tail",
+      "label": "Ribbon Tail",
+      "description": "A V-notch gives the lower end a ribbon silhouette.",
+      "source": "ribbon-tail.scad",
+      "assets": [
+        "bookmark.scad",
+        "fonts/Chewy-Regular.ttf",
+        "fonts/Chewy-LICENSE.txt"
+      ],
+      "parameters": [
+        {
+          "id": "text",
+          "label": "Inscription",
+          "type": "text",
+          "default": "Chapter One",
+          "max_length": 28
+        },
+        {
+          "id": "length",
+          "label": "Length",
+          "type": "integer",
+          "default": 120,
+          "minimum": 85,
+          "maximum": 160,
+          "unit": "mm"
+        },
+        {
+          "id": "width",
+          "label": "Width",
+          "type": "integer",
+          "default": 28,
+          "minimum": 22,
+          "maximum": 40,
+          "unit": "mm"
+        },
+        {
+          "id": "base_thickness",
+          "label": "Base thickness",
+          "type": "number",
+          "default": 1.0,
+          "minimum": 0.8,
+          "maximum": 1.6,
+          "step": 0.2,
+          "unit": "mm"
+        },
+        {
+          "id": "letter_height",
+          "label": "Maximum letter height",
+          "type": "integer",
+          "default": 7,
+          "minimum": 4,
+          "maximum": 12,
+          "unit": "mm"
+        },
+        {
+          "id": "base_color",
+          "label": "Base colour",
+          "type": "color",
+          "default": "#305460"
+        },
+        {
+          "id": "letter_color",
+          "label": "Letter colour",
+          "type": "color",
+          "default": "#ffe4b0"
+        },
+        {
+          "id": "letter_relief",
+          "label": "Raised letter height",
+          "type": "number",
+          "group": "development",
+          "default": 0.6,
+          "minimum": 0.4,
+          "maximum": 0.8,
+          "step": 0.2,
+          "unit": "mm"
+        }
+      ],
+      "parts": [
+        {
+          "id": "bookmark",
+          "label": "Bookmark plate",
+          "color": "#305460",
+          "color_parameter": "base_color",
+          "upper_color_parameter": "letter_color",
+          "color_change_at": "base_thickness"
+        }
+      ]
+    },
+    {
+      "id": "open-arch",
+      "label": "Open Arch",
+      "description": "A domed top has a through-window that can take a ribbon.",
+      "source": "open-arch.scad",
+      "assets": [
+        "bookmark.scad",
+        "fonts/Chewy-Regular.ttf",
+        "fonts/Chewy-LICENSE.txt"
+      ],
+      "parameters": [
+        {
+          "id": "text",
+          "label": "Inscription",
+          "type": "text",
+          "default": "Chapter One",
+          "max_length": 28
+        },
+        {
+          "id": "length",
+          "label": "Length",
+          "type": "integer",
+          "default": 120,
+          "minimum": 85,
+          "maximum": 160,
+          "unit": "mm"
+        },
+        {
+          "id": "width",
+          "label": "Width",
+          "type": "integer",
+          "default": 28,
+          "minimum": 22,
+          "maximum": 40,
+          "unit": "mm"
+        },
+        {
+          "id": "base_thickness",
+          "label": "Base thickness",
+          "type": "number",
+          "default": 1.0,
+          "minimum": 0.8,
+          "maximum": 1.6,
+          "step": 0.2,
+          "unit": "mm"
+        },
+        {
+          "id": "letter_height",
+          "label": "Maximum letter height",
+          "type": "integer",
+          "default": 7,
+          "minimum": 4,
+          "maximum": 12,
+          "unit": "mm"
+        },
+        {
+          "id": "base_color",
+          "label": "Base colour",
+          "type": "color",
+          "default": "#305460"
+        },
+        {
+          "id": "letter_color",
+          "label": "Letter colour",
+          "type": "color",
+          "default": "#ffe4b0"
+        },
+        {
+          "id": "letter_relief",
+          "label": "Raised letter height",
+          "type": "number",
+          "group": "development",
+          "default": 0.6,
+          "minimum": 0.4,
+          "maximum": 0.8,
+          "step": 0.2,
+          "unit": "mm"
+        }
+      ],
+      "parts": [
+        {
+          "id": "bookmark",
+          "label": "Bookmark plate",
+          "color": "#305460",
+          "color_parameter": "base_color",
+          "upper_color_parameter": "letter_color",
+          "color_change_at": "base_thickness"
+        }
+      ]
+    },
+    {
+      "id": "faceted-tab",
+      "label": "Faceted Tab",
+      "description": "Angled shoulders taper to a flat, geometric top.",
+      "source": "faceted-tab.scad",
+      "assets": [
+        "bookmark.scad",
+        "fonts/Chewy-Regular.ttf",
+        "fonts/Chewy-LICENSE.txt"
+      ],
+      "parameters": [
+        {
+          "id": "text",
+          "label": "Inscription",
+          "type": "text",
+          "default": "Chapter One",
+          "max_length": 28
+        },
+        {
+          "id": "length",
+          "label": "Length",
+          "type": "integer",
+          "default": 120,
+          "minimum": 85,
+          "maximum": 160,
+          "unit": "mm"
+        },
+        {
+          "id": "width",
+          "label": "Width",
+          "type": "integer",
+          "default": 28,
+          "minimum": 22,
+          "maximum": 40,
+          "unit": "mm"
+        },
+        {
+          "id": "base_thickness",
+          "label": "Base thickness",
+          "type": "number",
+          "default": 1.0,
+          "minimum": 0.8,
+          "maximum": 1.6,
+          "step": 0.2,
+          "unit": "mm"
+        },
+        {
+          "id": "letter_height",
+          "label": "Maximum letter height",
+          "type": "integer",
+          "default": 7,
+          "minimum": 4,
+          "maximum": 12,
+          "unit": "mm"
+        },
+        {
+          "id": "base_color",
+          "label": "Base colour",
+          "type": "color",
+          "default": "#305460"
+        },
+        {
+          "id": "letter_color",
+          "label": "Letter colour",
+          "type": "color",
+          "default": "#ffe4b0"
+        },
+        {
+          "id": "letter_relief",
+          "label": "Raised letter height",
+          "type": "number",
+          "group": "development",
+          "default": 0.6,
+          "minimum": 0.4,
+          "maximum": 0.8,
+          "step": 0.2,
+          "unit": "mm"
+        }
+      ],
+      "parts": [
+        {
+          "id": "bookmark",
+          "label": "Bookmark plate",
+          "color": "#305460",
+          "color_parameter": "base_color",
+          "upper_color_parameter": "letter_color",
+          "color_change_at": "base_thickness"
+        }
+      ]
+    }
+  ]
+}

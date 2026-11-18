@@ -785,7 +785,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <div class="card">
     <h2>Help</h2>
     <p>SnapSTL turns webstore orders for the <b>Custom Name Desk Organizer</b> (SKU <code>Magicians_35</code>) into print-ready plates: each name is generated on MakerWorld, scaled to the agreed rules, grouped 3 per plate and saved as <b>.3mf</b> files.</p>
-    <p>To review a locally generated draft, open <b>Models</b>, choose the design and generate a preview. Inspect the assembly and both plates before downloading a preview STL. The Models tab has a copyable example for requesting CAD work from an agent.</p>
+    <p>To review a locally generated draft, open <b>Models</b>, choose the design and generate a preview. Inspect its plates and any assembly before downloading an STL.</p>
+    <p>In <b>Models → Personalized Bookmark</b>, choose a style, enter an inscription and pick separate base and letter colours. For a two-colour print, download the STL and set one filament change in the slicer after the base thickness shown in the preview. Choose matching colours to use <b>Start print</b> with one loaded filament.</p>
     <p>Testing a SnapSTL branch? Open <b>Settings → Maintenance → Updates</b>, choose a published <b>Update branch</b> and click <b>Switch branch</b>. Select <b>main (production)</b> when testing is done. Check shared-records compatibility before switching.</p>
     <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-printers">Print</a><a href="#h-pstatus">Printers</a><a href="#h-slicing">Slicing</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-portal">Other computers</a><a href="#h-data">Your data</a></div>
   </div>
@@ -1146,7 +1147,7 @@ function modelPreviewStatus(){
   if($('model-compartments'))$('model-compartments').value=current&&saved.result.compartments?
     saved.result.compartments+' (from letter count)':'From letter count';
   $('model-status').textContent=studio.pending?'Generating preview…':
-    !available?'Install OpenSCAD to generate previews on this computer.':
+    !available?(studio.catalog.renderer_error||'Install OpenSCAD to generate previews on this computer.'):
     !saved?'Generate a preview to inspect this design.':
     current?'Preview ready.':'Showing the previous preview. Generate again to see the current inputs.';
   modelPrintControls();
@@ -1197,6 +1198,9 @@ function showModelPreview(){
     const lo=Math.min(...result.compartment_widths), hi=Math.max(...result.compartment_widths);
     checks.splice(1,0,(lo===hi?lo.toFixed(1):lo.toFixed(1)+'–'+hi.toFixed(1))+' mm pocket floor width');
   }
+  for(const plate of result.plates.filter(modelLayerColour)){
+    checks.push('Filament change after '+plate.color_change_at.toFixed(1)+' mm. Download the STL and set the change before the first upper-colour layer.');
+  }
   $('model-checks').textContent=checks.join(' · ');
   modelPrintPreview(result);
   $('model-downloads').replaceChildren(...result.plates.map(p=>{
@@ -1235,11 +1239,12 @@ function modelViewer(canvas){
   const gl=canvas.getContext('webgl',{alpha:false,antialias:true});
   if(!gl)throw new Error('WebGL is disabled.');
   const vertex='attribute vec3 point; attribute vec3 normal; uniform vec3 center,right,up,facing; '+
-    'uniform float size,zoom,aspect; uniform vec2 pan; varying float light; '+
+    'uniform float size,zoom,aspect; uniform vec2 pan; uniform vec4 changePlane; varying mediump float light,above; '+
     'void main(){vec3 p=(point-center)/size; float z=dot(p,facing); float w=1.0-z*0.32; '+
     'gl_Position=vec4(zoom*dot(p,right)/aspect+pan.x*w,zoom*dot(p,up)+pan.y*w,-z*0.5,w); '+
-    'light=0.54+0.46*max(dot(normalize(vec3(-0.2,-0.65,1.0)),normal),0.0);}';
-  const fragment='precision mediump float; uniform vec3 color; varying float light; void main(){gl_FragColor=vec4(color*light,1.0);}';
+    'above=dot(vec4(point,1.0),changePlane); light=0.54+0.46*max(dot(normalize(vec3(-0.2,-0.65,1.0)),normal),0.0);}';
+  const fragment='precision mediump float; uniform vec3 color,upperColor; varying mediump float light,above; '+
+    'void main(){gl_FragColor=vec4((above>0.0001?upperColor:color)*light,1.0);}';
   const program=gl.createProgram();
   for(const [type,source] of [[gl.VERTEX_SHADER,vertex],[gl.FRAGMENT_SHADER,fragment]]){
     const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);
@@ -1250,11 +1255,12 @@ function modelViewer(canvas){
   if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error('The 3D viewer could not start.');
   gl.useProgram(program);
   const attributes=['point','normal'].map(name=>gl.getAttribLocation(program,name));
-  const uniforms=Object.fromEntries(['center','right','up','facing','size','zoom','aspect','pan','color']
+  const uniforms=Object.fromEntries(['center','right','up','facing','size','zoom','aspect','pan','color','upperColor','changePlane']
     .map(name=>[name,gl.getUniformLocation(program,name)]));
   for(const attr of attributes)gl.enableVertexAttribArray(attr);
   gl.enable(gl.DEPTH_TEST);
-  let yaw=0.35,pitch=0.49,zoom=1.22,pan=[0,0],bounds=[0,0,0],size=1,buffers=[],drag=null;
+  const fitZoom=0.93;
+  let yaw=0.35,pitch=0.49,zoom=fitZoom,pan=[0,0],bounds=[0,0,0],size=1,buffers=[],drag=null;
   function draw(){
     const ratio=Math.min(window.devicePixelRatio||1,2);
     if(!canvas.clientWidth||!canvas.clientHeight)return;
@@ -1266,16 +1272,19 @@ function modelViewer(canvas){
     gl.uniform3f(uniforms.up,-s*p,c*p,q);gl.uniform3f(uniforms.facing,s*q,-c*q,p);
     gl.uniform1f(uniforms.size,size);gl.uniform1f(uniforms.zoom,zoom*Math.min(1,w/h));gl.uniform1f(uniforms.aspect,w/h);
     gl.uniform2fv(uniforms.pan,pan);
-    for(const {buffer,count,mode,color} of buffers){
+    for(const {buffer,count,mode,color,upperColor,changePlane} of buffers){
       gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
       gl.vertexAttribPointer(attributes[0],3,gl.FLOAT,false,24,0);
       gl.vertexAttribPointer(attributes[1],3,gl.FLOAT,false,24,12);
-      gl.uniform3fv(uniforms.color,color);gl.drawArrays(mode,0,count);
+      gl.uniform3fv(uniforms.color,color);
+      gl.uniform3fv(uniforms.upperColor,upperColor);
+      gl.uniform4fv(uniforms.changePlane,changePlane);
+      gl.drawArrays(mode,0,count);
     }
   }
-  function upload(vertices,mode,color){
+  function upload(vertices,mode,color,upperColor=color,changePlane=[0,0,0,-1]){
     const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,vertices,gl.STATIC_DRAW);
-    buffers.push({buffer,count:vertices.length/6,mode,color});
+    buffers.push({buffer,count:vertices.length/6,mode,color,upperColor,changePlane});
   }
   function meshes(items,assembly){
     for(const {buffer} of buffers)gl.deleteBuffer(buffer);
@@ -1293,7 +1302,14 @@ function modelViewer(canvas){
           lo[a]=Math.min(lo[a],data[i+a]);hi[a]=Math.max(hi[a],data[i+a]);
         }
       }
-      upload(data,gl.TRIANGLES,plate.color.slice(1).match(/../g).map(byte=>parseInt(byte,16)/255));
+      const rgb=hex=>hex.slice(1).match(/../g).map(byte=>parseInt(byte,16)/255);
+      if(modelLayerColour(plate)){
+        const normal=assembly?m.slice(0,3).map(row=>row[2]):[0,0,1];
+        const offset=assembly?normal.reduce((sum,n,i)=>sum+n*m[i][3],0):0;
+        upload(data,gl.TRIANGLES,rgb(plate.color),rgb(plate.upper_color),[...normal,-offset-plate.color_change_at]);
+      }else{
+        upload(data,gl.TRIANGLES,rgb(plate.color));
+      }
     }
     bounds=lo.map((x,i)=>(x+hi[i])/2);
     size=Math.max(1,Math.hypot(...lo.map((x,i)=>hi[i]-x))/2);
@@ -1320,7 +1336,7 @@ function modelViewer(canvas){
     e.preventDefault();magnify(Math.exp(-e.deltaY*0.002));
   },{passive:false});
   new ResizeObserver(draw).observe(canvas);
-  return {meshes,fit:()=>{zoom=1.22;pan=[0,0];draw()},front:()=>{yaw=0;pitch=0;draw()},
+  return {meshes,fit:()=>{zoom=fitZoom;pan=[0,0];draw()},front:()=>{yaw=0;pitch=0;draw()},
     top:()=>{yaw=0;pitch=Math.PI/2;draw()},magnify};
 }
 
@@ -1368,13 +1384,18 @@ $('model-stage').onclick=async()=>{
   }catch(error){$('model-status').textContent=error.message;$('model-stage').disabled=false}
 };
 
+function modelLayerColour(plate){
+  return plate.upper_color&&plate.upper_color.toLowerCase()!==plate.color.toLowerCase();
+}
 function modelPrintPreview(result){
   const picker=$('model-print-part'), previous=picker.value;
+  const printable=result.plates.filter(plate=>!modelLayerColour(plate));
   const changed=picker.dataset.key!==result.key;
   if(changed){studio.printJob=null;picker.dataset.key=result.key}
-  picker.replaceChildren(...result.plates.map(p=>new Option(p.label,p.id)));
-  if(result.plates.some(p=>p.id===previous))picker.value=previous;
-  $('model-print-panel').hidden=false;
+  picker.replaceChildren(...printable.map(p=>new Option(p.label,p.id)));
+  if(printable.some(p=>p.id===previous))picker.value=previous;
+  $('model-print-panel').hidden=!printable.length;
+  if(!printable.length)return;
   if(!studio.printersLoaded)loadModelPrinters();
   else if(changed)loadModelPrintJob();
 }

@@ -149,6 +149,11 @@ specific options and measured results are in [DESIGN.md](../models/name-desk-org
 
 ## Build and review
 
+Use `change/local-parametric-model` for all model packages and shared Models changes.
+Review each design in Development. After the owner approves all models for production, release the
+branch together by merging it into `main`. The **Move to Production** control records each local
+approval. The Git merge is a separate release step.
+
 | Milestone | Ready when |
 |---|---|
 | Catalog and common viewer | A tiny synthetic fixture renders from manifest to form to all preview plates. A second fixture appears in the dropdown while the app is running. Changing its schema and SCAD refreshes the selected form and preview without a restart. |
