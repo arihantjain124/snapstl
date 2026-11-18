@@ -283,7 +283,36 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
     Waiting held in Bambuddy → moved to that printer if changed, then started.
     The bed must be clear: a printer with a finished print asks first (`bed_clear` = the person confirmed);
     a busy printer gets the plate held in its queue (press Start print again once it's done and empty)."""
-    b, plate = _plate(batch_id, file)
+    _, plate = _plate(batch_id, file)
+    return _start_plate(batch_id, file, plate, printer_id, options, prs, force, speed, tray, bed_clear)
+
+
+def start_model_print(key: str, part: str, printer_id: int, tray: int, prs: list[dict], cfg,
+                      bed_clear: bool = False, force: bool = False, reprint_failed: bool = False) -> dict:
+    from . import model_studio
+
+    printer = next((p for p in prs if p["id"] == printer_id), None)
+    if not printer or not printer.get("active", True):
+        raise farm.FarmError("Choose an active Bambuddy printer")
+    spool = next((s for s in printer.get("spools", []) if s["tray"] == tray), None)
+    if not spool:
+        raise farm.FarmError("Choose a currently loaded filament colour on that printer")
+    if not printer.get("status", {}).get("connected"):
+        raise farm.FarmError("This printer is offline")
+    file = model_studio.write_print_plate(key, part, cfg, farm.MODEL_PRINT_DIR)
+    latest = _latest(0, file)
+    if latest and latest["state"] == "done":
+        if not reprint_failed:
+            raise farm.FarmError("This plate already printed. Confirm the physical print failed before reprinting.")
+    if latest and latest["state"] == "sent" and latest.get("held"):
+        if latest["printer_id"] != printer_id or latest.get("ams_tray") != tray:
+            raise farm.FarmError("Resume the held plate with its original printer and filament slot")
+    plate = {"kind": farm.MODEL_PRINT_KIND, "colors": [spool.get("hex") or spool.get("color") or ""]}
+    return _start_plate(0, file, plate, printer_id, None, prs, force, "", tray, bed_clear, reprint_failed)
+
+
+def _start_plate(batch_id: int, file: str, plate: dict, printer_id: int, options: dict | None, prs: list[dict],
+                 force: bool, speed: str, tray: int | None, bed_clear: bool, reprint_failed: bool = False) -> dict:
     # the printer's print defaults (Slicing), with what was set on this plate on top
     dflt = farm.print_defaults(int(printer_id)) if printer_id else {}
     speed = speed or dflt.get("speed", "")
@@ -318,11 +347,12 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
         if spd:
             farm._set(j["id"], speed=spd, speed_set=0, speed_tries=0)
         farm.start_job(j["id"], force=force)
-        update_made(batch_id)  # its orders → Printing
+        if batch_id:
+            update_made(batch_id)  # its orders → Printing
         return {"job_id": j["id"], "started": True}
     if j and j["state"] in farm.ACTIVE:
         raise farm.FarmError(f"Already on its way ({j['state']}) on {j['printer_name']}")
-    if j and j["state"] == "done":
+    if j and j["state"] == "done" and not reprint_failed:
         raise farm.FarmError("Already printed — use Reprint in Completed if it failed")
     now = db.now()
     with db.tx() as con:
@@ -333,7 +363,8 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
              json.dumps(opts), 0 if bed == "busy" else 1, spd, tray, now, now, computer.ID))
         db.add_activity(con, "print", f"Start print: {Path(file).name} on {printer['name']}"
                         + (" (held: the printer is busy)" if bed == "busy" else ""))
-    update_made(batch_id)  # its orders → Printing
+    if batch_id:
+        update_made(batch_id)  # its orders → Printing
     farm.WORKER.kick()
     return {"job_id": int(cur.lastrowid), "started": False, "held": bed == "busy"}
 
@@ -400,7 +431,8 @@ def slicing_summary() -> dict:
                           "WHERE s.computer_id=? ORDER BY s.id DESC LIMIT 40", computer.ID)
     items = []
     for r in rs:
-        label = json.loads(r.pop("summary") or "{}").get("label") or f"Batch #{r['batch_id']}"
+        label = json.loads(r.pop("summary") or "{}").get("label") or (
+            "Models" if r["kind"] == farm.MODEL_PRINT_KIND else f"Batch #{r['batch_id']}")
         items.append({"batch": label, "plate": r["plate"], "kind": r["kind"], "color": r["color"], "state": r["state"],
                       "progress": r["progress"], "error": r["error"], "updated_at": r["updated_at"],
                       "presets": {k: v.get("name") if isinstance(v, dict) else v
@@ -447,7 +479,8 @@ def queues(recent: int = 15) -> dict:
                            f"WHERE j.computer_id=? AND j.state NOT IN ({pq}) ORDER BY j.updated_at DESC LIMIT ?",
                       computer.ID, *farm.ACTIVE, recent)
     for r in dl + pj:
-        r["batch"] = label(r.pop("summary")) or (f"Batch #{r['batch_id']}" if r.get("batch_id") else "")
+        r["batch"] = label(r.pop("summary")) or ("Models" if r.get("kind") == farm.MODEL_PRINT_KIND
+                                               else f"Batch #{r['batch_id']}" if r.get("batch_id") else "")
     builds = []
     for b in bl:
         try:

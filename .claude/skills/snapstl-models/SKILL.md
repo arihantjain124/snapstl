@@ -1,6 +1,6 @@
 ---
 name: snapstl-models
-description: Design or revise printable parametric CAD models for SnapSTL and iterate on STL previews with the owner.
+description: Create SnapSTL CAD models or revise Development designs and iterate on fit with the owner.
 ---
 
 # Build SnapSTL models

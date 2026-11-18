@@ -509,10 +509,21 @@ orientations. Use the STL links below the viewer to download the current preview
 defaults come from **Settings → Product**. The compartment count follows the Scaling Rules v1.1
 letter-count table.
 
+**Production fields** are the settings used to make each preview, including text and container
+colour. **Development fields** hold fit adjustments such as glue-in clearance and minimum rim
+height. After checking the fit, generate the reviewed preview and click **Move to Production** to
+lock that source revision and its development settings on this computer. Use **Move to Development**
+before resuming fit or CAD changes.
+
+To print a preview, use **Print a plate** below the viewer. Select the plate, a Bambuddy printer and
+one of its loaded filament colours, then click **Start print**. The printer uses its **Slicing**
+profiles, and a busy printer keeps the job held until you clear the bed and resume. The printer's
+actual loaded filament selection determines the printed colour independently of the preview colour.
+
 Install an OpenSCAD development build with desktop CLI support. Models has been tested with
 OpenSCAD 2026.10.11 on macOS. If SnapSTL cannot find it, set `SNAPSTL_OPENSCAD` to the absolute
-path to the executable before starting the development instance. The **Build a model with an
-agent** panel provides an example prompt for Codex or Claude Code. See the
+path to the executable before starting the development instance. **Build a model with an agent**
+explains how to use the skill in Codex or Claude Code and how to give fit feedback. See the
 [Models workflow](docs/models-workspace-plan.md) and [organizer design record](models/name-desk-organizer/DESIGN.md).
 
 ## Updates

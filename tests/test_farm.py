@@ -837,3 +837,42 @@ def test_queue_panel_lists_downloading_building_slicing_printing(client, bb):
     q = wait_for(lambda: (lambda q: q if any(j["plate"] == pink for j in q["printing"]) else None)(client.get("/api/queues").json()))
     j = next(j for j in q["printing"] if j["plate"] == pink)
     assert j["printer_name"] == "Names A" and j["batch"]
+
+
+def test_models_print_uses_the_selected_colour_and_waits_for_a_clear_bed(client, bb, monkeypatch, tmp_path):
+    import trimesh
+
+    from snapstl import model_studio, threemf
+
+    key = "a" * 24
+    mesh = trimesh.creation.box(extents=(20, 16, 8))
+    monkeypatch.setattr(model_studio, "artifact",
+                        lambda k, p: mesh.export(file_type="stl") if (k, p) == (key, "base") else None)
+    monkeypatch.setattr(farm, "MODEL_PRINT_DIR", tmp_path)
+    farm.update_config(presets_by_printer={"2": STD})
+    bb.slicer = "ok"
+    bb.status[2]["state"] = "RUNNING"
+    portal = "/api/model-studio/print"
+    body = {"key": key, "part": "base", "printer_id": 2, "tray": 1}
+
+    response = client.post(portal, json=body | {"tray": 2})
+    assert response.status_code == 400
+    assert not bb.queue
+    response = client.post(portal, json=body)
+    assert response.status_code == 200 and response.json()["held"]
+    diagnostic = lambda: client.get(portal, params={"key": key, "part": "base"}).json().get("job")
+    job = wait_for(lambda: (j if (j := diagnostic()) and j["state"] == "sent" else None))
+    assert job["held"] and bb.queue[1]["manual_start"] is True
+    assert bb.queue[1]["ams_mapping"] == [1]
+    assert bb.slice_bodies[0][1]["filament_colours"] == ["#0A2989"]
+    assert len(threemf.read_3mf(tmp_path / key / "base.3mf")) == 1
+
+    bb.status[2].update(state="FINISH", awaiting_plate_clear=True)
+    farm.printer_status(2, max_age=0)
+    assert client.post(portal, json=body).status_code == 428
+    assert bb.queue[1]["manual_start"] is True
+    assert client.post(portal, json=body | {"bed_clear": True}).json()["started"]
+    assert bb.cleared == [2] and bb.queue[1]["manual_start"] is False
+    with db.tx() as con:
+        assert con.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == 0
+        assert con.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0

@@ -136,7 +136,7 @@ Snapstl/
 │   ├── cache.py              downloaded models in the visible Downloads folder (readable names, never auto-deleted);
 │   │                         key = name + options + compartments + license hash; one-time move from old cache
 │   ├── meshes.py             OBJ → trimesh, dims, to_origin
-│   ├── model_studio.py       local catalog, OpenSCAD previews, organizer seating checks and STL download
+│   ├── model_studio.py       local CAD, seating checks, model approvals, STL downloads and 3MF preview plates
 │   ├── scaling.py            Scaling Rules v1.1 (pick_band, scale_pair)
 │   ├── grouping.py           names by colour 3→2→1; bases 3 per plate (colour groups first)
 │   ├── packing.py            2-D footprint packing, Z rotation only, gap/margin verification
@@ -706,6 +706,20 @@ snapstl.server:app --port 8320`.
 | Change MakerWorld interaction | `helper/content.js` / `inject.js`; bump `helper/manifest.json` version |
 | Change the print farm | `farm.py` (Bambuddy calls, worker), `makeit.py` (queues, pre-selection, Start print, Ready to ship) + Print tab in `index.html`; new Bambuddy version → check its routes, then `scripts/bambuddy-version.txt`; extend the fake in `test_farm.py` |
 | Add an endpoint | `server.py`; anything the helper calls must live under `/api/helper/`; anything that touches this Mac's files or setup must be Mac-only (`MAC_ONLY_PREFIXES` / `is_local`) |
+
+## Models
+
+Models reads manifests and OpenSCAD packages from the checkout and verifies standalone previews.
+The local approval action pins the reviewed source and development values under
+`APP_DIR/model-approvals`. Reopening to Development restores the working source and the tuned
+defaults. Production fields remain editable in either stage.
+
+Models → Start print packs and verifies the selected preview as one 3MF in
+`APP_DIR/model-prints`. Standalone print and slice rows use kind `model` and batch ID 0. The
+Bambuddy worker slices with the selected printer's profiles, creates the queued item with
+`manual_start: true` and uses the selected loaded slot for `ams_mapping`. A busy printer keeps
+the job held for a later Resume click and the ordinary clear-bed confirmation. These models
+have no order or batch lifecycle.
 
 ## Updates (git)
 

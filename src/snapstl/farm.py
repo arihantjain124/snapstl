@@ -43,6 +43,8 @@ from . import computer, db
 from .platform_os import app_dir
 
 CONFIG_PATH = app_dir() / "farm.json"
+MODEL_PRINT_DIR = app_dir() / "model-prints"
+MODEL_PRINT_KIND = "model"
 DEFAULT_URL = os.environ.get("SNAPSTL_BAMBUDDY_URL", "http://127.0.0.1:8000")
 ROLES = ("bases", "names")
 BASE_COLOR = "white"  # bases are printed in white
@@ -640,8 +642,9 @@ def slice_request(presets: dict, color: str | None) -> dict:
     ref = lambda s: {"source": presets[s]["source"], "id": presets[s]["id"]}  # noqa: E731
     body = {"printer_preset": ref("printer"), "process_preset": ref("process"), "filament_presets": [ref("filament")],
             "export_3mf": True, "plate": 1}
-    if color in COLOR_HEX:
-        body["filament_colours"] = [COLOR_HEX[color]]
+    hex_color = COLOR_HEX.get(color) or (color if re.fullmatch(r"#[0-9a-fA-F]{6}", color or "") else "")
+    if hex_color:
+        body["filament_colours"] = [hex_color]
     if (presets.get("plate") or {}).get("name"):
         body["bed_type"] = presets["plate"]["name"]  # else the process profile's plate (usually Cool Plate)
     return body
@@ -1063,7 +1066,7 @@ class Worker:
         with db.tx() as con:
             j = con.execute("SELECT * FROM print_jobs WHERE state='queued' AND computer_id=? ORDER BY id LIMIT 1",
                             (computer.ID,)).fetchone()
-            b = con.execute("SELECT out_dir, summary FROM batches WHERE id=?", (j["batch_id"],)).fetchone() if j else None
+            b = self._source(con, j)
         if j is None:
             return False
         j = dict(j)
@@ -1080,6 +1083,14 @@ class Worker:
             self.current = None
         return True
 
+    @staticmethod
+    def _source(con, item):
+        if item is None:
+            return None
+        if item["batch_id"] == 0 and item["kind"] == MODEL_PRINT_KIND:
+            return {"out_dir": str(MODEL_PRINT_DIR)}
+        return con.execute("SELECT out_dir FROM batches WHERE id=?", (item["batch_id"],)).fetchone()
+
     def _send(self, j: dict, b: dict | None) -> None:
         if not b or not b["out_dir"]:
             raise FarmError("The batch folder is unknown")
@@ -1094,6 +1105,8 @@ class Worker:
             raise FarmError(f"Pick the slicing profiles for {missing} in Slicing, then Start print again")
         key, _ = target(j["printer_id"], cfg)
         s = slice_for(latest_slices(j["batch_id"]), j["batch_id"], j["plate"], key)
+        if j["kind"] == MODEL_PRINT_KIND and s and s["state"] in ("done", "failed") and s["color"] != j["color"]:
+            s = None  # the next print may choose a different loaded colour
         if s and s["state"] == "done" and s["sliced_file_id"]:
             file_id = int(s["sliced_file_id"])
             _set(j["id"], sliced=f"Bambuddy library #{file_id}")
@@ -1134,7 +1147,7 @@ class Worker:
                 return
             s = con.execute("SELECT * FROM slices WHERE state='queued' AND computer_id=? ORDER BY id LIMIT 1",
                             (computer.ID,)).fetchone()
-            b = con.execute("SELECT out_dir FROM batches WHERE id=?", (s["batch_id"],)).fetchone() if s else None
+            b = self._source(con, s)
         if s is None:
             return
         s = dict(s)
@@ -1149,7 +1162,8 @@ class Worker:
             body = slice_request(presets, _slice_color(s) or None)
             _slice_set(s["id"], state="uploading", error=None, presets=json.dumps(presets))
             src = Path(b["out_dir"]) / s["plate"]
-            kind = "Bases" if s["kind"] == "bases" else f"Names {s['color']}".strip()
+            kind = "Models" if s["kind"] == MODEL_PRINT_KIND else (
+                "Bases" if s["kind"] == "bases" else f"Names {s['color']}".strip())
             name = _upload_name(Path(b["out_dir"]).name, kind, src.name, suffix=".3mf")
             up = api("POST", "/library/files", cfg=cfg, timeout=300,
                      files=[("file", name, src.read_bytes(), "application/octet-stream")])
@@ -1292,7 +1306,7 @@ class Worker:
                     changes["progress"] = float(s["progress"])
             if changes:
                 _set(j["id"], **changes)
-                if changes.get("state") == "done":
+                if changes.get("state") == "done" and j["kind"] != MODEL_PRINT_KIND:
                     from . import makeit
 
                     makeit.update_made(j["batch_id"])  # both parts printed → Ready to ship

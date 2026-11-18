@@ -15,6 +15,7 @@ import re
 import tempfile
 import zipfile
 from pathlib import Path
+from threading import Lock
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
@@ -34,6 +35,7 @@ STATIC = Path(__file__).parent / "static"
 MAX_UPLOAD = 50 * 1024 * 1024
 SECURE_COOKIE = os.environ.get("SNAPSTL_SECURE_COOKIE", "1") == "1"
 SETTINGS: Settings = load_settings()
+STUDIO_PRINT_LOCK = Lock()
 
 
 @asynccontextmanager
@@ -238,6 +240,51 @@ def studio_stl(key: str, part: str):
     if data is None:
         raise HTTPException(404, "This preview expired. Generate it again.")
     return Response(data, media_type="model/stl", headers={"Cache-Control": "private, no-store"})
+
+
+@app.post("/api/model-studio/approval")
+def studio_approval(body: model_studio.ApprovalRequest):
+    try:
+        return model_studio.set_approval(body)
+    except (model_studio.ModelError, OSError) as error:
+        raise HTTPException(400, str(error) if isinstance(error, model_studio.ModelError)
+                            else "Could not save the model's approval.") from error
+
+
+@app.get("/api/model-studio/printers")
+def studio_printers():
+    try:
+        return {"printers": [{"id": p["id"], "name": p["name"], "connected": p["status"]["connected"],
+                              "spools": p["spools"]} for p in farm.printers() if p.get("active", True)]}
+    except farm.FarmError as error:
+        raise _farm_err(error) from error
+
+
+@app.get("/api/model-studio/print")
+def studio_print_status(key: str, part: str):
+    try:
+        file = model_studio.print_file(key, part)
+    except model_studio.ModelError as error:
+        raise HTTPException(400, str(error)) from error
+    job = makeit._latest(0, file)
+    return {"job": {field: job[field] for field in ("id", "state", "printer_id", "printer_name", "ams_tray",
+                                                   "held", "progress", "error")} if job else None}
+
+
+@app.post("/api/model-studio/print")
+def studio_print(body: model_studio.PrintRequest):
+    try:
+        with STUDIO_PRINT_LOCK:
+            return makeit.start_model_print(body.key, body.part, body.printer_id, body.tray, farm.printers(),
+                                            SETTINGS.plate, body.bed_clear, body.force, body.reprint_failed)
+    except makeit.BedNotClear as error:
+        raise HTTPException(428, str(error)) from error
+    except farm.StartBlocked as error:
+        raise HTTPException(409, str(error)) from error
+    except model_studio.ModelError as error:
+        raise HTTPException(400, str(error)) from error
+    except farm.FarmError as error:
+        raise _farm_err(error) from error
 
 
 @app.post("/api/update")

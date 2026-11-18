@@ -10,7 +10,7 @@ import re
 from collections import OrderedDict
 from dataclasses import asdict
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from threading import Lock
 from typing import Literal
 
@@ -25,7 +25,7 @@ from . import platform_os
 from .config import ROOT
 from .meshes import dims, to_origin
 from .scaling import fit_metrics, fit_problems, pick_band, scale_pair
-from .settings import ModelParams, ScalingSettings
+from .settings import APP_DIR, ModelParams, PlateSettings, ScalingSettings
 
 SLUG = r"^[a-z][a-z0-9-]{0,47}$"
 VARIABLE = r"^[a-z][a-z0-9_]{0,47}$"
@@ -33,9 +33,11 @@ MAX_STL = 8_000_000
 MAX_JOB = 12_000_000
 RENDER_TIMEOUT = 30
 CATALOG_ROOT = Path(os.environ.get("SNAPSTL_MODELS_DIR", ROOT / "models")).expanduser()
+APPROVAL_ROOT = APP_DIR / "model-approvals"
 RENDER_LOCK = Lock()
 PREVIEW_LOCK = Lock()
-PREVIEWS: OrderedDict[str, tuple[dict, dict[str, bytes]]] = OrderedDict()
+APPROVAL_LOCK = Lock()
+PREVIEWS: OrderedDict[str, tuple[dict, dict[str, bytes], dict]] = OrderedDict()
 
 
 class ModelError(ValueError):
@@ -49,7 +51,8 @@ class ManifestItem(BaseModel):
 class Parameter(ManifestItem):
     id: str = Field(pattern=VARIABLE)
     label: str = Field(min_length=1, max_length=80)
-    type: Literal["text", "integer", "number", "checkbox", "choice"]
+    type: Literal["text", "integer", "number", "checkbox", "choice", "color"]
+    group: Literal["production", "development"] = "production"
     default: str | int | float | bool
     minimum: float | None = None
     maximum: float | None = None
@@ -67,6 +70,8 @@ class Parameter(ManifestItem):
                 valid = isinstance(value, str) and value in self.choices
             case "checkbox":
                 valid = type(value) is bool
+            case "color":
+                valid = isinstance(value, str) and bool(re.fullmatch(r"#[0-9a-fA-F]{6}", value))
             case "number" | "integer":
                 valid = (
                     (type(value) is int or (self.type == "number" and type(value) is float))
@@ -83,6 +88,7 @@ class Part(ManifestItem):
     id: str = Field(pattern=SLUG)
     label: str = Field(min_length=1, max_length=80)
     color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+    color_parameter: str | None = Field(default=None, pattern=VARIABLE)
     assembly: tuple[tuple[float, float, float, float], tuple[float, float, float, float],
                     tuple[float, float, float, float], tuple[float, float, float, float]] | None = None
 
@@ -104,6 +110,9 @@ class Design(ManifestItem):
             raise ValueError("Parameter IDs must be unique and part is reserved")
         if len({p.id for p in self.parts}) != len(self.parts):
             raise ValueError("Part IDs must be unique")
+        color_ids = {p.id for p in self.parameters if p.type == "color"}
+        if any(part.color_parameter and part.color_parameter not in color_ids for part in self.parts):
+            raise ValueError("A part's colour control must name a color parameter")
         for param in self.parameters:
             param.value(param.default)
         return self
@@ -136,6 +145,23 @@ class PreviewRequest(ManifestItem):
     values: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
 
+class ApprovalRequest(ManifestItem):
+    model_id: str = Field(pattern=SLUG)
+    design_id: str = Field(pattern=SLUG)
+    action: Literal["promote", "reopen"]
+    preview_key: str = Field(default="", pattern=r"^(?:[0-9a-f]{24})?$")
+
+
+class PrintRequest(ManifestItem):
+    key: str = Field(pattern=r"^[0-9a-f]{24}$")
+    part: str = Field(pattern=SLUG)
+    printer_id: int = Field(strict=True, gt=0)
+    tray: int = Field(strict=True, ge=0)
+    bed_clear: bool = Field(default=False, strict=True)
+    force: bool = Field(default=False, strict=True)
+    reprint_failed: bool = Field(default=False, strict=True)
+
+
 def _read(root: Path, relative: str, limit: int) -> bytes:
     path = Path(relative)
     if path.is_absolute() or ".." in path.parts or "\\" in relative:
@@ -160,6 +186,14 @@ def _model(root: Path) -> Model:
     return manifest
 
 
+def _selection(root: Path, design_id: str) -> tuple[Model, Design]:
+    model = _model(root)
+    design = next((item for item in model.designs if item.id == design_id), None)
+    if design is None:
+        raise ModelError("That design is unavailable. Refresh Models.")
+    return model, design
+
+
 def _snapshot(package: Path, design: Design) -> tuple[str, dict[str, bytes]]:
     digest = hashlib.sha256(design.model_dump_json().encode())
     files = {}
@@ -172,9 +206,79 @@ def _snapshot(package: Path, design: Design) -> tuple[str, dict[str, bytes]]:
     return digest.hexdigest()[:16], files
 
 
-def _defaults(model: Model, design: Design, product: ModelParams | None) -> dict:
+def _defaults(model: Model, design: Design, product: ModelParams | None, tuned: dict | None = None) -> dict:
     settings = {k.lower(): v for k, v in asdict(product).items()} if product and model.adapter == "organizer-v1" else {}
-    return {p.id: settings.get(p.id, p.default) for p in design.parameters}
+    values = {p.id: settings.get(p.id, p.default) for p in design.parameters}
+    for p in design.parameters:
+        if p.group == "development" and tuned and p.id in tuned:
+            try:
+                values[p.id] = p.value(tuned[p.id])
+            except ModelError:
+                if design.status == "developed":
+                    raise
+    return values
+
+
+def _approval(model_id: str, design_id: str) -> dict:
+    path = APPROVAL_ROOT / model_id / design_id / "state.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        raise ModelError("Could not read the model's local approval record.") from exc
+
+
+def _effective(package: Path, design: Design) -> tuple[Path, Design, dict]:
+    state = _approval(package.name, design.id)
+    if state.get("stage") == "production":
+        snapshot = APPROVAL_ROOT.resolve() / package.name / design.id / state["snapshot"]
+        pinned = Design.model_validate_json(_read(snapshot, "design.json", 250_000))
+        return snapshot, pinned, state.get("values", {})
+    if state.get("stage") == "development":
+        design = design.model_copy(update={"status": "draft"})
+    return package, design, state.get("values", {})
+
+
+def set_approval(request: ApprovalRequest) -> dict:
+    package = CATALOG_ROOT.resolve() / request.model_id
+    _, design = _selection(package, request.design_id)
+    folder = APPROVAL_ROOT / request.model_id / request.design_id
+    with APPROVAL_LOCK:
+        state = _approval(request.model_id, request.design_id)
+        if request.action == "reopen":
+            _, effective, _ = _effective(package, design)
+            if effective.status != "developed":
+                raise ModelError("This design is already in development.")
+            state["stage"] = "development"
+        else:
+            root, effective, _ = _effective(package, design)
+            if effective.status == "developed":
+                raise ModelError("This design is already in production.")
+            revision, files = _snapshot(root, effective)
+            with PREVIEW_LOCK:
+                preview = PREVIEWS.get(request.preview_key)
+            if not preview or preview[2]["identity"] != (request.model_id, request.design_id, revision):
+                raise ModelError("Generate and review a current preview before moving to production.")
+            tuned = {p.id: preview[2]["values"][p.id] for p in design.parameters if p.group == "development"}
+            snapshot_id = request.preview_key
+            snapshot = folder / snapshot_id
+            snapshot.mkdir(parents=True, exist_ok=True)
+            for relative, content in files.items():
+                path = snapshot / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+            pinned = effective.model_copy(update={"status": "developed"})
+            (snapshot / "design.json").write_text(pinned.model_dump_json(), encoding="utf-8")
+            state = {"stage": "production", "snapshot": snapshot_id, "values": tuned}
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            with NamedTemporaryFile(mode="w", encoding="utf-8", dir=folder, delete=False) as file:
+                json.dump(state, file)
+            Path(file.name).replace(folder / "state.json")
+        except OSError as exc:
+            raise ModelError("Could not save the model's approval record.") from exc
+    return {"stage": state["stage"]}
 
 
 def catalog(product: ModelParams | None = None) -> dict:
@@ -191,13 +295,16 @@ def catalog(product: ModelParams | None = None) -> dict:
         designs = []
         for design in model.designs:
             try:
-                revision, _ = _snapshot(package, design)
-                item = design.model_dump(exclude={"source", "assets"})
-                defaults = _defaults(model, design, product)
+                source, effective, tuned = _effective(package, design)
+                revision, _ = _snapshot(source, effective)
+                item = effective.model_dump(exclude={"source", "assets"})
+                defaults = _defaults(model, effective, product, tuned)
+                item["parameters"] = [p for p in item["parameters"]
+                                      if effective.status != "developed" or p["group"] == "production"]
                 for param in item["parameters"]:
                     param["default"] = defaults[param["id"]]
-                designs.append(item | {"revision": revision})
-            except (ModelError, OSError) as exc:
+                designs.append(item | {"revision": revision, "adapter": model.adapter})
+            except (ModelError, OSError, ValidationError) as exc:
                 reason = str(exc) if isinstance(exc, ModelError) else "A model file could not be read."
                 errors.append(f"{model.title} / {design.label}: {reason}")
         models.append({"id": model.id, "title": model.title, "designs": designs})
@@ -271,6 +378,9 @@ def _organizer(meshes, scaling: ScalingSettings, text: str, compartments: int):
     matrix = [[1, 0, 0, float(x)], [0, 0, -1, recess_depth], [0, 1, 0, float(z)], [0, 0, 0, 1]]
     return [b, n], matrix, {
         "compartments": openings, "minimum_clearance": round(clearance, 3),
+        "compartment_widths": [round(p.bounds[2] - p.bounds[0], 1) for p in
+                               sorted((p for p in shapely.get_parts(floor) if p.area > 1),
+                                      key=lambda p: p.bounds[0])],
         "recess_depth": round(recess_depth, 3),
         "checks": ["Scale proportions preserved", "Insert seats in the full recess profile",
                    "Compartment count matches the scaling band"],
@@ -279,18 +389,19 @@ def _organizer(meshes, scaling: ScalingSettings, text: str, compartments: int):
 
 def preview(request: PreviewRequest, scaling: ScalingSettings, product: ModelParams | None = None) -> dict:
     package = CATALOG_ROOT.resolve() / request.model_id
-    model = _model(package)
-    design = next((d for d in model.designs if d.id == request.design_id), None)
-    if design is None:
-        raise ModelError("That design is unavailable. Refresh Models.")
-    revision, files = _snapshot(package, design)
+    model, design = _selection(package, request.design_id)
+    root, design, tuned = _effective(package, design)
+    revision, files = _snapshot(root, design)
     if request.revision != revision:
         raise ModelError("The design changed on disk. Refresh Models and try again.")
-    defaults = _defaults(model, design, product)
-    if request.values.keys() - defaults.keys():
+    defaults = _defaults(model, design, product, tuned)
+    editable = {p.id for p in design.parameters if design.status != "developed" or p.group == "production"}
+    if request.values.keys() - editable:
+        if request.values.keys() & (defaults.keys() - editable):
+            raise ModelError("Development settings are locked in production. Move the model back to Development to edit them.")
         raise ModelError("Some inputs are no longer part of this design. Refresh Models.")
     values = {p.id: p.value(request.values.get(p.id, defaults[p.id])) for p in design.parameters}
-    params = dict(values)
+    params = {p.id: values[p.id] for p in design.parameters if p.type != "color"}
     if model.adapter == "organizer-v1":
         if not re.fullmatch(r"[A-Za-z]{1,15}", values["text"]):
             raise ModelError("Use one line of 1–15 letters A–Z for this draft.")
@@ -344,13 +455,14 @@ def _render(model, design, revision, files, values, params, scaling):
         if sum(map(len, data.values())) > MAX_JOB:
             raise ModelError("The preview exceeds the STL size limit.")
         actual = _load_stl(data[part.id], part.label)
-        plates.append({"id": part.id, "label": part.label, "color": part.color, "assembly": transform,
+        plates.append({"id": part.id, "label": part.label,
+                       "color": values.get(part.color_parameter, part.color), "assembly": transform,
                        "dimensions": list(dims(actual)), "url": f"/api/model-studio/previews/{key}/{part.id}.stl"})
     if fit and fit_problems(fit_metrics(fit.base_orig, fit.name_orig, plates[0]["dimensions"], plates[1]["dimensions"])):
         raise ModelError("The exported preview files did not preserve the name/base proportions.")
     result = {"key": key, "revision": revision, "engine": engine, "plates": plates, **checks}
     with PREVIEW_LOCK:
-        PREVIEWS[key] = (result, data)
+        PREVIEWS[key] = (result, data, {"identity": (model.id, design.id, revision), "values": values})
         while len(PREVIEWS) > 8:
             PREVIEWS.popitem(last=False)
     return result
@@ -360,3 +472,40 @@ def artifact(key: str, part: str) -> bytes | None:
     with PREVIEW_LOCK:
         entry = PREVIEWS.get(key)
         return entry[1].get(part) if entry else None
+
+
+def print_file(key: str, part: str) -> str:
+    if not re.fullmatch(r"[0-9a-f]{24}", key) or not re.fullmatch(SLUG, part):
+        raise ModelError("Choose a valid preview plate.")
+    return f"{key}/{part}.3mf"
+
+
+def write_print_plate(key: str, part: str, cfg: PlateSettings, root: Path) -> str:
+    from . import export, packing, threemf
+
+    relative = print_file(key, part)
+    path = root / relative
+    if path.is_file():
+        return relative  # a held preview can be resumed even after SnapSTL restarted
+    data = artifact(key, part)
+    if data is None:
+        raise ModelError("This preview expired. Generate it again before printing.")
+    mesh = _load_stl(data, part)
+    packed_part = packing.make_part(part, mesh)
+    layout = packing.pack([packed_part], cfg)
+    if not layout.ok:
+        raise ModelError(layout.reason)
+    _, placed = packing.placed_part_meshes([packed_part], layout)[0]
+    # Put the single part the configured margin from the origin. The selected
+    # printer's Bambuddy profile validates its own bed during slicing.
+    placed.apply_translation((cfg.margin - placed.bounds[0][0], cfg.margin - placed.bounds[0][1], 0))
+    objects = [threemf.Object3MF(f"Model – {part}", placed.vertices, placed.faces)]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=path.parent) as folder:
+        staged = Path(folder) / path.name
+        threemf.write_3mf(staged, objects)
+        problems, _ = export.check_written(staged, objects, cfg)
+        if problems:
+            raise ModelError("The print plate failed verification. " + "; ".join(problems))
+        staged.replace(path)
+    return relative

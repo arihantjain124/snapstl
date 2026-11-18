@@ -98,3 +98,67 @@ def test_organizer_uses_product_font_options_and_scales_the_same_pair(monkeypatc
     assert observed["base"]["label_left"] == 50 and observed["base"]["label_width"] == 101
     assert result["plates"][0]["dimensions"] == [210, 65, 89]
     assert result["plates"][1]["dimensions"][2] == 2
+
+
+def test_approval_pins_geometry_and_tolerance_until_reopened(package, tmp_path, monkeypatch):
+    monkeypatch.setattr(model_studio, "APPROVAL_ROOT", tmp_path / "approvals")
+    manifest = package / "model.json"
+    model = json.loads(manifest.read_text())
+    model["designs"][0]["parameters"].append({
+        "id": "tolerance", "label": "Tolerance", "type": "number", "group": "development",
+        "default": 0.3, "minimum": 0.2, "maximum": 0.6,
+    })
+    manifest.write_text(json.dumps(model))
+    monkeypatch.setattr(model_studio, "_engine", lambda: ("fixture", "fixture-version"))
+
+    def export(_binary, work, design, params, _part):
+        height = int((work / design.source).read_text().split("(")[1].split(")")[0])
+        return trimesh.creation.box(extents=(params["width"], height, params["tolerance"]))
+
+    monkeypatch.setattr(model_studio, "_export", export)
+    client = TestClient(server.app, base_url="http://127.0.0.1:8317", client=("127.0.0.1", 50000))
+    path = "/api/model-studio"
+
+    def design():
+        return client.get(path + "/catalog").json()["models"][0]["designs"][0]
+
+    identity = {"model_id": "fixture", "design_id": "draft"}
+    body = identity | {"revision": design()["revision"], "values": {"tolerance": 0.5}}
+    preview = client.post(path + "/preview", json=body).json()
+    reviewed = identity | {"preview_key": preview["key"], "action": "promote"}
+    assert client.post(path + "/approval", json=reviewed).json()["stage"] == "production"
+    (package / "main.scad").write_text("cube(6);")
+    assert design()["status"] == "developed"
+    assert [p["id"] for p in design()["parameters"]] == ["width"]
+    pinned = identity | {"revision": design()["revision"], "values": {"width": 6}}
+    assert client.post(path + "/preview", json=pinned).json()["plates"][0]["dimensions"] == [6, 5, 0.5]
+    invalid = pinned | {"values": {"tolerance": 0.2}}
+    assert "locked" in client.post(path + "/preview", json=invalid).json()["detail"]
+    assert client.post(path + "/approval", json=identity | {"action": "reopen"}).json()["stage"] == "development"
+    open_design = design()
+    assert open_design["status"] == "draft" and open_design["parameters"][1]["default"] == 0.5
+    reopened = client.post(path + "/preview", json=identity | {"revision": open_design["revision"]}).json()
+    assert reopened["plates"][0]["dimensions"] == [5, 6, 0.5]
+
+
+def test_aaliq_rim_matches_reference_height_when_real_cad_is_enabled():
+    import os
+
+    import pytest
+    import trimesh
+
+    if os.environ.get("SNAPSTL_TEST_OPENSCAD") != "1":
+        pytest.skip("Enable SNAPSTL_TEST_OPENSCAD=1 to check the real OpenSCAD draft")
+    model, = model_studio.catalog()["models"]
+    design, = model["designs"]
+    values = {"text": "AaLiq"}
+    req = model_studio.PreviewRequest(model_id=model["id"], design_id=design["id"],
+                                      revision=design["revision"], values=values)
+    result = model_studio.preview(req, ScalingSettings())
+    assert result["compartment_widths"] == [35.6] * 5
+    base = model_studio._load_stl(model_studio.artifact(result["key"], "base"), "Base")
+    section = trimesh.intersections.mesh_plane(base, [0, 1, 0], [0, 49, 0])
+    x = 126.5  # the flat low section between L and i on the downloaded reference
+    top = max(a[2] + (x - a[0]) * (b[2] - a[2]) / (b[0] - a[0])
+              for a, b in section if min(a[0], b[0]) < x < max(a[0], b[0]))
+    assert top == pytest.approx(58.74, abs=0.04)

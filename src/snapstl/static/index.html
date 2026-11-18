@@ -203,7 +203,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 .model-designs button[aria-pressed=true],.model-views button[aria-pressed=true]{outline:2px solid var(--accent,#64a3df);outline-offset:1px}
 #model-canvas{width:100%;height:clamp(280px,48vh,520px);display:block;border-radius:8px;touch-action:none;background:#15202e;cursor:grab}
 #model-canvas:active{cursor:grabbing}
-#model-help textarea{width:100%;box-sizing:border-box;min-height:75px}
+.model-inputs input[type=color]{min-height:32px}
+#model-development{margin:12px 0}
 </style>
 </head>
 <body>
@@ -343,11 +344,18 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <button id="model-refresh">Refresh models</button>
       <span class="grow"></span>
       <span id="model-revision" class="hint"></span>
+      <button id="model-stage" hidden>Move to Production</button>
     </div>
     <div id="model-designs" class="model-designs" aria-label="Design drafts"></div>
     <p id="model-description" class="hint"></p>
     <form id="model-form">
+      <h3>Production fields</h3>
       <div id="model-inputs" class="model-inputs"></div>
+      <details id="model-development">
+        <summary>Development fields</summary>
+        <p class="hint">Tune these during fit tests. Moving to Production locks the values used in the reviewed preview.</p>
+        <div id="model-tuning" class="model-inputs"></div>
+      </details>
       <div class="toolbar">
         <button id="model-generate" class="primary">Generate preview</button>
         <button id="model-defaults" type="button">Reset defaults</button>
@@ -370,13 +378,27 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <p id="model-checks" class="hint"></p>
     <div id="model-downloads" class="toolbar"></div>
   </div>
+  <div class="card" id="model-print-panel" hidden>
+    <h3>Print a plate</h3>
+    <div class="model-inputs">
+      <label>Plate<select id="model-print-part"></select></label>
+      <label>Printer<select id="model-printer"><option value="">Choose a printer</option></select></label>
+      <label>Filament color<select id="model-filament"><option value="">Choose a loaded color</option></select></label>
+    </div>
+    <div class="toolbar">
+      <button id="model-printers-refresh">Refresh printers and colors</button>
+      <button id="model-print-start" class="primary" disabled>Start print</button>
+    </div>
+    <p id="model-print-status" class="hint" role="status"></p>
+  </div>
   <details class="card" id="model-help">
     <summary>Build a model with an agent</summary>
-    <p>Open the SnapSTL development checkout in Codex or Claude Code. Use <code>$snapstl-models</code> in Codex or <code>/snapstl-models</code> in Claude Code, then describe the design and how it should fit.</p>
-    <label for="model-prompt">Example prompt</label>
-    <textarea id="model-prompt" readonly>Design a desk organizer for pens and scissors with a glue-in name. Give me three distinct shapes. Ask about any measurements you need, then tell me which drafts to compare in SnapSTL Models.</textarea>
-    <button id="model-copy">Copy prompt</button> <span id="model-copy-status" class="hint" role="status"></span>
-    <p>When the agent finishes a draft, select its name here and inspect the plates and Assembly view. Give feedback using the design name and revision.</p>
+    <ul>
+      <li>In the development checkout, use <code>$snapstl-models</code> in Codex or <code>/snapstl-models</code> in Claude Code for a new model or a design in Development.</li>
+      <li>Example request. “Design an organizer for pens and scissors with a glue-in name. Ask what it needs to fit before drafting.”</li>
+      <li>Inspect the assembly and each plate. Use Development fields for fit tests. Send feedback with the design revision and where the print was tight, loose, or difficult to use.</li>
+      <li>Move the tested preview to Production to lock the fit settings. Move it back to Development before asking the agent to change the design.</li>
+    </ul>
   </details>
 </section>
 
@@ -983,7 +1005,7 @@ function expressBadge(d,note){if(!d)return '';const days=Math.ceil((new Date(d+'
 let S=null,META=null,filter={tab:'to_make',f:{},offset:0},LIMIT=100,openBatch=null,tab='orders',FACETS=null;
 const SEL=new Set();
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function api(path,opts={}){const r=await fetch(path,opts);if(r.status===401){location.href='/login';throw new Error('Signed out')}const t=await r.text();let j;try{j=JSON.parse(t)}catch{j={detail:t}}if(!r.ok)throw new Error(j.detail||r.statusText);return j}
+async function api(path,opts={}){const r=await fetch(path,opts);if(r.status===401){location.href='/login';throw new Error('Signed out')}const t=await r.text();let j;try{j=JSON.parse(t)}catch{j={detail:t}}if(!r.ok)throw Object.assign(new Error(j.detail||r.statusText),{status:r.status});return j}
 const post=(p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
 const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"></span>${esc(c||'—')}`;
 
@@ -1005,7 +1027,8 @@ const OLD_PAGES={downloads:'activity',pstatus:'printers'};  // pages merged in 0
 
 // ---------- Models ----------
 const studio={catalog:null, model:null, design:null, states:new Map(), loading:false,
-  pending:false, queued:false, view:'assembly', draw:null};
+  pending:false, queued:false, view:'assembly', draw:null, printers:[], printersLoaded:false,
+  printerError:'', printJob:null, printBusy:false, printStatusRequest:0};
 const studioKey=(model,design)=>model.id+'/'+design.id;
 function studioState(model=studio.model,design=studio.design){
   const key=studioKey(model,design);
@@ -1037,20 +1060,23 @@ function selectModel(model,design,render=true){
   studio.model=model;studio.design=design;
   $('model-picker').value=model?.id||'';
   $('model-designs').replaceChildren(...(model?.designs||[]).map(item=>
-    modelAction(item.label+(item.status==='developed'?' · Developed':' · In development'),
+    modelAction(item.label+(item.status==='developed'?' · Production':' · Development'),
       item===design,()=>selectModel(model,item))));
   $('model-form').hidden=!design;
   $('model-compare').hidden=(model?.designs.length||0)<2;
   $('model-description').textContent=design?.description||'';
   $('model-preview').hidden=true;
+  $('model-print-panel').hidden=true;
+  $('model-stage').hidden=!design;
   if(!design){
     $('model-revision').textContent='';
     $('model-status').textContent='No renderable model designs found.';
     return;
   }
   $('model-revision').textContent='Revision '+design.revision;
+  $('model-stage').textContent=design.status==='developed'?'Move to Development':'Move to Production';
   const state=studioState();
-  $('model-inputs').replaceChildren(...design.parameters.map(parameter=>{
+  function editor(parameter){
     const label=document.createElement('label');
     label.append(parameter.label+(parameter.unit?' ('+parameter.unit+')':''));
     const input=document.createElement(parameter.type==='choice'?'select':'input');
@@ -1061,6 +1087,8 @@ function selectModel(model,design,render=true){
       input.type='checkbox';
     }else if(parameter.type==='text'){
       input.type='text';input.maxLength=parameter.max_length;input.required=true;input.autocomplete='off';
+    }else if(parameter.type==='color'){
+      input.type='color';
     }else{
       input.type='number';input.required=true;input.step=parameter.step??(parameter.type==='integer'?1:'any');
       if(parameter.minimum!==null)input.min=parameter.minimum;
@@ -1075,10 +1103,26 @@ function selectModel(model,design,render=true){
     };
     label.append(input);
     return label;
-  }));
+  }
+  const fields=design.parameters.filter(p=>p.group!=='development').map(editor);
+  if(design.adapter==='organizer-v1'){
+    fields.splice(1,0,modelReadOnly('Name line 2','Empty (single line)'),
+      modelReadOnly('Two line alignment','Left (single line)'));
+    fields.push(modelReadOnly('Compartments','From letter count','model-compartments'));
+  }
+  $('model-inputs').replaceChildren(...fields);
+  const tuning=design.parameters.filter(p=>p.group==='development');
+  $('model-development').hidden=!tuning.length;
+  $('model-tuning').replaceChildren(...tuning.map(editor));
   showModelPreview();
   modelPreviewStatus();
   if(render&&!modelPreviewIsCurrent()&&$('model-form').checkValidity())generateModelPreview();
+}
+function modelReadOnly(labelText,value,id=''){
+  const label=document.createElement('label'), input=document.createElement('input');
+  input.readOnly=true;input.value=value;if(id)input.id=id;
+  label.append(labelText,input);
+  return label;
 }
 function fieldValue(parameter,input){
   return parameter.type==='checkbox'?input.checked:
@@ -1097,10 +1141,15 @@ function modelPreviewStatus(){
   const available=studio.catalog.renderer;
   $('model-generate').disabled=!available||studio.pending;
   const saved=studioState().preview;
+  const current=modelPreviewIsCurrent();
+  $('model-stage').disabled=studio.pending||(studio.design.status!=='developed'&&!current);
+  if($('model-compartments'))$('model-compartments').value=current&&saved.result.compartments?
+    saved.result.compartments+' (from letter count)':'From letter count';
   $('model-status').textContent=studio.pending?'Generating preview…':
     !available?'Install OpenSCAD to generate previews on this computer.':
     !saved?'Generate a preview to inspect this design.':
-    modelPreviewIsCurrent()?'Preview ready.':'Showing the previous preview. Generate again to see the current inputs.';
+    current?'Preview ready.':'Showing the previous preview. Generate again to see the current inputs.';
+  modelPrintControls();
 }
 async function generateModelPreview(){
   if(!studio.design||!studio.catalog.renderer||!$('model-form').reportValidity())return;
@@ -1144,7 +1193,12 @@ function showModelPreview(){
   $('model-dimensions').textContent=result.plates.map(p=>p.label+' '+p.dimensions.map(n=>n.toFixed(1)).join(' × ')+' mm').join(' · ');
   const checks=[...result.checks];
   if(result.compartments)checks.unshift(result.compartments+' compartments',result.minimum_clearance.toFixed(2)+' mm minimum clearance');
+  if(result.compartment_widths?.length){
+    const lo=Math.min(...result.compartment_widths), hi=Math.max(...result.compartment_widths);
+    checks.splice(1,0,(lo===hi?lo.toFixed(1):lo.toFixed(1)+'–'+hi.toFixed(1))+' mm pocket floor width');
+  }
   $('model-checks').textContent=checks.join(' · ');
+  modelPrintPreview(result);
   $('model-downloads').replaceChildren(...result.plates.map(p=>{
     const link=document.createElement('a');link.href=p.url;
     link.download=studio.design.id+'-'+p.id+'.stl';link.textContent='Download '+p.label.toLowerCase()+' STL';return link;
@@ -1300,12 +1354,128 @@ $('model-front').onclick=()=>studio.draw?.front();
 $('model-top').onclick=()=>studio.draw?.top();
 $('model-zoom-out').onclick=()=>studio.draw?.magnify(1/1.2);
 $('model-zoom-in').onclick=()=>studio.draw?.magnify(1.2);
-$('model-copy').onclick=async()=>{
-  try{await navigator.clipboard.writeText($('model-prompt').value);$('model-copy-status').textContent='Copied.'}
-  catch{$('model-prompt').select();$('model-copy-status').textContent='Select and copy the prompt.'}
+$('model-stage').onclick=async()=>{
+  const {model,design}=studio;
+  const reopen=design.status==='developed';
+  const message=reopen?'Move this design back to Development and unlock its fit settings?':
+    'Have you checked this revision and its fit? Moving to Production locks the current development settings.';
+  if(!confirm(message))return;
+  $('model-stage').disabled=true;
+  try{
+    await post('/api/model-studio/approval',{model_id:model.id,design_id:design.id,
+      action:reopen?'reopen':'promote',preview_key:studioState().preview?.result.key||''});
+    await loadModels();
+  }catch(error){$('model-status').textContent=error.message;$('model-stage').disabled=false}
+};
+
+function modelPrintPreview(result){
+  const picker=$('model-print-part'), previous=picker.value;
+  const changed=picker.dataset.key!==result.key;
+  if(changed){studio.printJob=null;picker.dataset.key=result.key}
+  picker.replaceChildren(...result.plates.map(p=>new Option(p.label,p.id)));
+  if(result.plates.some(p=>p.id===previous))picker.value=previous;
+  $('model-print-panel').hidden=false;
+  if(!studio.printersLoaded)loadModelPrinters();
+  else if(changed)loadModelPrintJob();
+}
+function modelPrintControls(){
+  const job=studio.printJob, selected=$('model-printer'), part=$('model-print-part'), tray=$('model-filament');
+  const current=studio.design&&modelPreviewIsCurrent();
+  const held=job?.state==='sent'&&Boolean(job.held);
+  const active=['queued','slicing','uploading','sent','printing'].includes(job?.state)&&!held;
+  const printer=studio.printers.find(p=>String(p.id)===selected.value);
+  selected.disabled=held||studio.printBusy;
+  tray.disabled=held||studio.printBusy||!printer?.spools.length;
+  part.disabled=studio.printBusy;
+  $('model-print-start').disabled=studio.printBusy||!current||active||!printer?.connected||tray.value==='';
+  $('model-print-start').textContent=job?.state==='done'?'Reprint failed part':held?'Resume held print':'Start print';
+}
+function modelFilaments(prefer=''){
+  const picker=$('model-printer'), target=studio.printers.find(p=>String(p.id)===picker.value);
+  const tray=$('model-filament');
+  const spools=target?.spools||[];
+  tray.replaceChildren(new Option('Choose a loaded color',''),...spools.map(s=>
+    new Option([s.name||s.color||s.hex||'Filament',s.slot,s.material].filter(Boolean).join(' · '),s.tray)));
+  const plate=studioState().preview?.result.plates.find(p=>p.id===$('model-print-part').value);
+  const match=spools.find(s=>s.hex?.toLowerCase()===plate?.color?.toLowerCase());
+  tray.value=spools.some(s=>String(s.tray)===prefer)?prefer:match?String(match.tray):'';
+  modelPrintControls();
+}
+async function loadModelPrinters(){
+  try{
+    const {printers}=await api('/api/model-studio/printers');
+    studio.printers=printers;
+    studio.printerError=printers.length?'':'No active printers in Bambuddy.';
+    const picker=$('model-printer'), previous=picker.value;
+    picker.replaceChildren(new Option('Choose a printer',''),...printers.map(p=>
+      new Option(p.name+(p.connected?'':' · Offline'),p.id)));
+    if(printers.some(p=>String(p.id)===previous))picker.value=previous;
+    modelFilaments($('model-filament').value);
+    await loadModelPrintJob();
+  }catch(error){
+    studio.printerError=error.message;
+    $('model-print-status').textContent=studio.printerError;
+  }finally{studio.printersLoaded=true}
+}
+async function loadModelPrintJob(){
+  if($('model-print-panel').hidden||studio.printBusy)return;
+  const plate=$('model-print-part'), key=plate.dataset.key, part=plate.value;
+  if(!key||!part)return;
+  const request=++studio.printStatusRequest;
+  try{
+    const {job}=await api('/api/model-studio/print?'+new URLSearchParams({key,part}));
+    if(request!==studio.printStatusRequest||key!==plate.dataset.key||part!==plate.value)return;
+    studio.printJob=job;
+    const held=job?.state==='sent'&&job.held;
+    if(held){
+      $('model-printer').value=job.printer_id;
+      modelFilaments(String(job.ams_tray));
+    }
+    const state=held?'Held in Bambuddy. Clear the bed, then resume.':
+      job?job.state.charAt(0).toUpperCase()+job.state.slice(1)+' · '+job.printer_name:'';
+    $('model-print-status').textContent=[state,job?.error,studio.printerError].filter(Boolean).join(' ');
+    modelPrintControls();
+  }catch(error){$('model-print-status').textContent=error.message}
+}
+$('model-printers-refresh').onclick=loadModelPrinters;
+$('model-printer').onchange=()=>modelFilaments();
+$('model-filament').onchange=modelPrintControls;
+$('model-print-part').onchange=()=>{
+  studio.printJob=null;modelFilaments();loadModelPrintJob();
+};
+$('model-print-start').onclick=async()=>{
+  if($('model-print-start').disabled)return;
+  const plate=$('model-print-part'), printer=$('model-printer'), filament=$('model-filament');
+  const reprint=studio.printJob?.state==='done';
+  if(reprint&&!confirm('Confirm that the physical print failed before reprinting.'))return;
+  if(!confirm('Print '+plate.selectedOptions[0].text+' on '+printer.selectedOptions[0].text+
+              ' using '+filament.selectedOptions[0].text+'?'))return;
+  const body={key:plate.dataset.key,part:plate.value,printer_id:Number(printer.value),tray:Number(filament.value),
+    reprint_failed:reprint};
+  studio.printBusy=true;modelPrintControls();
+  let failure='', triedBed=false, triedFilament=false;
+  try{
+    for(;;){
+      try{await post('/api/model-studio/print',body);break}
+      catch(error){
+        failure=error.message;
+        if(error.status===428&&!triedBed&&confirm(error.message+' Is the bed empty and clean?')){
+          triedBed=true;body.bed_clear=true;continue;
+        }
+        if(error.status===409&&!triedFilament&&confirm(error.message+' Start anyway?')){
+          triedFilament=true;body.force=true;continue;
+        }
+        return;
+      }
+    }
+    failure='';
+  }finally{
+    studio.printBusy=false;await loadModelPrintJob();modelPrintControls();
+    if(failure)$('model-print-status').textContent=failure;
+  }
 };
 window.addEventListener('focus',()=>{if(tab==='models')loadModels()});
-setInterval(()=>{if(tab==='models'&&!document.hidden)loadModels()},5000);
+setInterval(()=>{if(tab==='models'&&!document.hidden){loadModels();loadModelPrintJob()}},5000);
 
 // ---------- orders ----------
 // Only orders waiting to be made can be ticked (→ Create batch).

@@ -20,7 +20,7 @@
       "parameters": [
         {
           "id": "text",
-          "label": "Name",
+          "label": "Name line 1",
           "type": "text",
           "default": "AaLiQ",
           "max_length": 15
@@ -50,7 +50,7 @@
         },
         {
           "id": "thickness",
-          "label": "Thickness (base depth)",
+          "label": "Thickness",
           "type": "integer",
           "default": 50,
           "minimum": 30,
@@ -77,6 +77,18 @@
           ]
         },
         {
+          "id": "text_color",
+          "label": "Text color",
+          "type": "color",
+          "default": "#f4a7c0"
+        },
+        {
+          "id": "container_color",
+          "label": "Container color",
+          "type": "color",
+          "default": "#ffffff"
+        },
+        {
           "id": "clearance",
           "label": "Glue-in clearance per side",
           "type": "number",
@@ -84,6 +96,18 @@
           "minimum": 0.2,
           "maximum": 0.6,
           "step": 0.05,
+          "unit": "mm",
+          "group": "development"
+        },
+        {
+          "id": "minimum_rim",
+          "label": "Minimum compartment rim above floor",
+          "type": "number",
+          "group": "development",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 70,
+          "step": 1,
           "unit": "mm"
         }
       ],
@@ -91,12 +115,14 @@
         {
           "id": "base",
           "label": "Base plate",
-          "color": "#e4e8ef"
+          "color": "#e4e8ef",
+          "color_parameter": "container_color"
         },
         {
           "id": "name",
           "label": "Name plate",
-          "color": "#db3c82"
+          "color": "#db3c82",
+          "color_parameter": "text_color"
         }
       ]
     }

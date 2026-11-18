@@ -26,9 +26,9 @@ The common comparison preset is the synthetic name `AaLiQ`, Chewy, font size 60 
   For unusually compressed names, the recess grows enough to meet the digital clearance check.
 - Model defaults follow current SnapSTL Product settings. The bundled Chewy, Luckiest Guy,
   Titan One, DynaPuff, Cherry Bomb One and Akaya Kanadaka fonts retain their own license notices.
-  This preview accepts single-line A–Z text up to 15 letters. Thickness acts as base depth.
-  Rotate text tilts the glyph profile 6° before creating both parts. The cached examples all used
-  the same options, so the exact original behavior for non-default thickness and rotation is open.
+  This preview accepts single-line A–Z text up to 15 letters. MakerWorld labels Thickness as the
+  container depth. Rotate text tilts the local glyph profile 6° before creating both parts.
+  The exact original behavior for non-default rotation is open.
 
 ### Verification and open checks
 
@@ -44,3 +44,20 @@ The common comparison preset is the synthetic name `AaLiQ`, Chewy, font size 60 
 - **Open:** owner review, physical fit and glue-up, Windows and the native webviews, and direct
   comparison with MakerWorld exports for non-default settings. Print tests are needed before
   marking this design Developed or piloting it with production orders.
+
+### AaLiq reference and revised rim
+
+The owner supplied the watermark-free MakerWorld v2.34 3MF for `AaLiq` in NO AMS, with Chewy,
+size 60, thickness 50, outline 6, five compartments and rotation off. Both meshes are closed.
+The raw base measures 196.975 × 50 × 97.632 mm. Its five pockets are each about 35.6 mm wide
+after Scaling v1.1. The apparent small pocket near L and i came from the local rim dropping to
+about 45 mm above the floor. MakerWorld fills that gap to about 56 mm above the floor. The raw
+flat section is 64.437 mm high, exactly 66% of the raw base height. The local model now applies
+that floor to the contour while keeping pocket widths unchanged. The corrected rear silhouette
+overlaps the exact reference by 99.79%, and all five measured minimum rim heights match to 0.1 mm.
+
+Development fields hold glue-in clearance and an optional minimum retaining rim above the floor.
+Production fields hold the name, font, size, thickness, outline, rotation and both preview colours.
+Name line 2, two-line alignment and compartment derivation follow the single-line and Scaling
+v1.1 rules. The reference file remains local. The design stays in Development until the owner
+checks the print and deliberately moves the reviewed revision to Production.

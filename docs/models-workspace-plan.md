@@ -5,8 +5,10 @@ Implementation plan · 2026-11-18
 The development branch implements catalog discovery, manifest controls, interactive plate and
 assembly views, STL export, and the Letter Contour organizer draft. The selector supports
 multiple named designs and can copy compatible inputs for fast switching. The current organizer
-has one selectable design at the owner's direction. Side-by-side comparison, stored revision
-history and promotion of reviewed revisions remain follow-up work.
+has one selectable design at the owner's direction. Moving a tested preview to Production pins
+its source and development values on this computer. Moving it back reopens the working draft with
+the last tuned fit values. Side-by-side comparison and browsing all historic revisions remain
+follow-up work.
 
 Add **Models** to the SnapSTL sidebar. The first entry is **Name Desk Organizer**, marked In
 development. The same selector, parameter form, 3D viewer and export controls serve each new model.
@@ -56,7 +58,8 @@ Production use goes through the separate pilot.
 
 Put a **Build a model with an agent** help panel next to the model picker. Explain how to open
 the SnapSTL development checkout and paste a plain-language request into Codex or Claude Code.
-Show `$snapstl-models` for Codex and `/snapstl-models` for Claude Code, with a copyable sample.
+Show `$snapstl-models` for Codex and `/snapstl-models` for Claude Code, with a short example in
+the help text. The skill changes new or Development models.
 
 > Design a desk organizer for pens and scissors with a glue-in name. Give me three clearly
 > different concepts and ask me which measurements you need before you build. Tell me what
@@ -134,6 +137,12 @@ only package changes. A genuinely new kind of control or renderer requires a ver
 
 The implemented routes are `GET /api/model-studio/catalog`,
 `POST /api/model-studio/preview` and `GET /api/model-studio/previews/{key}/{part}.stl`.
+Use `POST /api/model-studio/approval` to promote a reviewed preview or reopen its design.
+Models printing uses `GET /api/model-studio/printers` and `GET/POST /api/model-studio/print`.
+Its verified 3MF sources live in the app's `model-prints/` folder. Standalone jobs use the
+existing local print and slice queue with batch ID 0. Bambuddy receives a held job and the selected
+loaded filament slot. Only the Start or Resume click releases it, subject to the normal bed-clear
+rules. Models printing does not create an order or a batch.
 The app reads `models/` in its checkout by default or the local directory in `SNAPSTL_MODELS_DIR`.
 The manifest's design ID, source and declared assets determine its revision. The organizer's
 specific options and measured results are in [DESIGN.md](../models/name-desk-organizer/DESIGN.md).

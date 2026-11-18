@@ -27,6 +27,10 @@ revisions, test results and approvals. Write or
 update reusable model-building instructions in the skill when the workflow changes, so Codex and
 Claude Code follow the same process. Keep model development on its separate branch unless the owner
 authorizes a production merge.
+The skill may edit new or Development designs only. A person moves a design from Production back
+to Development before CAD or fit changes. **Move to Production** in Models locks the reviewed
+source and fit settings on this computer. The **Start print** button in Models uses the same
+Bambuddy hold, selected filament slot, printer presets and bed-clear rules as Print.
 
 ## 2. Binding rules (change only if the owner explicitly asks)
 

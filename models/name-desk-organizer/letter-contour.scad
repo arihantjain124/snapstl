@@ -14,6 +14,7 @@ thickness = 50;
 outline = 6;
 rotate_text = "no";
 clearance = 0.30;
+minimum_rim = 0;
 compartments = 5;
 base_length = 210;
 base_height = 89;
@@ -46,13 +47,18 @@ module outline_shape() {
 }
 
 module bottom_rail(rail_left, rail_width, bottom) {
+    nominal_height = label_height + 2*outline;
+    // MakerWorld continues the floor up through gaps to 66% of the raw base height.
+    // A development override can raise this further in finished millimetres above the floor.
+    lip = max(0.66*nominal_height, floor + minimum_rim * nominal_height/base_height);
     if (rail_width > label_width + epsilon) {
         // Narrow names need shoulders to preserve useful compartments on both ends.
         translate([rail_left, bottom])
             offset(r=outline) offset(delta=-outline)
                 square([rail_width, max(3*outline, 0.60*label_height + outline)]);
+        translate([rail_left, bottom]) square([rail_width, lip]);
     } else {
-        translate([rail_left, bottom]) square([rail_width, floor+epsilon]);
+        translate([rail_left, bottom]) square([rail_width, lip]);
     }
 }
 

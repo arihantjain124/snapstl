@@ -446,3 +446,15 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
   all font exports and parameter limits locally. See [the model's design record](models/name-desk-organizer/DESIGN.md).
 - **Open:** owner review of the refined draft, physical fit trials, non-default MakerWorld parity
   and native app verification on Mac and Windows. Preview generation is separate from live batches.
+
+### 2026-11-18: Models fit controls, production approval and direct print
+- Owner kept Name line 2 empty and compartments derived from the scaling table. Matched the
+  remaining MakerWorld production fields, including text and container preview colours. Moved
+  clearances and minimum rim to Development. Production approval pins the verified model and locks
+  its development values. Reopen the design before using the skill to change it.
+- Added plate, printer and loaded filament selection in Models. Start print uses Bambuddy's held
+  queue, the chosen printer's profiles and the existing clear-bed confirmation.
+- Generated the exact `AaLiq` preview in Chrome and read the owner-supplied licensed 3MF locally.
+  Compartment widths matched. MakerWorld raises the gap near L and i to 66% of base height.
+  Updated the local contour to match. Kept the source 3MF and production files outside Git.
+- **Open:** owner review and physical fit check before promoting Letter Contour.

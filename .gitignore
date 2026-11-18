@@ -10,6 +10,7 @@ __pycache__/
 *.xls
 *.csv
 *.zip
+*.3mf
 output/
 
 # secrets and per-computer settings (see .env.example)

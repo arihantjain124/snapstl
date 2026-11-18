@@ -1,6 +1,6 @@
 ---
 name: snapstl-models
-description: Design or revise printable parametric CAD models for SnapSTL from a plain-language brief, export STL previews, and iterate with the user in the Models view.
+description: Create new SnapSTL CAD models or revise designs in Development, export STL previews, and iterate on fit with the user in Models. Production designs must be reopened by the owner before editing.
 ---
 
 # Build SnapSTL models
@@ -8,7 +8,10 @@ description: Design or revise printable parametric CAD models for SnapSTL from a
 Read the repository's [AGENTS.md](../../../AGENTS.md) and [Models plan](../../../docs/models-workspace-plan.md).
 For the organizer, also read the [measurement survey and pipeline](../../../docs/parametric-model-pipeline.md)
 and the [scaling rules](../../../docs/scaling-rules-v1.1-handoff.md). For any existing design, read its
-manifest, CAD and model-level `DESIGN.md` before proposing a change.
+manifest, CAD and model-level `DESIGN.md` before proposing a change. Verify its current stage
+in Models or the active instance's model approval record. This skill authors new models and
+Development designs. If the selected design is in Production, ask the owner to use **Move to
+Development** in Models and wait for that change before editing its package or tolerances.
 
 ## Agree on the design before building
 
@@ -61,7 +64,9 @@ a new revision of its design. Keep each named concept independently selectable a
    independently when feasible. Derive dimensions from the same source for interacting parts.
 3. Expose the controls the owner needs in the model manifest. Give each a stable ID, readable
    label, validated range and default, with units where relevant. Declare plates, assets and
-   assembly positions for each named design. For compatible parameter changes, preserve existing IDs and defaults
+   assembly positions for each named design. Keep use-time inputs such as names, dimensions and
+   colours in Production fields. Put glue-in clearance, rim adjustments and fitting tolerances
+   in Development fields. Record reasons and measured fit feedback in the model's `DESIGN.md`. For compatible parameter changes, preserve existing IDs and defaults
    unless the user asks to change them. New models use the same dropdown, form and viewer.
 4. Export each printable part with the pinned local OpenSCAD build and explicitly registered fonts
    when applicable. Validate inputs, capture renderer diagnostics, and keep generated files in the
@@ -106,8 +111,8 @@ and compare with the previous review. Confirm each revised draft appears in the 
 when available. Record feedback, decisions, test results and open fit questions by design and
 revision. Report editable source, STL links, the comparison preset and physical checks still due.
 
-Keep each revision In development while it is being iterated. When the owner finalizes a verified
-design, pin the exact reviewed revision and record their approval in `DESIGN.md`. Mark that design
-Developed in the catalog when supported. Multiple designs of a model can be Developed. Keep the
-approved revision available while creating later drafts, and retain the other concepts for
-comparison. A production pilot or public release requires its own decision.
+Keep each revision in Development while iterating. When the owner approves a verified revision,
+ask the owner to select that preview and click **Move to Production**. SnapSTL pins the reviewed
+CAD and development settings locally. Record the approval, revision and fit results in
+`DESIGN.md`. Later fit or CAD changes begin when the owner moves the design back to Development.
+A production batch pilot or public release is its own decision.
