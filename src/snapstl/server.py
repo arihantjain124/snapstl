@@ -21,7 +21,8 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import auth, bambuddy_host, cache, computer, config, db, extras, farm, makeit, platform_os, sync, tabs, updater, verify
+from . import (archive, auth, bambuddy_host, cache, computer, config, db, extras, farm, makeit, platform_os, sync, tabs,
+               updater, verify)
 from .ingest import add_adhoc, ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
 from . import maintenance as M
@@ -63,6 +64,7 @@ async def _lifespan(_app):
     logistics_server = start_logistics()
     sync.LOOP.start()   # shared order records (Supabase), if connected in Settings
     farm.WORKER.start()  # Push to queue → Bambuddy (connects by itself on a fresh install)
+    archive.CLEANER.start()  # once a day: old batch folders / unused models → Recycle Bin
     bambuddy_host.start_watch()  # Bambuddy computer: Keep running (starts Bambuddy / Docker when they stop)
     yield
     from .logistics import stop as stop_logistics
@@ -741,6 +743,51 @@ def maintenance_info():
     return M.stats()
 
 
+@app.get("/api/maintenance/disk")
+def maintenance_disk():
+    """Settings → Maintenance: space used by batch folders, models, backups; what the next clean-up moves."""
+    return archive.disk()
+
+
+@app.post("/api/maintenance/clean-files")
+async def maintenance_clean_files():
+    """Clean up files now: archived batches (10+ days) and unused models (15+ days) → Recycle Bin."""
+    return await run_in_threadpool(archive.clean_up)
+
+
+@app.get("/api/activity")
+def activity(days: int = 7, kind: str = ""):
+    """Activities tab: what happened on this computer, newest first."""
+    since = time.time() - max(1, min(days, 365)) * 86400
+    with db.tx() as con:
+        rows = db.rows(con, "SELECT at, kind, text FROM activity WHERE at >= ?" + (" AND kind=?" if kind else "")
+                       + " ORDER BY at DESC LIMIT 1000", *((since, kind) if kind else (since,)))
+        prints = db.rows(con, "SELECT j.updated_at AS at, j.plate, j.state, j.printer_name, j.error, b.summary FROM print_jobs j "
+                              "LEFT JOIN batches b ON b.id=j.batch_id WHERE j.updated_at >= ? AND j.state IN "
+                              "('done','failed','cancelled') AND j.printer_id <> 0 ORDER BY j.updated_at DESC LIMIT 500",
+                         since) if kind in ("", "print") else []
+        builds = db.rows(con, "SELECT finished_at AS at, status, summary FROM batches WHERE finished_at >= ? "
+                              "ORDER BY finished_at DESC", since) if kind in ("", "build") else []
+        dls = db.rows(con, "SELECT updated_at AS at, name, state, error FROM downloads WHERE updated_at >= ? AND state IN "
+                           "('done','failed') ORDER BY updated_at DESC LIMIT 500", since) if kind in ("", "download") else []
+    word = {"done": "printed", "failed": "failed", "cancelled": "cancelled"}
+    for j in prints:
+        label = json.loads(j.pop("summary") or "{}").get("label") or ""
+        rows.append({"at": j["at"], "kind": "print", "text": f"{j['plate'].rsplit('/', 1)[-1]} {word[j['state']]} on "
+                     f"{j['printer_name'] or '?'}" + (f" ({label})" if label else "")
+                     + (f" — {j['error']}" if j["state"] == "failed" and j["error"] else "")})
+    for b in builds:
+        summ = json.loads(b.pop("summary") or "{}")
+        rows.append({"at": b["at"], "kind": "build", "text": f"{summ.get('label') or 'Batch'} built: "
+                     f"{len(summ.get('plates') or [])} plates" + (f", {len(summ.get('errors') or [])} problem(s)"
+                                                                  if summ.get("errors") else "")})
+    for d in dls:
+        rows.append({"at": d["at"], "kind": "download", "text": f"{d['name']} " + (
+            "downloaded" if d["state"] == "done" else f"download failed — {d['error'] or ''}")})
+    rows.sort(key=lambda r: -(r["at"] or 0))
+    return {"items": rows[:1500]}
+
+
 @app.post("/api/maintenance/backup")
 def maintenance_backup():
     return {"backup": str(M.backup())}
@@ -921,22 +968,9 @@ def downloader_action(action: str):
 # ---------------- batches ----------------
 @app.get("/api/batches")
 def batches():
-    with db.tx() as con:
-        rs = db.rows(con, "SELECT * FROM batches ORDER BY id DESC LIMIT 100")
-    out = []
-    for r in rs:
-        summ = json.loads(r["summary"] or "{}")
-        item = {
-            "id": r["id"], "created_at": r["created_at"], "status": r["status"],
-            "orders": len(json.loads(r["order_ids"] or "[]")),
-            "plates": len(summ.get("plates", [])), "errors": len(summ.get("errors", [])),
-            "label": summ.get("label", ""),
-            "computer": r.get("computer_name") or "", "mine": (r.get("computer_id") or computer.ID) == computer.ID,
-        }
-        if r["status"] in B.OPEN:
-            item["progress"] = B.batch_progress(r)
-        out.append(item)
-    return out
+    """Batches page: every batch with its names, progress (printed / checked / packed / shipped), status in
+    words and Archive (archive.py)."""
+    return archive.batch_rows()
 
 
 def _batch(batch_id: int) -> dict:

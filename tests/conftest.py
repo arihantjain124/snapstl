@@ -12,6 +12,7 @@ os.environ["SNAPSTL_REQUIRE_SHARED"] = "0"  # tests work without the shared reco
 # Never a real Bambuddy on this computer (it could get an API key or print jobs); tests/test_farm.py fakes it.
 os.environ["SNAPSTL_BAMBUDDY_URL"] = "http://127.0.0.1:9"
 os.environ["SNAPSTL_NO_BAMBUDDY"] = "1"  # never update a real Bambuddy install from tests
+os.environ["SNAPSTL_NO_CLEANUP"] = "1"  # the daily clean-up (archive.py) never runs by itself in tests
 
 import numpy as np
 import pytest

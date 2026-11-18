@@ -79,6 +79,12 @@ body.offline main section:not(#t-settings):not(#t-help) :is(button,input,select,
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .chips button{border-radius:999px;font-size:12px;padding:4px 10px}
 .chips button.on{border-color:var(--accent);color:var(--accent)}
+.nchips{display:flex;flex-wrap:wrap;gap:4px;max-width:520px}
+.nchip{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--chip);white-space:nowrap}
+.nchip.shipped{opacity:.55}.nchip.cancelled{text-decoration:line-through;opacity:.55}
+.bprog{display:grid;grid-template-columns:60px 90px 44px;gap:6px;align-items:center;font-size:12px}
+.bprog .bar{margin:0}
+.bacts{display:flex;flex-wrap:wrap;gap:4px;max-width:260px}
 #chips{flex-direction:column;gap:6px}
 .chipgroup{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .chiphead{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);min-width:92px}
@@ -291,8 +297,13 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 <section id="t-batches" hidden>
   <div class="card">
     <div class="toolbar"><h2 style="margin:0">Batches</h2><span class="grow hint" id="queueinfo"></span></div>
-    <p class="hint">A batch takes the orders you picked from MakerWorld models to print-ready plates: <b>Queue download</b> → the helper generates every name → <b>Queue build</b> → plates. Then <b>Print</b> sends them to your printers. Nothing starts by itself.</p>
-    <div class="tw"><table><thead><tr><th>#</th><th>Folder</th><th>Computer</th><th>Created</th><th>Orders</th><th>Models</th><th>Plates</th><th>Status</th><th></th></tr></thead><tbody id="batches"></tbody></table></div>
+    <p class="hint">A batch takes the orders you picked from MakerWorld models to print-ready plates: <b>Queue download</b> → the helper generates every name → <b>Queue build</b> → plates. Then <b>Print</b> sends them to your printers. Nothing starts by itself. A batch moves to <b>Archive</b> once all its orders are on the way (or cancelled); 10 days later its folder goes to the Recycle Bin.</p>
+    <div class="chips" id="bchips"></div>
+    <div class="toolbar" style="margin:0 0 8px;flex-wrap:wrap"><select id="bdate" style="max-width:150px"><option value="all">Any date</option><option value="1">Today</option><option value="7">Last 7 days</option><option value="month">This month</option><option value="pick">Pick dates…</option></select>
+      <span id="brange" hidden><input type="date" id="bfrom" style="max-width:150px"> to <input type="date" id="bto" style="max-width:150px"></span>
+      <select id="bstatus" style="max-width:170px"><option value="">Any status</option></select>
+      <input id="bsearch" placeholder="Search name or order" style="max-width:220px"><span class="grow"></span><span class="hint" id="bcount"></span></div>
+    <div class="tw"><table class="btable"><thead><tr><th>Batch</th><th>Names</th><th>Progress</th><th>Status</th><th class="bpc">Computer</th><th></th></tr></thead><tbody id="batches"></tbody></table></div>
   </div>
   <div class="card" id="bdetail" hidden>
     <div class="toolbar"><h2 style="margin:0" id="btitle"></h2><span class="grow"></span><button id="bmakeit" class="primary" hidden title="Send these plates to your printers: Print → Bases / Names">Print</button> <button id="bfinder" hidden class="fm">Show in Finder</button> <a class="btn primary" id="bzip">Download ZIP</a></div>
@@ -1025,21 +1036,56 @@ $('report').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('ingestm
 
 // ---------- batches ----------
 const BST={created:['Created — not queued',''],waiting:['Downloading','info'],models_ready:['Ready to build','ok'],build_requested:['Queued to build','info'],building:['Building','info'],done:['Done','ok'],done_with_problems:['Done with problems','warn'],failed:['Failed','err'],cancelled:['Cancelled','']};
-async function loadBatches(){const bs=await api('/api/batches');
-  $('batches').innerHTML=bs.length?bs.map(b=>{const st=BST[b.status]||[b.status,''];const p=b.progress;const active=!!p;const finished=b.status.startsWith('done');
-    const models=p?`${p.ready}/${p.models}${p.failed?` <span class="reason">${p.failed} failed</span>`:''}<div class="bar" style="margin-top:4px"><i style="width:${p.models?100*p.ready/p.models:0}%"></i></div>`:'—';
+// Batches (0.24): names, progress, status in words, grouped by day; Active / Archive; date, status, name filters
+let BTAB='active',BDATA=null,BOPEN=new Set();try{BTAB=localStorage.getItem('btab')||'active'}catch{}
+const BWORD_CLS={'All shipped':'ok','Shipping':'ok','Packing':'ok','Checking':'warn','Printing':'info','Ready to print':'info','Downloading':'info','Building':'info','Ready to build':'warn','Failed':'err','Cancelled':'','Not started':'','No orders':''};
+const dayKey=t=>{const d=new Date(t*1000);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+function dayLabel(k){const t=dayKey(Date.now()/1000),y=dayKey(Date.now()/1000-86400);return k===t?'Today':k===y?'Yesterday':new Date(k+'T00:00').toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short',year:'numeric'})}
+function bFilter(b){const v=$('bdate').value,now=Date.now()/1000,k=dayKey(b.created_at);
+  if(v==='1'&&k!==dayKey(now))return false;if(v==='7'&&b.created_at<now-7*86400)return false;
+  if(v==='month'&&k.slice(0,7)!==dayKey(now).slice(0,7))return false;
+  if(v==='pick'){if($('bfrom').value&&k<$('bfrom').value)return false;if($('bto').value&&k>$('bto').value)return false}
+  if($('bstatus').value&&b.word!==$('bstatus').value)return false;
+  const q=$('bsearch').value.trim().toLowerCase();if(q&&!(b.names.some(n=>(n.name||'').toLowerCase().includes(q)||(n.order_id||'').toLowerCase().includes(q))||(b.label||'').toLowerCase().includes(q)))return false;
+  return true}
+const nameChip=n=>`<span class="nchip ${['on_the_way','delivered','rto'].includes(n.tab)?'shipped':n.tab==='cancelled'?'cancelled':''}" title="${esc(n.order_id)} · ${esc((TABWORD[n.tab]||[0,n.tab])[1])}"><span class="swatch" style="background:${COLORS[n.color]||'transparent'}"></span>${esc(n.name)}${n.quantity>1?' ×'+n.quantity:''}</span>`;
+function bProgress(b){const c=b.count,live=c.orders-c.cancelled;if(!c.orders)return '<span class="hint">—</span>';
+  const bar=(n,l)=>`<div class="bprog"><span>${l}</span><div class="bar"><i style="width:${live?100*n/live:0}%"></i></div><span class="hint">${n}/${live}</span></div>`;
+  return bar(c.printed,'Printed')+bar(c.checked,'Checked')+bar(c.packed,'Packed')+bar(c.shipped,'Shipped')+(c.cancelled?`<div class="hint">${c.cancelled} cancelled</div>`:'')}
+async function loadBatches(){let r;try{r=await api('/api/batches')}catch(e){$('batches').innerHTML=`<tr><td colspan="6" class="reason">${esc(e.message)}</td></tr>`;return}BDATA=r;bRender()}
+function bRender(){const r=BDATA;if(!r)return;const all=r.batches;
+  const arch=all.filter(b=>b.archived_at),act=all.filter(b=>!b.archived_at);
+  $('bchips').innerHTML=[['active','Active',act.length],['archive','Archive',arch.length]].map(([k,l,n])=>`<button data-btab="${k}" class="${BTAB===k?'on':''}">${l} · ${n}</button>`).join('');
+  document.querySelectorAll('[data-btab]').forEach(x=>x.onclick=()=>{BTAB=x.dataset.btab;try{localStorage.setItem('btab',BTAB)}catch{}bRender()});
+  const words=[...new Set(all.map(b=>b.word))].sort(),cur=$('bstatus').value;
+  $('bstatus').innerHTML='<option value="">Any status</option>'+words.map(w=>`<option ${w===cur?'selected':''}>${esc(w)}</option>`).join('');
+  const showPc=r.computers>1;document.querySelectorAll('.bpc').forEach(x=>x.hidden=!showPc);
+  const bs=(BTAB==='archive'?arch:act).filter(bFilter);
+  $('bcount').textContent=`${bs.length} batch${bs.length===1?'':'es'}`;
+  let day=null;
+  $('batches').innerHTML=bs.length?bs.map(b=>{const k=dayKey(b.created_at);const head=k!==day?(day=k,`<tr><td colspan="6" style="background:var(--chip);font-weight:600">${esc(dayLabel(k))}</td></tr>`):'';
+    return head+bRow(b,showPc)}).join(''):`<tr><td colspan="6" class="empty">${BTAB==='archive'?'Nothing archived yet — a batch moves here once all its orders are on the way':'No batches here — select orders on the Orders tab'}</td></tr>`;
+  bWire()}
+function bRow(b,showPc){const st=BST[b.status]||[b.status,''];const p=b.progress;const finished=b.status.startsWith('done');
+    const models=p?`<div class="hint">Models ${p.ready}/${p.models}${p.failed?` <span class="reason">${p.failed} failed</span>`:''}</div><div class="bar" style="margin-top:4px"><i style="width:${p.models?100*p.ready/p.models:0}%"></i></div>`:'';
     const acts=[`<button class="small" data-b="${b.id}">Open</button>`];
-    const pc=`${esc(b.computer||'—')}${b.mine?' <span class="pill ok">this one</span>':''}`;
-    if(!b.mine){return `<tr class="other"><td>${b.id}</td><td>${esc(b.label||'—')}</td><td>${pc}</td><td>${new Date(b.created_at*1000).toLocaleString()}</td><td>${b.orders}</td><td>${models}</td><td>${b.plates||'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${acts.join(' ')}</td></tr>`}
-    if(finished)acts.push(`<a class="btn small" href="/api/batches/${b.id}/zip">ZIP</a>`);
-    const built=['done','done_with_problems','failed'].includes(b.status);
+    const pc=`<td class="bpc" ${showPc?'':'hidden'}>${esc(b.computer||'—')}${b.mine?' <span class="pill ok">this one</span>':''}</td>`;
+    const many=b.names.length>8,open=BOPEN.has(b.id);
+    const names=`<div class="nchips">${(many&&!open?b.names.slice(0,8):b.names).map(nameChip).join('')}${many?`<button class="small" data-bmore="${b.id}">${open?'Less':'+'+(b.names.length-8)+' more'}</button>`:''}</div>`;
+    const status=`<span class="pill ${BWORD_CLS[b.word]||''}">${esc(b.word)}</span>${b.files_cleaned_at?'<div class="hint">files in the Recycle Bin</div>':b.clean_on?`<div class="hint">files to the Recycle Bin ${new Date(b.clean_on*1000).toLocaleDateString()}</div>`:''}${models}`;
+    const head=`<td style="white-space:nowrap"><b>${esc(b.label||'Batch #'+b.id)}</b><div class="hint">${new Date(b.created_at*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} · ${b.plates||0} plates</div></td>`;
+    if(!b.mine){return `<tr class="other">${head}<td>${names}</td><td>${bProgress(b)}</td><td>${status}</td>${pc}<td>${acts.join(' ')}</td></tr>`}
+    if(finished&&!b.files_cleaned_at)acts.push(`<a class="btn small" href="/api/batches/${b.id}/zip">ZIP</a>`);
+    const built=['done','done_with_problems','failed'].includes(b.status)&&!b.files_cleaned_at&&!b.archived_at;
     if(b.status==='created')acts.push(`<button class="small primary" data-dl="${b.id}">Queue download</button>`);
     if(b.status==='models_ready')acts.push(`<button class="small primary" data-build="${b.id}">Queue build</button>`);
     if(b.status==='waiting')acts.push(`<button class="small" data-build="${b.id}" data-partial="1" title="Build with the models that are ready; orders still missing a model are left out">Build now with what's ready</button>`);
-    if(finished)acts.push(`<button class="small primary" data-make="${b.id}" title="Send these plates to your printers: Print → Bases / Names">Print</button>`);
+    if(finished&&!b.archived_at)acts.push(`<button class="small primary" data-make="${b.id}" title="Send these plates to your printers: Print → Bases / Names">Print</button>`);
     if(built)acts.push(`<button class="small" data-redl="${b.id}" title="Fetch every model of this batch again from MakerWorld (replaces the saved ones)">Re-download</button>`,`<button class="small" data-rebuild="${b.id}" title="Make the plates again from the downloaded models — writes a new Batch folder; the old one stays">Rebuild plates</button>`);
     if(['created','waiting','models_ready'].includes(b.status))acts.push(`<button class="small" data-cancel="${b.id}">${b.label?'Stop':'Cancel'}</button>`);
-    return `<tr><td>${b.id}</td><td>${esc(b.label||'—')}</td><td>${pc}</td><td>${new Date(b.created_at*1000).toLocaleString()}</td><td>${b.orders}</td><td>${models}</td><td>${b.plates||'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${acts.join(' ')}</td></tr>`}).join(''):'<tr><td colspan="9" class="empty">No batches yet — select orders on the Orders tab</td></tr>';
+    return `<tr>${head}<td>${names}</td><td>${bProgress(b)}</td><td>${status}</td>${pc}<td><div class="bacts">${acts.join(' ')}</div></td></tr>`}
+function bWire(){
+  document.querySelectorAll('[data-bmore]').forEach(x=>x.onclick=()=>{const id=+x.dataset.bmore;BOPEN.has(id)?BOPEN.delete(id):BOPEN.add(id);bRender()});
   document.querySelectorAll('[data-b]').forEach(x=>x.onclick=()=>openBatchDetail(+x.dataset.b));
   document.querySelectorAll('[data-make]').forEach(x=>x.onclick=()=>show('makeit'));
   document.querySelectorAll('[data-dl]').forEach(x=>x.onclick=async()=>{try{const r=await post(`/api/batches/${x.dataset.dl}/download`);$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for the helper — see Downloads`}catch(e){alert(e.message)}loadBatches()});
@@ -1048,6 +1094,8 @@ async function loadBatches(){const bs=await api('/api/batches');
   document.querySelectorAll('[data-build]').forEach(x=>x.onclick=async()=>{if(x.dataset.partial&&!confirm('Build now with the models that are ready? Orders still missing a model go back to Ready.'))return;try{await post(`/api/batches/${x.dataset.build}/build`)}catch(e){alert(e.message)}loadBatches()});
   document.querySelectorAll('[data-cancel]').forEach(x=>x.onclick=async()=>{if(confirm(x.textContent==='Stop'?'Stop this re-download? The batch goes back to done; its plates are unchanged.':'Cancel this batch? Its orders go back to Ready.')){try{await post(`/api/batches/${x.dataset.cancel}/cancel`)}catch(e){alert(e.message)}refreshAll();loadBatches()}});
   if(openBatch&&!$('bdetail').hidden)openBatchDetail(openBatch,true)}
+['bdate','bstatus','bfrom','bto'].forEach(id=>$(id).onchange=()=>{$('brange').hidden=$('bdate').value!=='pick';bRender()});
+$('bsearch').oninput=()=>bRender();
 function plateSVG(p){const [bx,by]=p.preview.bed,m=p.preview.margin;const fill=p.kind==='bases'?'#ffffff':(COLORS[p.colors[0]]||'#bbb');
   const parts=p.preview.parts.map(pt=>`<path d="${pt.rings.map(r=>'M'+r.map(([x,y])=>`${x},${by-y}`).join('L')+'Z').join('')}" fill="${fill}" fill-rule="evenodd" stroke="#777" stroke-width="0.8"><title>${esc(pt.key)} (${pt.rotation}°)</title></path>`).join('');
   return `<svg viewBox="-2 -2 ${bx+4} ${by+4}"><rect width="${bx}" height="${by}" rx="4" fill="var(--bed)" stroke="var(--line)"/><rect x="${m}" y="${m}" width="${bx-2*m}" height="${by-2*m}" fill="none" stroke="var(--line)" stroke-dasharray="3 3"/>${parts}</svg>`}
