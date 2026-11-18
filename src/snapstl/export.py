@@ -28,9 +28,16 @@ def _clean(s: str) -> str:
     return _BAD.sub("", s).strip() or "_"
 
 
+def title_color(c: str) -> str:
+    """"baby blue" → "Baby Blue" (file names)."""
+    return " ".join(w[:1].upper() + w[1:] for w in (c or "").split()) or "No colour"
+
+
 def plate_filename(plate: Plate) -> str:
-    """{Ayra,pink},{Manvi,pink},{Riya,blue}.3mf — same scheme in Bases/ and Names/<colour>/."""
-    stem = ",".join("{" + _clean(o.name) + "," + _clean(o.color) + "}" for o in plate.orders)
+    """Easy to read (0.24): "Bases - Ayra + Manvi + Riya.3mf" in Bases/, "Pink - Ayra + Manvi.3mf" in
+    Names/<colour>/ (before 0.24: "{Ayra,pink},{Manvi,pink}.3mf")."""
+    head = "Bases" if plate.kind == "bases" else _clean(title_color(plate.orders[0].color if plate.orders else ""))
+    stem = f"{head} - " + " + ".join(_clean(o.name) for o in plate.orders)
     if len(stem) > MAX_NAME:
         h = hashlib.sha1(stem.encode()).hexdigest()[:8]
         stem = stem[: MAX_NAME - 10] + "~" + h

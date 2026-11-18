@@ -86,6 +86,9 @@ _COL_COMMENTS = {
     "remake_reason": "Why a remake was requested.",
     "reuse_of": "This order is sent with the returned (RTO) piece of that order.",
     "reused_by": "This returned (RTO) piece went to that order (each piece is used once).",
+    "print_done_at": "Every plate holding the order printed (epoch seconds): Printing, waiting for check.",
+    "checked_at": "Base and name checked good on Print → Verify (epoch seconds) → Printed – pack it.",
+    "checked_by": "Staff member who checked it (Print → Verify); Before 0.24 = printed before checks existed.",
 }
 _NEW_COLS_SQL = "".join(
     f"ALTER TABLE {SCHEMA}.order_records ADD COLUMN IF NOT EXISTS {c} {_PG_TYPE[t]};\n" for c, t, _ in _NEW_COLS) + "".join(
@@ -225,6 +228,43 @@ CREATE TABLE IF NOT EXISTS {SCHEMA}.usage_counts (
     PRIMARY KEY (computer_id, day, feature)
 );
 COMMENT ON TABLE {SCHEMA}.usage_counts IS 'How often each SnapSTL feature was used, per computer per day (feature names only, no customer data).';
+CREATE TABLE IF NOT EXISTS {SCHEMA}.staff (
+    name       text PRIMARY KEY,
+    added_at   double precision,
+    hidden     boolean NOT NULL DEFAULT false,
+    changed    double precision,
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+COMMENT ON TABLE {SCHEMA}.staff IS 'Staff who check prints (Print → Verify); a name is hidden, never removed. Newest `changed` wins.';
+CREATE TABLE IF NOT EXISTS {SCHEMA}.print_checks (
+    uid        text PRIMARY KEY,
+    batch_uid  text,
+    plate      text NOT NULL,
+    idx        integer NOT NULL,
+    order_id   text,
+    part       text NOT NULL,
+    name       text,
+    color      text,
+    result     text NOT NULL,
+    letters    text,
+    staff      text,
+    note       text,
+    at         double precision NOT NULL,
+    printed_on text,
+    printer    text,
+    fix_file   text,
+    computer   text,
+    stored_at  timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX IF NOT EXISTS print_checks_order ON {SCHEMA}.print_checks (order_id, at);
+CREATE INDEX IF NOT EXISTS print_checks_stored ON {SCHEMA}.print_checks (stored_at);
+COMMENT ON TABLE {SCHEMA}.print_checks IS 'Print → Verify: one row per printed base / name checked (result good | letters | name | base | colour | plate_failed), by whom. The newest row of an item counts. Never edited or deleted.';
+CREATE OR REPLACE TRIGGER print_checks_no_delete BEFORE DELETE ON {SCHEMA}.print_checks
+    FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.refuse_delete();
+CREATE OR REPLACE TRIGGER print_checks_no_truncate BEFORE TRUNCATE ON {SCHEMA}.print_checks
+    FOR EACH STATEMENT EXECUTE FUNCTION {SCHEMA}.refuse_delete();
+CREATE OR REPLACE TRIGGER staff_no_delete BEFORE DELETE ON {SCHEMA}.staff
+    FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.refuse_delete();
 CREATE OR REPLACE TRIGGER order_notes_no_delete BEFORE DELETE ON {SCHEMA}.order_notes
     FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.refuse_delete();
 CREATE OR REPLACE TRIGGER order_notes_no_truncate BEFORE TRUNCATE ON {SCHEMA}.order_notes
@@ -240,7 +280,7 @@ DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['order_records', 'batch_records', 'meta', 'report_rows', 'report_uploads',
-                           'order_notes', 'usage_counts'] LOOP
+                           'order_notes', 'usage_counts', 'staff', 'print_checks'] LOOP
     IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = format('{SCHEMA}.%I', t)::regclass) THEN
       EXECUTE format('ALTER TABLE {SCHEMA}.%I ENABLE ROW LEVEL SECURITY', t);
     END IF;
@@ -284,8 +324,10 @@ EXCEPTION WHEN others THEN  -- never block the sync: the stamps are only compare
   RAISE WARNING 'SnapSTL: status stamps not rewritten: %', SQLERRM;
 END $$;
 """
-SCHEMA_VERSION = 2  # of the shared records; a newer one makes older apps stop syncing (update them)
+SCHEMA_VERSION = 3  # of the shared records; a newer one makes older apps stop syncing (update them)
 # 2 (0.23): order flow + logistics fields, order_notes, usage_counts: older SnapSTLs must not write
+# 3 (0.24): Print → Verify (check fields, staff, print_checks): an older SnapSTL would move orders to
+#           Printed – pack it without a check
 
 
 def schema_sql() -> str:
@@ -800,7 +842,57 @@ def _push_notes(rc) -> int:
         for u in usage:  # only if it wasn't used again meanwhile
             con.execute("UPDATE usage_counts SET sent=1 WHERE day=? AND feature=? AND count=?",
                         (u["day"], u["feature"], u["count"]))
+    _push_checks(rc)
     return len(notes)
+
+
+CHECK_COLS = ("uid", "batch_uid", "plate", "idx", "order_id", "part", "name", "color", "result", "letters", "staff",
+              "note", "at", "printed_on", "printer", "fix_file", "computer")
+
+
+def _push_checks(rc) -> None:
+    """Staff names and print checks of this computer not in the shared records yet."""
+    with db.tx() as con:
+        staff = db.rows(con, "SELECT * FROM staff WHERE COALESCE(sent,0)=0")
+        checks = db.rows(con, f"SELECT * FROM plate_checks WHERE COALESCE(sent,0)=0 LIMIT {PUSH_BATCH}")
+    _many(rc, f"INSERT INTO {SCHEMA}.staff AS s(name, added_at, hidden, changed) VALUES (%(name)s, %(added_at)s, "
+              "%(hidden)s, %(changed)s) ON CONFLICT (name) DO UPDATE SET hidden = CASE WHEN COALESCE(EXCLUDED.changed, 0) "
+              "> COALESCE(s.changed, 0) THEN EXCLUDED.hidden ELSE s.hidden END, changed = GREATEST(s.changed, "
+              "EXCLUDED.changed), updated_at = clock_timestamp() RETURNING name",
+          [{**x, "hidden": bool(x["hidden"])} for x in staff])
+    _many(rc, f"INSERT INTO {SCHEMA}.print_checks({', '.join(CHECK_COLS)}) VALUES "
+              f"({', '.join('%(' + c + ')s' for c in CHECK_COLS)}) ON CONFLICT (uid) DO NOTHING RETURNING uid",
+          [{c: x.get(c) for c in CHECK_COLS} for x in checks])
+    with db.tx() as con:
+        for x in staff:  # only if it wasn't changed again meanwhile
+            con.execute("UPDATE staff SET sent=1 WHERE name=? AND changed IS ?", (x["name"], x["changed"]))
+        con.executemany("UPDATE plate_checks SET sent=1 WHERE uid=?", [(x["uid"],) for x in checks])
+
+
+def _pull_checks(rc) -> None:
+    staff = rc.execute(f"SELECT name, added_at, hidden, changed FROM {SCHEMA}.staff").fetchall()
+    with db.tx() as con:
+        for x in staff:
+            con.execute("INSERT INTO staff(name, added_at, hidden, changed, sent) VALUES (?,?,?,?,1) ON CONFLICT(name) "
+                        "DO UPDATE SET hidden=excluded.hidden, changed=excluded.changed, sent=1 "
+                        "WHERE COALESCE(excluded.changed, 0) > COALESCE(staff.changed, 0)",
+                        (x["name"], x["added_at"], int(bool(x["hidden"])), x["changed"]))
+        r = con.execute("SELECT value FROM sync_state WHERE key='checks_pulled_until'").fetchone()
+    q = f"SELECT *, stored_at::text AS stored_text FROM {SCHEMA}.print_checks"
+    rows = (rc.execute(q + f" WHERE stored_at > %s::timestamptz - interval '{PULL_OVERLAP_S} seconds' "
+                           "ORDER BY stored_at", (r[0],)) if r else rc.execute(q + " ORDER BY stored_at")).fetchall()
+    with db.tx() as con:
+        uid_id = {u: i for i, u in con.execute("SELECT id, uid FROM batches WHERE uid IS NOT NULL")}
+        con.executemany(
+            "INSERT OR IGNORE INTO plate_checks(uid, batch_uid, batch_id, plate, idx, order_id, part, name, color, result, "
+            "letters, staff, note, at, printed_on, printer, fix_file, computer, sent) VALUES "
+            "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)",
+            [(x["uid"], x["batch_uid"], uid_id.get(x["batch_uid"]), x["plate"], x["idx"], x["order_id"], x["part"],
+              x["name"], x["color"], x["result"], x["letters"], x["staff"], x["note"], x["at"], x["printed_on"],
+              x["printer"], x["fix_file"], x["computer"]) for x in rows])
+        if rows:
+            con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('checks_pulled_until', ?)",
+                        (rows[-1]["stored_text"],))
 
 
 def _pull_notes(rc) -> int:
@@ -900,6 +992,7 @@ def sync_now() -> dict:
             with _remote() as rc:  # pushes are committed before pulling
                 STATUS.pulled = _pull(rc)
                 _pull_notes(rc)
+                _pull_checks(rc)
             with _remote() as rc:  # stale claims released while pulling
                 STATUS.pushed += _push(rc)
             STATUS.last_ok = time.time()
@@ -999,13 +1092,16 @@ def _save_copy(rc, dest) -> dict:
     lines = rc.execute("SELECT * FROM shop.report_lines ORDER BY order_id").fetchall()
     notes = rc.execute(f"SELECT * FROM {SCHEMA}.order_notes ORDER BY stored_at").fetchall()
     usage_rows = rc.execute(f"SELECT * FROM {SCHEMA}.usage_counts ORDER BY day, feature").fetchall()
+    staff = rc.execute(f"SELECT * FROM {SCHEMA}.staff ORDER BY name").fetchall()
+    checks = rc.execute(f"SELECT * FROM {SCHEMA}.print_checks ORDER BY stored_at").fetchall()
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump({"saved_at": time.time(), "by": computer.NAME, "order_records": orders,
                    "batch_records": batches, "report_rows": reports, "report_uploads": uploads,
-                   "shop_report_lines": lines, "order_notes": notes, "usage_counts": usage_rows},
+                   "shop_report_lines": lines, "order_notes": notes, "usage_counts": usage_rows,
+                   "staff": staff, "print_checks": checks},
                   f, default=str, indent=1)
     os.replace(tmp, dest)
     return {"orders": len(orders), "batches": len(batches)}

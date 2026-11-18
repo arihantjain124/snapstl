@@ -356,3 +356,20 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
   from the shared records get the check; once after updating, Ready orders not yet checked by a person
   are re-checked (5 such orders on the owner's database when this was made). Orders a person already
   approved or edited are left alone.
+
+### 2026-11-18: next update planned — Batches, Print → Verify, clean-up (0.24.0)
+- Owner's problems: Batches table cluttered (Computer column useless with one computer), names not
+  shown, list only grows, no archive or date filter; Print needs merging of same-colour single-name
+  plates across batches, a manual check step after printing (spoiled letters today mean digging out
+  the file and reprinting by hand), clearer Completed / Removed; .3mf names hard to read; Refresh
+  button on Orders. Printers part of Print stays as it is.
+- Found: downloaded name models usually have one piece per letter (an "i" dot is its own piece,
+  touching letters are one piece), so a single-letter fix plate can be made inside SnapSTL.
+- Decisions: shipped = On the way or later; Recycle Bin, not permanent; batch files 10 days after
+  shipped, models after 15 days unused; merge any plates of a colour up to 3 names, suggest only;
+  verify bases and names with a staff name from a list; everything printed before counts as
+  verified; new file names `Pink – A + B + C.3mf`; checks sync through Supabase; logistics sees
+  "waiting for check" and only checked orders in Labels to make; Activity log and download queue move
+  to a new Activities tab; packing slip only for Completed items; fewer hints, auto-build with a
+  "build plate clean" tick, print by colour, disk space — yes; Hindi — no; home screen — not chosen.
+- Plan: `docs/build-plan-batches-print-verify.md` (7 phases). Waiting for the owner's approval.

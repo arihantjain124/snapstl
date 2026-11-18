@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import auth, bambuddy_host, cache, computer, config, db, farm, makeit, platform_os, sync, tabs, updater
+from . import auth, bambuddy_host, cache, computer, config, db, extras, farm, makeit, platform_os, sync, tabs, updater, verify
 from .ingest import add_adhoc, ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
 from . import maintenance as M
@@ -40,8 +40,15 @@ async def _lifespan(_app):
     MANAGER.output_dir = SETTINGS.output_dir
     cache.set_root(SETTINGS.downloads_dir)  # downloaded models: visible folder, kept until deleted in Finder
     cache.migrate_old_cache()               # one-time move from the old hidden cache folder
+    try:  # first: from 0.24 an order is made only when checked, so what was printed before counts as checked
+        verify.backfill()                   # one-time (0.24): items printed before 0.24 → checked "Before 0.24"
+        checks_ok = True
+    except Exception as e:  # noqa: BLE001  (never block starting the app)
+        print(f"SnapSTL: check backfill skipped: {e}")
+        checks_ok = False
     try:
-        makeit.backfill_started()           # one-time (0.23): Printing for orders whose plates were started
+        if checks_ok:  # else it would take made orders back to Printing
+            makeit.backfill_started()       # one-time (0.23): Printing for orders whose plates were started
     except Exception as e:  # noqa: BLE001  (never block starting the app)
         print(f"SnapSTL: Printing backfill skipped: {e}")
     try:
@@ -1143,7 +1150,9 @@ async def makeit_start(req: Request):
         prs = await run_in_threadpool(farm.printers)
         return await run_in_threadpool(makeit.start_print, int(b["batch_id"]), str(b.get("file", "")),
                                        int(b["printer_id"]), b.get("options") or {}, prs, bool(b.get("force")),
-                                       str(b.get("speed") or ""), b.get("tray"))
+                                       str(b.get("speed") or ""), b.get("tray"), bool(b.get("bed_clear")))
+    except makeit.BedNotClear as e:
+        raise HTTPException(428, str(e)) from e
     except farm.StartBlocked as e:
         raise HTTPException(409, str(e)) from e
     except farm.FarmError as e:
@@ -1254,6 +1263,84 @@ async def makeit_remove(req: Request):
         return makeit.remove(int(b["batch_id"]), str(b.get("file", "")), bool(b.get("put_back")))
     except farm.FarmError as e:
         raise _farm_err(e) from e
+
+
+@app.post("/api/makeit/by-hand")
+async def makeit_by_hand(req: Request):
+    """Removed / waiting plate printed by hand → Verify."""
+    b = await req.json()
+    _own_batch(int(b.get("batch_id") or 0))
+    try:
+        return makeit.printed_by_hand(int(b["batch_id"]), str(b.get("file", "")))
+    except farm.FarmError as e:
+        raise _farm_err(e) from e
+
+
+@app.post("/api/makeit/merge")
+async def makeit_merge(req: Request):
+    """Names → Merge: same-colour plates not started (≤ 3 names) onto one plate."""
+    b = await req.json()
+    try:
+        return await run_in_threadpool(extras.merge, list(b.get("plates") or []), str(b.get("staff") or ""))
+    except extras.ExtraError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.post("/api/makeit/split")
+async def makeit_split(req: Request):
+    b = await req.json()
+    try:
+        return extras.split(int(b.get("batch_id") or 0), str(b.get("file", "")))
+    except extras.ExtraError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.post("/api/verify")
+async def verify_submit(req: Request):
+    """Print → Verify (and Completed → Found a problem): {carrier: {batch_id, file}, staff, results, note}."""
+    b = await req.json()
+    try:
+        out = await run_in_threadpool(verify.submit, b.get("carrier") or {}, str(b.get("staff") or ""),
+                                      list(b.get("results") or []), str(b.get("note") or ""))
+    except (ValueError, extras.ExtraError) as e:
+        raise HTTPException(409, str(e)) from e
+    with db.tx() as con:
+        db.count_usage(con, "verify_problem" if any(r.get("result") != "good" for r in b.get("results") or [])
+                       else "verify_good")
+    sync.LOOP.kick()
+    return out
+
+
+@app.get("/api/verify/letters")
+def verify_letters(batch_id: int, plate: str, idx: int):
+    try:
+        return {"pieces": verify.letter_pieces(batch_id, plate, idx)}
+    except (ValueError, extras.ExtraError) as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.get("/api/staff")
+def staff_get(all: int = 0):
+    with db.tx() as con:
+        names = verify.staff_names(con, all_=True)
+        hidden = {r[0] for r in con.execute("SELECT name FROM staff WHERE hidden=1")}
+    return {"staff": [{"name": n, "hidden": n in hidden} for n in names if all or n not in hidden]}
+
+
+@app.post("/api/staff")
+async def staff_post(req: Request):
+    """Add a staff name ({name}) or hide / show one ({name, hidden})."""
+    b = await req.json()
+    try:
+        with db.tx() as con:
+            if "hidden" in b:
+                verify.hide_staff(con, str(b.get("name") or ""), bool(b.get("hidden")))
+                name = b.get("name")
+            else:
+                name = verify.add_staff(con, str(b.get("name") or ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"name": name}
 
 
 @app.post("/api/makeit/reprint")
@@ -1397,6 +1484,7 @@ def farm_clear_plate(pid: int):
     """A person checked the bed is empty: the next queued print may start."""
     try:
         farm.clear_plate(pid)
+        makeit.confirm_bed_clear(pid)  # Start print won't ask again for this bed
     except farm.FarmError as e:
         raise _farm_err(e) from e
     return {"ok": True}
