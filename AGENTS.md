@@ -157,7 +157,11 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Updates (git pull, helper self-reload) | `updater.py`, `server.update_*`, `scripts/update.sh`, `helper/background.js` (`reloadIfUpdated`) |
 | Logistics page (label + customer-care team): lists, search, actions, tracking link, messages | `logistics_api.py` (`VIEWS`, `ROUTES`), `logistics.py` (`READS` / `WRITES`), `settings.LogisticsSettings`, `<section id="t-desk">` + `dLoad` / `dOpen` in `index.html`; `tests/test_logistics_page.py` |
 | Access control / other computers | `server._blocked`, `server.access_control`, `/api/portal`, `__init__.serve` (bind address) |
-| Download queue + folder (on Batches) | `<section id="t-batches">` in `index.html`; `cache.py` for the folder |
+| Download queue + folder, activity list | `<section id="t-activity">` in `index.html` (`loadQueue`, `loadActivity`), `GET /api/activity` in `server.py`, `db.add_activity`; `cache.py` for the folder |
+| Print → Verify: checks, staff names, order made only when checked | `verify.py` (items, carriers, `update_orders`, `submit`, `backfill`), `makeit.update_made` (calls it), `vRender` / `cRender` in `index.html`; `tests/test_verify.py` |
+| Fix plates (letters / name / base) and merged plates | `extras.py` (`pieces`, `make_fixes`, `merge`, `split`, `suggestions`), `makeit.board` (lists them); `tests/test_verify.py` |
+| Bed clear before a print | `makeit.bed_state` / `confirm_bed_clear` / `start_print`, `farm.Worker` (never releases onto a busy printer) |
+| Batches page, Archive, clean-up to the Recycle Bin, disk space | `archive.py` (`batch_rows`, `update_archive`, `clean_up`, `disk`, `CLEANER`), `platform_os.to_trash`, `cache.touch`; `bRender` in `index.html`; `tests/test_archive.py` |
 | MakerWorld page interaction | `helper/content.js`, `helper/inject.js` (bump `helper/manifest.json` version; reload extension) |
 | Backups / clean-up / reset | `maintenance.py` |
 | Install / service / window | Mac `scripts/make_app.sh`; Windows `scripts/windows/*.ps1`; `src/snapstl/__init__.py` |

@@ -803,7 +803,14 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Filament</b> is read from Bambuddy: every AMS slot and external spool with Bambu's colour name (<i>Hot Pink</i>, <i>Jade White</i>). Nothing to type in SnapSTL — load the spool and it shows up.</li>
       <li><b>Slicing</b>: pick the Bambuddy profiles for each printer (see Slicing below).</li>
     </ol>
-    <p><b>Print</b> (sidebar) has four lists. <b>Bases</b>: every base plate still to print, with the next <b>available</b> printer and its best-matching filament slot already chosen. <b>Names</b>: every name plate with its colour; a printer and the slot closest to that colour are pre-selected. Any printer and any loaded slot can be chosen — the slot is what the print uses. <b>Completed</b>: printed plates, with <b>Reprint</b> only for a failed print. <b>Removed</b>: plates taken off the lists (e.g. printed by hand), with <b>Put back</b>.</p>
+    <p><b>Print</b> (sidebar) has five lists. <b>Bases</b>: every base plate still to print, with the next <b>available</b> printer and its best-matching filament slot already chosen. <b>Names</b>: every name plate with its colour; a printer and the slot closest to that colour are pre-selected. Any printer and any loaded slot can be chosen — the slot is what the print uses. <b>Fix</b> plates (only what was spoiled) are listed first.</p>
+    <ul>
+      <li><b>Merge</b> (Names): when two or more plates of one colour, not started yet, have room (up to 3 names in all), a yellow bar suggests <b>Merge onto one plate</b>. The names keep their size (no scaling) and go onto one new plate in the newest batch's <code>Merged/</code> folder; the single plates leave the list. <b>Split back</b> returns them while the merged plate isn't started. <b>Group by colour</b> lists every name plate by colour, so one spool can print them all.</li>
+      <li><b>Verify</b>: a plate Bambu reports as printed comes here, not straight to packing. Choose who is checking (<b>Checked by</b>; <b>Add name</b> adds a staff member — names are shared with every computer), take the plate off the printer and look at every base and name: <b>Good</b>, <b>Letter(s) spoiled</b> (tap the spoiled letters on the picture), <b>Whole name spoiled</b>, <b>Wrong colour</b> or <b>Base broken or warped</b>, then <b>Save check</b>. Each problem gets a small <b>Fix</b> plate with only what was spoiled, at the same size, at the top of Bases / Names; it's printed and checked like any plate. <b>Whole plate failed</b> sends the plate back to print again. A name fixed twice before shows a warning to check the model. An order moves to <b>Orders → Printed – pack it</b> only when its base and its name are both checked good; until then Orders shows <i>Printed – waiting for check</i>. Everything printed before 0.24 counts as checked (<i>Before 0.24</i>).</li>
+      <li><b>Completed</b>: names checked good and not shipped yet — colour, order, batch, printer, who checked it and when, and <i>had a fix</i>. Filter by date or search; tick rows and press <b>Packing slip</b> for a printable list. <b>Found a problem</b> (e.g. while packing) makes a fix plate and takes the order back to Printing.</li>
+      <li><b>Removed</b>: plates taken off the lists, with <b>Put back</b> and <b>Printed by hand</b> (sends it to Verify). A plate leaves this list once its orders are packed, shipped or cancelled.</li>
+      <li><b>Bed clear</b>: SnapSTL never starts a print on a bed that may still hold a finished print. If the printer shows a finished print, <b>Start print</b> asks you to take it off and confirm the bed is empty (this also clears the plate in Bambuddy). If the printer is busy with another print, the plate waits held in its queue — press <b>Start print</b> again once that print is done and the bed is empty.</li>
+    </ul>
     <p>Each plate shows whether it's <b>sliced</b> for its printer (<i>Sliced</i>, <i>Slicing</i>, <i>Slicing failed</i> with the reason, or <i>No profiles for A1</i> → Slicing). <b>Options</b> start from the printer's print defaults (Slicing → Print defaults); change speed, bed levelling, flow calibration or timelapse for that plate only.</p>
     <p><b>Nothing prints until you click Start print</b> on a plate: that click slices it if needed, sends it to the chosen printer and starts it. Bambuddy prints it as soon as the printer is free and its bed has been cleared (<b>Clear plate</b> on the Printers page, or in Bambuddy). If Bambuddy warns (e.g. too little filament), SnapSTL asks before starting anyway. A printed plate moves to <b>Completed</b>; once an order's base and name are both printed it shows in <b>Orders → Ready to ship</b>.</p>
   </div>
@@ -830,10 +837,13 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <h2>Output files</h2>
 <pre class="hint" style="white-space:pre-wrap">&lt;output folder&gt;/2026-11-15/                 one folder per day
     Batch 1 - 2026-11-15/                  numbering restarts at 1 each day
-        Bases/{Ayra,pink},{Manvi,pink},{Riya,pink}.3mf
-        Names/pink/{Ayra,pink},{Manvi,pink},{Riya,pink}.3mf
-        Names/blue/{Kabir,blue}.3mf        one folder per name colour
+        Bases/Bases - Ayra + Manvi + Riya.3mf
+        Names/pink/Pink - Ayra + Manvi + Riya.3mf
+        Names/blue/Blue - Kabir.3mf        one folder per name colour
+        Fixes/Fix - Pink - Riya (r).3mf    printed again: only what was spoiled (Verify)
+        Merged/Merged - Pink - Ayra + Tara.3mf   plates merged on Print → Names
         report.csv                         sizes, scale %, fit check, warnings</pre>
+    <p>Plates built before 0.24 keep their old names (<code>{Ayra,pink},{Manvi,pink}.3mf</code>). A batch whose orders were all on the way 10 days ago has its folder moved to the <b>Recycle Bin</b> (Batches → Archive); downloaded models no batch used for 15 days go there too (Settings → Maintenance → Disk space and old files).</p>
     <p>Each .3mf is one plate; every base or name is its own named object in Bambu Studio, already placed on the 256 × 256 mm bed. Names: one colour per plate, up to 3. Bases: 3 per plate (the last plate may have fewer). No ZIP files are created.</p>
   </div>
 

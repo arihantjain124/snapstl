@@ -1,7 +1,11 @@
 # Build plan: Batches, Print → Verify, merged plates, clean-up, Activities (0.24.0)
 
-Agreed with the owner on 2026-11-18 (discussion: `documentation.md`). **Status:** plan only — nothing
-built yet. Nothing is committed to `main` or pushed until the owner says so.
+Agreed with the owner on 2026-11-18 (discussion: `documentation.md`). **Status:** all 7 phases built,
+tested and pushed to `main` as 0.24.0 on 2026-11-18 (owner approved all phases and asked for the push).
+Changes from this plan, decided while building: Queue build stays a button (the owner's "build plate
+clean" meant: no print may start on a bed with a finished print — see decision 78 in ARCHITECTURE);
+file names use a plain hyphen (`Pink - Ayra + Riya.3mf`, safe on SD cards); Hindi and the home screen
+were not built (owner).
 Each phase ends with passing tests and can be committed on its own on the work branch.
 The **Printers** part of Print (printer, slot, slice, options for bases and names) is not changed.
 
