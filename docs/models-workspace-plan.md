@@ -10,9 +10,10 @@ revision in the app without a service restart or an app release.
 
 ## What the owner sees
 
-1. Open **Models** and pick a design. Above the viewer, show the design name, development status
-   and its controls. Each control has a plain-language label, a default, a unit when relevant and a
-   valid range or set of choices. Use the same widgets for every design.
+1. Open **Models** and pick a model. Under the model picker, show its named **Designs** with
+   **In development** or **Developed** status. Pick a design and, when available, an earlier
+   revision. The selected design's controls sit above the viewer. Each control has a plain-language
+   label, a default, a unit when relevant and a valid range or set of choices.
 2. Edit values and click **Generate preview**. Keep the last successful view visible while rendering
    and identify its revision and stale status. Show errors next to the affected field or above the
    viewer. **Reset defaults** reloads the selected design's defaults.
@@ -25,12 +26,45 @@ revision in the app without a service restart or an app release.
    when validation passes. Preview plates represent the print orientation of the design's parts.
    Production batch layouts, slicing and printing remain explicit workflows in their existing pages.
 
+### Compare drafts and approve designs
+
+Keep a model request under a single model entry. Start with the number of concepts requested by
+the owner. If they leave the number open, use one when the direction is settled or propose two to
+three when different shapes, construction approaches or visual styles could answer the brief.
+Use distinct names that describe each concept. A different parameter value, font setting, size or
+colour remains a configuration of the same design. Keep accessible named concepts and useful
+reviewed revisions so feedback can refer to a specific design and revision.
+
+Compare two to three concepts with the same camera and comparable input values, using side-by-side
+views where there is room and fast switching otherwise. Preserve each concept's edits and carry
+shared inputs across comparison when their IDs and ranges agree. Show each concept's geometry
+checks, dimensions and status alongside its preview. Ask for feedback by concept name.
+
+When the owner approves a verified revision, mark that design **Developed**. Several named designs
+of the same model may reach Developed. A model with an approved design appears in **Developed**,
+and any sibling drafts remain visible. Pin approval to the reviewed source revision and store
+later edits as drafts so an approved version remains available. Developed records design approval.
+Production use goes through the separate pilot.
+
+### Using the model-building skill
+
+Put a **Build a model with an agent** help panel next to the model picker. Explain how to open
+the SnapSTL development checkout and paste a plain-language request into Codex or Claude Code.
+Show `$snapstl-models` for Codex and `/snapstl-models` for Claude Code, with a copyable sample.
+
+> Design a desk organizer for pens and scissors with a glue-in name. Give me three clearly
+> different concepts and ask me which measurements you need before you build. Tell me what
+> to open in SnapSTL Models when the drafts are ready.
+
+Tell the owner to return to **Models**, select the named model and compare the suggested drafts.
+When the agent publishes another revision, the running preview app picks it up from the checkout.
+
 While **Models** is open, periodically refresh the catalog's revision information and refresh it
 on entering the tab or returning focus. Add discovered designs to the selector immediately. When
 the selected design changes on disk, revalidate its current form values and request one updated
 preview if those values still apply. Keep edits and compatible values across revisions. Highlight
 renamed, removed or invalid inputs and wait for correction. Discard stale render results using the
-selected model, source revision and submitted parameters. Use manual **Generate preview** for
+selected model, design ID, source revision and submitted parameters. Use manual **Generate preview** for
 form changes so typing a name doesn't start a render for every keystroke.
 
 ## Files an agent adds or edits
@@ -42,10 +76,10 @@ instance. Model IDs remain stable across revisions. The initial catalog scans di
 
 | File | Purpose |
 |---|---|
-| `model.json` | Schema version, stable ID, title and maturity, entry point, ordered parameter definitions, and an ordered list of preview plates/parts. |
-| `model.scad` | OpenSCAD entry point with deterministic part selection. |
+| `model.json` | Schema version, stable model ID and title, and named design entries with stable IDs, status, current revision and approved revision when applicable. Each design declares its entry point, parameters and preview plates. |
+| OpenSCAD source | Separate named concept entry points with deterministic part selection. Shared dimensions and geometry helpers can live in common include files. |
 | Assets or includes | Local fonts and supporting CAD, declared so a change invalidates the current preview. Include asset provenance and license notices. |
-| `DESIGN.md` | User-approved brief, interfaces, geometry checks, decisions and revision notes. |
+| `DESIGN.md` | One required file per model. Record the brief, interfaces, design names and rationale, like-for-like comparison presets, feedback and checks by design and revision, approved revisions and open questions. Read it before revising the model. |
 
 Start with a small versioned manifest. Control types are text, integer, number, checkbox and choice.
 Each definition has a parameter ID, display label and typed default. Add units, bounds, step and
@@ -57,6 +91,8 @@ adapter for derived values such as compartment count and finished size. Display 
 read-only and keep Scaling v1.1 in its existing module.
 
 The catalog revision is a digest of a validated manifest, CAD source and declared assets.
+Store approved source and dependency snapshots and any revisions promised for review, so a later
+edit to a shared include preserves earlier geometry.
 The renderer snapshots that revision for each render. A malformed or partially saved package
 shows a per-design error while other designs remain available. Update package files and publish the
 manifest last when changing the contract. The app swaps in a new preview only after a complete
@@ -85,7 +121,7 @@ only package changes. A genuinely new kind of control or renderer requires a ver
   download cache.
 - Validate the exported mesh with existing SnapSTL mesh utilities. Return plate labels, bounding
   boxes, parts and URLs for binary geometry, with assembly transforms and validation results.
-  Cache by model revision, normalized parameters and engine build. Generate in a development
+  Cache by model ID, design ID, source revision, normalized parameters and engine build. Generate in a development
   instance such as the documented temporary home on port 8320, with synthetic input and an
   independent output directory. Use SnapSTL's existing test configuration for shared records
   in that isolated instance. Model iteration needs no access to production data or printers.
@@ -95,11 +131,12 @@ only package changes. A genuinely new kind of control or renderer requires a ver
 | Milestone | Ready when |
 |---|---|
 | Catalog and common viewer | A tiny synthetic fixture renders from manifest to form to all preview plates. A second fixture appears in the dropdown while the app is running. Changing its schema and SCAD refreshes the selected form and preview without a restart. |
-| Organizer draft | A Chewy example renders two printable parts and an assembled view. Short, long and dotted names, all scaling bands and compartment counts, and invalid input exercise the first model. The owner reviews shape and appearance in the app. |
+| Organizer drafts | Named Chewy concepts each render two printable parts and an assembled view. Compare distinct geometries under the same name and layout preset. Short, long and dotted names, all scaling bands and compartment counts, and invalid input exercise the first model. The owner reviews and can approve more than one design. |
 | Fit and platform verification | Exported geometry meets the agreed dimensions and clearance. Local wall thickness, seating and print orientation are checked. Coupons and full pairs verify physical fit. Browser and native macOS/Windows checks cover orbit, zoom, stale renders, errors and STL export. |
 | Separate production pilot | A small manually selected batch uses approved organizer revisions through the existing scaling and plate checks after owner review. |
 
-Acceptance checks include a broken manifest, unsupported parameter value, missing font or OpenSCAD,
+Acceptance checks include comparing named drafts, approving and reopening multiple developed
+designs, keeping an approved revision stable across draft edits, a broken manifest, unsupported parameter value, missing font or OpenSCAD,
 timeout, malformed mesh, rapidly switching models, concurrent source edits and preserving the last
 good view on failure. Prove that the preview uses the same meshes the owner downloads.
 

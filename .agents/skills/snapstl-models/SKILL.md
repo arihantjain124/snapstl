@@ -8,7 +8,7 @@ description: Design or revise printable parametric CAD models for SnapSTL from a
 Read the repository's [AGENTS.md](../../../AGENTS.md) and [Models plan](../../../docs/models-workspace-plan.md).
 For the organizer, also read the [measurement survey and pipeline](../../../docs/parametric-model-pipeline.md)
 and the [scaling rules](../../../docs/scaling-rules-v1.1-handoff.md). For any existing design, read its
-manifest, CAD and design notes before proposing a change.
+manifest, CAD and model-level `DESIGN.md` before proposing a change.
 
 ## Agree on the design before building
 
@@ -33,21 +33,35 @@ defaults. Confirm the agreed brief in a few lines, including the deliverable and
 judge fit. For a requested revision, apply clear changes directly and clarify consequential ambiguity
 before editing. Carry prior approvals forward.
 
-## Build one meaningful draft
+## Choose and name the design concepts
+
+Keep one model entry per request. Use the number of designs the owner asks for. When they leave
+the count open, build one if the brief fixes the design direction, or propose two to three if
+different shapes, construction methods or visual styles would give the owner a meaningful choice.
+Explain the difference in a line per concept and confirm it with the initial design discussion.
+
+Give every concept a descriptive name and stable design ID. A different silhouette, layout,
+assembly approach or visual language can justify a new design. A different value of an exposed
+size, font or colour parameter is a preset of the same design. A refinement of one approach is
+a new revision of its design. Keep each named concept independently selectable and printable.
+
+## Build the agreed drafts
 
 1. Work in the model development branch and an isolated SnapSTL instance. Start with the implemented
    manifest and preview contract in the checkout. The Models plan describes the proposed contract.
    If the tab or renderer is unavailable, use the local OpenSCAD CLI for an honest standalone
    preview and report which in-app step remains unavailable. A text-only conversation needs a
    workspace with access to the CAD toolchain for generated artifacts.
-2. Capture the accepted brief and pass/fail measures in the design notes. Choose shared parameters
+2. Create or update one `DESIGN.md` at the root of the model package. Record the accepted brief,
+   interfaces, pass/fail measures and comparison preset. Give each named concept a section for why
+   it exists, source revisions, test results and feedback. Choose shared parameters
    for mating geometry, name dimensions in millimetres, and document the origin, assembly transform
    and intended print face for each part. Use simple reusable 2D profiles and extrusions where they
    describe the design clearly. Keep engineering dimensions and decorative choices adjustable
    independently when feasible. Derive dimensions from the same source for interacting parts.
 3. Expose the controls the owner needs in the model manifest. Give each a stable ID, readable
    label, validated range and default, with units where relevant. Declare plates, assets and
-   assembly positions. For compatible parameter changes, preserve existing IDs and defaults
+   assembly positions for each named design. For compatible parameter changes, preserve existing IDs and defaults
    unless the user asks to change them. New models use the same dropdown, form and viewer.
 4. Export each printable part with the pinned local OpenSCAD build and explicitly registered fonts
    when applicable. Validate inputs, capture renderer diagnostics, and keep generated files in the
@@ -56,7 +70,7 @@ before editing. Carry prior approvals forward.
 
 ## Verify geometry and fit
 
-Start with the default configuration and at least one meaningful boundary case. Add cases for
+For each draft, start with common comparison inputs and at least one meaningful boundary case. Add cases for
 interactions likely to break, such as a narrow compartment beside a thick divider, an extreme
 aspect ratio, or text with counters, descenders or separate dots. Use the existing mesh utilities
 and implemented preview tools. Check the exported files in millimetres:
@@ -80,16 +94,20 @@ failed draft labelled as such and keep the previous successful preview available
 
 ## Review and iterate with the owner
 
-Offer a complete first preview of the agreed design. Tell the owner which dropdown entry and
-revision to open, which parameter values are active, and what to inspect in each relevant view.
-Ask for targeted feedback on shape, dimensions, assembly and the next change. For example,
-“Open Models → Name Desk Organizer → Assembly. Does the name sit where you want it, and is there
-enough room in the end compartments for what you’ll store?”
+Offer complete first previews of the agreed concepts. Tell the owner which model, named designs
+and revisions to open in Models. Compare like-for-like presets and camera angles where possible.
+Ask what works in each named design and which parts or appearance details they want to carry
+forward. For example, “Open Models and compare the Stepped and Arched drafts in Assembly. Which
+looks better on your desk, and which gives your scissors more usable space?”
 
-On follow-up, read the latest notes and change the relevant CAD or parameters. Keep unrelated
-geometry consistent. Render again, verify the changed dimension and any mating interfaces, and
-compare with the prior preview. Confirm that the revised model is selectable and updated in the
-development app when that workflow is available. Record accepted decisions, open fit questions and
-test results in the design notes for the next agent. Report editable source, STL links, the preset
-used and any checks still requiring a printed part. Treat approval for a preview as approval for
-that iteration. Any production pilot or public release is its own decision.
+On follow-up, read `DESIGN.md` and identify the design and revision the feedback refers to. Change
+the relevant CAD or parameters. Render again, verify changed dimensions and mating interfaces,
+and compare with the previous review. Confirm each revised draft appears in the development app
+when available. Record feedback, decisions, test results and open fit questions by design and
+revision. Report editable source, STL links, the comparison preset and physical checks still due.
+
+Keep each revision In development while it is being iterated. When the owner finalizes a verified
+design, pin the exact reviewed revision and record their approval in `DESIGN.md`. Mark that design
+Developed in the catalog when supported. Multiple designs of a model can be Developed. Keep the
+approved revision available while creating later drafts, and retain the other concepts for
+comparison. A production pilot or public release requires its own decision.

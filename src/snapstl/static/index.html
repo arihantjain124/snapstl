@@ -615,10 +615,12 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="grid2">
       <div class="card" id="updcard">
         <h2>Updates</h2>
+        <label for="updbranch">Update branch</label>
+        <select id="updbranch" disabled></select>
         <p class="hint" id="updinfo">…</p>
         <ul class="hint" id="updlist" style="padding-left:18px;margin:4px 0"></ul>
         <div class="toolbar" style="margin-top:8px"><button id="updcheck">Check for updates</button><button id="updgo" class="primary" hidden>Update now</button><button id="updrestart" title="Restart SnapSTL so changes already in its folder (e.g. git pull) are used">Restart SnapSTL</button></div>
-        <p class="hint">Updating fetches the latest SnapSTL, installs it and restarts it (a few seconds); Bambuddy is brought to the tested version too. The Chrome helper reloads itself. Orders, batches, settings and downloaded models are kept.</p>
+        <p class="hint">Use main for production. A test branch can change this computer's app behavior. Choose main and switch back when testing is done. Check compatibility with your shared records before switching.</p>
       </div>
       <div class="card">
         <h2>Database</h2>
@@ -708,6 +710,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <div class="card">
     <h2>Help</h2>
     <p>SnapSTL turns webstore orders for the <b>Custom Name Desk Organizer</b> (SKU <code>Magicians_35</code>) into print-ready plates: each name is generated on MakerWorld, scaled to the agreed rules, grouped 3 per plate and saved as <b>.3mf</b> files.</p>
+    <p>Testing a SnapSTL branch? Open <b>Settings → Maintenance → Updates</b>, choose a published <b>Update branch</b> and click <b>Switch branch</b>. Select <b>main (production)</b> when testing is done. Check shared-records compatibility before switching.</p>
     <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-printers">Print</a><a href="#h-pstatus">Printers</a><a href="#h-slicing">Slicing</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-portal">Other computers</a><a href="#h-data">Your data</a></div>
   </div>
 
@@ -1699,25 +1702,60 @@ $('shareddisc').onclick=async()=>{if(!confirm('Disconnect this computer from the
   try{await post('/api/shared-records',{disconnect:true});META=await api('/api/meta');$('pcname').textContent=META.computer.name;loadShared();loadSetup();loadDb()}catch(e){alert(e.message)}};
 
 // ---------- updates ----------
+let updateStatus=null, updateRequest=0, applyingUpdate=false;
+function updateBranchControls(){
+  const u=updateStatus, select=$('updbranch');
+  const switching=Boolean(u?.branches?.includes(select.value)&&select.value!==u.branch);
+  select.disabled=applyingUpdate||!u?.branches?.length||Boolean(u.error);
+  $('updgo').hidden=!(switching||u?.behind>0);
+  $('updgo').disabled=applyingUpdate||Boolean(u?.error||u?.edited?.length);
+  $('updgo').textContent=switching?'Switch branch':'Update now';
+}
 async function loadUpdates(fetch=1){if(!META.local){$('updcard').hidden=true;return}
+  if(applyingUpdate)return;
+  const request=++updateRequest;
   $('updinfo').textContent='Checking…';
-  let u;try{u=await api('/api/update?fetch='+fetch)}catch(e){$('updinfo').textContent=e.message;return}
-  $('updbadge').hidden=!(u.behind>0||u.restart_needed);$('updgo').hidden=!(u.behind>0);$('updrestart').hidden=false;$('updrestart').className=u.restart_needed?'primary':'';
+  let u;try{u=await api('/api/update?fetch='+fetch)}catch(e){if(request===updateRequest)$('updinfo').textContent=e.message;return}
+  if(request!==updateRequest)return;
+  updateStatus=u;
+  const select=$('updbranch'), previous=select.value, branches=u.branches||[];
+  select.replaceChildren(...[...new Set([u.branch,...branches].filter(Boolean))].map(branch=>
+    new Option(branch==='main'?'main (production)':branch,branch)));
+  select.value=branches.includes(previous)?previous:u.branch||'';
+  updateBranchControls();
+  $('updbadge').hidden=!(u.behind>0||u.restart_needed);$('updrestart').hidden=false;$('updrestart').className=u.restart_needed?'primary':'';
   $('updlist').innerHTML=(u.changes||[]).map(c=>`<li>${esc(c)}</li>`).join('');
-  const ver='SnapSTL '+(u.version||'')+(u.current?` (${esc(u.current.split(' ')[0])})`:'');
+  const ver='SnapSTL '+(u.version||'')+(u.current?` (${esc(u.branch)} · ${esc(u.current.split(' ')[0])})`:'');
   $('updinfo').innerHTML=!u.git?esc(u.error):u.error?`${ver}. ${esc(u.error)}`:u.behind?`${ver}. <b>${u.behind} update${u.behind>1?'s':''} waiting:</b>`:`${ver} — up to date.`;
   if(u.restart_needed)$('updinfo').innerHTML+=` <b style="color:var(--warn)">The files were updated (e.g. by git pull), but SnapSTL is still running the old version${u.running?` (${esc(u.running.split(' ')[0])})`:''} — press Restart SnapSTL to use the new one.</b>`;
   if(u.edited&&u.edited.length)$('updinfo').innerHTML+=` <span style="color:var(--err)">Files were changed by hand (${esc(u.edited.slice(0,3).join(', '))}), so updating is blocked.</span>`}
 $('updcheck').onclick=()=>loadUpdates(1);
+$('updbranch').onchange=updateBranchControls;
 $('updrestart').onclick=async()=>{$('updrestart').disabled=true;$('updinfo').textContent='Restarting SnapSTL…';
   try{await post('/api/update/restart');setTimeout(()=>location.reload(),6000)}catch(e){$('updinfo').textContent=e.message;$('updrestart').disabled=false}};
-$('updbadge').onclick=()=>show('settings');
-$('updgo').onclick=async()=>{$('updgo').disabled=true;$('updinfo').textContent='Updating…';
-  try{const r=await post('/api/update');
-    if(!r.updated){$('updinfo').textContent='Already up to date.';loadUpdates(0);return}
+$('updbadge').onclick=()=>{show('settings');setSec('maintenance')};
+$('updgo').onclick=async()=>{
+  const branch=$('updbranch').value;
+  const switching=branch!==updateStatus?.branch;
+  if(switching&&!confirm(`Switch this computer from ${updateStatus.branch} to ${branch}?`))return;
+  applyingUpdate=true;++updateRequest;updateBranchControls();
+  $('updrestart').disabled=true;$('updinfo').textContent=switching?'Switching branch…':'Updating…';
+  let refresh=false, restarting=false;
+  try{const r=await post('/api/update',switching?{branch}:{});
+    if(!r.updated){refresh=true;return}
     $('updinfo').textContent=r.restarting?'Updated — SnapSTL is restarting. This page reloads in a few seconds.':(r.note||'Updated.');$('updlist').innerHTML='';
-    if(r.restarting)setTimeout(function wait(){fetch('/api/meta').then(x=>x.ok?location.reload():setTimeout(wait,1500)).catch(()=>setTimeout(wait,1500))},4000)}
-  catch(e){$('updinfo').textContent=e.message;$('updinfo').style.color='var(--err)'}finally{$('updgo').disabled=false}};
+    if(r.restarting){
+      restarting=true;
+      setTimeout(function wait(){fetch('/api/meta').then(x=>x.ok?location.reload():setTimeout(wait,1500)).catch(()=>setTimeout(wait,1500))},4000);
+      return;
+    }
+    refresh=true;
+  }catch(e){$('updinfo').textContent=e.message}finally{
+    if(!restarting){
+      applyingUpdate=false;$('updrestart').disabled=false;updateBranchControls();
+      if(refresh)await loadUpdates(0);
+    }
+  }};
 
 // ---------- database ----------
 const fmtMB=b=>(b/1048576).toFixed(1)+' MB';

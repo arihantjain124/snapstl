@@ -220,7 +220,10 @@ def update_check(fetch: int = 1):
 
 
 @app.post("/api/update")
-def update_apply():
+def update_apply(body: dict | None = None):
+    branch = (body or {}).get("branch")
+    if branch is not None and (not isinstance(branch, str) or not branch):
+        raise HTTPException(400, "Choose a branch published in the SnapSTL repository")
     if DOWNLOADER.current is not None:
         raise HTTPException(409, f"A name is being downloaded ({DOWNLOADER.current}) — pause downloads or wait, then update")
     with db.tx() as con:
@@ -229,7 +232,7 @@ def update_apply():
     if busy:
         raise HTTPException(409, "A batch is being built — wait for it to finish, then update")
     try:
-        r = updater.apply()
+        r = updater.apply(branch)
     except RuntimeError as e:
         raise HTTPException(400, str(e)) from e
     r["restarting"] = _restart_service_soon() if r["updated"] else False

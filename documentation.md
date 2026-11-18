@@ -425,3 +425,13 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
   exported geometry, and asks the owner to review the draft in the app before iterating.
 - **Open**: implementation and review in the isolated development checkout, organizer design
   direction, printed fit trials and any decision to pilot in production.
+
+### 2026-11-18: Update branches and named model drafts
+- Owner asked for an update branch picker so existing users can test branch builds, and multiple
+  named concepts per model so feedback can compare different designs under matching parameters.
+- Added a published-branch picker to Settings → Maintenance → Updates. It preserves the active
+  branch for later updates and offers main for production. Reviewed test branches need shared-records
+  compatibility before use on production data.
+- Models plan and skill now specify how to choose a concept count, compare named drafts, retain
+  approved versions as Developed, maintain each model's `DESIGN.md`, and show skill instructions
+  inside the future Models view. Models UI implementation is open.

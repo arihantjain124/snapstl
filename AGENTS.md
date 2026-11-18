@@ -22,7 +22,8 @@ model, read [.agents/skills/snapstl-models/SKILL.md](.agents/skills/snapstl-mode
 before starting CAD work. Ask focused design and fit questions before the first build, verify the
 exported geometry, and have the owner inspect each draft in **Models** when that view is available.
 Follow the [Models workflow plan](docs/models-workspace-plan.md) for the common manifest, picker,
-parameter form and 3D viewer. Keep package-specific geometry and decisions with the design. Write or
+parameter form and 3D viewer. Keep one `DESIGN.md` per model with its named design concepts, reviewed
+revisions, test results and approvals. Write or
 update reusable model-building instructions in the skill when the workflow changes, so Codex and
 Claude Code follow the same process. Keep model development on its separate branch unless the owner
 authorizes a production merge.
