@@ -403,3 +403,14 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
   `putJSON`) were removed by mistake in 0.22.22. Saved profiles were not affected.
 - Fix: lines restored; `tests/test_page_script.py` fails if they go missing again. Checked against a stand-in
   Bambuddy: load, save, switch printer, reload, print defaults.
+
+
+### 2026-11-18: 0.24.2 Bambuddy profile list and logistics search
+- Owner reported: Slicing showed every saved profile as "no longer in Bambuddy", with an Internal Server Error, while
+  the profiles were still in Bambuddy.
+- Cause: Bambuddy 1.3.1's combined profile list crashes when it is signed in to Bambu Cloud and SnapSTL's key may use
+  the cloud. SnapSTL treated the failed list as profiles that had gone.
+- Fix: when that list crashes, SnapSTL reads the owner's profiles from Bambuddy's local list and says the standard
+  profiles are hidden. If nothing can be listed, saved picks show "(saved)" and no false warning appears.
+- Logistics search also finds the name to print, as the customer typed it or as corrected.
+- Checks: automated tests and a stand-in Bambuddy that fails the same way. Not yet run against the real Bambuddy.
