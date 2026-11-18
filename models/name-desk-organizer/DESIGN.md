@@ -27,7 +27,8 @@ The common comparison preset is the synthetic name `AaLiQ`, Chewy, font size 60 
 - Model defaults follow current SnapSTL Product settings. The bundled Chewy, Luckiest Guy,
   Titan One, DynaPuff, Cherry Bomb One and Akaya Kanadaka fonts retain their own license notices.
   This preview accepts single-line A–Z text up to 15 letters. MakerWorld labels Thickness as the
-  container depth. Rotate text tilts the local glyph profile 6° before creating both parts.
+  container depth. **Rotate text → yes** shows a signed angle in degrees, from −30° to +30°.
+  It defaults to 6° and rotates the shared glyph profile before creating either part.
   The exact original behavior for non-default rotation is open.
 
 ### Verification and open checks

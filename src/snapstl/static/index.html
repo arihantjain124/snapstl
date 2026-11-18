@@ -198,6 +198,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 .adhoc{border:1px solid var(--line);border-radius:10px;padding:12px;margin:8px 0}.adhocrow{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}.adhocrow label{display:flex;flex-direction:column;gap:4px;font-size:12px;min-width:0;flex:1 1 140px;margin:0}.adhocrow label.grow{flex:2 1 200px}.adhocrow input{width:100%;box-sizing:border-box}
 .model-inputs{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px;margin:12px 0}
 .model-inputs label{display:grid;align-content:start;gap:5px}
+.model-inputs label[hidden]{display:none}
 .model-inputs input:not([type=checkbox]),.model-inputs select{width:100%;box-sizing:border-box}
 .model-designs,.model-views{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}
 .model-designs button[aria-pressed=true],.model-views button[aria-pressed=true]{outline:2px solid var(--accent,#64a3df);outline-offset:1px}
@@ -785,7 +786,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <div class="card">
     <h2>Help</h2>
     <p>SnapSTL turns webstore orders for the <b>Custom Name Desk Organizer</b> (SKU <code>Magicians_35</code>) into print-ready plates: each name is generated on MakerWorld, scaled to the agreed rules, grouped 3 per plate and saved as <b>.3mf</b> files.</p>
-    <p>To review a locally generated draft, open <b>Models</b>, choose the design and generate a preview. Inspect the assembly and both plates before downloading a preview STL. The Models tab has a copyable example for requesting CAD work from an agent.</p>
+    <p>To review a locally generated draft, open <b>Models</b>, choose the design and generate a preview. For Letter Contour, set <b>Rotate text</b> to <b>yes</b> to enter a rotation angle. Inspect the assembly and both plates before downloading a preview STL. See <b>Build a model with an agent</b> for help requesting CAD work.</p>
     <p>Testing a SnapSTL branch? Open <b>Settings → Maintenance → Updates</b>, choose a published <b>Update branch</b> and click <b>Switch branch</b>. Select <b>main (production)</b> when testing is done. Check shared-records compatibility before switching.</p>
     <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-printers">Print</a><a href="#h-pstatus">Printers</a><a href="#h-slicing">Slicing</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-portal">Other computers</a><a href="#h-data">Your data</a></div>
   </div>
@@ -1099,6 +1100,7 @@ function selectModel(model,design,render=true){
     else input.value=value;
     input.oninput=()=>{
       state.values[parameter.id]=fieldValue(parameter,input);
+      updateModelRotationAngle();
       modelPreviewStatus();
     };
     label.append(input);
@@ -1114,9 +1116,17 @@ function selectModel(model,design,render=true){
   const tuning=design.parameters.filter(p=>p.group==='development');
   $('model-development').hidden=!tuning.length;
   $('model-tuning').replaceChildren(...tuning.map(editor));
+  updateModelRotationAngle();
   showModelPreview();
   modelPreviewStatus();
   if(render&&!modelPreviewIsCurrent()&&$('model-form').checkValidity())generateModelPreview();
+}
+function updateModelRotationAngle(){
+  if(studio.design?.adapter!=='organizer-v1')return;
+  const fields=$('model-form').elements, angle=fields.namedItem('rotation_angle');
+  if(!angle)return;
+  angle.disabled=fields.namedItem('rotate_text').value!=='yes';
+  angle.closest('label').hidden=angle.disabled;
 }
 function modelReadOnly(labelText,value,id=''){
   const label=document.createElement('label'), input=document.createElement('input');
@@ -1130,7 +1140,8 @@ function fieldValue(parameter,input){
 }
 function modelValues(){
   const fields=$('model-form').elements;
-  return Object.fromEntries(studio.design.parameters.map(p=>[p.id,fieldValue(p,fields.namedItem(p.id))]));
+  return Object.fromEntries(studio.design.parameters.filter(p=>!fields.namedItem(p.id).disabled)
+    .map(p=>[p.id,fieldValue(p,fields.namedItem(p.id))]));
 }
 function modelPreviewIsCurrent(){
   const saved=studioState().preview;
@@ -1339,7 +1350,7 @@ $('model-compare').onclick=()=>{
     const state=studioState(studio.model,design);
     for(const p of design.parameters){
       const source=studio.design.parameters.find(item=>item.id===p.id&&item.type===p.type);
-      if(!source)continue;
+      if(!source||!Object.hasOwn(fields,p.id))continue;
       const value=fields[p.id];
       if(p.type==='text'&&value.length>p.max_length)continue;
       if(p.type==='choice'&&!p.choices.includes(value))continue;

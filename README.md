@@ -507,7 +507,7 @@ Open **Models**, choose the font and parameters, and click **Generate preview**.
 **Assembly**, **Base plate** and **Name plate** to inspect the fit and the separate print
 orientations. Use the STL links below the viewer to download the current preview. The organizer
 defaults come from **Settings → Product**. The compartment count follows the Scaling Rules v1.1
-letter-count table.
+letter-count table. Set **Rotate text** to **yes** to enter an angle from −30° to +30°.
 
 **Production fields** are the settings used to make each preview, including text and container
 colour. **Development fields** hold fit adjustments such as glue-in clearance and minimum rim

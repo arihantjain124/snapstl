@@ -73,6 +73,8 @@ def test_organizer_uses_product_font_options_and_scales_the_same_pair(monkeypatc
     assert design["id"] == "letter-contour"
     assert controls["font"]["choices"] == FONTS
     assert controls["font"]["default"] == "DynaPuff" and controls["thickness"]["default"] == 65
+    angle = controls["rotation_angle"]
+    assert (angle["default"], angle["minimum"], angle["maximum"]) == (6, -30, 30)
     observed = {}
 
     def export(_binary, _work, _design, params, part):
@@ -98,6 +100,13 @@ def test_organizer_uses_product_font_options_and_scales_the_same_pair(monkeypatc
     assert observed["base"]["label_left"] == 50 and observed["base"]["label_width"] == 101
     assert result["plates"][0]["dimensions"] == [210, 65, 89]
     assert result["plates"][1]["dimensions"][2] == 2
+    rotated = request.model_copy(update={"values": {"rotate_text": "yes", "rotation_angle": -12.5}})
+    model_studio.preview(rotated, ScalingSettings(), ModelParams(Font="DynaPuff", Thickness=65))
+    assert all(params["rotation_angle"] == -12.5 and params["rotate_text"] == "yes"
+               for params in observed.values())
+    invalid = request.model_copy(update={"values": {"rotate_text": "yes", "rotation_angle": 31}})
+    with pytest.raises(model_studio.ModelError, match="Rotation angle"):
+        model_studio.preview(invalid, ScalingSettings())
 
 
 def test_approval_pins_geometry_and_tolerance_until_reopened(package, tmp_path, monkeypatch):
@@ -162,3 +171,20 @@ def test_aaliq_rim_matches_reference_height_when_real_cad_is_enabled():
     top = max(a[2] + (x - a[0]) * (b[2] - a[2]) / (b[0] - a[0])
               for a, b in section if min(a[0], b[0]) < x < max(a[0], b[0]))
     assert top == pytest.approx(58.74, abs=0.04)
+
+
+@pytest.mark.parametrize("angle", [-30, 30])
+def test_organizer_rotation_limits_preserve_seating(angle):
+    import os
+
+    if os.environ.get("SNAPSTL_TEST_OPENSCAD") != "1":
+        pytest.skip("Enable SNAPSTL_TEST_OPENSCAD=1 to check the real OpenSCAD draft")
+    model, = model_studio.catalog()["models"]
+    design, = model["designs"]
+    req = model_studio.PreviewRequest(model_id=model["id"], design_id=design["id"],
+                                      revision=design["revision"],
+                                      values={"text": "AaLiq", "rotate_text": "yes", "rotation_angle": angle})
+    result = model_studio.preview(req, ScalingSettings())
+    assert result["compartments"] == 5
+    assert result["minimum_clearance"] >= 0.12
+    assert result["plates"][1]["dimensions"][2] == 2

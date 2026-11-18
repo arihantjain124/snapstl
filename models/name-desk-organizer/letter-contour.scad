@@ -13,6 +13,7 @@ font_size = 60;
 thickness = 50;
 outline = 6;
 rotate_text = "no";
+rotation_angle = 6;
 clearance = 0.30;
 minimum_rim = 0;
 compartments = 5;
@@ -38,7 +39,7 @@ assert(compartments >= 1 && compartments <= 10, "Choose 1–10 compartments");
 assert(len(text) > 0 && clearance > 0 && outline > 0 && thickness > front_wall + wall);
 
 module letters() {
-    rotate(rotate_text == "yes" ? 6 : 0)
+    rotate(rotate_text == "yes" ? rotation_angle : 0)
         text(text, size=font_size, font=font);
 }
 

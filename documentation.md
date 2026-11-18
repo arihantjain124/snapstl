@@ -468,3 +468,8 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
   Compartment widths matched. MakerWorld raises the gap near L and i to 66% of base height.
   Updated the local contour to match. Kept the source 3MF and production files outside Git.
 - **Open:** owner review and physical fit check before promoting Letter Contour.
+
+### 2026-11-18: Editable organizer rotation angle
+- Owner asked to choose the tilt when Rotate text is enabled. Letter Contour shows a signed
+  angle in degrees when enabled, with the previous 6° as the default. The same contour drives
+  the insert and the recess.

@@ -77,6 +77,15 @@
           ]
         },
         {
+          "id": "rotation_angle",
+          "label": "Rotation angle",
+          "type": "number",
+          "default": 6,
+          "minimum": -30,
+          "maximum": 30,
+          "unit": "°"
+        },
+        {
           "id": "text_color",
           "label": "Text color",
           "type": "color",
