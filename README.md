@@ -500,6 +500,21 @@ When the computers are connected to the shared order records:
 
 To browse orders from another computer, enable **Settings → Connections → Logistics access** on the host, set a password and press Save, then open `http://HOST-IP:8002`. This is the **logistics page** for the labelling and customer-care team (below).
 
+## Models preview
+
+The local CAD development branch includes **Models → Name Desk Organizer → Letter Contour**.
+Open **Models**, choose the font and parameters, and click **Generate preview**. Switch between
+**Assembly**, **Base plate** and **Name plate** to inspect the fit and the separate print
+orientations. Use the STL links below the viewer to download the current preview. The organizer
+defaults come from **Settings → Product**. The compartment count follows the Scaling Rules v1.1
+letter-count table.
+
+Install an OpenSCAD development build with desktop CLI support. Models has been tested with
+OpenSCAD 2026.10.11 on macOS. If SnapSTL cannot find it, set `SNAPSTL_OPENSCAD` to the absolute
+path to the executable before starting the development instance. The **Build a model with an
+agent** panel provides an example prompt for Codex or Claude Code. See the
+[Models workflow](docs/models-workspace-plan.md) and [organizer design record](models/name-desk-organizer/DESIGN.md).
+
 ## Updates
 
 SnapSTL checks for updates by itself. When there is one, the sidebar shows **Update available**.

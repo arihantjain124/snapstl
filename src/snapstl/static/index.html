@@ -196,6 +196,14 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 @media (max-width:800px){.app{grid-template-columns:minmax(0,1fr)}nav#tabs{flex-wrap:wrap}.hint code,.callout code{word-break:break-all}.toolbar{flex-wrap:wrap}.side{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:0;border-bottom:1px solid var(--line);padding:8px 10px}
   nav#tabs{flex-direction:row}nav#tabs button{width:auto;padding:6px 9px}.side .foot{margin:0;flex-direction:row;flex-wrap:wrap}.health{flex-direction:row;flex-wrap:wrap;border:0;padding:0}.bar{display:none}}
 .adhoc{border:1px solid var(--line);border-radius:10px;padding:12px;margin:8px 0}.adhocrow{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}.adhocrow label{display:flex;flex-direction:column;gap:4px;font-size:12px;min-width:0;flex:1 1 140px;margin:0}.adhocrow label.grow{flex:2 1 200px}.adhocrow input{width:100%;box-sizing:border-box}
+.model-inputs{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px;margin:12px 0}
+.model-inputs label{display:grid;align-content:start;gap:5px}
+.model-inputs input:not([type=checkbox]),.model-inputs select{width:100%;box-sizing:border-box}
+.model-designs,.model-views{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}
+.model-designs button[aria-pressed=true],.model-views button[aria-pressed=true]{outline:2px solid var(--accent,#64a3df);outline-offset:1px}
+#model-canvas{width:100%;height:clamp(280px,48vh,520px);display:block;border-radius:8px;touch-action:none;background:#15202e;cursor:grab}
+#model-canvas:active{cursor:grabbing}
+#model-help textarea{width:100%;box-sizing:border-box;min-height:75px}
 </style>
 </head>
 <body>
@@ -205,6 +213,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <nav id="tabs">
     <button data-t="orders" class="on"><span class="ic">▤</span>Orders</button>
     <button data-t="batches"><span class="ic">▦</span>Batches</button>
+    <button data-t="models"><span class="ic">◇</span>Models</button>
     <button data-t="makeit"><span class="ic">⚒</span>Print</button>
     <button data-t="printers"><span class="ic">◉</span>Printers</button>
     <button data-t="slicing"><span class="ic">▣</span>Slicing</button>
@@ -326,6 +335,50 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 </section>
 
 
+
+<section id="t-models" hidden>
+  <div class="card">
+    <div class="toolbar">
+      <label for="model-picker">Model</label><select id="model-picker"></select>
+      <button id="model-refresh">Refresh models</button>
+      <span class="grow"></span>
+      <span id="model-revision" class="hint"></span>
+    </div>
+    <div id="model-designs" class="model-designs" aria-label="Design drafts"></div>
+    <p id="model-description" class="hint"></p>
+    <form id="model-form">
+      <div id="model-inputs" class="model-inputs"></div>
+      <div class="toolbar">
+        <button id="model-generate" class="primary">Generate preview</button>
+        <button id="model-defaults" type="button">Reset defaults</button>
+        <button id="model-compare" type="button">Copy inputs to other drafts</button>
+      </div>
+    </form>
+    <p id="model-status" class="hint" role="status">Loading models…</p>
+    <p id="model-errors" class="hint" role="status"></p>
+  </div>
+  <div class="card" id="model-preview" hidden>
+    <div id="model-views" class="model-views" aria-label="Preview plates"></div>
+    <canvas id="model-canvas" aria-label="Interactive preview of selected model plate"></canvas>
+    <p id="model-view-error" class="hint" hidden></p>
+    <div class="toolbar" style="margin-top:10px">
+      <button id="model-fit">Fit view</button><button id="model-front">Front</button><button id="model-top">Top</button>
+      <button id="model-zoom-out" aria-label="Zoom out">−</button><button id="model-zoom-in" aria-label="Zoom in">+</button>
+      <span class="hint">Drag to orbit · Shift-drag to pan</span>
+    </div>
+    <p id="model-dimensions"></p>
+    <p id="model-checks" class="hint"></p>
+    <div id="model-downloads" class="toolbar"></div>
+  </div>
+  <details class="card" id="model-help">
+    <summary>Build a model with an agent</summary>
+    <p>Open the SnapSTL development checkout in Codex or Claude Code. Use <code>$snapstl-models</code> in Codex or <code>/snapstl-models</code> in Claude Code, then describe the design and how it should fit.</p>
+    <label for="model-prompt">Example prompt</label>
+    <textarea id="model-prompt" readonly>Design a desk organizer for pens and scissors with a glue-in name. Give me three distinct shapes. Ask about any measurements you need, then tell me which drafts to compare in SnapSTL Models.</textarea>
+    <button id="model-copy">Copy prompt</button> <span id="model-copy-status" class="hint" role="status"></span>
+    <p>When the agent finishes a draft, select its name here and inspect the plates and Assembly view. Give feedback using the design name and revision.</p>
+  </details>
+</section>
 
 <section id="t-makeit" hidden>
   <div class="card">
@@ -710,6 +763,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <div class="card">
     <h2>Help</h2>
     <p>SnapSTL turns webstore orders for the <b>Custom Name Desk Organizer</b> (SKU <code>Magicians_35</code>) into print-ready plates: each name is generated on MakerWorld, scaled to the agreed rules, grouped 3 per plate and saved as <b>.3mf</b> files.</p>
+    <p>To review a locally generated draft, open <b>Models</b>, choose the design and generate a preview. Inspect the assembly and both plates before downloading a preview STL. The Models tab has a copyable example for requesting CAD work from an agent.</p>
     <p>Testing a SnapSTL branch? Open <b>Settings → Maintenance → Updates</b>, choose a published <b>Update branch</b> and click <b>Switch branch</b>. Select <b>main (production)</b> when testing is done. Check shared-records compatibility before switching.</p>
     <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-printers">Print</a><a href="#h-pstatus">Printers</a><a href="#h-slicing">Slicing</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-portal">Other computers</a><a href="#h-data">Your data</a></div>
   </div>
@@ -945,9 +999,313 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   for(const s of PAGES)$('t-'+s).hidden=s!==t;
-  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='activity'){loadActivity();loadQueue()} if(t==='makeit'){loadMakeIt();loadQueues()} if(t==='printers')loadStatusAll(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
-const PAGES=['orders','batches','makeit','printers','slicing','settings','activity','help'];
+  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='models')loadModels(); if(t==='activity'){loadActivity();loadQueue()} if(t==='makeit'){loadMakeIt();loadQueues()} if(t==='printers')loadStatusAll(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
+const PAGES=['orders','batches','models','makeit','printers','slicing','settings','activity','help'];
 const OLD_PAGES={downloads:'activity',pstatus:'printers'};  // pages merged in 0.19 (the download queue is on Activities since 0.24)
+
+// ---------- Models ----------
+const studio={catalog:null, model:null, design:null, states:new Map(), loading:false,
+  pending:false, queued:false, view:'assembly', draw:null};
+const studioKey=(model,design)=>model.id+'/'+design.id;
+function studioState(model=studio.model,design=studio.design){
+  const key=studioKey(model,design);
+  if(!studio.states.has(key))studio.states.set(key,{values:{},preview:null});
+  return studio.states.get(key);
+}
+function modelAction(text, active, onclick){
+  const button=document.createElement('button');
+  button.type='button';button.textContent=text;button.setAttribute('aria-pressed',String(active));button.onclick=onclick;
+  return button;
+}
+async function loadModels(){
+  if(studio.loading)return;
+  studio.loading=true;
+  try{
+    const received=await api('/api/model-studio/catalog');
+    if(JSON.stringify(received)===JSON.stringify(studio.catalog))return;
+    const previous=studio.design?.revision;
+    studio.catalog=received;
+    $('model-errors').textContent=received.errors.join(' · ');
+    $('model-picker').replaceChildren(...received.models.map(model=>new Option(model.title,model.id)));
+    const model=received.models.find(m=>m.id===studio.model?.id)||received.models[0];
+    const design=model?.designs.find(d=>d.id===studio.design?.id)||model?.designs[0];
+    selectModel(model,design,previous!==design?.revision);
+  }catch(error){$('model-status').textContent=error.message}
+  finally{studio.loading=false}
+}
+function selectModel(model,design,render=true){
+  studio.model=model;studio.design=design;
+  $('model-picker').value=model?.id||'';
+  $('model-designs').replaceChildren(...(model?.designs||[]).map(item=>
+    modelAction(item.label+(item.status==='developed'?' · Developed':' · In development'),
+      item===design,()=>selectModel(model,item))));
+  $('model-form').hidden=!design;
+  $('model-compare').hidden=(model?.designs.length||0)<2;
+  $('model-description').textContent=design?.description||'';
+  $('model-preview').hidden=true;
+  if(!design){
+    $('model-revision').textContent='';
+    $('model-status').textContent='No renderable model designs found.';
+    return;
+  }
+  $('model-revision').textContent='Revision '+design.revision;
+  const state=studioState();
+  $('model-inputs').replaceChildren(...design.parameters.map(parameter=>{
+    const label=document.createElement('label');
+    label.append(parameter.label+(parameter.unit?' ('+parameter.unit+')':''));
+    const input=document.createElement(parameter.type==='choice'?'select':'input');
+    input.name=parameter.id;
+    if(parameter.type==='choice'){
+      for(const choice of parameter.choices)input.add(new Option(choice,choice));
+    }else if(parameter.type==='checkbox'){
+      input.type='checkbox';
+    }else if(parameter.type==='text'){
+      input.type='text';input.maxLength=parameter.max_length;input.required=true;input.autocomplete='off';
+    }else{
+      input.type='number';input.required=true;input.step=parameter.step??(parameter.type==='integer'?1:'any');
+      if(parameter.minimum!==null)input.min=parameter.minimum;
+      if(parameter.maximum!==null)input.max=parameter.maximum;
+    }
+    const value=state.values[parameter.id]??parameter.default;
+    if(parameter.type==='checkbox')input.checked=value;
+    else input.value=value;
+    input.oninput=()=>{
+      state.values[parameter.id]=fieldValue(parameter,input);
+      modelPreviewStatus();
+    };
+    label.append(input);
+    return label;
+  }));
+  showModelPreview();
+  modelPreviewStatus();
+  if(render&&!modelPreviewIsCurrent()&&$('model-form').checkValidity())generateModelPreview();
+}
+function fieldValue(parameter,input){
+  return parameter.type==='checkbox'?input.checked:
+    ['integer','number'].includes(parameter.type)?input.valueAsNumber:input.value;
+}
+function modelValues(){
+  const fields=$('model-form').elements;
+  return Object.fromEntries(studio.design.parameters.map(p=>[p.id,fieldValue(p,fields.namedItem(p.id))]));
+}
+function modelPreviewIsCurrent(){
+  const saved=studioState().preview;
+  return saved?.result.revision===studio.design.revision&&saved.values===JSON.stringify(modelValues());
+}
+function modelPreviewStatus(){
+  if(!studio.design)return;
+  const available=studio.catalog.renderer;
+  $('model-generate').disabled=!available||studio.pending;
+  const saved=studioState().preview;
+  $('model-status').textContent=studio.pending?'Generating preview…':
+    !available?'Install OpenSCAD to generate previews on this computer.':
+    !saved?'Generate a preview to inspect this design.':
+    modelPreviewIsCurrent()?'Preview ready.':'Showing the previous preview. Generate again to see the current inputs.';
+}
+async function generateModelPreview(){
+  if(!studio.design||!studio.catalog.renderer||!$('model-form').reportValidity())return;
+  if(studio.pending){studio.queued=true;return}
+  const {model,design}=studio;
+  const state=studioState();
+  const values=modelValues();
+  const serialized=JSON.stringify(values);
+  studio.pending=true;modelPreviewStatus();
+  let failure='';
+  try{
+    const result=await post('/api/model-studio/preview',{model_id:model.id,design_id:design.id,revision:design.revision,values});
+    if(studio.catalog.models.find(m=>m.id===model.id)?.designs.find(d=>d.id===design.id)?.revision!==result.revision)return;
+    const meshes=await Promise.all(result.plates.map(async plate=>{
+      const response=await fetch(plate.url);
+      if(!response.ok)throw new Error('The preview expired. Generate it again.');
+      return {plate, vertices:modelStl(await response.arrayBuffer())};
+    }));
+    state.preview={result,meshes,values:serialized};
+    if(studio.model?.id===model.id&&studio.design?.revision===design.revision)showModelPreview();
+  }catch(error){
+    if(studio.model?.id===model.id&&studio.design?.revision===design.revision)failure=error.message;
+  }finally{
+    studio.pending=false;modelPreviewStatus();
+    if(failure)$('model-status').textContent=failure;
+    if(studio.queued){studio.queued=false;if(tab==='models')generateModelPreview()}
+  }
+}
+function showModelPreview(){
+  const preview=studioState().preview;
+  $('model-preview').hidden=!preview;
+  if(!preview)return;
+  const {result,meshes}=preview;
+  const assembled=result.plates.length>1&&result.plates.every(p=>p.assembly);
+  const views=result.plates.map(p=>[p.id,p.label]);
+  if(assembled)views.unshift(['assembly','Assembly']);
+  if(!views.some(([id])=>id===studio.view))studio.view=views[0][0];
+  $('model-views').replaceChildren(...views.map(([id,label])=>modelAction(label,id===studio.view,()=>{
+    studio.view=id;showModelPreview();
+  })));
+  $('model-dimensions').textContent=result.plates.map(p=>p.label+' '+p.dimensions.map(n=>n.toFixed(1)).join(' × ')+' mm').join(' · ');
+  const checks=[...result.checks];
+  if(result.compartments)checks.unshift(result.compartments+' compartments',result.minimum_clearance.toFixed(2)+' mm minimum clearance');
+  $('model-checks').textContent=checks.join(' · ');
+  $('model-downloads').replaceChildren(...result.plates.map(p=>{
+    const link=document.createElement('a');link.href=p.url;
+    link.download=studio.design.id+'-'+p.id+'.stl';link.textContent='Download '+p.label.toLowerCase()+' STL';return link;
+  }));
+  try{
+    studio.draw??=modelViewer($('model-canvas'));
+    const assembly=studio.view==='assembly';
+    studio.draw.meshes(assembly?meshes:meshes.filter(m=>m.plate.id===studio.view),assembly);
+    $('model-view-error').hidden=true;
+  }catch(error){
+    $('model-view-error').textContent='Interactive 3D unavailable. You can still download the STL files. '+error.message;
+    $('model-view-error').hidden=false;
+  }
+}
+function modelStl(buffer){
+  const view=new DataView(buffer);
+  const count=view.getUint32(80,true);
+  if(buffer.byteLength!==84+50*count)throw new Error('Invalid STL preview.');
+  const points=new Float32Array(count*18);
+  for(let face=0;face<count;face++){
+    const start=84+face*50;
+    for(let vertex=0;vertex<3;vertex++){
+      const index=face*18+vertex*6;
+      for(let axis=0;axis<3;axis++){
+        points[index+axis]=view.getFloat32(start+12+vertex*12+axis*4,true);
+        points[index+3+axis]=view.getFloat32(start+axis*4,true);
+      }
+    }
+  }
+  return points;
+}
+
+function modelViewer(canvas){
+  const gl=canvas.getContext('webgl',{alpha:false,antialias:true});
+  if(!gl)throw new Error('WebGL is disabled.');
+  const vertex='attribute vec3 point; attribute vec3 normal; uniform vec3 center,right,up,facing; '+
+    'uniform float size,zoom,aspect; uniform vec2 pan; varying float light; '+
+    'void main(){vec3 p=(point-center)/size; float z=dot(p,facing); float w=1.0-z*0.32; '+
+    'gl_Position=vec4(zoom*dot(p,right)/aspect+pan.x*w,zoom*dot(p,up)+pan.y*w,-z*0.5,w); '+
+    'light=0.54+0.46*max(dot(normalize(vec3(-0.2,-0.65,1.0)),normal),0.0);}';
+  const fragment='precision mediump float; uniform vec3 color; varying float light; void main(){gl_FragColor=vec4(color*light,1.0);}';
+  const program=gl.createProgram();
+  for(const [type,source] of [[gl.VERTEX_SHADER,vertex],[gl.FRAGMENT_SHADER,fragment]]){
+    const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);
+    if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw new Error('The 3D shader could not start.');
+    gl.attachShader(program,shader);gl.deleteShader(shader);
+  }
+  gl.linkProgram(program);
+  if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error('The 3D viewer could not start.');
+  gl.useProgram(program);
+  const attributes=['point','normal'].map(name=>gl.getAttribLocation(program,name));
+  const uniforms=Object.fromEntries(['center','right','up','facing','size','zoom','aspect','pan','color']
+    .map(name=>[name,gl.getUniformLocation(program,name)]));
+  for(const attr of attributes)gl.enableVertexAttribArray(attr);
+  gl.enable(gl.DEPTH_TEST);
+  let yaw=0.35,pitch=0.49,zoom=1.22,pan=[0,0],bounds=[0,0,0],size=1,buffers=[],drag=null;
+  function draw(){
+    const ratio=Math.min(window.devicePixelRatio||1,2);
+    if(!canvas.clientWidth||!canvas.clientHeight)return;
+    const w=Math.round(canvas.clientWidth*ratio),h=Math.round(canvas.clientHeight*ratio);
+    if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}
+    gl.viewport(0,0,w,h);gl.clearColor(0.082,0.125,0.18,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    const s=Math.sin(yaw),c=Math.cos(yaw),p=Math.sin(pitch),q=Math.cos(pitch);
+    gl.uniform3fv(uniforms.center,bounds);gl.uniform3f(uniforms.right,c,s,0);
+    gl.uniform3f(uniforms.up,-s*p,c*p,q);gl.uniform3f(uniforms.facing,s*q,-c*q,p);
+    gl.uniform1f(uniforms.size,size);gl.uniform1f(uniforms.zoom,zoom*Math.min(1,w/h));gl.uniform1f(uniforms.aspect,w/h);
+    gl.uniform2fv(uniforms.pan,pan);
+    for(const {buffer,count,mode,color} of buffers){
+      gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+      gl.vertexAttribPointer(attributes[0],3,gl.FLOAT,false,24,0);
+      gl.vertexAttribPointer(attributes[1],3,gl.FLOAT,false,24,12);
+      gl.uniform3fv(uniforms.color,color);gl.drawArrays(mode,0,count);
+    }
+  }
+  function upload(vertices,mode,color){
+    const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,vertices,gl.STATIC_DRAW);
+    buffers.push({buffer,count:vertices.length/6,mode,color});
+  }
+  function meshes(items,assembly){
+    for(const {buffer} of buffers)gl.deleteBuffer(buffer);
+    buffers=[];
+    const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];
+    for(const {plate,vertices} of items){
+      const data=assembly?vertices.slice():vertices;
+      const m=plate.assembly;
+      for(let i=0;i<data.length;i+=6){
+        for(let a=0;a<3;a++){
+          if(assembly){
+            const row=m[a];data[i+a]=row[0]*vertices[i]+row[1]*vertices[i+1]+row[2]*vertices[i+2]+row[3];
+            data[i+3+a]=row[0]*vertices[i+3]+row[1]*vertices[i+4]+row[2]*vertices[i+5];
+          }
+          lo[a]=Math.min(lo[a],data[i+a]);hi[a]=Math.max(hi[a],data[i+a]);
+        }
+      }
+      upload(data,gl.TRIANGLES,plate.color.slice(1).match(/../g).map(byte=>parseInt(byte,16)/255));
+    }
+    bounds=lo.map((x,i)=>(x+hi[i])/2);
+    size=Math.max(1,Math.hypot(...lo.map((x,i)=>hi[i]-x))/2);
+    const grid=[],z=lo[2]-0.2;
+    const x0=Math.floor((lo[0]-16)/10)*10,x1=Math.ceil((hi[0]+16)/10)*10;
+    const y0=Math.floor((lo[1]-16)/10)*10,y1=Math.ceil((hi[1]+16)/10)*10;
+    const step=Math.max(10,Math.ceil(Math.max(x1-x0,y1-y0)/1000)*10);
+    for(let x=x0;x<=x1;x+=step)grid.push(x,y0,z,0,0,1,x,y1,z,0,0,1);
+    for(let y=y0;y<=y1;y+=step)grid.push(x0,y,z,0,0,1,x1,y,z,0,0,1);
+    upload(new Float32Array(grid),gl.LINES,[0.22,0.32,0.43]);draw();
+  }
+  canvas.onpointerdown=e=>{drag=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId)};
+  canvas.onpointermove=e=>{
+    if(!drag)return;
+    const dx=e.clientX-drag[0],dy=e.clientY-drag[1];drag=[e.clientX,e.clientY];
+    if(e.shiftKey){pan[0]+=2*dx/canvas.clientWidth;pan[1]-=2*dy/canvas.clientHeight}
+    else{yaw-=dx*0.009;pitch=Math.min(1.56,Math.max(-1.52,pitch+dy*0.009))}
+    draw();
+  };
+  canvas.onpointerup=canvas.onpointercancel=()=>{drag=null};
+  function magnify(factor){zoom=Math.min(4,Math.max(0.28,zoom*factor));draw()}
+  canvas.addEventListener('wheel',e=>{
+    if(!e.ctrlKey&&!e.metaKey)return;
+    e.preventDefault();magnify(Math.exp(-e.deltaY*0.002));
+  },{passive:false});
+  new ResizeObserver(draw).observe(canvas);
+  return {meshes,fit:()=>{zoom=1.22;pan=[0,0];draw()},front:()=>{yaw=0;pitch=0;draw()},
+    top:()=>{yaw=0;pitch=Math.PI/2;draw()},magnify};
+}
+
+$('model-picker').onchange=()=>{
+  const model=studio.catalog.models.find(m=>m.id===$('model-picker').value);
+  selectModel(model,model?.designs[0]);
+};
+$('model-refresh').onclick=()=>loadModels();
+$('model-form').onsubmit=e=>{e.preventDefault();generateModelPreview()};
+$('model-defaults').onclick=()=>{studioState().values={};selectModel(studio.model,studio.design,false)};
+$('model-compare').onclick=()=>{
+  if(!$('model-form').reportValidity())return;
+  const fields=modelValues();
+  for(const design of studio.model.designs){
+    if(design===studio.design)continue;
+    const state=studioState(studio.model,design);
+    for(const p of design.parameters){
+      const source=studio.design.parameters.find(item=>item.id===p.id&&item.type===p.type);
+      if(!source)continue;
+      const value=fields[p.id];
+      if(p.type==='text'&&value.length>p.max_length)continue;
+      if(p.type==='choice'&&!p.choices.includes(value))continue;
+      if(p.minimum!==null&&value<p.minimum||p.maximum!==null&&value>p.maximum)continue;
+      state.values[p.id]=value;
+    }
+  }
+  $('model-status').textContent='Copied compatible inputs. Select any draft to compare.';
+};
+$('model-fit').onclick=()=>studio.draw?.fit();
+$('model-front').onclick=()=>studio.draw?.front();
+$('model-top').onclick=()=>studio.draw?.top();
+$('model-zoom-out').onclick=()=>studio.draw?.magnify(1/1.2);
+$('model-zoom-in').onclick=()=>studio.draw?.magnify(1.2);
+$('model-copy').onclick=async()=>{
+  try{await navigator.clipboard.writeText($('model-prompt').value);$('model-copy-status').textContent='Copied.'}
+  catch{$('model-prompt').select();$('model-copy-status').textContent='Select and copy the prompt.'}
+};
+window.addEventListener('focus',()=>{if(tab==='models')loadModels()});
+setInterval(()=>{if(tab==='models'&&!document.hidden)loadModels()},5000);
 
 // ---------- orders ----------
 // Only orders waiting to be made can be ticked (→ Create batch).

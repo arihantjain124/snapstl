@@ -17,12 +17,12 @@ import zipfile
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import (archive, auth, bambuddy_host, cache, computer, config, db, extras, farm, makeit, platform_os, sync, tabs,
-               updater, verify)
+from . import (archive, auth, bambuddy_host, cache, computer, config, db, extras, farm, makeit, model_studio, platform_os,
+               sync, tabs, updater, verify)
 from .ingest import add_adhoc, ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
 from . import maintenance as M
@@ -217,6 +217,27 @@ def _restart_service_soon() -> bool:
 def update_check(fetch: int = 1):
     """Settings → Updates: is a newer SnapSTL waiting in the repository?"""
     return updater.check(bool(fetch)) | {"version": _version()}
+
+
+@app.get("/api/model-studio/catalog")
+def studio_catalog():
+    return model_studio.catalog(SETTINGS.model)
+
+
+@app.post("/api/model-studio/preview")
+def studio_preview(body: model_studio.PreviewRequest):
+    try:
+        return model_studio.preview(body, SETTINGS.scaling, SETTINGS.model)
+    except model_studio.ModelError as error:
+        raise HTTPException(400, str(error)) from error
+
+
+@app.get("/api/model-studio/previews/{key}/{part}.stl")
+def studio_stl(key: str, part: str):
+    data = model_studio.artifact(key, part)
+    if data is None:
+        raise HTTPException(404, "This preview expired. Generate it again.")
+    return Response(data, media_type="model/stl", headers={"Cache-Control": "private, no-store"})
 
 
 @app.post("/api/update")

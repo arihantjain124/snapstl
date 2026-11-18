@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "id": "name-desk-organizer",
+  "title": "Name Desk Organizer",
+  "adapter": "organizer-v1",
+  "designs": [
+    {
+      "id": "letter-contour",
+      "label": "Letter Contour",
+      "description": "The rim follows the lettering, with a recessed name and a separate NO AMS insert.",
+      "source": "letter-contour.scad",
+      "assets": [
+        "fonts/AkayaKanadaka-Regular.ttf",
+        "fonts/CherryBombOne-Regular.ttf",
+        "fonts/Chewy-Regular.ttf",
+        "fonts/DynaPuff[wdth,wght].ttf",
+        "fonts/LuckiestGuy-Regular.ttf",
+        "fonts/TitanOne-Regular.ttf"
+      ],
+      "parameters": [
+        {
+          "id": "text",
+          "label": "Name",
+          "type": "text",
+          "default": "AaLiQ",
+          "max_length": 15
+        },
+        {
+          "id": "font",
+          "label": "Font",
+          "type": "choice",
+          "default": "Chewy",
+          "choices": [
+            "Chewy",
+            "Luckiest Guy",
+            "Titan One",
+            "DynaPuff",
+            "Cherry Bomb One",
+            "Akaya Kanadaka"
+          ]
+        },
+        {
+          "id": "font_size",
+          "label": "Font size",
+          "type": "integer",
+          "default": 60,
+          "minimum": 30,
+          "maximum": 120,
+          "unit": "mm"
+        },
+        {
+          "id": "thickness",
+          "label": "Thickness (base depth)",
+          "type": "integer",
+          "default": 50,
+          "minimum": 30,
+          "maximum": 120,
+          "unit": "mm"
+        },
+        {
+          "id": "outline",
+          "label": "Outline",
+          "type": "integer",
+          "default": 6,
+          "minimum": 4,
+          "maximum": 15,
+          "unit": "mm"
+        },
+        {
+          "id": "rotate_text",
+          "label": "Rotate text",
+          "type": "choice",
+          "default": "no",
+          "choices": [
+            "no",
+            "yes"
+          ]
+        },
+        {
+          "id": "clearance",
+          "label": "Glue-in clearance per side",
+          "type": "number",
+          "default": 0.3,
+          "minimum": 0.2,
+          "maximum": 0.6,
+          "step": 0.05,
+          "unit": "mm"
+        }
+      ],
+      "parts": [
+        {
+          "id": "base",
+          "label": "Base plate",
+          "color": "#e4e8ef"
+        },
+        {
+          "id": "name",
+          "label": "Name plate",
+          "color": "#db3c82"
+        }
+      ]
+    }
+  ]
+}

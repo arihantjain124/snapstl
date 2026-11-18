@@ -435,3 +435,14 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
 - Models plan and skill now specify how to choose a concept count, compare named drafts, retain
   approved versions as Developed, maintain each model's `DESIGN.md`, and show skill instructions
   inside the future Models view. Models UI implementation is open.
+
+### 2026-11-18: Models preview built and Letter Contour calibrated
+- Implemented a local Models tab with a discovered catalog, parameter form, STL-backed 3D views,
+  fit results and skill instructions. The owner saw the first draft preview and chose Letter Contour
+  only, asked to match the MakerWorld model closely, and confirmed permission to reproduce it.
+- Reconstructed the contour from the cached geometry and brought in all six font options plus the
+  existing font size, thickness, outline and rotate controls. Six default-setting reference pairs
+  showed 99.98–99.99% projected insert overlap and 97.57–100% rear silhouette overlap. Verified
+  all font exports and parameter limits locally. See [the model's design record](models/name-desk-organizer/DESIGN.md).
+- **Open:** owner review of the refined draft, physical fit trials, non-default MakerWorld parity
+  and native app verification on Mac and Windows. Preview generation is separate from live batches.

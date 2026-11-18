@@ -152,6 +152,7 @@ authorizes a production merge.
 | Request | Edit |
 |---|---|
 | UI text, layout, buttons, columns, tabs, side navigation | `src/snapstl/static/index.html` |
+| Models tab, local CAD and fit preview | `model_studio.py`, `/api/model-studio/*` in `server.py`, `t-models` in `index.html`; CAD packages and their notes in `models/` |
 | In-app Help page | `<section id="t-help">` in `index.html` (update with README when behaviour changes) |
 | Fit check | `scaling.fit_metrics` / `fit_problems`, `pipeline.build`, `export.write_plate` |
 | New order field / column | `db.py` (MIGRATIONS) → `ingest.py` → `server._order_view` / `FILTERS` → `index.html` |

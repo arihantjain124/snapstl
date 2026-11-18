@@ -86,6 +86,7 @@ Snapstl/
 │   ├── models-workspace-plan.md       proposed Models tab, local catalog and 3D preview workflow
 │   ├── parametric-model-pipeline.md   local organizer reference survey and CAD workflow proposal
 │   └── scaling-rules-v1.1-handoff.md   business spec for scaling (historical source)
+├── models/                    local OpenSCAD packages, manifests and per-model DESIGN.md
 ├── pyproject.toml            deps, console scripts            uv.lock      exact versions
 ├── .python-version           3.12                             .gitignore   excludes data/reports/output
 ├── .gitattributes            .sh stays LF, .ps1 CRLF
@@ -135,6 +136,7 @@ Snapstl/
 │   ├── cache.py              downloaded models in the visible Downloads folder (readable names, never auto-deleted);
 │   │                         key = name + options + compartments + license hash; one-time move from old cache
 │   ├── meshes.py             OBJ → trimesh, dims, to_origin
+│   ├── model_studio.py       local catalog, OpenSCAD previews, organizer seating checks and STL download
 │   ├── scaling.py            Scaling Rules v1.1 (pick_band, scale_pair)
 │   ├── grouping.py           names by colour 3→2→1; bases 3 per plate (colour groups first)
 │   ├── packing.py            2-D footprint packing, Z rotation only, gap/margin verification

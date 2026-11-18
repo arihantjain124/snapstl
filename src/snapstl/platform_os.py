@@ -245,6 +245,21 @@ def docker_cli() -> str | None:
     return None
 
 
+def openscad_cli() -> str | None:
+    """The optional Models renderer, including normal desktop install locations."""
+    import shutil
+
+    override = os.environ.get("SNAPSTL_OPENSCAD")
+    if override:
+        return shutil.which(override)
+    found = shutil.which("openscad.com" if WINDOWS else "openscad")
+    if found:
+        return found
+    path = (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "OpenSCAD" / "openscad.com"
+            if WINDOWS else Path("/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"))
+    return str(path) if path.is_file() else None
+
+
 def docker_desktop() -> Path | None:
     if WINDOWS:
         p = Path(os.environ.get("ProgramFiles") or "C:/Program Files") / "Docker" / "Docker" / "Docker Desktop.exe"

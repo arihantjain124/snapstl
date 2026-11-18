@@ -2,6 +2,12 @@
 
 Implementation plan · 2026-11-18
 
+The development branch implements catalog discovery, manifest controls, interactive plate and
+assembly views, STL export, and the Letter Contour organizer draft. The selector supports
+multiple named designs and can copy compatible inputs for fast switching. The current organizer
+has one selectable design at the owner's direction. Side-by-side comparison, stored revision
+history and promotion of reviewed revisions remain follow-up work.
+
 Add **Models** to the SnapSTL sidebar. The first entry is **Name Desk Organizer**, marked In
 development. The same selector, parameter form, 3D viewer and export controls serve each new model.
 An agent working in the development checkout authors OpenSCAD and a small model manifest. SnapSTL
@@ -106,8 +112,8 @@ only package changes. A genuinely new kind of control or renderer requires a ver
   in the browser and verify it inside both native app webviews. Shared code owns cameras, bed
   coordinates, loading and error states. Keep dimensions and an explanatory fallback usable if
   WebGL is unavailable. Evaluate any vendored viewer dependency separately with the owner.
-- Use a dedicated localhost API namespace such as `/api/model-studio` so the existing downloaded
-  model pictures keep their route. Provide catalog metadata, preview submission, job status and
+- Use the dedicated localhost namespace `/api/model-studio` so the existing downloaded
+  model pictures keep their route. Provide catalog metadata, preview submission and
   validated mesh retrieval by server-issued ID. Reuse the app's access controls. Keep the routes
   outside the logistics and helper allowlists. Preview submission follows the current shared-records
   write gate unless the owner explicitly chooses a sandbox-preview exception. The standalone CAD
@@ -116,9 +122,9 @@ only package changes. A genuinely new kind of control or renderer requires a ver
   Discover only trusted local model packages. Resolve entry points and declared dependencies
   within the package, reject escaping paths and symlinks, and run with an isolated input snapshot
   and output directory. Keep CAD source and execution local. Apply a render timeout and bounds
-  on text, parts, job concurrency and artifact sizes. Stream progress states via job polling and
-  return sanitized diagnostics. Keep preview outputs separate from batch outputs and the model
-  download cache.
+  on text, parts, job concurrency and artifact sizes. The browser shows a rendering state while a
+  bounded request runs. The server returns sanitized diagnostics. Keep preview outputs separate
+  from batch outputs and the model download cache. A small memory cache retains recent previews.
 - Validate the exported mesh with existing SnapSTL mesh utilities. Return plate labels, bounding
   boxes, parts and URLs for binary geometry, with assembly transforms and validation results.
   Cache by model ID, design ID, source revision, normalized parameters and engine build. Generate in a development
@@ -126,12 +132,18 @@ only package changes. A genuinely new kind of control or renderer requires a ver
   independent output directory. Use SnapSTL's existing test configuration for shared records
   in that isolated instance. Model iteration needs no access to production data or printers.
 
+The implemented routes are `GET /api/model-studio/catalog`,
+`POST /api/model-studio/preview` and `GET /api/model-studio/previews/{key}/{part}.stl`.
+The app reads `models/` in its checkout by default or the local directory in `SNAPSTL_MODELS_DIR`.
+The manifest's design ID, source and declared assets determine its revision. The organizer's
+specific options and measured results are in [DESIGN.md](../models/name-desk-organizer/DESIGN.md).
+
 ## Build and review
 
 | Milestone | Ready when |
 |---|---|
 | Catalog and common viewer | A tiny synthetic fixture renders from manifest to form to all preview plates. A second fixture appears in the dropdown while the app is running. Changing its schema and SCAD refreshes the selected form and preview without a restart. |
-| Organizer drafts | Named Chewy concepts each render two printable parts and an assembled view. Compare distinct geometries under the same name and layout preset. Short, long and dotted names, all scaling bands and compartment counts, and invalid input exercise the first model. The owner reviews and can approve more than one design. |
+| Organizer draft | Letter Contour renders two printable parts and an assembled view with the six supported fonts. Short, long and dotted names, all scaling bands and compartment counts, and invalid input exercise the model. The owner reviews the visual match before approval and print trials. |
 | Fit and platform verification | Exported geometry meets the agreed dimensions and clearance. Local wall thickness, seating and print orientation are checked. Coupons and full pairs verify physical fit. Browser and native macOS/Windows checks cover orbit, zoom, stale renders, errors and STL export. |
 | Separate production pilot | A small manually selected batch uses approved organizer revisions through the existing scaling and plate checks after owner review. |
 
