@@ -100,6 +100,8 @@ def tracking_link(o: dict, rep: dict) -> str:
 
 def words(o: dict, tab: str, rep: dict) -> str:
     """Where the order is, in the words customer care says on the phone."""
+    if tab == "printing" and o.get("print_done_at") and not o.get("checked_at"):
+        return "Printed – waiting for check"  # Print → Verify (0.24): packed only after a person checks it
     if tab in MAKING:
         return "Being made"
     if tab == "pack_it":

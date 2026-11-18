@@ -79,6 +79,9 @@ body.offline main section:not(#t-settings):not(#t-help) :is(button,input,select,
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .chips button{border-radius:999px;font-size:12px;padding:4px 10px}
 .chips button.on{border-color:var(--accent);color:var(--accent)}
+.hint.tip{display:none}.card.showtips .hint.tip{display:block}
+.tipbtn{border-radius:999px;width:24px;height:24px;padding:0;font-weight:700;margin:0 0 6px 6px;vertical-align:middle}
+.tipbtn.on{border-color:var(--accent);color:var(--accent)}
 .nchips{display:flex;flex-wrap:wrap;gap:4px;max-width:520px}
 .nchip{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--chip);white-space:nowrap}
 .nchip.shipped{opacity:.55}.nchip.cancelled{text-decoration:line-through;opacity:.55}
@@ -206,6 +209,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <button data-t="printers"><span class="ic">◉</span>Printers</button>
     <button data-t="slicing"><span class="ic">▣</span>Slicing</button>
     <button data-t="settings"><span class="ic">⚙</span>Settings</button>
+    <button data-t="activity"><span class="ic">☰</span>Activities</button>
     <button data-t="help"><span class="ic">?</span>Help</button>
   </nav>
   <div class="foot">
@@ -229,6 +233,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="toolbar">
       <label class="btn" style="margin:0;color:var(--text)">Upload report (.xlsx)<input id="report" type="file" accept=".xlsx,.xls,.csv" hidden></label>
       <button id="adhocgo" title="Type in an order for an ad-hoc request: name, mobile, colour">Add ad-hoc order</button>
+      <button id="orefresh" title="Load the latest from the shared records (every computer's changes) and show it">↻ Refresh</button>
       <span class="grow hint" id="ingestmsg"></span>
     </div>
     <div class="msgs" id="ingestres"></div>
@@ -318,15 +323,6 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <h3>Names</h3><div class="plates" id="bnames"></div>
     <p class="hint">Bases are shown from the top as they'll sit on the plate (any watermark found is painted red); names as outlines. Click a plate to get its .3mf. Review in Bambu Studio before printing.</p>
   </div>
-  <div class="card">
-    <div class="toolbar"><h2 style="margin:0">Download queue</h2><span class="grow hint" id="dlsession"></span>
-      <button id="qpause" class="small">Pause</button><button id="retry2" class="small">Retry failed</button></div>
-    <p class="hint">Names waiting for MakerWorld (from <b>Queue download</b> / <b>Re-download</b>). The SnapSTL Helper in your MakerWorld tab works through them one at a time, oldest first.</p>
-    <div class="tw" style="max-height:40vh;overflow:auto"><table><thead><tr><th>#</th><th>Name</th><th>Comp.</th><th>Batch</th><th>State</th><th>Watermark</th><th>Tries</th><th>Detail</th></tr></thead><tbody id="dlq"></tbody></table></div>
-    <div class="toolbar" style="margin:10px 0 0"><span class="hint grow" id="dlfolder"></span><button id="dlfinder" class="small fm">Show in Finder</button></div>
-    <p class="hint under">Every downloaded model is kept in this folder (one folder per name with <code>base.stl</code>, <code>name.stl</code>, <code>info.json</code>) and reused by later batches. SnapSTL never deletes them; a deleted one is simply downloaded again. Change the folder in Settings → Folders.</p>
-  </div>
-  <details class="card"><summary style="cursor:pointer;font-weight:600">Activity log</summary><div class="log" id="log" style="margin-top:8px"></div></details>
 </section>
 
 
@@ -647,6 +643,12 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <div class="toolbar" style="margin-top:10px"><button id="backupnow">Back up now</button><span class="grow"></span><label id="resetsharedl" class="hint" style="margin:0 8px 0 0" hidden title="Also empties the shared order records in Supabase, for every computer (a copy is saved first)"><input type="checkbox" id="resetshared"> also clear Supabase</label><button id="resetdb" style="color:var(--err)" title="Empties this computer's database (and, if ticked, the shared order records in Supabase)">Reset this computer's database…</button></div>
         <p class="hint" id="dbmsg"></p>
       </div>
+      <div class="card">
+        <h2>Disk space and old files</h2>
+        <p class="hint" id="diskinfo">…</p>
+        <p class="hint">Once a day SnapSTL moves to the <b>Recycle Bin</b> (never deletes): the folder of a batch whose orders were all on the way <b>10 days</b> ago (Batches → Archive), and downloaded models no batch used for <b>15 days</b> — unless an order waiting to be made has that name. A model is simply downloaded again if it's needed later. Nothing is moved while a batch is downloading or building.</p>
+        <div class="toolbar"><button id="cleanfiles">Clean up files now</button><span class="grow hint" id="cleanmsg"></span></div>
+      </div>
     </div>
   </div>
 
@@ -681,6 +683,25 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
 
   <div class="savebar" id="savebar" hidden><span class="hint grow" id="savehint">Changes here are kept when you press <b>Save settings</b>.</span><button id="reset" title="Product, plate and folder settings back to SnapSTL's defaults">Restore defaults</button><button id="save" class="primary">Save settings</button></div>
+</section>
+
+<section id="t-activity" hidden>
+  <div class="card">
+    <div class="toolbar"><h2 style="margin:0">Activities</h2><span class="grow hint" id="actinfo"></span><button class="small" id="actrefresh">Refresh</button></div>
+    <p class="hint">What happened on this computer, newest first: downloads, builds, prints, checks (with who checked), merges and clean-ups.</p>
+    <div class="chips" id="actkinds"></div>
+    <div class="toolbar" style="margin:0 0 8px"><select id="actdays" style="max-width:160px"><option value="1">Today</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select><input id="actsearch" placeholder="Search" style="max-width:240px"></div>
+    <div class="tw" style="max-height:50vh;overflow:auto"><table><thead><tr><th style="width:150px">When</th><th style="width:110px">What</th><th>Details</th></tr></thead><tbody id="actlist"></tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="toolbar"><h2 style="margin:0">Download queue</h2><span class="grow hint" id="dlsession"></span>
+      <button id="qpause" class="small">Pause</button><button id="retry2" class="small">Retry failed</button></div>
+    <p class="hint">Names waiting for MakerWorld (from <b>Queue download</b> / <b>Re-download</b>). The SnapSTL Helper in your MakerWorld tab works through them one at a time, oldest first.</p>
+    <div class="tw" style="max-height:40vh;overflow:auto"><table><thead><tr><th>#</th><th>Name</th><th>Comp.</th><th>Batch</th><th>State</th><th>Watermark</th><th>Tries</th><th>Detail</th></tr></thead><tbody id="dlq"></tbody></table></div>
+    <div class="toolbar" style="margin:10px 0 0"><span class="hint grow" id="dlfolder"></span><button id="dlfinder" class="small fm">Show in Finder</button></div>
+    <p class="hint under">Every downloaded model is kept in this folder (one folder per name with <code>base.stl</code>, <code>name.stl</code>, <code>info.json</code>) and reused by later batches. SnapSTL never deletes them; a deleted one is simply downloaded again. Change the folder in Settings → Folders.</p>
+  </div>
+  <details class="card"><summary style="cursor:pointer;font-weight:600">Download helper log (technical)</summary><div class="log" id="log" style="margin-top:8px"></div></details>
 </section>
 
 <section id="t-help" class="help" hidden>
@@ -899,13 +920,21 @@ async function api(path,opts={}){const r=await fetch(path,opts);if(r.status===40
 const post=(p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
 const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"></span>${esc(c||'—')}`;
 
+// Long explanations sit behind a "?" next to each heading (0.24): a cleaner page; one click shows them
+(function tips(){for(const sec of ['t-orders','t-batches','t-makeit','t-activity','t-settings']){
+  for(const card of $(sec).querySelectorAll('.card')){
+    const long=[...card.querySelectorAll('p.hint')].filter(p=>!p.id&&p.textContent.trim().length>140&&p.closest('.card')===card);
+    if(!long.length)continue;long.forEach(p=>p.classList.add('tip'));
+    const btn=document.createElement('button');btn.type='button';btn.className='small tipbtn';btn.textContent='?';btn.title='Show / hide the explanation';
+    btn.onclick=()=>{card.classList.toggle('showtips');btn.classList.toggle('on',card.classList.contains('showtips'))};
+    const h=card.querySelector('h2');if(h&&h.parentElement.classList.contains('toolbar')){h.insertAdjacentElement('afterend',btn);btn.style.margin='0'}else if(h)h.appendChild(btn);else if(card.querySelector('.toolbar')){const tb=card.querySelector('.toolbar');tb.appendChild(btn);btn.style.margin='0'}else card.prepend(btn)}}})();
 // tabs
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   for(const s of PAGES)$('t-'+s).hidden=s!==t;
-  if(t==='orders')loadOrders(); if(t==='batches'){loadBatches();loadQueue()} if(t==='makeit'){loadMakeIt();loadQueues()} if(t==='printers')loadStatusAll(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
-const PAGES=['orders','batches','makeit','printers','slicing','settings','help'];
-const OLD_PAGES={downloads:'batches',pstatus:'printers'};  // pages merged in 0.19
+  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='activity'){loadActivity();loadQueue()} if(t==='makeit'){loadMakeIt();loadQueues()} if(t==='printers')loadStatusAll(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
+const PAGES=['orders','batches','makeit','printers','slicing','settings','activity','help'];
+const OLD_PAGES={downloads:'activity',pstatus:'printers'};  // pages merged in 0.19 (the download queue is on Activities since 0.24)
 
 // ---------- orders ----------
 // Only orders waiting to be made can be ticked (→ Create batch).
@@ -1088,8 +1117,8 @@ function bWire(){
   document.querySelectorAll('[data-bmore]').forEach(x=>x.onclick=()=>{const id=+x.dataset.bmore;BOPEN.has(id)?BOPEN.delete(id):BOPEN.add(id);bRender()});
   document.querySelectorAll('[data-b]').forEach(x=>x.onclick=()=>openBatchDetail(+x.dataset.b));
   document.querySelectorAll('[data-make]').forEach(x=>x.onclick=()=>show('makeit'));
-  document.querySelectorAll('[data-dl]').forEach(x=>x.onclick=async()=>{try{const r=await post(`/api/batches/${x.dataset.dl}/download`);$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for the helper — see Downloads`}catch(e){alert(e.message)}loadBatches()});
-  document.querySelectorAll('[data-redl]').forEach(x=>x.onclick=async()=>{if(!confirm('Re-download every model of this batch from MakerWorld? The new downloads replace the saved ones. Then use Queue build / Rebuild plates.'))return;try{const r=await post(`/api/batches/${x.dataset.redl}/download`,{force:true});$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for re-download — see Downloads`}catch(e){alert(e.message)}loadBatches()});
+  document.querySelectorAll('[data-dl]').forEach(x=>x.onclick=async()=>{try{const r=await post(`/api/batches/${x.dataset.dl}/download`);$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for the helper — see Activities → Download queue`}catch(e){alert(e.message)}loadBatches()});
+  document.querySelectorAll('[data-redl]').forEach(x=>x.onclick=async()=>{if(!confirm('Re-download every model of this batch from MakerWorld? The new downloads replace the saved ones. Then use Queue build / Rebuild plates.'))return;try{const r=await post(`/api/batches/${x.dataset.redl}/download`,{force:true});$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for re-download — see Activities → Download queue`}catch(e){alert(e.message)}loadBatches()});
   document.querySelectorAll('[data-rebuild]').forEach(x=>x.onclick=async()=>{if(!confirm('Rebuild the plates from the downloaded models? A new Batch folder is written; the old folder stays.'))return;try{await post(`/api/batches/${x.dataset.rebuild}/build`)}catch(e){alert(e.message)}loadBatches()});
   document.querySelectorAll('[data-build]').forEach(x=>x.onclick=async()=>{if(x.dataset.partial&&!confirm('Build now with the models that are ready? Orders still missing a model go back to Ready.'))return;try{await post(`/api/batches/${x.dataset.build}/build`)}catch(e){alert(e.message)}loadBatches()});
   document.querySelectorAll('[data-cancel]').forEach(x=>x.onclick=async()=>{if(confirm(x.textContent==='Stop'?'Stop this re-download? The batch goes back to done; its plates are unchanged.':'Cancel this batch? Its orders go back to Ready.')){try{await post(`/api/batches/${x.dataset.cancel}/cancel`)}catch(e){alert(e.message)}refreshAll();loadBatches()}});
@@ -1138,6 +1167,23 @@ async function loadQueue(){const r=await api('/api/downloads');const d=r.downloa
 $('dlfinder').onclick=()=>post('/api/downloads/reveal');
 $('qpause').onclick=async()=>{await post('/api/downloader/'+($('qpause').dataset.paused==='1'?'resume':'pause'));loadQueue();refresh()};
 $('retry2').onclick=async()=>{await post('/api/downloads/retry');loadQueue()};
+// ---------- Activities (0.24) ----------
+let ACT=null,ACTKIND='';try{ACTKIND=localStorage.getItem('actkind')||''}catch{}
+const ACTKINDS=[['','All'],['print','Prints'],['check','Checks'],['build','Builds'],['download','Downloads'],['merge','Merges'],['cleanup','Clean-up']];
+const ACTWORD={print:['Print','info'],check:['Check','ok'],build:['Build',''],download:['Download',''],merge:['Merge','info'],cleanup:['Clean-up','warn']};
+async function loadActivity(){try{ACT=(await api('/api/activity?days='+$('actdays').value)).items}catch(e){$('actlist').innerHTML=`<tr><td colspan="3" class="reason">${esc(e.message)}</td></tr>`;return}actRender()}
+function actRender(){if(!ACT)return;const q=$('actsearch').value.trim().toLowerCase();
+  const n=k=>ACT.filter(a=>!k||a.kind===k).length;
+  $('actkinds').innerHTML=ACTKINDS.map(([k,l])=>`<button data-ak="${k}" class="${ACTKIND===k?'on':''}">${l} · ${n(k)}</button>`).join('');
+  document.querySelectorAll('[data-ak]').forEach(b=>b.onclick=()=>{ACTKIND=b.dataset.ak;try{localStorage.setItem('actkind',ACTKIND)}catch{}actRender()});
+  const L=ACT.filter(a=>(!ACTKIND||a.kind===ACTKIND)&&(!q||a.text.toLowerCase().includes(q)));
+  $('actinfo').textContent=`${L.length} shown`;
+  let day=null;$('actlist').innerHTML=L.length?L.slice(0,800).map(a=>{const k=dayKey(a.at),w=ACTWORD[a.kind]||[a.kind,''];const head=k!==day?(day=k,`<tr><td colspan="3" style="background:var(--chip);font-weight:600">${esc(dayLabel(k))}</td></tr>`):'';
+    return head+`<tr><td class="hint">${new Date(a.at*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</td><td><span class="pill ${w[1]}">${esc(w[0])}</span></td><td>${esc(a.text)}</td></tr>`}).join(''):'<tr><td colspan="3" class="empty">Nothing in this period</td></tr>'}
+$('actdays').onchange=loadActivity;$('actsearch').oninput=actRender;$('actrefresh').onclick=()=>{loadActivity();loadQueue()};
+$('orefresh').onclick=async()=>{const b=$('orefresh');b.disabled=true;$('ingestmsg').textContent='Refreshing…';
+  try{if(META.shared_records){const s=await post('/api/sync');$('ingestmsg').textContent=s.error?s.error:`Up to date ${new Date().toLocaleTimeString()} · sent ${s.pushed||0}, loaded ${s.pulled||0}`}else $('ingestmsg').textContent=`Refreshed ${new Date().toLocaleTimeString()}`}
+  catch(e){$('ingestmsg').textContent=e.message}finally{b.disabled=false;refreshAll();loadOrders()}};
 
 // ---------- print job status ----------
 const JST={queued:['Waiting to send','info'],slicing:['Slicing','info'],uploading:['Sending','info'],sent:['In Bambuddy queue','info'],printing:['Printing','info'],done:['Printed','ok'],failed:['Failed','err'],cancelled:['Cancelled','']};
@@ -1332,7 +1378,7 @@ let QTAB='slicing',QMIN=false,QDATA=null,QTIMER=null;
 try{QTAB=localStorage.getItem('qtab')||'slicing';QMIN=localStorage.getItem('qmin')==='1'}catch{}
 const QTABS=[['downloading','Downloading'],['building','Building'],['slicing','Slicing'],['printing','Printing']];
 const QLIVE={downloading:['claimed','queued'],building:['waiting','models_ready','build_requested','building'],slicing:['queued','uploading','slicing'],printing:['queued','slicing','uploading','sent','printing']};
-const QWORD={claimed:'Downloading',queued:'Waiting',failed:'Failed',done:'Done',cancelled:'Cancelled',waiting:'Downloading models',models_ready:'Models ready',build_requested:'Waiting to build',building:'Building',done_with_problems:'Done with problems',uploading:'Sending',slicing:'Slicing',sent:'In Bambuddy queue',printing:'Printing',reprint:'Reprint',removed:'Removed'};
+const QWORD={claimed:'Downloading',queued:'Waiting',failed:'Failed',done:'Done',cancelled:'Cancelled',waiting:'Downloading models',models_ready:'Models ready',build_requested:'Waiting to build',building:'Building',done_with_problems:'Done with problems',uploading:'Sending',slicing:'Slicing',sent:'In Bambuddy queue',printing:'Printing',reprint:'Reprint',removed:'Removed',merged:'Merged',unmerged:'Split back'};
 function qPill(st,pct){const live=Object.values(QLIVE).some(a=>a.includes(st));const cls=st==='failed'?'err':st.startsWith('done')?'ok':live?'info':'';
   return `<span class="pill ${cls}">${esc(QWORD[st]||st)}${pct?' '+Math.round(pct)+'%':''}</span>`}
 const qName=f=>esc(String(f||'').split('/').pop().replace(/\.3mf$/,''));
@@ -1658,8 +1704,12 @@ $('updgo').onclick=async()=>{$('updgo').disabled=true;$('updinfo').textContent='
 
 // ---------- database ----------
 const fmtMB=b=>(b/1048576).toFixed(1)+' MB';
+async function loadDisk(){try{const d=await api('/api/maintenance/disk');
+  $('diskinfo').innerHTML=`Batch folders <b>${fmtMB(d.batch_bytes)}</b> (${d.batch_folders}) · downloaded models <b>${fmtMB(d.model_bytes)}</b> (${d.models}) · backups <b>${fmtMB(d.backup_bytes)}</b> · database <b>${fmtMB(d.db_bytes)}</b><br>Next clean-up moves ${d.due_batches} batch folder${d.due_batches===1?'':'s'} and ${d.due_models} model${d.due_models===1?'':'s'} (${fmtMB(d.due_bytes)}) to the Recycle Bin${d.last_cleanup?` · last clean-up ${new Date(d.last_cleanup*1000).toLocaleString()}`:''}.`}catch(e){$('diskinfo').textContent=e.message}}
+$('cleanfiles').onclick=async()=>{const b=$('cleanfiles');if(!confirm('Move old batch folders (all shipped 10+ days ago) and models not used for 15 days to the Recycle Bin now?'))return;b.disabled=true;$('cleanmsg').textContent='Cleaning up…';
+  try{const r=await post('/api/maintenance/clean-files');$('cleanmsg').textContent=r.skipped||`Moved ${r.batches} batch folder(s) and ${r.models} model(s) (${fmtMB(r.bytes)}) to the Recycle Bin.`+(r.failed&&r.failed.length?` Not moved: ${r.failed.join('; ')}`:'')}catch(e){$('cleanmsg').textContent=e.message}finally{b.disabled=false;loadDisk()}};
 async function loadDb(){const m=await api('/api/maintenance');const o=m.orders,sum=x=>Object.values(x).reduce((a,b)=>a+b,0);
-  loadSync();
+  loadSync();loadDisk();
   $('dbkind').innerHTML=META.shared_records?`<b>Shared order records</b> (Supabase, connected in <i>Settings → Connections</i>): every order — uploaded on any computer — is recorded there, with who is making it and the latest webstore status. They are only ever added to and updated; resetting this computer's database doesn't touch them (unless <i>also clear Supabase</i> is ticked), and <b>Sync now</b> loads them back. This computer is <b>${esc(META.computer.name)}</b>.`:`<b>This computer only.</b> To share orders with other computers, set up the shared order records (Settings → Shared order records).`;
   $('dbinfo').textContent=`${sum(o)} orders (${o.ready||0} ready, ${o.needs_review||0} to review, ${o.in_batch||0} in a batch, ${o.bundled||0} bundled, ${o.printed||0} printed, ${o.not_needed||0} not needed) · ${sum(m.batches)} batches · ${m.reports_uploaded} report uploads · database ${fmtMB(m.db_bytes)} · downloaded models ${m.cache_models} (${fmtMB(m.cache_bytes)}) · ${m.backups} backups${m.last_backup?` (latest ${m.last_backup})`:''}`}
 $('dbsync').onclick=async()=>{const b=$('dbsync');b.disabled=true;$('dbsyncmsg').textContent='Syncing…';
@@ -1715,7 +1765,7 @@ async function refresh(){try{const st=await api('/api/state');showShared(st.shar
   const key=JSON.stringify(st.counts)+JSON.stringify(q)+st.building;
   if(key!==lastKey){lastKey=key;loadFacets();
     if(tab==='orders')loadOrders(); if(tab==='batches')loadBatches()}
-  if(tab==='batches')loadQueue();
+  if(tab==='activity')loadQueue();
   if(++TICK%3===0){if(tab==='makeit')loadMakeIt();if(tab==='printers'&&$('psauto').checked)loadStatusAll()}
   if(TICK%8===0)loadHealth();
   const log=$('log');const atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-4;log.textContent=st.log.join('\n');if(atEnd)log.scrollTop=log.scrollHeight;
