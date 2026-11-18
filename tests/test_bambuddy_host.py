@@ -155,6 +155,31 @@ def test_preset_list_crash_is_explained(monkeypatch):
 
 
 
+def test_own_profiles_still_listed_when_bambuddys_list_crashes(monkeypatch):
+    def api(method, path, **k):
+        if path.startswith("/slicer/presets"):
+            raise farm.FarmError("Bambuddy: Internal Server Error")
+        assert path == "/local-presets/"
+        return {"printer": [{"id": 4, "name": "SnapSTL A1 0.4 nozzle"}], "process": [], "filament": None}
+
+    monkeypatch.setattr(farm, "api", api)
+    listed, note = farm.preset_listing({})
+    assert listed["printer"] == [{"key": "local:4", "name": "SnapSTL A1 0.4 nozzle", "source": "local"}]
+    assert listed["process"] == listed["filament"] == []
+    assert "Bambu Cloud" in note
+    assert farm.bambuddy_presets({}) == listed  # saving a pick checks against the same list
+
+
+def test_other_bambuddy_errors_are_not_hidden_by_the_local_list(monkeypatch):
+    def api(method, path, **k):
+        assert path.startswith("/slicer/presets")
+        raise farm.FarmError("Can't reach Bambuddy")
+
+    monkeypatch.setattr(farm, "api", api)
+    with pytest.raises(farm.FarmError, match="Can't reach"):
+        farm.preset_listing({})
+
+
 def test_octoeverywhere_checked_started_and_restarted(host):
     h = host["host"]
     s = h.status()

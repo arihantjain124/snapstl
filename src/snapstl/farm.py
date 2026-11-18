@@ -497,15 +497,34 @@ def clear_plate(pid: int) -> None:
 PRESET_TIERS = ("local", "standard")  # no cloud profiles (owner decision 0.22.19, ARCHITECTURE #62)
 
 
-def bambuddy_presets(cfg: dict | None = None, refresh: bool = False, status: dict | None = None) -> dict:
-    """The slicer profiles SnapSTL may use, as Bambuddy lists them: {printer|process|filament: [{key:
-    "source:id", name, source}]} — yours imported in Bambuddy (Local Profiles) first, then the slicer's
-    standard ones. Bambu Cloud / Orca Cloud profiles are never used (they made slicing depend on the cloud)."""
+LOCAL_ONLY_NOTICE = ("Showing your own profiles from Bambuddy. Bambuddy is signed in to Bambu Cloud and can't read that "
+                     "list (a Bambuddy bug), so the slicer's standard profiles aren't shown. Slicing with your own "
+                     "profiles still works.")
+
+
+def _local_presets(cfg: dict | None = None) -> dict:
+    """Your profiles in Bambuddy (Local Profiles), read from their own list: it works while Bambuddy's combined
+    list is crashing on Bambu Cloud."""
+    r = api("GET", "/local-presets/", cfg=cfg, timeout=30) or {}
+    if not isinstance(r, dict):
+        raise FarmError("Bambuddy's list of local profiles came back in an unexpected form — is Bambuddy up to date?")
+    return {slot: [{"key": f"local:{p['id']}", "name": p.get("name") or str(p["id"]), "source": "local"}
+                   for p in r.get(slot) or []] for slot in ("printer", "process", "filament")}
+
+
+def preset_listing(cfg: dict | None = None, refresh: bool = False) -> tuple[dict, str]:
+    """The slicer profiles SnapSTL may use, as Bambuddy lists them, and a note when the list is only partial:
+    ({printer|process|filament: [{key: "source:id", name, source}]}, note) — yours imported in Bambuddy (Local
+    Profiles) first, then the slicer's standard ones. Bambu Cloud / Orca Cloud profiles are never used (they made
+    slicing depend on the cloud). When Bambuddy's combined list crashes, yours are read from their own list."""
     try:
         r = api("GET", "/slicer/presets" + ("?refresh=true" if refresh else ""), cfg=cfg, timeout=30) or {}
     except FarmError as e:
         if "internal server error" in str(e).lower():  # Bambuddy's own crash (its log has why); usually CLOUD_LIST_BUG
-            raise FarmError(f"Bambuddy failed listing its profiles ({e}). {CLOUD_LIST_HINT}") from e
+            try:
+                return _local_presets(cfg), LOCAL_ONLY_NOTICE
+            except FarmError:
+                raise FarmError(f"Bambuddy failed listing its profiles ({e}). {CLOUD_LIST_HINT}") from e
         raise
     if not isinstance(r, dict):
         raise FarmError("Bambuddy's list of slicer profiles came back in an unexpected form — is Bambuddy up to date?")
@@ -515,7 +534,15 @@ def bambuddy_presets(cfg: dict | None = None, refresh: bool = False, status: dic
             for p in (r.get(tier) or {}).get(slot) or []:
                 out[slot].append({"key": f"{p.get('source', tier)}:{p['id']}", "name": p.get("name") or p["id"],
                                   "source": p.get("source", tier)})
-    return out
+    return out, ""
+
+
+def bambuddy_presets(cfg: dict | None = None, refresh: bool = False, status: dict | None = None) -> dict:
+    """The profiles of `preset_listing`, without its note."""
+    return preset_listing(cfg, refresh)[0]
+
+
+
 
 
 
