@@ -7,6 +7,9 @@ and a separately printed name that seats in a shallow recess. The immediate goal
 pairs locally during MakerWorld outages. The longer-term goal is to turn a plain-language brief into
 editable CAD, printable parts and previews using the same workflow for future models.
 
+The [Models workflow plan](models-workspace-plan.md) describes the shared interface for previewing
+and iterating on these designs in SnapSTL.
+
 ## Organizer reference survey
 
 Measured the unscaled STL pairs in SnapSTL's configured Downloads folder with the app's mesh,

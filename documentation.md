@@ -415,3 +415,13 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
   [Local parametric models](docs/parametric-model-pipeline.md).
 - **Open**: permission for a close public reproduction versus an independently styled design, sample
   prints to calibrate fit, and approval of the Chewy-first preview and pilot plan.
+
+### 2026-11-18: Models workflow planned and CAD skill written
+- Owner asked for one local **Models** section with a design picker, parameters above the viewer,
+  and interactive previews for every plate. The organizer is first. New models and revisions
+  should appear through changes to their CAD and manifest while the app is running.
+- Wrote [Models in SnapSTL](docs/models-workspace-plan.md) and the `snapstl-models` skill for
+  Codex and Claude Code. The skill asks about design and fit before the first CAD draft, checks the
+  exported geometry, and asks the owner to review the draft in the app before iterating.
+- **Open**: implementation and review in the isolated development checkout, organizer design
+  direction, printed fit trials and any decision to pilot in production.

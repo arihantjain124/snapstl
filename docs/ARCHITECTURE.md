@@ -83,6 +83,7 @@ Snapstl/
 ├── README.md                 owner-facing install / daily use / troubleshooting
 ├── docs/
 │   ├── ARCHITECTURE.md       this file
+│   ├── models-workspace-plan.md       proposed Models tab, local catalog and 3D preview workflow
 │   ├── parametric-model-pipeline.md   local organizer reference survey and CAD workflow proposal
 │   └── scaling-rules-v1.1-handoff.md   business spec for scaling (historical source)
 ├── pyproject.toml            deps, console scripts            uv.lock      exact versions

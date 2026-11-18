@@ -15,6 +15,18 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
    Order Reconciliation Report (webstore statuses and what they mean), app states, and open questions.
 5. The files you'll touch. Read them fully before editing.
 
+### Parametric model requests
+
+When the owner invokes `snapstl-models` or asks to design, revise, or preview a printable CAD
+model, read [.agents/skills/snapstl-models/SKILL.md](.agents/skills/snapstl-models/SKILL.md)
+before starting CAD work. Ask focused design and fit questions before the first build, verify the
+exported geometry, and have the owner inspect each draft in **Models** when that view is available.
+Follow the [Models workflow plan](docs/models-workspace-plan.md) for the common manifest, picker,
+parameter form and 3D viewer. Keep package-specific geometry and decisions with the design. Write or
+update reusable model-building instructions in the skill when the workflow changes, so Codex and
+Claude Code follow the same process. Keep model development on its separate branch unless the owner
+authorizes a production merge.
+
 ## 2. Binding rules (change only if the owner explicitly asks)
 
 **Product rules**
