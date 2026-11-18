@@ -248,7 +248,8 @@ def test_only_snapstl_reaches_the_records(two):
             rls = dict(c.execute("SELECT relname, relrowsecurity FROM pg_class WHERE relnamespace = "
                                  "'snapstl'::regnamespace AND relkind = 'r'").fetchall())
             assert rls == {"order_records": True, "batch_records": True, "meta": True, "report_rows": True,
-                           "report_uploads": True, "order_notes": True, "usage_counts": True}
+                           "report_uploads": True, "order_notes": True, "usage_counts": True, "staff": True,
+                           "print_checks": True}
             c.execute("SET ROLE anon")
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 c.execute("SELECT * FROM snapstl.order_records")
@@ -754,3 +755,42 @@ def test_older_snapstl_cannot_write_after_the_upgrade(two, monkeypatch):
         monkeypatch.setattr(sync, "_setup_done", "")
         st = sync.sync_now()
         assert "newer SnapSTL" in st["error"]
+
+
+def test_print_checks_and_staff_reach_every_computer(two):
+    """0.24: who checked a print (and the staff list) is shared; a hidden name stays hidden everywhere."""
+    from snapstl import verify
+
+    pc = two
+    data = report([("V1", "PRINT", "Asha", "")])
+    for name in ("A", "B"):
+        with pc(name):
+            ingest.ingest(data, "r.csv")
+            ok(sync.sync_now())
+    with pc("A"):
+        with db.tx() as con:
+            verify.add_staff(con, "Meena")
+            verify.add_staff(con, "Ravi")
+            db.set_group(con, "V1", "check", print_done_at=1.0, checked_at=2.0, checked_by="Meena")
+            verify.add_check(con, {"batch_id": 0, "plate": "Names/pink/Pink - Asha.3mf", "idx": 0, "order_id": "V1",
+                                   "part": "names", "name": "Asha", "color": "pink"}, "letters", "Meena", letters="s")
+        ok(sync.sync_now())
+        r = remote("V1")
+        assert (r["checked_by"], r["checked_at"]) == ("Meena", 2.0)
+    with pc("B"):
+        ok(sync.sync_now())
+        assert order("V1")["checked_by"] == "Meena"
+        with db.tx() as con:
+            assert verify.staff_names(con) == ["Meena", "Ravi"]
+            c = db.rows(con, "SELECT order_id, result, letters, staff, computer FROM plate_checks")
+            assert c == [{"order_id": "V1", "result": "letters", "letters": "s", "staff": "Meena", "computer": "PC A"}]
+            verify.hide_staff(con, "Ravi")
+        ok(sync.sync_now())
+    with pc("A"):
+        ok(sync.sync_now())
+        with db.tx() as con:
+            assert verify.staff_names(con) == ["Meena"]
+    with sync._remote() as rc:  # never deleted
+        import psycopg
+        with pytest.raises(psycopg.Error):
+            rc.execute("DELETE FROM snapstl.print_checks")

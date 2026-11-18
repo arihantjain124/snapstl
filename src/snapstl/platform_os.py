@@ -54,6 +54,38 @@ def reveal(path: Path) -> None:
         open_folder(path.parent)
 
 
+def to_trash(path: Path) -> bool:
+    """Move a file or folder to the Recycle Bin (Windows) / Trash (Mac, Linux) — never deleted for good.
+    Returns True when it's gone from its place."""
+    path = Path(path)
+    if not path.exists():
+        return True
+    if WINDOWS:
+        import ctypes
+        from ctypes import wintypes
+
+        class SHFILEOPSTRUCTW(ctypes.Structure):
+            _fields_ = [("hwnd", wintypes.HWND), ("wFunc", wintypes.UINT), ("pFrom", wintypes.LPCWSTR),
+                        ("pTo", wintypes.LPCWSTR), ("fFlags", ctypes.c_ushort), ("fAnyOperationsAborted", wintypes.BOOL),
+                        ("hNameMappings", ctypes.c_void_p), ("lpszProgressTitle", wintypes.LPCWSTR)]
+
+        FO_DELETE, FOF_SILENT, FOF_NOCONFIRMATION, FOF_ALLOWUNDO, FOF_NOERRORUI = 3, 0x4, 0x10, 0x40, 0x400
+        op = SHFILEOPSTRUCTW(None, FO_DELETE, str(path.resolve()) + "\0", None,
+                             FOF_SILENT | FOF_NOCONFIRMATION | FOF_ALLOWUNDO | FOF_NOERRORUI, False, None, None)
+        rc = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
+        return rc == 0 and not op.fAnyOperationsAborted and not path.exists()
+    trash = Path.home() / (".Trash" if MAC else ".local/share/Trash/files")
+    trash.mkdir(parents=True, exist_ok=True)
+    dest, n = trash / path.name, 2
+    while dest.exists():
+        dest = trash / f"{path.name} {n}"
+        n += 1
+    import shutil
+
+    shutil.move(str(path), str(dest))
+    return not path.exists()
+
+
 _awake_proc = None
 
 

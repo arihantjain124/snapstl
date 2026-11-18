@@ -8,15 +8,18 @@
 * A print starts only when a person presses **Start print**: the plate is sliced if needed, uploaded,
   queued on that printer held, and then released — all from that one click (`farm.Worker`). Nothing
   else starts a print.
-* A printed plate leaves the queue for **Completed**. **Reprint** (only after a person confirms the
-  print failed) puts it back in the queue.
+* A printed plate goes to **Verify** (0.24): a person checks each base / name (verify.py); spoiled ones
+  get a fix plate (extras.py), a failed plate goes back to the list. **Completed** lists checked names.
+* **Bed clear**: a print is released only when its printer is free and a person confirmed the bed is
+  empty (Start print asks when the printer shows a finished print); a busy printer keeps it held.
+* **Merge** (Names): same-colour plates not started, ≤ 3 names, onto one plate (extras.py).
 * **Slice** (Make It → Slice): plates are sliced by Bambuddy's slicer with the presets chosen there,
   one at a time in the background; each row shows Sliced / Slicing % / failed. Start print sends the
   sliced file, or slices first and sends it when that's done.
 * **Remove** takes a plate off Bases / Names (e.g. printed by hand); **Removed** lists them with
   **Put back**. Nothing is deleted.
-* An order is **Ready to ship** (`orders.made_at`, Orders → Ready to ship) once every base plate and
-  name plate holding it is printed.
+* An order is **made** (`orders.made_at`, Orders → Printed – pack it) once its base and name are checked
+  good on Verify.
 
 Which plates are listed: those of this computer's built batches whose orders are still Bundled (not
 yet marked printed / ready), plus any plate with a print on its way.
@@ -24,8 +27,9 @@ yet marked printed / ready), plus any plate with a print on its way.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
-from . import computer, db, farm
+from . import computer, db, extras, farm, verify
 
 AVAILABLE_STATES = {"IDLE", "FINISH", "FAILED", ""}
 
@@ -111,53 +115,66 @@ def choose(plates: list[dict], prs: list[dict], active: dict[int, int]) -> dict[
 
 # ---------------- the board ----------------
 def board(prs: list[dict] | None = None) -> dict:
-    """Bases queue, Names queue and Completed, with printer choices and pre-selections."""
+    """Bases and Names to print (with printer choices and pre-selections), Verify, Completed, Removed."""
     slices = farm.latest_slices()
     with db.tx() as con:
         batches = _batches(con)
         latest: dict[tuple[int, str], dict] = {}
         for j in db.rows(con, "SELECT * FROM print_jobs WHERE computer_id=? ORDER BY id", computer.ID):
             latest[(j["batch_id"], j["plate"])] = j
+        mine = {b["id"]: b for b in batches}
+        extra_rows = [x for x in verify.extra_plates(con) if x["batch_id"] in mine]
+        open_ids = {r[0] for r in con.execute("SELECT order_id FROM orders WHERE state='bundled'")}
+        express = {r[0]: r[1] for r in con.execute("SELECT order_id, express_by FROM orders WHERE express_by IS NOT NULL "
+                                                   "AND state='bundled'")}
         rows, removed = [], []
+
+        def add(b, summ, p, ids, extra=None):
+            j = latest.get((b["id"], p["file"]))
+            label = summ.get("label") or f"Batch #{b['id']}"
+            open_orders = [i for i in ids if i in open_ids]
+            if j and j["state"] == "merged":
+                return  # printed on a merged plate
+            if j and j["state"] == "removed":
+                if open_orders:  # hidden once its orders are packed / shipped / cancelled
+                    removed.append({"batch_id": b["id"], "batch": label, "file": p["file"], "kind": p["kind"],
+                                    "names": p.get("names", []), "colors": p.get("colors", []),
+                                    "removed_at": j["updated_at"], "extra": extra})
+                return
+            active = bool(j and j["state"] in farm.ACTIVE)
+            done = bool(j and j["state"] == "done")
+            if done or not (open_orders or active):
+                return  # printed (→ Verify) or its orders are made / gone
+            rows.append({
+                "batch_id": b["id"], "batch": label, "file": p["file"], "kind": p["kind"],
+                "names": p.get("names", []), "colors": p.get("colors", []), "order_ids": ids,
+                "open_items": open_orders, "extra": extra, "sliced": False, "slice": None,
+                "job": _job(j), "job_active": active, "done": False, "need": farm.needed_color(p),
+                # earliest Express needed-by date of its orders still to finish (None = not express)
+                "express_by": min((express[i] for i in open_orders if i in express), default=None),
+            })
+
         for b in batches:
             summ = json.loads(b.get("summary") or "{}")
             plates = summ.get("plates") or []
-            orders = _batch_orders(con, b)
-            state_of = {o["order_id"]: o["state"] for o in orders}
-            express_of = {o["order_id"]: o.get("express_by") for o in orders if o.get("express_by")}
-            on = plate_order_ids(plates, orders)
+            on = plate_order_ids(plates, _batch_orders(con, b))
             for p in plates:
-                j = latest.get((b["id"], p["file"]))
-                ids = on.get(p["file"], [])
-                if j and j["state"] == "removed":
-                    removed.append({"batch_id": b["id"], "batch": summ.get("label") or f"Batch #{b['id']}",
-                                    "file": p["file"], "kind": p["kind"], "names": p.get("names", []),
-                                    "colors": p.get("colors", []), "removed_at": j["updated_at"]})
-                    continue
-                open_orders = [i for i in ids if state_of.get(i) == "bundled"]
-                active = bool(j and j["state"] in farm.ACTIVE)
-                done = bool(j and j["state"] == "done")
-                if not (open_orders or active or done):
-                    continue  # its orders were marked printed / made again elsewhere
-                rows.append({
-                    "batch_id": b["id"], "batch": summ.get("label") or f"Batch #{b['id']}", "file": p["file"],
-                    "kind": p["kind"], "names": p.get("names", []), "colors": p.get("colors", []),
-                    "order_ids": ids, "sliced": False, "slice": None,
-                    "job": _job(j), "job_active": active, "done": done,
-                    "need": farm.needed_color(p),
-                    # earliest Express needed-by date of its orders still to finish (None = not express)
-                    "express_by": min((express_of[i] for i in open_orders if i in express_of), default=None),
-                })
+                add(b, summ, p, on.get(p["file"], []))
+        for x in extra_rows:
+            b = mine[x["batch_id"]]
+            p = {"kind": x["part"], "file": x["file"], "colors": [x["color"]] if x["part"] == "names" else [],
+                 "names": [i.get("name") + (f" ({i['letters']})" if i.get("letters") else "") for i in x["items"]]}
+            add(b, json.loads(b.get("summary") or "{}"), p, [i.get("order_id") for i in x["items"]], x["kind"])
     prs = prs or []
-    # plates holding an Express order first (earliest needed-by date), the rest as before; free printers
-    # are pre-selected for them first
-    pending = sorted([r for r in rows if not r["done"]], key=lambda r: (r["express_by"] is None, r["express_by"] or ""))
+    # fix plates first, then plates holding an Express order (earliest needed-by date), the rest as before;
+    # free printers are pre-selected for them first
+    pending = sorted(rows, key=lambda r: (r["extra"] != "fix", r["express_by"] is None, r["express_by"] or ""))
     active_jobs = farm.active_counts()
     for r in pending:
         r["choices"] = [{"id": p["id"], "name": p["name"], "why_not": "", "note": farm.match_note(r, p),
                          "available": available(p, active_jobs.get(p["id"], 0)), "left": spool_left(p, r["need"]),
                          "online": bool((p.get("status") or {}).get("connected")),
-                         "state": (p.get("status") or {}).get("state", ""),
+                         "state": (p.get("status") or {}).get("state", ""), "bed": bed_state(p),
                          "trays": farm.tray_choices(r["need"], p), "best_tray": farm.best_tray(r["need"], p)} for p in prs]
     pick = choose(pending, prs, active_jobs) if prs else {}
     keys: dict = {}
@@ -183,10 +200,10 @@ def board(prs: list[dict] | None = None) -> dict:
         r["slice_for"] = pid
         r["slice"] = slice_state(r, pid)
         r["sliced"] = bool(r["slice"] and r["slice"]["state"] == "done")
-    done = sorted([r for r in rows if r["done"]], key=lambda r: -(r["job"] or {}).get("updated_at", 0))[:300]
-    return {"bases": [r for r in pending if r["kind"] == "bases"],
-            "names": [r for r in pending if r["kind"] == "names"],
-            "completed": done, "removed": removed}
+    names = [r for r in pending if r["kind"] == "names"]
+    return {"bases": [r for r in pending if r["kind"] == "bases"], "names": names,
+            "merge": extras.suggestions(names), "verify": verify.cards(), "completed": verify.completed(),
+            "removed": removed, "staff": verify.staff_list()}
 
 
 def _job(j: dict | None) -> dict | None:
@@ -209,7 +226,16 @@ def _plate(batch_id: int, file: str) -> tuple[dict, dict]:
     b = dict(b)
     plate = next((p for p in json.loads(b.get("summary") or "{}").get("plates", []) if p["file"] == file), None)
     if plate is None:
-        raise farm.FarmError("Not a plate of this batch")
+        with db.tx() as con:
+            x = con.execute("SELECT * FROM extra_plates WHERE batch_id=? AND file=? AND state='active'",
+                            (batch_id, file)).fetchone()
+        if x is None:
+            raise farm.FarmError("Not a plate of this batch")
+        x = dict(x)
+        items = json.loads(x["items"])
+        plate = {"kind": x["part"], "file": x["file"], "names": [i.get("name") for i in items],
+                 "colors": [x["color"]] if x["part"] == "names" else [], "order_ids": [i.get("order_id") for i in items],
+                 "extra": x["kind"]}
     return b, plate
 
 
@@ -220,11 +246,43 @@ def _latest(batch_id: int, file: str) -> dict | None:
     return dict(j) if j else None
 
 
+class BedNotClear(farm.FarmError):
+    """The printer may still hold a finished print: a person must confirm the bed is empty."""
+
+
+def bed_state(printer: dict) -> str:
+    """'busy' (printing now) | 'check' (a finished print may still be on the bed) | 'clear'."""
+    st = printer.get("status") or {}
+    state = str(st.get("state", "")).upper()
+    if state in farm.BUSY_STATES:
+        return "busy"
+    if st.get("awaiting_plate_clear"):
+        return "check"
+    if state in ("FINISH", "FAILED"):
+        with db.tx() as con:
+            c = con.execute("SELECT at FROM bed_clears WHERE printer_id=?", (printer["id"],)).fetchone()
+            last = con.execute("SELECT MAX(updated_at) FROM print_jobs WHERE printer_id=? AND state IN "
+                               "('done','failed','cancelled','printing')", (printer["id"],)).fetchone()[0]
+        if c is None or (last is not None and last > c[0]):
+            return "check"
+    return "clear"
+
+
+def confirm_bed_clear(printer_id: int, awaiting: bool = False) -> None:
+    """A person confirmed the bed of this printer is empty (Start print, or Printers → Clear plate)."""
+    with db.tx() as con:
+        con.execute("INSERT OR REPLACE INTO bed_clears(printer_id, at) VALUES (?, ?)", (printer_id, db.now()))
+    if awaiting:
+        farm.clear_plate(printer_id)
+
+
 def start_print(batch_id: int, file: str, printer_id: int, options: dict | None, prs: list[dict],
-                force: bool = False, speed: str = "", tray: int | None = None) -> dict:
+                force: bool = False, speed: str = "", tray: int | None = None, bed_clear: bool = False) -> dict:
     """Start print (a person's click): the only way a Make It plate gets printed.
     Not sent yet / failed / cancelled / reprint → sent to that printer and started once queued.
-    Waiting held in Bambuddy → moved to that printer if changed, then started."""
+    Waiting held in Bambuddy → moved to that printer if changed, then started.
+    The bed must be clear: a printer with a finished print asks first (`bed_clear` = the person confirmed);
+    a busy printer gets the plate held in its queue (press Start print again once it's done and empty)."""
     b, plate = _plate(batch_id, file)
     # the printer's print defaults (Slicing), with what was set on this plate on top
     dflt = farm.print_defaults(int(printer_id)) if printer_id else {}
@@ -242,7 +300,19 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
     if missing:
         raise farm.FarmError(f"Pick the slicing profiles for {missing} in Slicing first")
     j = _latest(batch_id, file)
+    if j and j["state"] == "merged":
+        raise farm.FarmError("This plate is part of a merged plate — print that one, or Split back first")
+    bed = bed_state(printer)
+    if bed == "check":
+        if not bed_clear:
+            raise BedNotClear(f"{printer['name']} may still have a finished print on its bed. Take it off and "
+                              "clean the plate, then confirm.")
+        confirm_bed_clear(printer["id"], bool((printer.get("status") or {}).get("awaiting_plate_clear")))
+        bed = "clear"
     if j and j["state"] == "sent" and j.get("held"):
+        if bed == "busy":
+            raise farm.FarmError(f"{printer['name']} is still printing — press Start print once it's done and the "
+                                 "bed is empty")
         if j["printer_id"] != printer["id"] or opts or tray != j.get("ams_tray"):
             farm.print_job(j["id"], printer["id"], opts, prs, tray=tray)  # move / options / slot while still held
         if spd:
@@ -258,12 +328,14 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
     with db.tx() as con:
         cur = con.execute(
             "INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,options,autostart,speed,"
-            "ams_tray,created_at,updated_at,computer_id) VALUES (?,?,?,?,?,?,'queued',?,1,?,?,?,?,?)",
+            "ams_tray,created_at,updated_at,computer_id) VALUES (?,?,?,?,?,?,'queued',?,?,?,?,?,?,?)",
             (batch_id, file, plate["kind"], (plate.get("colors") or [""])[0], printer["id"], printer["name"],
-             json.dumps(opts), spd, tray, now, now, computer.ID))
+             json.dumps(opts), 0 if bed == "busy" else 1, spd, tray, now, now, computer.ID))
+        db.add_activity(con, "print", f"Start print: {Path(file).name} on {printer['name']}"
+                        + (" (held: the printer is busy)" if bed == "busy" else ""))
     update_made(batch_id)  # its orders → Printing
     farm.WORKER.kick()
-    return {"job_id": int(cur.lastrowid), "started": False}
+    return {"job_id": int(cur.lastrowid), "started": False, "held": bed == "busy"}
 
 
 def reprint(batch_id: int, file: str) -> dict:
@@ -281,9 +353,29 @@ def reprint(batch_id: int, file: str) -> dict:
     return {"ok": True}
 
 
+def printed_by_hand(batch_id: int, file: str) -> dict:
+    """Removed (or waiting) plate printed by hand: it goes to Verify like any printed plate."""
+    _, plate = _plate(batch_id, file)
+    j = _latest(batch_id, file)
+    if j and j["state"] in farm.ACTIVE:
+        raise farm.FarmError(f"It's on its way ({j['state']}) — cancel it in Bambuddy first")
+    if j and j["state"] == "done":
+        raise farm.FarmError("Already printed — check it on Verify")
+    now = db.now()
+    with db.tx() as con:
+        con.execute("INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,progress,created_at,"
+                    "updated_at,computer_id) VALUES (?,?,?,?,0,'By hand','done',100,?,?,?)",
+                    (batch_id, file, plate["kind"], (plate.get("colors") or [""])[0], now, now, computer.ID))
+        db.add_activity(con, "print", f"Printed by hand: {Path(file).name}")
+    update_made(batch_id)
+    return {"ok": True}
+
+
 def remove(batch_id: int, file: str, put_back: bool = False) -> dict:
     """Take a plate off Bases / Names (nothing is deleted), or put it back."""
     _, plate = _plate(batch_id, file)
+    if plate.get("extra") == "merged" and not put_back:
+        raise farm.FarmError("Use Split back for a merged plate")
     j = _latest(batch_id, file)
     if put_back:
         if not j or j["state"] != "removed":
@@ -390,42 +482,9 @@ def backfill_started() -> int:
 
 
 def update_made(batch_id: int) -> None:
-    """Orders whose every base plate and name plate is printed → made (made_at: Printed – pack it); else
-    not. Orders with a plate that a person started (any print job of it, except Removed) → Printing
-    (print_started_at, set once, kept)."""
-    with db.tx() as con:
-        b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
-        if b is None:
-            return
-        b = dict(b)
-        plates = json.loads(b.get("summary") or "{}").get("plates") or []
-        orders = _batch_orders(con, b)
-        on = plate_order_ids(plates, orders)
-        done = {r["plate"] for r in db.rows(
-            con, "SELECT j.plate FROM print_jobs j WHERE j.batch_id=? AND j.id = (SELECT MAX(id) FROM print_jobs k "
-                 "WHERE k.batch_id=j.batch_id AND k.plate=j.plate) AND j.state='done'", batch_id)}
-        started = {r["plate"] for r in db.rows(
-            con, "SELECT j.plate FROM print_jobs j WHERE j.batch_id=? AND j.id = (SELECT MAX(id) FROM print_jobs k "
-                 "WHERE k.batch_id=j.batch_id AND k.plate=j.plate) AND j.state<>'removed'", batch_id)}
-        now = db.now()
-        for p in plates:
-            if p["file"] in started:
-                for oid in on.get(p["file"], []):
-                    con.execute("UPDATE orders SET print_started_at=?, updated_at=? WHERE order_id=? "
-                                "AND print_started_at IS NULL AND state IN ('in_batch','bundled','printed')",
-                                (now, now, oid))
-        kinds: dict[str, dict[str, bool]] = {}
-        for p in plates:
-            for oid in on.get(p["file"], []):
-                k = kinds.setdefault(oid, {"bases": True, "names": True, "seen_b": False, "seen_n": False})
-                k["seen_b" if p["kind"] == "bases" else "seen_n"] = True
-                k[p["kind"]] = k[p["kind"]] and p["file"] in done
-        now = db.now()
-        for oid, k in kinds.items():
-            made = k["seen_b"] and k["seen_n"] and k["bases"] and k["names"]
-            if made:
-                con.execute("UPDATE orders SET made_at=COALESCE(made_at, ?), updated_at=? WHERE order_id=? AND state='bundled'",
-                            (now, now, oid))
-            else:
-                con.execute("UPDATE orders SET made_at=NULL WHERE order_id=? AND made_at IS NOT NULL AND state='bundled'",
-                            (oid,))
+    """Orders of this batch (and of batches sharing a merged plate with it): Printing once a plate holding
+    them is started; *waiting for check* once every plate is printed; made (Printed – pack it) once their
+    base and name are checked good on Verify (verify.update_orders)."""
+    verify.update_orders(batch_id)
+
+

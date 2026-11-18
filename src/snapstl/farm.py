@@ -1113,7 +1113,11 @@ class Worker:
         qid = int((item or {})["id"])
         _set(j["id"], state="sent", file_id=file_id, queue_item_id=qid, held=1, error=None)
         self._log(f"{Path(j['plate']).name} → in {j['printer_name']}'s queue, waiting for Start")
-        if j.get("autostart"):  # a person pressed Start print (Make It): release it now that it's queued
+        busy = str((printer_status(j["printer_id"], cfg, max_age=0) or {}).get("state", "")).upper() in BUSY_STATES
+        if j.get("autostart") and busy:  # it would start right after the current print, on a full bed
+            _set(j["id"], error="Held: the printer started another print — press Start print once it's done "
+                                "and the bed is empty")
+        elif j.get("autostart"):  # a person pressed Start print (Make It): release it now that it's queued
             try:
                 start_job(j["id"])
                 self._log(f"{Path(j['plate']).name} → started on {j['printer_name']}")

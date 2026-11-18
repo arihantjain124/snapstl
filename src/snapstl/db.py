@@ -159,6 +159,9 @@ MIGRATIONS = [
     # 0.23: order flow + logistics (docs/build-plan-order-flow-and-logistics.md)
     ("orders", "first_status", "TEXT"),      # webstore status when first seen (orders first seen past PRINT are history)
     ("orders", "print_started_at", "REAL"),  # a plate holding it was first started → Printing
+    # 0.24: Print → Verify, batches archive / clean-up (docs/build-plan-batches-print-verify.md)
+    ("batches", "archived_at", "REAL"),      # every order on the way or later (or cancelled) → Batches → Archive
+    ("batches", "files_cleaned_at", "REAL"),  # its folder went to the Recycle Bin (10 days after archived)
 ]
 
 # Things people set on an order (mostly on the logistics page). Each group travels as one piece between
@@ -171,8 +174,11 @@ FIELD_GROUPS: dict[str, tuple[str, ...]] = {
     "name_note": ("name_change_reason", "name_confirmed_at"),   # name changed after confirming with the customer
     "remake": ("remake_at", "remake_reason"),                   # remake requested (by logistics)
     "reuse": ("reuse_of", "reused_by"),                         # new order ← returned (RTO) piece of another order
+    # Print → Verify (0.24): every plate holding it printed (waiting for check) / both parts checked good, by whom
+    "check": ("print_done_at", "checked_at", "checked_by"),
 }
-_GROUP_TYPES = {"label_at": "REAL", "name_confirmed_at": "REAL", "remake_at": "REAL"}
+_GROUP_TYPES = {"label_at": "REAL", "name_confirmed_at": "REAL", "remake_at": "REAL", "print_done_at": "REAL",
+                "checked_at": "REAL"}
 FLAGS = ("past_print_not_made", "cancelled_in_production", "cancel_request", "back_to_print", "unknown_status")
 MIGRATIONS += [("orders", c, _GROUP_TYPES.get(c, "TEXT")) for g in FIELD_GROUPS.values() for c in g]
 MIGRATIONS += [("orders", f"{g}_changed", "REAL") for g in FIELD_GROUPS]
@@ -195,6 +201,35 @@ CREATE INDEX IF NOT EXISTS order_notes_order ON order_notes(order_id, at);
 -- how often each feature is used on this computer, per day (no customer data)
 CREATE TABLE IF NOT EXISTS usage_counts (day TEXT NOT NULL, feature TEXT NOT NULL, count INTEGER NOT NULL,
     sent INTEGER, PRIMARY KEY (day, feature));
+-- Print → Verify (0.24): who may check prints (a name is hidden, never removed); shared with every computer
+CREATE TABLE IF NOT EXISTS staff (name TEXT PRIMARY KEY COLLATE NOCASE, added_at REAL, hidden INTEGER NOT NULL DEFAULT 0,
+    changed REAL, sent INTEGER);
+-- one row per printed item checked (a base or a name of one copy of an order on a plate); the newest row of an
+-- item counts. batch/plate/idx = the item's own plate in its batch, also when it was printed on a merged or
+-- fix plate (printed_on). Shared with every computer, never edited or deleted.
+CREATE TABLE IF NOT EXISTS plate_checks (uid TEXT PRIMARY KEY, batch_uid TEXT, batch_id INTEGER, plate TEXT NOT NULL,
+    idx INTEGER NOT NULL, order_id TEXT, part TEXT NOT NULL, name TEXT, color TEXT, result TEXT NOT NULL,
+    letters TEXT, staff TEXT, note TEXT, at REAL NOT NULL, printed_on TEXT, printer TEXT, fix_file TEXT,
+    computer TEXT, sent INTEGER);
+CREATE INDEX IF NOT EXISTS plate_checks_item ON plate_checks(batch_id, plate, idx, at);
+CREATE INDEX IF NOT EXISTS plate_checks_order ON plate_checks(order_id, at);
+-- merged plates (several name plates of one colour on one) and fix plates (spoiled letters / a name / a base
+-- printed again), kept in the folder of batch `batch_id`; items = the items they hold (verify.py)
+CREATE TABLE IF NOT EXISTS extra_plates (id INTEGER PRIMARY KEY AUTOINCREMENT, uid TEXT, batch_id INTEGER NOT NULL,
+    file TEXT NOT NULL, kind TEXT NOT NULL, part TEXT NOT NULL, color TEXT, names TEXT, items TEXT NOT NULL,
+    preview TEXT, created_at REAL NOT NULL, state TEXT NOT NULL DEFAULT 'active', staff TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS extra_plates_file ON extra_plates(batch_id, file);
+CREATE TABLE IF NOT EXISTS extra_items (plate_id INTEGER NOT NULL, batch_id INTEGER NOT NULL, plate TEXT NOT NULL,
+    idx INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS extra_items_batch ON extra_items(batch_id);
+-- Activities tab: what happened on this computer, in plain words
+CREATE TABLE IF NOT EXISTS activity (id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL NOT NULL, kind TEXT NOT NULL,
+    text TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS activity_at ON activity(at);
+-- a person confirmed a printer's bed is empty (Start print / Printers → Clear plate)
+CREATE TABLE IF NOT EXISTS bed_clears (printer_id INTEGER PRIMARY KEY, at REAL NOT NULL);
+-- when a downloaded model was last used by a batch (models unused for 15 days go to the Recycle Bin)
+CREATE TABLE IF NOT EXISTS model_use (folder TEXT PRIMARY KEY, last_used REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS report_rows (order_id TEXT PRIMARY KEY, data TEXT, status_at TEXT, file TEXT, sent INTEGER);
 CREATE TABLE IF NOT EXISTS shop_lines (order_id TEXT PRIMARY KEY, data TEXT, status_at TEXT, file TEXT, sent INTEGER);
 CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT);
@@ -329,6 +364,11 @@ def add_note(con, order_id: str, text: str, author: str = "") -> dict:
     con.execute("INSERT INTO order_notes(uid, order_id, at, text, author, sent) VALUES (?,?,?,?,?,0)",
                 (n["uid"], n["order_id"], n["at"], n["text"], n["author"]))
     return n
+
+
+def add_activity(con, kind: str, text: str) -> None:
+    """One line on the Activities tab (kinds: download, build, print, check, merge, cleanup, sync)."""
+    con.execute("INSERT INTO activity(at, kind, text) VALUES (?,?,?)", (now(), kind, (text or "")[:500]))
 
 
 def count_usage(con, feature: str, day: str | None = None) -> None:

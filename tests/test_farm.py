@@ -219,6 +219,8 @@ def bb(monkeypatch, tmp_path):
     with db.tx() as con:
         con.execute("DELETE FROM print_jobs")
         con.execute("DELETE FROM slices")
+        for t in ("plate_checks", "extra_plates", "extra_items", "staff", "bed_clears", "activity"):
+            con.execute(f"DELETE FROM {t}")
         con.execute("DELETE FROM downloads WHERE batch_id > ?", (first,))
         con.execute("DELETE FROM batches WHERE id > ?", (first,))
         con.execute("DELETE FROM orders WHERE order_id LIKE 'PQ%' OR order_id LIKE 'PC%' OR order_id LIKE 'PB%' OR order_id LIKE 'PS%' OR order_id LIKE 'PM%' OR order_id LIKE 'PK%' OR order_id LIKE 'PV%' OR order_id LIKE 'PO%' OR order_id LIKE 'PN%'")
@@ -299,7 +301,7 @@ def test_any_printer_and_best_filament_slot():
 def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     client.get("/api/farm")
     bid, folder = built_batch(client, "PQ")
-    base_plate, pink, blue = "Bases/{Ayra,pink},{Riya,blue}.3mf", "Names/pink/{Ayra,pink}.3mf", "Names/blue/{Riya,blue}.3mf"
+    base_plate, pink, blue = "Bases/Bases - Ayra + Riya.3mf", "Names/pink/Pink - Ayra.3mf", "Names/blue/Blue - Riya.3mf"
 
     v = client.get(f"/api/batches/{bid}/plates").json()
     by = {p["file"]: p for p in v["plates"]}
@@ -318,7 +320,7 @@ def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     assert "Slicing failed" in j["error"] and "Use Slicer API" in j["error"]
 
     # only Bambuddy's slicer slices: a sliced file put in the batch folder by hand is never used
-    hand = folder / "Sliced" / "Bases" / "{Ayra,pink},{Riya,blue}.gcode.3mf"
+    hand = folder / "Sliced" / "Bases" / "Bases - Ayra + Riya.gcode.3mf"
     hand.parent.mkdir(parents=True)
     hand.write_bytes(sliced_bytes("by hand"))
     assert not client.get(f"/api/batches/{bid}/plates").json()["plates"][0]["sliced"]
@@ -326,7 +328,7 @@ def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     assert client.post(f"/api/print-jobs/{j['id']}/retry").status_code == 200
     j = wait_for(lambda: (lambda j: j if j["state"] == "sent" else None)(job_of(client, bid, base_plate)))
     sent = bb.files[bb.queue[1]["library_file_id"]]
-    assert sent["filename"] == f"{folder.name} - Bases - {{Ayra,pink}},{{Riya,blue}}.gcode.3mf"
+    assert sent["filename"] == f"{folder.name} - Bases - Bases - Ayra + Riya.gcode.3mf"
     assert b"by hand" not in sent["data"] and bb.queue[1]["printer_id"] == 1
     assert bb.queue[1]["manual_start"] is True and j["held"]  # never starts by itself
     assert not any("add-to-queue" in u for _, u in bb.calls)
@@ -339,10 +341,10 @@ def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
     assert client.post(f"/api/batches/{bid}/push", json={"plates": picks}).json()["queued"] == 2
     wait_for(lambda: all(job_of(client, bid, f)["state"] == "sent" for f in (pink, blue)))
     src_id, body = next((fid, b) for fid, b in bb.slice_bodies if "Names pink" in bb.files[fid]["filename"])
-    assert bb.files[src_id]["filename"].endswith("{Ayra,pink}.3mf")  # the plain plate went up, Bambuddy sliced it
+    assert bb.files[src_id]["filename"].endswith("Pink - Ayra.3mf")  # the plain plate went up, Bambuddy sliced it
     assert body["printer_preset"] == {"source": "standard", "id": "Bambu Lab A1 0.4 nozzle"}
     assert body["filament_colours"] == ["#F4A7C0"] and body["export_3mf"] is True
-    qi = next(q for q in bb.queue.values() if bb.files[q["library_file_id"]]["filename"].endswith("{Ayra,pink}.gcode.3mf"))
+    qi = next(q for q in bb.queue.values() if bb.files[q["library_file_id"]]["filename"].endswith("Pink - Ayra.gcode.3mf"))
     assert qi["manual_start"] is True and not (folder / "Sliced" / "Names").exists()  # nothing written locally
 
     # Bambuddy prints them: pending → printing → completed
@@ -360,7 +362,7 @@ def test_push_to_queue_hand_sliced_and_slicer_service(client, bb):
 def test_print_button_moves_reprints_and_sets_options(client, bb):
     client.get("/api/farm")
     bid, folder = built_batch(client, "PB")
-    pink = "Names/pink/{Ayra,pink}.3mf"
+    pink = "Names/pink/Pink - Ayra.3mf"
     bb.slicer = "ok"  # Bambuddy's slicer slices it when pushed
     client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": pink, "printer_id": 2}]})
     j = wait_for(lambda: (lambda j: j if j["state"] == "sent" else None)(job_of(client, bid, pink)))
@@ -394,7 +396,7 @@ def test_print_button_moves_reprints_and_sets_options(client, bb):
 def test_prints_start_only_when_start_is_pressed(client, bb):
     client.get("/api/farm")
     bid, folder = built_batch(client, "PS")
-    plate = "Bases/{Ayra,pink},{Riya,blue}.3mf"
+    plate = "Bases/Bases - Ayra + Riya.3mf"
     bb.slicer = "ok"
     client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": plate, "printer_id": 1}]})
     j = wait_for(lambda: (lambda j: j if j["state"] == "sent" else None)(job_of(client, bid, plate)))
@@ -422,7 +424,7 @@ def test_cancel_and_login_on_bambuddy(client, bb):
     r = client.post("/api/farm/connect", json={"api_key": "bb_made_by_hand"})
     assert r.status_code == 200 and r.json()["connected"]
     bid, folder = built_batch(client, "PC")
-    plate = "Bases/{Ayra,pink},{Riya,blue}.3mf"
+    plate = "Bases/Bases - Ayra + Riya.3mf"
     bb.slicer = "ok"
     client.post(f"/api/batches/{bid}/push", json={"plates": [{"file": plate, "printer_id": 1}]})
     j = wait_for(lambda: (lambda j: j if j["state"] == "sent" else None)(job_of(client, bid, plate)))
@@ -477,7 +479,7 @@ def test_make_it_bases_names_start_completed_ready_to_ship(client, bb):
     bb.status[4] = {"connected": True, "state": "IDLE", "vt_tray": [tray(254, "FFFFFF", remain=95)]}  # more white left
     client.get("/api/farm")
     bid, folder = built_batch(client, "PM")
-    base, pink, blue = "Bases/{Ayra,pink},{Riya,blue}.3mf", "Names/pink/{Ayra,pink}.3mf", "Names/blue/{Riya,blue}.3mf"
+    base, pink, blue = "Bases/Bases - Ayra + Riya.3mf", "Names/pink/Pink - Ayra.3mf", "Names/blue/Blue - Riya.3mf"
     bb.slicer = "ok"  # sliced by Bambuddy when started
 
     m = client.get("/api/makeit").json()
@@ -519,24 +521,37 @@ def test_make_it_bases_names_start_completed_ready_to_ship(client, bb):
     client.post("/api/makeit/start", json={"batch_id": bid, "file": blue, "printer_id": 2})
     wait_for(lambda: len(bb.queue) == 3 and bb.queue[3].get("manual_start") is False)
 
-    # printed: base + pink done → Ayra (PM1) ready to ship; Riya waits for blue
+    # printed: base + pink done → Verify; nothing is packed before a person checks it
     bb.queue[1]["status"] = bb.queue[2]["status"] = "completed"
     farm.WORKER.refresh()
     m = client.get("/api/makeit").json()
-    assert {r["file"] for r in m["completed"]} == {base, pink} and [r["file"] for r in m["names"]] == [blue]
-    tab = lambda t: [o["order_id"] for o in client.get(f"/api/orders?tab={t}&limit=50").json()["orders"] if o["order_id"].startswith("PM")]
+    assert {c["file"] for c in m["verify"]} == {base, pink} and [r["file"] for r in m["names"]] == [blue]
+    tab = lambda t: sorted(o["order_id"] for o in client.get(f"/api/orders?tab={t}&limit=50").json()["orders"] if o["order_id"].startswith("PM"))
+    assert tab("pack_it") == [] and tab("printing") == ["PM1", "PM2"]
+    o1 = next(o for o in client.get("/api/orders?tab=printing&limit=50").json()["orders"] if o["order_id"] == "PM1")
+    assert o1["print_done_at"] and not o1["checked_at"]  # Printed – waiting for check
+    card = {c["file"]: c for c in m["verify"]}
+    good = lambda f: [{"batch_id": i["batch_id"], "plate": i["plate"], "idx": i["idx"], "result": "good"} for i in card[f]["items"]]
+    check = lambda f, res, staff="Asha": client.post("/api/verify", json={"carrier": {"batch_id": bid, "file": f},
+                                                                          "staff": staff, "results": res})
+    assert check(base, good(base)).status_code == 409  # who is checking? (no staff names yet)
+    assert client.post("/api/staff", json={"name": "Asha"}).status_code == 200
+    assert check(base, good(base)).status_code == 200 and check(pink, good(pink)).status_code == 200
     assert tab("pack_it") == ["PM1"] and tab("printing") == ["PM2"]
+    m = client.get("/api/makeit").json()
+    assert m["verify"] == [] and [(r["order_id"], r["checked_by"]) for r in m["completed"]] == [("PM1", "Asha")]
+    assert m["staff"] == ["Asha"]
+
+    # blue printed but the whole plate failed → back to Names to print again; PM2 stays in Printing
     bb.queue[3]["status"] = "completed"
     farm.WORKER.refresh()
-    assert sorted(tab("pack_it")) == ["PM1", "PM2"] and client.get("/api/makeit").json()["names"] == []
-
-    # Reprint (after a failure is noticed): back to the queue, its orders leave Ready to ship
-    assert client.post("/api/makeit/reprint", json={"batch_id": bid, "file": pink}).status_code == 200
+    card = {c["file"]: c for c in client.get("/api/makeit").json()["verify"]}
+    assert list(card) == [blue]
+    bad = [{**x, "result": "plate_failed"} for x in good(blue)]
+    assert check(blue, bad).json()["failed"]
     m = client.get("/api/makeit").json()
-    assert [r["file"] for r in m["names"]] == [pink] and m["names"][0]["job"]["state"] == "reprint"
-    assert tab("pack_it") == ["PM2"] and tab("printing") == ["PM1"]
-    assert client.post("/api/makeit/reprint", json={"batch_id": bid, "file": blue}).status_code == 200  # also done
-    assert client.post("/api/makeit/reprint", json={"batch_id": bid, "file": pink}).status_code == 400  # not completed
+    assert [r["file"] for r in m["names"]] == [blue] and m["names"][0]["job"]["state"] == "reprint"
+    assert m["verify"] == [] and tab("printing") == ["PM2"]
 
 
 def test_plate_orders_for_batches_built_before_order_ids():
@@ -555,7 +570,7 @@ def test_plate_orders_for_batches_built_before_order_ids():
 def test_make_it_slice_with_bambuddy_and_remove(client, bb, monkeypatch):
     client.get("/api/farm")
     bid, folder = built_batch(client, "PK")
-    base, pink = "Bases/{Ayra,pink},{Riya,blue}.3mf", "Names/pink/{Ayra,pink}.3mf"
+    base, pink = "Bases/Bases - Ayra + Riya.3mf", "Names/pink/Pink - Ayra.3mf"
 
     # presets come from Bambuddy's list, set per printer (the A1s still use the pick made for their model)
     p = client.get("/api/makeit/presets?printer=1").json()
@@ -618,7 +633,7 @@ def test_no_built_in_presets_each_printer_needs_its_own(client, bb):
     farm.update_config(presets_by_model={})  # nothing set up yet
     client.get("/api/farm")
     bid, folder = built_batch(client, "PN")
-    pink = "Names/pink/{Ayra,pink}.3mf"
+    pink = "Names/pink/Pink - Ayra.3mf"
     p = client.get("/api/makeit/presets").json()
     assert p["printer"] == 1 and p["set_for"] == {"1": False, "2": False, "3": False} and p["chosen"] == {}
     sl = makeit_row(client, "names", pink)["slice"]
@@ -646,7 +661,7 @@ def test_presets_per_printer_manual_slice_import_and_speed(client, bb):
     bb.slicer = "ok"
     client.get("/api/farm")
     bid, folder = built_batch(client, "PV")
-    base, pink = "Bases/{Ayra,pink},{Riya,blue}.3mf", "Names/pink/{Ayra,pink}.3mf"
+    base, pink = "Bases/Bases - Ayra + Riya.3mf", "Names/pink/Pink - Ayra.3mf"
 
     # the P1S gets its own presets; the A1s keep theirs
     p = client.get("/api/makeit/presets?printer=4").json()
@@ -811,7 +826,7 @@ def test_queue_panel_lists_downloading_building_slicing_printing(client, bb):
     bb.slicer = "ok"
     client.get("/api/farm")
     bid, folder = built_batch(client, "PQ")
-    pink = "Names/pink/{Ayra,pink}.3mf"
+    pink = "Names/pink/Pink - Ayra.3mf"
     q = client.get("/api/queues").json()
     assert set(q["counts"]) == {"downloading", "building", "slicing", "printing"}
     assert any(r["state"] == "done" for r in q["downloading"])  # the batch's models, finished

@@ -174,7 +174,16 @@ def test_starting_a_plate_moves_its_orders_to_printing(tmp_path, monkeypatch):
     job("Names/pink/n1.3mf", "done")
     job("Bases/b1.3mf", "done")
     makeit.update_made(bid)
+    # 0.24: printed is not made — S1 waits for a person's check (Print → Verify)
+    assert tab(db.DB_PATH, "S1") == "printing" and get(db.DB_PATH, "S1")["print_done_at"]
+    from snapstl import verify
+    with db.tx() as con:
+        verify.add_staff(con, "Asha")
+    for f in ("Names/pink/n1.3mf", "Bases/b1.3mf"):
+        verify.submit({"batch_id": bid, "file": f}, "Asha",
+                      [{"batch_id": bid, "plate": f, "idx": 0, "result": "good"}])
     assert tab(db.DB_PATH, "S1") == "pack_it" and tab(db.DB_PATH, "S2") == "printing"
+    assert get(db.DB_PATH, "S1")["checked_by"] == "Asha"
     # once after updating, older batches get Printing from the jobs they have
     sql(db.DB_PATH, "UPDATE orders SET print_started_at=NULL")
     assert makeit.backfill_started() >= 1 and get(db.DB_PATH, "S2")["print_started_at"]

@@ -8,7 +8,9 @@ for people and ending in the cache key so the app can find it:
         name.stl     the name piece, unscaled
         info.json    name, compartments, model options, when it was downloaded
 
-SnapSTL never deletes these. If you delete one in Finder, that name is simply downloaded again the
+A model no batch used for 15 days goes to the Recycle Bin (archive.py); it's downloaded again if needed.
+
+SnapSTL never deletes these for good. If you delete one in Finder, that name is simply downloaded again the
 next time a batch needs it. STL is only this folder's internal format; plates are written as .3mf.
 
 Key = hash of everything that changes the geometry (name + model options + compartments +
@@ -83,12 +85,25 @@ def load(key: str, root: Path | None = None) -> tuple[trimesh.Trimesh, trimesh.T
     if not (b.exists() and n.exists()):
         return None
     try:
-        return (
+        got = (
             trimesh.load(b, file_type="stl", force="mesh"),
             trimesh.load(n, file_type="stl", force="mesh"),
         )
     except Exception:
         return None
+    touch(d)
+    return got
+
+
+def touch(d: Path) -> None:
+    """A batch used (or just downloaded) this model: it stays at least 15 more days (archive.py)."""
+    try:
+        from . import db
+
+        with db.tx() as con:
+            con.execute("INSERT OR REPLACE INTO model_use(folder, last_used) VALUES (?, ?)", (Path(d).name, db.now()))
+    except Exception:  # noqa: BLE001  (never fail a build over this)
+        pass
 
 
 def store(key: str, base: trimesh.Trimesh, name: trimesh.Trimesh, meta: dict, root: Path | None = None) -> Path:
@@ -100,6 +115,7 @@ def store(key: str, base: trimesh.Trimesh, name: trimesh.Trimesh, meta: dict, ro
     base.export(d / "base.stl", file_type="stl")
     name.export(d / "name.stl", file_type="stl")
     (d / "info.json").write_text(json.dumps(meta, indent=2))
+    touch(d)
     return d
 
 

@@ -100,9 +100,9 @@ def test_grouping_by_color(meshes_for):
     assert set(bplates[0].colors) == {"pink"}  # full colour group first
     assert sum(sizes) == len(orders)
     names = [plate_filename(p) for p in bplates]
-    assert names[0] == "{Ayra,pink},{Manvi,pink},{Riya,pink}.3mf"
-    assert names[1] == "{Kabir,blue},{Zoya,blue},{Tara,green}.3mf"
-    assert plate_filename(nplates[0]) == "{Ayra,pink},{Manvi,pink},{Riya,pink}.3mf"
+    assert names[0] == "Bases - Ayra + Manvi + Riya.3mf"
+    assert names[1] == "Bases - Kabir + Zoya + Tara.3mf"
+    assert plate_filename(nplates[0]) == "Pink - Ayra + Manvi + Riya.3mf"
 
 
 def test_build_writes_valid_files(tmp_path: Path, meshes_for):
@@ -112,10 +112,10 @@ def test_build_writes_valid_files(tmp_path: Path, meshes_for):
     assert res.ok, res.errors
     files = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.3mf"))
     assert files == [
-        "Bases/{Ayra,pink},{Manvi,pink},{Aishwarya,pink}.3mf",
-        "Bases/{Kabir,blue}.3mf",
-        "Names/blue/{Kabir,blue}.3mf",
-        "Names/pink/{Ayra,pink},{Manvi,pink},{Aishwarya,pink}.3mf",
+        "Bases/Bases - Ayra + Manvi + Aishwarya.3mf",
+        "Bases/Bases - Kabir.3mf",
+        "Names/blue/Blue - Kabir.3mf",
+        "Names/pink/Pink - Ayra + Manvi + Aishwarya.3mf",
     ]
     from snapstl.threemf import read_3mf
 
@@ -137,7 +137,7 @@ def test_duplicate_names_and_copies(tmp_path: Path, meshes_for):
     assert res.ok, res.errors
     assert all(res.complete(o.idx) for o in orders)
     names = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.3mf"))
-    assert "Names/pink/{Anaya,pink},{Anaya,pink},{Anaya,pink}.3mf" in names
+    assert "Names/pink/Pink - Anaya + Anaya + Anaya.3mf" in names
 
 
 def test_batch_folders_number_per_day(tmp_path, monkeypatch):

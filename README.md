@@ -461,13 +461,21 @@ Plates are saved like this:
 ```
 SnapSTL/output/2026-11-16/                 one folder per day
     Batch 1 - 2026-11-16/                  numbering restarts at 1 every day
-        Bases/{Ayra,pink},{Manvi,pink},{Riya,pink}.3mf
-        Names/pink/{Ayra,pink},{Manvi,pink},{Riya,pink}.3mf
+        Bases/Bases - Ayra + Manvi + Riya.3mf
+        Names/pink/Pink - Ayra + Manvi + Riya.3mf
+        Fixes/Fix - Pink - Riya (r).3mf      only what was spoiled, printed again (Print → Verify)
+        Merged/Merged - Pink - Ayra + Tara.3mf
         report.csv                         sizes, scale per axis, warnings
 ```
 
-Downloaded models are kept in `SnapSTL/Downloads`, one folder per name. Later batches reuse them, and
-SnapSTL never deletes them.
+Downloaded models are kept in `SnapSTL/Downloads`, one folder per name, and later batches reuse them.
+Nothing is ever deleted for good: a model no batch used for 15 days, and the folder of a batch whose
+orders were all on the way 10 days ago, go to the Recycle Bin (Trash on a Mac).
+
+Since 0.24 a printed plate goes to **Print → Verify**: a staff member checks every base and name; spoiled
+letters, a spoiled name, a wrong colour or a broken base get a small fix plate, and an order is packed only
+after both its parts are checked good. Batches show their names and progress and move to **Archive** once
+shipped; **Activities** lists what happened on the computer.
 
 The **Help** page in the app explains every tab, status and setting.
 

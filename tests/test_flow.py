@@ -126,9 +126,9 @@ def test_batch_with_helper_builds_plates(client):
     b = build_and_wait(client, bid)
     assert b["status"] == "done", b["summary"].get("errors")
     assert sorted(p["file"] for p in b["summary"]["plates"]) == [
-        "Bases/{Ayra,pink},{Manvi,pink},{Riya,blue}.3mf",
-        "Names/blue/{Riya,blue}.3mf",
-        "Names/pink/{Ayra,pink},{Manvi,pink}.3mf",
+        "Bases/Bases - Ayra + Manvi + Riya.3mf",
+        "Names/blue/Blue - Riya.3mf",
+        "Names/pink/Pink - Ayra + Manvi.3mf",
     ]
     folder = Path(b["summary"]["folder"])
     today = time.strftime("%Y-%m-%d")
@@ -557,7 +557,7 @@ def test_adhoc_orders_are_added_by_hand_and_batched_like_any_order(client):
     helper_work(client)
     b = build_and_wait(client, bid)
     assert b["status"] == "done", b["summary"].get("errors")
-    assert "Names/lavender/{Kiara,lavender},{Kiara,lavender}.3mf" in [p["file"] for p in b["summary"]["plates"]]
+    assert "Names/lavender/Lavender - Kiara + Kiara.3mf" in [p["file"] for p in b["summary"]["plates"]]
     st = {x["order_id"]: x["state"] for x in client.get("/api/orders?tab=all&limit=1000").json()["orders"]}
     assert (st[o["order_id"]], st["J1"]) == ("bundled", "bundled")
     # its plates are on Print like any other batch's; printed by hand here, so take them off the board

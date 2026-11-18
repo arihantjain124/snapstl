@@ -356,3 +356,43 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
   from the shared records get the check; once after updating, Ready orders not yet checked by a person
   are re-checked (5 such orders on the owner's database when this was made). Orders a person already
   approved or edited are left alone.
+
+### 2026-11-18: next update planned — Batches, Print → Verify, clean-up (0.24.0)
+- Owner's problems: Batches table cluttered (Computer column useless with one computer), names not
+  shown, list only grows, no archive or date filter; Print needs merging of same-colour single-name
+  plates across batches, a manual check step after printing (spoiled letters today mean digging out
+  the file and reprinting by hand), clearer Completed / Removed; .3mf names hard to read; Refresh
+  button on Orders. Printers part of Print stays as it is.
+- Found: downloaded name models usually have one piece per letter (an "i" dot is its own piece,
+  touching letters are one piece), so a single-letter fix plate can be made inside SnapSTL.
+- Decisions: shipped = On the way or later; Recycle Bin, not permanent; batch files 10 days after
+  shipped, models after 15 days unused; merge any plates of a colour up to 3 names, suggest only;
+  verify bases and names with a staff name from a list; everything printed before counts as
+  verified; new file names `Pink – A + B + C.3mf`; checks sync through Supabase; logistics sees
+  "waiting for check" and only checked orders in Labels to make; Activity log and download queue move
+  to a new Activities tab; packing slip only for Completed items; fewer hints, auto-build with a
+  "build plate clean" tick, print by colour, disk space — yes; Hindi — no; home screen — not chosen.
+- Plan: `docs/build-plan-batches-print-verify.md` (7 phases). Waiting for the owner's approval.
+- Owner (later the same day): "build plate clean" means no print may start while a finished print is
+  still on the printer's bed; approved all 7 phases and asked to build, push and write a brief.
+
+### 2026-11-18: 0.24.0 built and pushed
+- Built as planned (`docs/build-plan-batches-print-verify.md`), brief for the owner:
+  `docs/release-0.24.0-brief.md`.
+- **Print → Verify**: an order is made (Printed – pack it) only when its base and name are checked good
+  by a named staff member; fix plates for spoiled letters / a name / wrong colour / a broken base, cut
+  from the plate's own file at the same size; whole plate failed → back to the list. Completed lists
+  checked names with who checked them, packing slip, Found a problem.
+- **Bed clear**: Start print asks to confirm the bed is empty when the printer shows a finished print; a
+  busy printer keeps the plate held. Queue build stays manual.
+- **Merge** (suggest only, ≤ 3 names, same colour, not started) and **Split back**; group by colour.
+- **Batches**: names, progress, status in words, day groups, filters, Archive; folders to the Recycle
+  Bin 10 days after all orders are on the way, models unused 15 days too.
+- **Activities** tab (download queue moved there), Orders **Refresh**, explanations behind **?**,
+  logistics shows *Printed – waiting for check*.
+- Checks: 137 automated tests pass (sync on a throwaway Postgres). Practice run on a copy of the owner's
+  database: 116 printed items counted as checked "Before 0.24", all 1,670 orders in the same tab on the
+  copy, on an empty second computer and in the shared records (schema 3); a 0.23 computer is refused.
+  Letters of real names split correctly (e.g. SuriPari 8, Ronika 6, ANIKA 5).
+- **Update day**: every computer must update the same day (0.23 computers stop syncing).
+
