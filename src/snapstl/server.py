@@ -1294,10 +1294,10 @@ def makeit_presets(printer: int = 0, refresh: int = 0):
     base |= {"chosen": {k: f"{v['source']}:{v['id']}" for k, v in chosen.items()},
              "names": {k: v["name"] for k, v in chosen.items()}}
     try:  # local (yours in Bambuddy) + standard profiles only — no cloud (ARCHITECTURE #62)
-        avail = farm.bambuddy_presets(cfg, refresh=bool(refresh))
+        avail, notice = farm.preset_listing(cfg, refresh=bool(refresh))
     except farm.FarmError as e:
-        return base | {"available": {sl: [] for sl in farm.PRESET_SLOTS}, "error": str(e), "status": {}}
-    return base | {"available": avail, "error": "", "status": {}, "cloud_problem": ""}
+        return base | {"available": {sl: [] for sl in farm.PRESET_SLOTS}, "error": str(e), "status": {}, "notice": ""}
+    return base | {"available": avail, "error": "", "status": {}, "cloud_problem": "", "notice": notice}
 
 
 @app.put("/api/makeit/presets")

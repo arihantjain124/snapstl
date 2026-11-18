@@ -61,11 +61,12 @@ def _digits(s: str) -> str:
 
 
 def _search(q: str) -> tuple[str, list]:
-    """Order ID, customer name or phone (any way it's written: the last 10 digits are compared)."""
+    """Order ID, customer name, the name to print (as it will print or as the customer typed it) or phone (any
+    way it's written: the last 10 digits are compared)."""
     q = q.strip()
     d = _digits(q)[-10:]
-    parts, args = ["order_id LIKE ?", "COALESCE(clubbed_id,'') LIKE ?", "COALESCE(customer_name,'') LIKE ?"], \
-        [f"%{q}%", f"%{q}%", f"%{q}%"]
+    parts = [f"COALESCE({c},'') LIKE ?" for c in ("order_id", "clubbed_id", "customer_name", "name", "raw_name")]
+    args = [f"%{q}%"] * len(parts)
     if len(d) >= 4:
         phone = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone,''),' ',''),'+',''),'-',''),'(',''),')','')"
         parts.append(f"{phone} LIKE ?")
@@ -154,7 +155,7 @@ def _rows(con, where: str, args: list, order: str, limit: int, offset: int) -> t
 
 
 def list_orders(request: Request, view: str = "labels", q: str = "", limit: int = 100, offset: int = 0):
-    """A left-menu list, or a search over every order (q: order ID, phone or customer name)."""
+    """A left-menu list, or a search over every order (q: order ID, phone, customer name or name to print)."""
     limit = max(1, min(int(limit), 500))
     with db.tx() as con:
         if q.strip():

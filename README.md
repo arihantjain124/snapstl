@@ -663,8 +663,8 @@ SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn snapstl.server:ap
 
 Open `http://HOST-IP:8002` and sign in with the logistics password.
 
-- **Search** (top): order ID, phone (any way it's written) or customer name — shows all of that
-  customer's orders. "Last report uploaded" says how fresh the statuses are.
+- **Search** (top): order ID, phone (any way it's written), customer name or the name to print (as
+  the customer typed it or as corrected) — a phone search shows all of that customer's orders. "Last report uploaded" says how fresh the statuses are.
 - **Labels:** *Labels to make* (printed orders; "label expired" and Express first, **Copy order IDs**
   for the website; **Label Generated** on each row) and *Label done – ship it*.
 - **Customer help:** *Check name first*, *Cancel requests & problems*, *Remake requests*.

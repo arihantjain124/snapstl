@@ -116,6 +116,16 @@ def test_notes_cancel_request_and_remake(client):
     assert act(client, "R2", "remake", {"reason": "again"}).status_code == 409  # being made already
 
 
+def test_search_by_the_name_to_print(client):
+    from snapstl.ingest import set_name
+
+    upload(client, [("N1", "PRINT"), ("N2", "PRINT")])
+    set_name("N2", "Esha")  # corrected after a call: the name the customer typed still finds the order
+    assert sorted(lst(client, q="asha")) == ["N1", "N2"]  # any capitals, as the customer typed it
+    assert lst(client, q="ESH") == ["N2"]  # part of the corrected name
+    assert lst(client, q="nobody") == []
+
+
 def test_search_late_and_tracking(client, monkeypatch):
     from snapstl import server
 
