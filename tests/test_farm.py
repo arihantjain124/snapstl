@@ -846,8 +846,9 @@ def test_models_print_uses_the_selected_colour_and_waits_for_a_clear_bed(client,
 
     key = "a" * 24
     mesh = trimesh.creation.box(extents=(20, 16, 8))
-    monkeypatch.setattr(model_studio, "artifact",
-                        lambda k, p: mesh.export(file_type="stl") if (k, p) == (key, "base") else None)
+    preview = ({"plates": [{"id": "base", "color": "#ffffff"}]},
+               {"base": mesh.export(file_type="stl")}, {})
+    monkeypatch.setattr(model_studio, "PREVIEWS", model_studio.OrderedDict({key: preview}))
     monkeypatch.setattr(farm, "MODEL_PRINT_DIR", tmp_path)
     farm.update_config(presets_by_printer={"2": STD})
     bb.slicer = "ok"
