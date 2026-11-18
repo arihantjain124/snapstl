@@ -50,11 +50,16 @@ a new revision of its design. Keep each named concept independently selectable a
 
 ## Build the agreed drafts
 
-1. Work in the model development branch and an isolated SnapSTL instance. Start with the implemented
+1. Work on the shared `change/local-parametric-model` branch and use an isolated SnapSTL instance.
+   Merge that branch into `main` together only after the owner approves all models for production.
+   Start with the implemented
    manifest and preview contract in the checkout. The Models plan describes the proposed contract.
    If the tab or renderer is unavailable, use the local OpenSCAD CLI for an honest standalone
    preview and report which in-app step remains unavailable. A text-only conversation needs a
-   workspace with access to the CAD toolchain for generated artifacts.
+   workspace with access to the CAD toolchain for generated artifacts. On Apple silicon, check
+   `/usr/sbin/sysctl -n hw.optional.neon` before launching the CLI from a restricted shell. If the
+   probe is denied, use the desktop app or an unrestricted local development instance. Qt will
+   otherwise abort before OpenSCAD reaches the CAD source.
 2. Create or update one `DESIGN.md` at the root of the model package. Record the accepted brief,
    interfaces, pass/fail measures and comparison preset. Give each named concept a section for why
    it exists, source revisions, test results and feedback. Choose shared parameters
@@ -72,6 +77,26 @@ a new revision of its design. Keep each named concept independently selectable a
    when applicable. Validate inputs, capture renderer diagnostics, and keep generated files in the
    preview output area. For public work, use synthetic text and distributable assets with their
    notices. Keep references and customer data local. Preserve the MakerWorld path and its guards.
+
+## Design for layer-based colour changes
+
+When a design uses multiple print colours, ask which faces need contrast and whether the owner
+wants a single filament change, a limit on changes, or separate pieces. Use the intended print
+orientation to put colour regions on consecutive Z bands where the design permits. For raised
+lettering or a motif, finish the base at one common Z and put only the contrasting features
+above it. Keep the features supported and bonded to the solid below. For more complex models,
+consider the build direction, stepped detail and the order of coloured features together.
+Avoid two colours on a layer when the visual goal allows it. If a shared layer is essential,
+compare the slicer's change count and purge estimate for that layout and for separately printed
+pieces, and agree on any assembly and fit implications with the owner.
+
+Record each change height from the print bed and the filament order in the design record.
+Align boundaries to the actual layer schedule, including the first layer and any variable
+layer heights. Verify that each layer in the sliced preview uses the intended colour and count
+the changes before presenting a print workflow as verified. A mesh check can establish the
+transition geometry. The chosen slicer profile determines the actual toolpath. For a geometry-only
+STL, give the owner the change height and instructions for setting the filament change or pause
+in their slicer. Keep these standalone instructions within the existing Models and print rules.
 
 ## Verify geometry and fit
 

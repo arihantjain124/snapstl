@@ -89,6 +89,8 @@ class Part(ManifestItem):
     label: str = Field(min_length=1, max_length=80)
     color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
     color_parameter: str | None = Field(default=None, pattern=VARIABLE)
+    upper_color_parameter: str | None = Field(default=None, pattern=VARIABLE, exclude_if=lambda value: value is None)
+    color_change_at: str | None = Field(default=None, pattern=VARIABLE, exclude_if=lambda value: value is None)
     assembly: tuple[tuple[float, float, float, float], tuple[float, float, float, float],
                     tuple[float, float, float, float], tuple[float, float, float, float]] | None = None
 
@@ -111,8 +113,13 @@ class Design(ManifestItem):
         if len({p.id for p in self.parts}) != len(self.parts):
             raise ValueError("Part IDs must be unique")
         color_ids = {p.id for p in self.parameters if p.type == "color"}
+        height_ids = {p.id for p in self.parameters if p.type in ("number", "integer")}
         if any(part.color_parameter and part.color_parameter not in color_ids for part in self.parts):
             raise ValueError("A part's colour control must name a color parameter")
+        for part in self.parts:
+            if part.upper_color_parameter or part.color_change_at:
+                if part.upper_color_parameter not in color_ids or part.color_change_at not in height_ids:
+                    raise ValueError("A layer colour needs a color parameter and a numeric change height parameter")
         for param in self.parameters:
             param.value(param.default)
         return self
@@ -308,13 +315,18 @@ def catalog(product: ModelParams | None = None) -> dict:
                 reason = str(exc) if isinstance(exc, ModelError) else "A model file could not be read."
                 errors.append(f"{model.title} / {design.label}: {reason}")
         models.append({"id": model.id, "title": model.title, "designs": designs})
-    return {"models": models, "errors": errors, "renderer": bool(platform_os.openscad_cli())}
+    installed = bool(platform_os.openscad_cli())
+    problem = platform_os.openscad_launch_problem() if installed else None
+    return {"models": models, "errors": errors, "renderer": installed and problem is None,
+            "renderer_error": problem}
 
 
 def _engine() -> tuple[str, str]:
     binary = platform_os.openscad_cli()
     if binary is None:
         raise ModelError("Install an OpenSCAD development build with textmetrics support, then refresh Models.")
+    if problem := platform_os.openscad_launch_problem():
+        raise ModelError(problem)
     code, version = platform_os.run_quiet([binary, "--version"], timeout=5)
     if code:
         raise ModelError("OpenSCAD could not start. Check the installation and launch environment.")
@@ -455,9 +467,15 @@ def _render(model, design, revision, files, values, params, scaling):
         if sum(map(len, data.values())) > MAX_JOB:
             raise ModelError("The preview exceeds the STL size limit.")
         actual = _load_stl(data[part.id], part.label)
-        plates.append({"id": part.id, "label": part.label,
-                       "color": values.get(part.color_parameter, part.color), "assembly": transform,
-                       "dimensions": list(dims(actual)), "url": f"/api/model-studio/previews/{key}/{part.id}.stl"})
+        plate = {"id": part.id, "label": part.label,
+                 "color": values.get(part.color_parameter, part.color), "assembly": transform,
+                 "dimensions": list(dims(actual)), "url": f"/api/model-studio/previews/{key}/{part.id}.stl"}
+        if part.upper_color_parameter:
+            height = values[part.color_change_at]
+            if not 0 < height < actual.extents[2]:
+                raise ModelError("The filament change height must be inside the preview plate.")
+            plate.update(upper_color=values[part.upper_color_parameter], color_change_at=height)
+        plates.append(plate)
     if fit and fit_problems(fit_metrics(fit.base_orig, fit.name_orig, plates[0]["dimensions"], plates[1]["dimensions"])):
         raise ModelError("The exported preview files did not preserve the name/base proportions.")
     result = {"key": key, "revision": revision, "engine": engine, "plates": plates, **checks}
@@ -487,9 +505,14 @@ def write_print_plate(key: str, part: str, cfg: PlateSettings, root: Path) -> st
     path = root / relative
     if path.is_file():
         return relative  # a held preview can be resumed even after SnapSTL restarted
-    data = artifact(key, part)
+    with PREVIEW_LOCK:
+        preview = PREVIEWS.get(key)
+        data = preview[1].get(part) if preview else None
+        plate = next((plate for plate in preview[0]["plates"] if plate["id"] == part), None) if preview else None
     if data is None:
         raise ModelError("This preview expired. Generate it again before printing.")
+    if plate and "upper_color" in plate and plate["upper_color"].lower() != plate["color"].lower():
+        raise ModelError("Download the STL and set the filament change in the slicer for a two-colour print.")
     mesh = _load_stl(data, part)
     packed_part = packing.make_part(part, mesh)
     layout = packing.pack([packed_part], cfg)

@@ -520,9 +520,21 @@ one of its loaded filament colours, then click **Start print**. The printer uses
 profiles, and a busy printer keeps the job held until you clear the bed and resume. The printer's
 actual loaded filament selection determines the printed colour independently of the preview colour.
 
+In **Models → Personalized Bookmark**, compare Classic Round, Ribbon Tail, Open Arch and Faceted
+Tab. Enter up to 28 characters, set the length, width and base thickness, and choose separate base
+and letter colours. The maximum letter height is a cap. Longer text scales down to fit.
+
+For two colours, download the STL and add one filament change or pause before the first
+letter-only layer in the slicer. The preview shows the change height from the bed. The default
+base is 1.0 mm and the lettering adds 0.6 mm. With a 0.20 mm first layer and fixed 0.20 mm layers,
+the base is layers 1–5 and the letters start on layer 6. Check the sliced preview before printing.
+Choose matching model colours to use SnapSTL's single-slot **Start print** workflow.
+
 Install an OpenSCAD development build with desktop CLI support. Models has been tested with
 OpenSCAD 2026.10.11 on macOS. If SnapSTL cannot find it, set `SNAPSTL_OPENSCAD` to the absolute
-path to the executable before starting the development instance. **Build a model with an agent**
+path to the executable before starting the development instance. On Apple silicon, use the
+desktop app or an unrestricted local development server so OpenSCAD can detect CPU features.
+**Build a model with an agent**
 explains how to use the skill in Codex or Claude Code and how to give fit feedback. See the
 [Models workflow](docs/models-workspace-plan.md) and [organizer design record](models/name-desk-organizer/DESIGN.md).
 
