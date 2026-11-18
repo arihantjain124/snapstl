@@ -506,6 +506,14 @@ SnapSTL checks for updates by itself. When there is one, the sidebar shows **Upd
 Click it, then **Update now**. SnapSTL installs the update and restarts in a few seconds, and the
 helper in Chrome reloads itself. Orders, batches, settings and downloads are kept.
 
+To test a published branch, open **Settings → Maintenance → Updates**, click **Check for updates**,
+choose its name under **Update branch**, and click **Switch branch**. Use the same picker to return
+to **main (production)**. Updates follow the branch checked out on this computer. Only branches
+published to the configured `origin` appear. A tester needs a SnapSTL build with the branch picker
+before using it, and the branches they switch between should contain the picker for an in-app return.
+Use test branches with shared production records only after checking schema and workflow compatibility.
+Switching code does not roll back database changes. Test branches skip the in-app Bambuddy update.
+
 Running the install command again also updates SnapSTL.
 Bambuddy on the Bambuddy computer is updated by running its [step-0](#0-the-bambuddy-computer-print-farm--slicing)
 command there again (to the version this SnapSTL was tested with, `scripts/bambuddy-version.txt`). A

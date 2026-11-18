@@ -707,14 +707,19 @@ snapstl.server:app --port 8320`.
 
 Each SnapSTL folder (`~/SnapSTL-app`) is a git clone of the **public** repository over HTTPS (no keys),
 made by the one-command installers (`scripts/install-mac.sh`, `scripts/windows/install-windows.ps1`,
-which also turn an older zip copy into a clone and run the platform installer). `updater.py`: `check()` = `git fetch` + how many commits `main` is
-behind; `apply()` = refuse if tracked files were edited by hand → `git pull --ff-only` → `uv sync`.
-`GET/POST /api/update` (this computer only) wrap them. POST refuses while a name is claimed or a
-batch is building, then restarts the service (launchd / the Windows task). The UI checks at start and every 6 h and shows
+which also turn an older zip copy into a clone and run the platform installer). `updater.check()`
+fetches and prunes `origin` branch refs for the picker and counts incoming commits on the checked-out
+branch's upstream. **Update now** pulls fast-forward only. **Switch branch** fetches again, validates
+the name against published branches and checks out a local tracking branch at the published revision.
+Tracked edits and unpublished commits on the target branch block the switch. `main` is the production
+choice. In-app Bambuddy updates run when installing a new commit on `main`.
+`GET/POST /api/update` (this computer only) wrap this flow. POST accepts an optional `branch`, refuses
+while a name is claimed or a batch is building, and installs and restarts when the commit changes
+(launchd / the Windows task). The UI checks at start and every 6 h and shows
 **Update available** in the sidebar. The helper's config response carries the helper version on disk.
 When it differs from the running one, background.js calls `chrome.runtime.reload()` once per version
 (never mid-name). `onInstalled` reloads open model-maker tabs so they run the new content script.
-`scripts/update.sh` does the same from Terminal. Customer data is outside the folder, so a pull
+`scripts/update.sh` updates the current branch from Terminal. Customer data is outside the folder, so a pull
 can't touch it. Shared order records and Windows: the sections below.
 
 ## Print farm — Bambuddy (0.10.0)
