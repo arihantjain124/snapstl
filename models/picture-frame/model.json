@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "id": "picture-frame",
+  "title": "Picture Frame",
+  "designs": [
+    {
+      "id": "folding-easel",
+      "label": "Folding Easel",
+      "description": "A portrait 4 × 6 in frame with a folding rear stand and optional raised lettering on either border.",
+      "source": "folding-easel.scad",
+      "assets": [
+        "fonts/AkayaKanadaka-OFL.txt",
+        "fonts/AkayaKanadaka-Regular.ttf",
+        "fonts/CherryBombOne-OFL.txt",
+        "fonts/CherryBombOne-Regular.ttf",
+        "fonts/Chewy-LICENSE.txt",
+        "fonts/Chewy-Regular.ttf",
+        "fonts/DynaPuff-OFL.txt",
+        "fonts/DynaPuff[wdth,wght].ttf",
+        "fonts/LuckiestGuy-LICENSE.txt",
+        "fonts/LuckiestGuy-Regular.ttf",
+        "fonts/TitanOne-OFL.txt",
+        "fonts/TitanOne-Regular.ttf"
+      ],
+      "parameters": [
+        {
+          "id": "personalize",
+          "label": "Add raised text",
+          "type": "checkbox",
+          "default": true
+        },
+        {
+          "id": "text",
+          "label": "Text",
+          "type": "text",
+          "default": "Good Times",
+          "max_length": 24
+        },
+        {
+          "id": "font",
+          "label": "Font",
+          "type": "choice",
+          "default": "Chewy",
+          "choices": [
+            "Chewy",
+            "Luckiest Guy",
+            "Titan One",
+            "DynaPuff",
+            "Cherry Bomb One",
+            "Akaya Kanadaka"
+          ]
+        },
+        {
+          "id": "text_position",
+          "label": "Text position",
+          "type": "choice",
+          "default": "Bottom",
+          "choices": [
+            "Bottom",
+            "Top"
+          ]
+        },
+        {
+          "id": "max_letter_height",
+          "label": "Maximum letter height",
+          "type": "number",
+          "minimum": 5,
+          "maximum": 11,
+          "default": 9,
+          "step": 0.5,
+          "unit": "mm"
+        },
+        {
+          "id": "photo_clearance",
+          "label": "Photo clearance per side",
+          "type": "number",
+          "minimum": 0.2,
+          "maximum": 0.7,
+          "default": 0.3,
+          "step": 0.05,
+          "unit": "mm",
+          "group": "development"
+        },
+        {
+          "id": "pin_clearance",
+          "label": "Hinge pin clearance per side",
+          "type": "number",
+          "minimum": 0.15,
+          "maximum": 0.45,
+          "default": 0.2,
+          "step": 0.05,
+          "unit": "mm",
+          "group": "development"
+        }
+      ],
+      "parts": [
+        {
+          "id": "frame",
+          "label": "Frame plate",
+          "color": "#d68170",
+          "assembly": [
+            [
+              1,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              1,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              1
+            ]
+          ]
+        },
+        {
+          "id": "backing",
+          "label": "Backing plate",
+          "color": "#d6b7a6",
+          "assembly": [
+            [
+              1,
+              0,
+              0,
+              2
+            ],
+            [
+              0,
+              -1,
+              0,
+              182.4
+            ],
+            [
+              0,
+              0,
+              -1,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              1
+            ]
+          ]
+        },
+        {
+          "id": "stand",
+          "label": "Stand plate",
+          "color": "#a45047",
+          "assembly": [
+            [
+              1,
+              0,
+              0,
+              53.8
+            ],
+            [
+              0,
+              -0.8660254037844387,
+              0.49999999999999994,
+              117.31051177665154
+            ],
+            [
+              0,
+              -0.49999999999999994,
+              -0.8660254037844387,
+              -2.469872981077807
+            ],
+            [
+              0,
+              0,
+              0,
+              1
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}

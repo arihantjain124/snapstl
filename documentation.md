@@ -473,3 +473,8 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
 - Owner asked to choose the tilt when Rotate text is enabled. Letter Contour shows a signed
   angle in degrees when enabled, with the previous 6° as the default. The same contour drives
   the insert and the recess.
+
+### 2026-11-18: Folding Easel picture frame
+- Owner requested a 4 × 6 in frame with a folding rear stand, the six existing fonts and selectable top or bottom lettering. The model belongs on `change/local-parametric-model`.
+- Built a three-plate portrait draft with a rear-loaded photo pocket, screw-on backing and a hinged stand. Added adjustable photo and hinge clearances for Development. See [Folding Easel](models/picture-frame/DESIGN.md) for the assembly and geometry checks.
+- **Open:** owner preview review and a physical test of the photo fit, hinge and stability.
