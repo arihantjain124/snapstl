@@ -396,3 +396,10 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
   Letters of real names split correctly (e.g. SuriPari 8, Ronika 6, ANIKA 5).
 - **Update day**: every computer must update the same day (0.23 computers stop syncing).
 
+
+### 2026-11-18: 0.24.1 Slicing page fix
+- Owner reported: Slicing → Bambuddy profiles per printer stuck on "Loading…" after updating to 0.24.0.
+- Cause: the page lines declaring the Slicing helpers (`SLPR`, `SLP`, `slName`, `SLOTS`, `SRC_LABEL`, `CLOUD_WHY`,
+  `putJSON`) were removed by mistake in 0.22.22. Saved profiles were not affected.
+- Fix: lines restored; `tests/test_page_script.py` fails if they go missing again. Checked against a stand-in
+  Bambuddy: load, save, switch printer, reload, print defaults.

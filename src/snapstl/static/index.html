@@ -1417,6 +1417,13 @@ $('slp_all').onclick=async()=>{if(!MK)return;const rows=[...MK.bases,...MK.names
   if(!todo.length){$('slp_allmsg').textContent='Nothing to slice for the chosen printers.'+skip;return}
   try{const r=await post('/api/makeit/slice',{plates:todo.map(x=>({batch_id:x.batch_id,file:x.file,printer_id:+pick(x).id}))});$('slp_allmsg').textContent=`${r.queued} plate(s) queued for slicing, each for its chosen printer.`+skip}catch(e){$('slp_allmsg').textContent=e.message}loadMakeIt()};
 
+// ---------- Slicing ----------
+let SLPR=0,SLP=null;try{SLPR=+(localStorage.getItem('slprinter')||0)}catch{}
+const slName=id=>((SLP&&SLP.printers.find(x=>x.id===id))||{}).name||'this printer';
+const SLOTS=['printer','process','filament'];
+const SRC_LABEL={local:'Yours in Bambuddy',orca_cloud:'Orca Cloud',cloud:'Bambu Cloud',standard:"Slicer's standard profiles"};
+const CLOUD_WHY={not_authenticated:'not signed in in Bambuddy',expired:'sign-in expired in Bambuddy',unreachable:"couldn't be reached"};
+const putJSON=(path,b)=>api(path,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
 async function loadPresets(refresh){$('slp_msg').textContent=refresh?'Reading Bambuddy\'s profiles…':'Loading…';$('slp_msg').style.color='';let p;
   const q=new URLSearchParams();if(SLPR)q.set('printer',SLPR);if(refresh)q.set('refresh','1');
   try{p=await api('/api/makeit/presets?'+q)}catch(e){$('slp_msg').textContent=e.message;return}
