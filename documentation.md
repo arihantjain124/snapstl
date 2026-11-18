@@ -403,3 +403,15 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
   `putJSON`) were removed by mistake in 0.22.22. Saved profiles were not affected.
 - Fix: lines restored; `tests/test_page_script.py` fails if they go missing again. Checked against a stand-in
   Bambuddy: load, save, switch printer, reload, print defaults.
+
+### 2026-11-18: Local parametric organizer research
+- Owner wants local generation to clear the backlog during MakerWorld outages, starting with the
+  current compartment organizer, and a repeatable workflow from plain-language request to STL preview.
+- Created `change/local-parametric-model`. Measured six cached Chewy pairs that passed the watermark scan.
+  The base follows the text silhouette, with a 50 mm depth, 3 mm floor and dividers, and a 1 mm front
+  recess for a separate flat 4 mm insert before Scaling v1.1.
+- OpenSCAD rendered a synthetic test pair from the untracked prototype. Its rectangular body and
+  raised insert differ from the references. The survey and proposed build stages are in
+  [Local parametric models](docs/parametric-model-pipeline.md).
+- **Open**: permission for a close public reproduction versus an independently styled design, sample
+  prints to calibrate fit, and approval of the Chewy-first preview and pilot plan.
