@@ -25,6 +25,7 @@ from . import (archive, auth, bambuddy_host, cache, computer, config, db, extras
                updater, verify)
 from .ingest import add_adhoc, ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
+from . import staff as staff_pins
 from . import maintenance as M
 from .batches import DOWNLOADER, MANAGER, compartments_for
 from .scaling import pick_band
@@ -1322,7 +1323,11 @@ async def makeit_merge(req: Request):
     """Names → Merge: same-colour plates not started (≤ 3 names) onto one plate."""
     b = await req.json()
     try:
-        return await run_in_threadpool(extras.merge, list(b.get("plates") or []), str(b.get("staff") or ""))
+        try:  # who merged (the activity log); merging doesn't need a PIN
+            who = staff_pins.checker(str(b.get("token") or ""), str(b.get("staff") or ""))
+        except ValueError:
+            who = ""
+        return await run_in_threadpool(extras.merge, list(b.get("plates") or []), who)
     except extras.ExtraError as e:
         raise HTTPException(409, str(e)) from e
 
@@ -1341,7 +1346,7 @@ async def verify_submit(req: Request):
     """Print → Verify (and Completed → Found a problem): {carrier: {batch_id, file}, staff, results, note}."""
     b = await req.json()
     try:
-        out = await run_in_threadpool(verify.submit, b.get("carrier") or {}, str(b.get("staff") or ""),
+        out = await run_in_threadpool(verify.submit, b.get("carrier") or {}, _checker(b),
                                       list(b.get("results") or []), str(b.get("note") or ""))
     except (ValueError, extras.ExtraError) as e:
         raise HTTPException(409, str(e)) from e
@@ -1362,26 +1367,85 @@ def verify_letters(batch_id: int, plate: str, idx: int):
 
 @app.get("/api/staff")
 def staff_get(all: int = 0):
+    """Settings → Staff and Print → Verify: the people, who has a PIN, whether PINs are in use."""
     with db.tx() as con:
-        names = verify.staff_names(con, all_=True)
-        hidden = {r[0] for r in con.execute("SELECT name FROM staff WHERE hidden=1")}
-    return {"staff": [{"name": n, "hidden": n in hidden} for n in names if all or n not in hidden]}
+        rows = db.rows(con, "SELECT name, hidden, COALESCE(pin_hash,'')<>'' AS pin FROM staff ORDER BY name COLLATE NOCASE")
+        on = staff_pins.pins_on(con)
+    return {"staff": [{"name": r["name"], "hidden": bool(r["hidden"]), "pin_set": bool(r["pin"])} for r in rows
+                      if all or not r["hidden"]],
+            "pins_on": on, "owner_pin_set": staff_pins.owner_set()}
 
 
 @app.post("/api/staff")
 async def staff_post(req: Request):
-    """Add a staff name ({name}) or hide / show one ({name, hidden})."""
+    """Settings → Staff (owner PIN once set): add a person ({name}), hide / show one ({name, hidden}), set or
+    clear their PIN ({name, pin} / {name, clear_pin}). Every change: {owner_pin}."""
     b = await req.json()
     try:
+        staff_pins.require_owner(str(b.get("owner_pin") or ""))
         with db.tx() as con:
+            name = str(b.get("name") or "")
             if "hidden" in b:
-                verify.hide_staff(con, str(b.get("name") or ""), bool(b.get("hidden")))
-                name = b.get("name")
-            else:
-                name = verify.add_staff(con, str(b.get("name") or ""))
+                verify.hide_staff(con, name, bool(b.get("hidden")))
+            elif b.get("clear_pin"):
+                staff_pins.clear_pin(con, name)
+            else:  # add (or show again), with a PIN if one is given; an existing person: just the new PIN
+                if "pin" not in b or not con.execute("SELECT 1 FROM staff WHERE name=?", (name,)).fetchone():
+                    name = verify.add_staff(con, name)
+                if "pin" in b:
+                    staff_pins.set_pin(con, name, str(b.get("pin") or ""))
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+    sync.LOOP.kick()
     return {"name": name}
+
+
+@app.post("/api/staff/owner-pin")
+async def staff_owner_pin(req: Request):
+    """Set the owner PIN ({pin}) or change it ({pin, old_pin}); it guards Settings → Staff on this computer."""
+    b = await req.json()
+    try:
+        staff_pins.set_owner(str(b.get("pin") or ""), str(b.get("old_pin") or ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"ok": True}
+
+
+@app.post("/api/staff/start")
+async def staff_start(req: Request):
+    """Print → Verify: {pin} → {name, token}: checks are saved under this person until Done or 30 idle minutes."""
+    b = await req.json()
+    try:
+        return staff_pins.start(str(b.get("pin") or ""))
+    except ValueError as e:
+        raise HTTPException(403, str(e)) from e
+
+
+@app.post("/api/verify/plate-failed")
+async def verify_plate_failed(req: Request):
+    """The whole printed plate failed ({carrier: {batch_id, file}}): its unchecked items go back to print."""
+    b = await req.json()
+    who = _checker(b)
+    try:
+        out = await run_in_threadpool(verify.plate_failed, b.get("carrier") or {}, who)
+    except (ValueError, extras.ExtraError) as e:
+        raise HTTPException(409, str(e)) from e
+    sync.LOOP.kick()
+    return out
+
+
+@app.post("/api/staff/end")
+async def staff_end(req: Request):
+    staff_pins.end(str((await req.json()).get("token") or ""))
+    return {"ok": True}
+
+
+def _checker(b: dict) -> str:
+    """Who a check or merge is saved under (the PIN's person once PINs are in use)."""
+    try:
+        return staff_pins.checker(str(b.get("token") or ""), str(b.get("staff") or ""))
+    except ValueError as e:
+        raise HTTPException(403, str(e)) from e
 
 
 @app.post("/api/makeit/reprint")

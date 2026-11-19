@@ -36,8 +36,20 @@ def _res(card, how):
     return [{"batch_id": i["batch_id"], "plate": i["plate"], "idx": i["idx"], "result": how(i)} for i in card["items"]]
 
 
+def by_plate(verify_cards):
+    """Print → Verify shows one card per name (0.25.1); tests check plate by plate: the items waiting for a
+    check, grouped by the plate they were printed on."""
+    out = {}
+    for c in verify_cards:
+        for i in c["items"]:
+            if i["status"] == "waiting":
+                k = (i["carrier"]["batch_id"], i["carrier"]["file"])
+                out.setdefault(k, {"batch_id": k[0], "file": k[1], "extra": i["extra"], "items": []})["items"].append(i)
+    return out
+
+
 def _cards(c):
-    return {(x["batch_id"], x["file"]): x for x in c.get("/api/makeit").json()["verify"]}
+    return by_plate(c.get("/api/makeit").json()["verify"])
 
 
 def test_plate_files_have_easy_names(client, bb):
@@ -51,7 +63,7 @@ def test_fix_plates_for_a_broken_base_and_a_wrong_colour(client, bb):
     for f in (BASE, PINK, BLUE):  # printed by hand (e.g. Removed → Mark printed by hand)
         assert client.post("/api/makeit/by-hand", json={"batch_id": bid, "file": f}).status_code == 200
     m = client.get("/api/makeit").json()
-    assert m["bases"] == [] and m["names"] == [] and {c["file"] for c in m["verify"]} == {BASE, PINK, BLUE}
+    assert m["bases"] == [] and m["names"] == [] and {f for _, f in by_plate(m["verify"])} == {BASE, PINK, BLUE}
     assert _tab(client, "PV") == {"PV1": "printing", "PV2": "printing"}
     cards = _cards(client)
 
@@ -113,6 +125,7 @@ def test_spoiled_letters_only(client, bb, monkeypatch):
     bid, folder = built_batch(client, "PS")
     client.post("/api/staff", json={"name": "Asha"})
     client.post("/api/makeit/by-hand", json={"batch_id": bid, "file": PINK})
+    client.post("/api/makeit/by-hand", json={"batch_id": bid, "file": BASE})  # a name is checked once its base is printed
     card = _cards(client)[(bid, PINK)]
     it = card["items"][0]
     p = client.get(f"/api/verify/letters?batch_id={bid}&plate={PINK}&idx=0").json()["pieces"]
@@ -153,12 +166,14 @@ def test_merge_name_plates_across_batches_and_split_back(client, bb):
     assert client.post("/api/makeit/by-hand", json={"batch_id": b2, "file": merged}).status_code == 200
     assert client.post("/api/makeit/split", json={"batch_id": b2, "file": merged}).status_code == 409  # printed
     client.post("/api/staff", json={"name": "Asha"})
+    assert _cards(client) == {}  # Verify waits for the bases: a name is checked with its base
+    assert _tab(client, "PO")["PO1"] == "printing"
+    for b in (b1, b2):
+        client.post("/api/makeit/by-hand", json={"batch_id": b, "file": BASE})
     card = _cards(client)[(b2, merged)]
     assert card["extra"] == "merged" and sorted(i["order_id"] for i in card["items"]) == ["PN1", "PO1"]
     assert _check(client, b2, merged, _res(card, lambda i: "good")).status_code == 200
-    assert _tab(client, "PO")["PO1"] == "printing"  # its base isn't printed yet
     for b in (b1, b2):
-        client.post("/api/makeit/by-hand", json={"batch_id": b, "file": BASE})
         _check(client, b, BASE, _res(_cards(client)[(b, BASE)], lambda i: "good"))
     assert _tab(client, "PO")["PO1"] == "pack_it" and _tab(client, "PN")["PN1"] == "pack_it"
 
@@ -219,7 +234,7 @@ def test_staff_names_are_kept_hidden_not_removed(client):
     assert client.post("/api/staff", json={"name": ""}).status_code == 400
     client.post("/api/staff", json={"name": "Ravi K", "hidden": True})
     assert "Ravi K" not in [s["name"] for s in client.get("/api/staff").json()["staff"]]
-    assert {"name": "Ravi K", "hidden": True} in client.get("/api/staff?all=1").json()["staff"]
+    assert {"name": "Ravi K", "hidden": True, "pin_set": False} in client.get("/api/staff?all=1").json()["staff"]
     client.post("/api/staff", json={"name": "Ravi K"})  # added again → shown again
     assert "Ravi K" in [s["name"] for s in client.get("/api/staff").json()["staff"]]
     with db.tx() as con:
@@ -249,3 +264,82 @@ def test_base_and_letters_status_and_no_double_save(client, bb):
         assert con.execute("SELECT COUNT(*) FROM plate_checks WHERE batch_id=? AND plate=?", (bid, PINK)).fetchone()[0] == 1
     m = client.get("/api/makeit").json()
     assert [(r["file"], r["other_ready"]) for r in m["printed_bases"]] == [(BASE, 1)]  # Ayra's letters printed
+
+
+def test_a_letter_fix_plate_merges_with_other_letter_plates_and_splits_back(client, bb):
+    """0.25.1: a fix plate of letters can be merged with a same-colour plate (≤ 3 names); Split back returns both."""
+    b1, f1 = built_batch(client, "PF")
+    b2, f2 = built_batch(client, "PG")
+    client.post("/api/staff", json={"name": "Asha"})
+    for f in (PINK, BASE):
+        client.post("/api/makeit/by-hand", json={"batch_id": b1, "file": f})
+    card = _cards(client)[(b1, PINK)]
+    fix = _check(client, b1, PINK, _res(card, lambda i: "name")).json()["fixes"][0]
+    names = {(r["batch_id"], r["file"]): r for r in client.get("/api/makeit").json()["names"]}
+    assert names[(b1, fix)]["extra"] == "fix" and (b2, PINK) in names
+    plates = [{"batch_id": b1, "file": fix}, {"batch_id": b2, "file": PINK}]
+    r = client.post("/api/makeit/merge", json={"plates": plates, "staff": "Asha"})
+    assert r.status_code == 200, r.text
+    merged = r.json()["file"]
+    assert len(read_3mf(f2 / merged)) == 2
+    names = {(r["batch_id"], r["file"]) for r in client.get("/api/makeit").json()["names"]}
+    assert (b2, merged) in names and (b1, fix) not in names and (b2, PINK) not in names
+    # a blue plate can't join a pink one; more than 3 names can't go on one plate
+    assert client.post("/api/makeit/merge", json={"plates": [{"batch_id": b1, "file": BLUE},
+                                                             {"batch_id": b2, "file": BLUE}] * 2}).status_code == 409
+    assert client.post("/api/makeit/split", json={"batch_id": b2, "file": merged}).status_code == 200
+    names = {(r["batch_id"], r["file"]) for r in client.get("/api/makeit").json()["names"]}
+    assert (b1, fix) in names and (b2, PINK) in names and (b2, merged) not in names
+
+
+def test_checks_are_saved_under_the_person_whose_pin_was_typed(client, bb):
+    """0.25.1: staff PINs. Settings → Staff needs the owner PIN once set; once anyone has a PIN, a check needs a
+    PIN sign-in (a chosen name alone is refused) and is saved under that person."""
+    from snapstl import staff as staff_pins
+
+    staff_pins.reset_owner()
+    bid, folder = built_batch(client, "PP")
+    for f in (PINK, BASE):
+        client.post("/api/makeit/by-hand", json={"batch_id": bid, "file": f})
+    assert client.post("/api/staff/owner-pin", json={"pin": "12a4"}).status_code == 400
+    assert client.post("/api/staff/owner-pin", json={"pin": "9999"}).status_code == 200
+    assert client.post("/api/staff", json={"name": "Meena", "pin": "1111"}).status_code == 400  # owner PIN needed
+    assert client.post("/api/staff", json={"name": "Meena", "pin": "1111", "owner_pin": "9999"}).status_code == 200
+    assert client.post("/api/staff", json={"name": "Ravi", "pin": "1111", "owner_pin": "9999"}).status_code == 400  # taken
+    assert client.post("/api/staff", json={"name": "Ravi", "pin": "2222", "owner_pin": "9999"}).status_code == 200
+    s = client.get("/api/staff").json()
+    assert s["pins_on"] and s["owner_pin_set"] and {x["name"]: x["pin_set"] for x in s["staff"]}["Meena"]
+
+    card = _cards(client)[(bid, PINK)]
+    good = _res(card, lambda i: "good")
+    assert _check(client, bid, PINK, good, staff="Meena").status_code == 403  # a name alone isn't enough now
+    assert client.post("/api/staff/start", json={"pin": "3333"}).status_code == 403
+    tok = client.post("/api/staff/start", json={"pin": "2222"}).json()
+    assert tok["name"] == "Ravi"
+    r = client.post("/api/verify", json={"carrier": {"batch_id": bid, "file": PINK}, "token": tok["token"],
+                                         "staff": "Meena", "results": good})
+    assert r.status_code == 200, r.text
+    with db.tx() as con:
+        assert con.execute("SELECT staff FROM plate_checks WHERE batch_id=? AND plate=?", (bid, PINK)).fetchone()[0] == "Ravi"
+    client.post("/api/staff/end", json={"token": tok["token"]})
+    assert client.post("/api/verify/plate-failed", json={"carrier": {"batch_id": bid, "file": BASE},
+                                                          "token": tok["token"]}).status_code == 403  # signed out
+    with db.tx() as con:  # PINs are stored only as salted hashes
+        assert all("1111" not in (h or "") for (h,) in con.execute("SELECT pin_hash FROM staff"))
+    staff_pins.reset_owner()
+    with db.tx() as con:
+        con.execute("UPDATE staff SET pin_hash=''")
+
+
+def test_a_spoiled_letters_plate_goes_back_before_its_bases_are_printed(client, bb):
+    """0.25.1: Letters → Printed lists printed letter plates; Whole plate failed works there even while the
+    bases aren't printed (Verify shows the name only once both parts are)."""
+    bid, folder = built_batch(client, "PL")
+    client.post("/api/staff", json={"name": "Asha"})
+    client.post("/api/makeit/by-hand", json={"batch_id": bid, "file": PINK})
+    m = client.get("/api/makeit").json()
+    assert m["verify"] == [] and [(r["file"], r["other_ready"]) for r in m["printed_letters"]] == [(PINK, 0)]
+    r = client.post("/api/verify/plate-failed", json={"carrier": {"batch_id": bid, "file": PINK}, "staff": "Asha"})
+    assert r.status_code == 200 and r.json()["failed"]
+    m = client.get("/api/makeit").json()
+    assert m["printed_letters"] == [] and next(r for r in m["names"] if r["file"] == PINK)["job"]["state"] == "reprint"

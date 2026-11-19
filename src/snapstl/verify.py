@@ -344,45 +344,80 @@ def _plate_preview(b: dict, file: str, extras_list: list[dict]) -> dict | None:
     return x["preview"] if x else None
 
 
-def cards() -> list[dict]:
-    """Print → Verify: one card per printed plate with items still to check (oldest print first)."""
+
+def name_cards() -> dict:
+    """Print → Verify (0.25.1): one card per order whose base and letters are all printed and not all checked
+    yet — the person checks a name with its base together. Express first, then the earliest printed. Also how
+    many orders have one part printed and wait for the other."""
     from .makeit import _batches
 
     with db.tx() as con:
         batches = {b["id"]: b for b in _batches(con)}
         jobs = latest_jobs(con)
-        exs = extra_plates(con)
-        by_item = _by_item(exs)
+        by_item = _by_item(extra_plates(con))
         checks = latest_checks(con, batches)
         fixes = fix_counts(con, batches)
-        info = {r["order_id"]: r for r in db.rows(con, "SELECT order_id, flag, flag_note, express_by FROM orders "
-                                                       "WHERE state='bundled'")}
-        out: dict[tuple, dict] = {}
+        info = {r["order_id"]: r for r in db.rows(con, "SELECT order_id, name, color, quantity, flag, flag_note, "
+                                                       "express_by FROM orders WHERE state='bundled'")}
+        per: dict[str, dict] = {}
         for b in batches.values():
             items, state_of = batch_items(con, b)
             for it in items:
                 if state_of.get(it["order_id"]) != "bundled":
-                    continue  # packed, shipped or gone: nothing to check
-                s = item_status(it, checks.get(key(it)), jobs, by_item)
-                if s["status"] != "waiting":
                     continue
+                chk = checks.get(key(it))
+                s = item_status(it, chk, jobs, by_item)
                 cb, cf = s["carrier"]
-                if cb not in batches:
-                    continue
-                j = s["job"] or {}
-                x = s["extra"]
-                card = out.setdefault((cb, cf), {
-                    "batch_id": cb, "file": cf, "batch": _label(batches[cb]), "kind": it["part"],
-                    "extra": x["kind"] if x else None, "printer": j.get("printer_name") or "",
-                    "done_at": j.get("updated_at"), "preview": _plate_preview(batches[cb], cf, exs),
-                    "color": it.get("color") or "", "items": []})
-                o = info.get(it["order_id"]) or {}
-                card["items"].append({
+                j, x = s["job"] or {}, s["extra"]
+                o = per.setdefault(it["order_id"], {"order_id": it["order_id"], "batch_id": b["id"],
+                                                    "batch": _label(b), "items": []})
+                o["items"].append({
                     **{k: it[k] for k in ("batch_id", "plate", "idx", "order_id", "part", "name", "color")},
+                    "status": s["status"], "carrier": {"batch_id": cb, "file": cf}, "extra": x["kind"] if x else None,
+                    "printer": j.get("printer_name") or "", "done_at": j.get("updated_at") if s["status"] == "waiting" else None,
+                    "checked_by": chk.get("staff") if chk and s["status"] == "good" else "",
                     "letters": next((i.get("letters") for i in (x or {}).get("items", []) if key(i) == key(it)), ""),
-                    "fixes": fixes.get(key(it), 0), "warn_model": fixes.get(key(it), 0) >= MAX_FIXES_WARN,
-                    "flag": o.get("flag"), "flag_note": o.get("flag_note"), "express_by": o.get("express_by")})
-    return sorted(out.values(), key=lambda c: c["done_at"] or 0)
+                    "fixes": fixes.get(key(it), 0), "warn_model": fixes.get(key(it), 0) >= MAX_FIXES_WARN})
+    cards, other = [], 0
+    for oid, o in per.items():
+        sts = [i["status"] for i in o["items"]]
+        if "waiting" not in sts:
+            continue
+        if {i["part"] for i in o["items"]} != {"bases", "names"} or any(s not in ("waiting", "good") for s in sts):
+            other += 1  # one part printed, the other not yet: it comes here once both are
+            continue
+        r = info.get(oid) or {}
+        o["items"].sort(key=lambda i: (i["part"] != "names", i["idx"]))
+        cards.append({**o, "name": r.get("name") or o["items"][0]["name"], "color": r.get("color") or "",
+                      "quantity": r.get("quantity") or 1, "flag": r.get("flag"), "flag_note": r.get("flag_note"),
+                      "express_by": r.get("express_by"),
+                      "done_at": max((i["done_at"] or 0) for i in o["items"]) or None})
+    cards.sort(key=lambda c: (c["express_by"] is None, c["express_by"] or "", c["done_at"] or 0))
+    return {"cards": cards, "waiting_other": other}
+
+
+def plate_failed(carrier: dict, staff: str) -> dict:
+    """The whole printed plate failed: every item on it still waiting for a check goes back to print."""
+    from .makeit import _batches
+
+    cb, cf = int(carrier["batch_id"]), str(carrier["file"])
+    with db.tx() as con:
+        jobs = latest_jobs(con)
+        by_item = _by_item(extra_plates(con))
+        results = []
+        for b in _batches(con):
+            items, state_of = batch_items(con, b)
+            checks = latest_checks(con, [b["id"]])
+            for it in items:
+                if state_of.get(it["order_id"]) != "bundled":
+                    continue
+                s = item_status(it, checks.get(key(it)), jobs, by_item)
+                if s["status"] == "waiting" and s["carrier"] == (cb, cf):
+                    results.append({"batch_id": it["batch_id"], "plate": it["plate"], "idx": it["idx"],
+                                    "result": "plate_failed"})
+    if not results:
+        raise AlreadyChecked("Nothing on this plate is waiting for a check")
+    return submit({"batch_id": cb, "file": cf}, staff, results)
 
 
 def completed(limit: int = 500) -> list[dict]:
@@ -450,12 +485,12 @@ def _submit(carrier: dict, staff: str, results: list[dict], note: str) -> dict:
     with db.tx() as con:
         if not staff or staff.lower() not in {s.lower() for s in staff_names(con, all_=True)}:
             raise ValueError("Choose who is checking (add your name first)")
-        cb, cf = int(carrier["batch_id"]), str(carrier["file"])
+        cb, cf = (int(carrier["batch_id"]), str(carrier["file"])) if carrier.get("file") else (None, "")
         jobs = latest_jobs(con)
         j = jobs.get((cb, cf)) or {}
         at = db.now()
         cache: dict[int, tuple] = {}
-        wanted, failed, n_good, part = [], False, 0, ""
+        wanted, failed, n_good, part, names = [], False, 0, "", []
         for r in results:
             bid = int(r["batch_id"])
             if bid not in cache:
@@ -472,19 +507,28 @@ def _submit(carrier: dict, staff: str, results: list[dict], note: str) -> dict:
             # pressed twice, or checked on another screen meanwhile: it must be printed and not checked yet, or
             # (Completed → Found a problem) checked good before
             chk = latest_checks(con, [bid]).get(key(it))
-            st = item_status(it, chk, jobs, _by_item(extra_plates(con, [bid])))["status"]
+            s = item_status(it, chk, jobs, _by_item(extra_plates(con, [bid])))
+            st = s["status"]
             if not (st == "waiting" or (st == "good" and res in FIX_RESULTS)):
                 who = f" by {chk['staff']}" if chk and chk.get("staff") else ""
                 raise AlreadyChecked(f"{it['name']} is already checked{who} — nothing was saved twice")
             if res in FIX_RESULTS:
                 wanted.append({"item": it, "result": res,
                                "pieces": [int(x) for x in r.get("pieces") or []] if res == "letters" else None})
+            if res == "plate_failed" and s["carrier"] != (cb, cf):
+                raise ValueError(f"{it['name']} isn't on that plate")
             failed = failed or res == "plate_failed"
             n_good += res == "good"
-            add_check(con, it, res, staff, note=note, printed_on=cf, printer=j.get("printer_name") or "", at=at)
+            names.append(it["name"])
+            ij = s["job"] or {}  # the plate this item was printed on (its own, a merged or a fix plate)
+            add_check(con, it, res, staff, note=note, printed_on=s["carrier"][1], printer=ij.get("printer_name") or "",
+                      at=at)
         files = []
-        if wanted:
-            files = extras.make_fixes(con, cb, wanted, staff, at + 0.0005)
+        by_batch: dict[int, list[dict]] = {}
+        for w in wanted:  # fix plates go in the folder of the item's own batch
+            by_batch.setdefault(int(w["item"]["batch_id"]), []).append(w)
+        for fb, ws in by_batch.items():
+            files += extras.make_fixes(con, fb, ws, staff, at + 0.0005)
             for w in wanted:  # which letters went on the fix plate
                 if w.get("letters"):
                     con.execute("UPDATE plate_checks SET letters=? WHERE batch_id=? AND plate=? AND idx=? AND at=?",
@@ -493,14 +537,14 @@ def _submit(carrier: dict, staff: str, results: list[dict], note: str) -> dict:
             con.execute("INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,created_at,"
                         "updated_at,computer_id) VALUES (?,?,?,?,0,'','reprint',?,?,?)",
                         (cb, cf, j.get("kind") or part, j.get("color"), at + 0.001, at + 0.001, computer.ID))
-        name = cf.rsplit("/", 1)[-1]
+        what = cf.rsplit("/", 1)[-1] if failed else ", ".join(dict.fromkeys(names))
         if failed:
-            db.add_activity(con, "check", f"{staff}: {name} failed — back to the list to print again")
+            db.add_activity(con, "check", f"{staff}: {what} failed — back to the list to print again")
         else:
             bad = len(results) - n_good
-            db.add_activity(con, "check", f"{staff} checked {name}: {n_good} good"
+            db.add_activity(con, "check", f"{staff} checked {what}: {n_good} good"
                             + (f", {bad} to fix ({', '.join(f.rsplit('/', 1)[-1] for f in files)})" if bad else ""))
-        touched = {cb} | set(cache)
+        touched = ({cb} if cb is not None else set()) | set(cache)
     for bid in touched:
         update_orders(bid)
     return {"ok": True, "fixes": files, "failed": failed}

@@ -456,3 +456,22 @@ Agreed: two releases — 0.25.0 now, 0.25.1 (Verify by name, staff PINs, merging
   never changed — the owner's settings had none saved).
 - Not changed: no logins (on hold, `docs/plan-user-logins.md`); only the order date is kept from the report
   (not the time), so same-day orders keep order-ID order.
+
+
+### 2026-11-20: 0.25.1 Verify by name, staff PINs, merging with tick boxes
+- **Verify by name:** one card per order, shown once its letters and its base are both printed (owner: a person
+  checks a name with its base, and Verify no longer fills up with half-printed plates). Parts already checked
+  show "checked by …". **Confirm – ready to pack** / **Save – send problems for reprint** replace *Save check*.
+  The info line says how many names wait for their other part. Search by name or order.
+- **Whole plate failed…** moved to the printed plate: on each card (the plate that part was printed on) and in
+  Bases → Printed and the new Letters → Printed (so a spoiled letters plate can go back before its bases are
+  printed — found while explaining the update to the owner); every unchecked item on that plate goes back to print.
+- **Staff PINs** (owner: a check must be saved under the person who really did it, without logins): Settings →
+  Staff holds the owner PIN (this computer, `owner-pin.json`; reset with `snapstl-admin reset-owner-pin`), the
+  people and their 4-digit PINs (shared with every computer as salted hashes, new columns `staff.pin_hash` /
+  `pin_changed`; no schema version bump — older apps leave them alone). On Verify a person types their PIN once
+  (30 minutes without a check signs them out). Until anyone has a PIN, Verify keeps the name picker, so the update
+  doesn't stop checking. Limit (told to the owner): two people sharing one PIN can't be stopped.
+- **Merging with tick boxes:** tick letter plates of one colour (not started; letter **fix** plates too), up to 3
+  names; other colours can't be ticked; Split back returns exactly the plates merged (each item records `src`).
+- On update day: set the owner PIN and everyone's PIN in Settings → Staff on the farm computer.

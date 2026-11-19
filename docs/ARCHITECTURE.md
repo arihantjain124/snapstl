@@ -142,6 +142,7 @@ Snapstl/
 │   ├── orders.py             `Order` dataclass (one organizer copy inside a batch)
 │   ├── maintenance.py        backups, clean-up (keeps made orders), reset
 │   ├── auth.py               portal password (other computers) + signed session cookie; `snapstl-admin`
+│   ├── staff.py              staff PINs + owner PIN (Print → Verify, Settings → Staff; 0.25.1)
 │   └── static/
 │       ├── index.html        the whole UI: side navigation (Orders, Batches, Downloads, Settings, Help)
 │       └── login.html        used only if a portal password is set

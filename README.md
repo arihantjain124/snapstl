@@ -371,8 +371,17 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   **Base printed — print these letters now**, then **Base still to print**. You can only pick printers that
   have that colour loaded, as Bambuddy reports it. One is pre-selected when such a printer is available.
   Search by name, order ID or batch.
-- **Verify**: after **Save check** a *Saving…* screen covers the card until it's done; pressing again
-  saves nothing twice.
+- **Verify** (0.25.1): one card per name, once its letters **and** its base are printed — put them together,
+  mark each part, then **Confirm – ready to pack** (or **Save – send problems for reprint**). A *Saving…* screen
+  covers the card until it's done; pressing again saves nothing twice. People type their **PIN** once (Done /
+  switch person; signed out after 30 minutes without a check) and every check is saved under them. **Whole
+  plate failed…** is on each card and in Bases → Printed / Letters → Printed (a letters plate can be sent back
+  before its bases are printed).
+- **Merge** (Letters): tick letter plates of one colour (fix plates too), not started, up to 3 names, then
+  **Merge onto one plate**; **Split back** returns exactly those plates while it isn't started.
+- **Settings → Staff**: the owner PIN (set it first; forgotten: `uv run snapstl-admin reset-owner-pin` on that
+  computer), the people who check prints and their 4-digit PINs (shared with every computer, stored only as a
+  scrambled code). Until anyone has a PIN, Verify lets people pick their name as before.
 - **Completed**: printed plates. **Reprint** is there only for a print that failed: it asks first,
   then the plate goes back to Bases or Names.
 - **Removed**: plates you took off Bases or Names with **Remove** (for example printed by hand).
