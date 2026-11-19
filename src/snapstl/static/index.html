@@ -84,6 +84,11 @@ body.offline main section:not(#t-settings):not(#t-help) :is(button,input,select,
 .tipbtn.on{border-color:var(--accent);color:var(--accent)}
 .nchips{display:flex;flex-wrap:wrap;gap:4px;max-width:520px}
 .nchip{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--chip);white-space:nowrap}
+.pm{font-size:10px;color:var(--muted);margin-left:2px}.pm.ok{color:var(--ok)}.pm.info{color:var(--accent)}
+.mknow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0 10px;font-size:13px}
+.mkgrp{background:var(--chip)}
+.vbusy{position:relative}.vsaving{position:absolute;inset:0;z-index:3;display:flex;align-items:center;justify-content:center;gap:10px;font-size:16px;border-radius:inherit;background:color-mix(in srgb,var(--panel) 85%,transparent)}
+.spin{width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;flex:none}@keyframes spin{to{transform:rotate(360deg)}}
 .nchip.shipped{opacity:.55}.nchip.cancelled{text-decoration:line-through;opacity:.55}
 .bprog{display:grid;grid-template-columns:60px 90px 44px;gap:6px;align-items:center;font-size:12px}
 .bprog .bar{margin:0}
@@ -126,6 +131,9 @@ details.objsbox summary{cursor:pointer;font-weight:600;margin:10px 0 6px}
 .drow:hover{border-color:var(--accent)}
 .drow.red{border-left-color:var(--err);background:var(--errbg)}
 .drow .who{font-weight:600}
+.cpid{cursor:copy;border-bottom:1px dashed var(--muted)}.cpid:hover{color:var(--accent);border-color:var(--accent)}
+.drow .tick{display:flex;align-items:center;gap:8px}.drow .tick input{width:20px;height:20px;margin:0}
+.dlabelbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--infobg)}
 .drow .what{font-size:14px}
 .drow .meta{font-size:13px;color:var(--muted)}
 .drow .acts{display:flex;gap:6px;align-items:start;flex-wrap:wrap;justify-content:flex-end}
@@ -268,11 +276,12 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <span id="selcount" class="hint">No orders selected</span>
       <button id="selall" class="small">Select all matching</button>
       <button id="selclear" class="small">Clear</button>
+      <button id="seloldest" class="small" title="Select the oldest orders that can go into a batch (Express first), as many as in the box">Select oldest</button><input id="seln" type="number" min="1" max="500" value="50" aria-label="How many oldest orders to select" style="width:70px">
       <span class="grow"></span>
       <button id="mkbatch" class="primary" disabled>Create batch</button>
     </div>
-    <div class="tw"><table class="otable"><thead><tr><th><input type="checkbox" id="pagecheck" title="Select this page"></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Address</th><th>Report status</th><th>Name to print</th><th>Colour</th><th>Qty</th><th>Size L×H · comp.</th><th>Stage</th><th></th></tr>
-    <tr class="frow"><th></th><th><input data-f="order" placeholder="filter"></th><th><input data-f="date" placeholder="2026-11"></th><th><input data-f="customer" placeholder="filter"></th><th><input data-f="phone" placeholder="filter"></th><th><input data-f="address" placeholder="filter"></th><th><select data-f="status"><option value="">all</option></select></th><th><input data-f="name" placeholder="filter"></th><th><select data-f="color"><option value="">all</option></select></th><th><input data-f="qty" placeholder="=" style="width:44px"></th><th></th><th></th><th></th></tr></thead>
+    <div class="tw"><table class="otable"><thead><tr><th><input type="checkbox" id="pagecheck" title="Select this page"></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Address</th><th>Report status</th><th>Name to print</th><th>Colour</th><th>Qty</th><th>Size L×H · comp.</th><th>Stage</th><th>Payment</th><th></th></tr>
+    <tr class="frow"><th></th><th><input data-f="order" placeholder="filter"></th><th><input data-f="date" placeholder="2026-11"></th><th><input data-f="customer" placeholder="filter"></th><th><input data-f="phone" placeholder="filter"></th><th><input data-f="address" placeholder="filter"></th><th><select data-f="status"><option value="">all</option></select></th><th><input data-f="name" placeholder="filter"></th><th><select data-f="color"><option value="">all</option></select></th><th><input data-f="qty" placeholder="=" style="width:44px"></th><th></th><th></th><th><input data-f="payment" placeholder="COD" style="width:70px"></th><th></th></tr></thead>
     <tbody id="orders"></tbody></table></div>
     <div class="toolbar" style="margin-top:8px"><span class="hint grow" id="pageinfo" aria-live="polite"></span><label for="pagesize">Rows per page</label><select id="pagesize"><option>25</option><option>50</option><option selected>100</option><option>200</option><option>500</option></select><label for="pagenumber">Page</label><select id="pagenumber" aria-label="Go to orders page"><option value="1">1</option></select><button id="prev" class="small">Previous</button><button id="next" class="small">Next</button></div>
   </div>
@@ -292,6 +301,12 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <button id="dcopyids" class="small" hidden>Copy order IDs</button>
         <a class="btn small" id="dcsv" href="#">Download (CSV)</a></div>
       <div class="msgs" id="dmsg"></div>
+      <div class="dlabelbar" id="dlabelbar" hidden><label class="tick" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="dtickall"> Tick all</label>
+        <button class="primary" id="dlabelsel" disabled>Label Generated for ticked</button>
+        <button id="dlabelpaste" title="Paste the order IDs whose labels you made on the website, one per line">Paste order IDs…</button>
+        <span class="hint">Made the labels on the website? Tick them here (or paste their IDs) and press Label Generated.</span>
+        <div id="dpastebox" hidden style="flex-basis:100%"><textarea id="dpastetext" rows="4" placeholder="One order ID per line (spaces and commas are fine too)" style="width:100%"></textarea>
+          <div class="btns" style="margin-top:6px"><button class="primary" id="dpastego">Label Generated for these</button><button id="dpastex">Cancel</button></div></div></div>
       <div class="dlist" id="dlist"></div>
       <div class="dbar" style="margin-top:10px"><span class="grow hint" id="dpage"></span><button id="dprev" class="small">Previous</button><button id="dnext" class="small">Next</button></div>
     </div>
@@ -329,21 +344,23 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 
 <section id="t-makeit" hidden>
   <div class="card">
-    <div class="toolbar"><h2 style="margin:0">Print</h2><span class="grow hint" id="mkinfo"></span><button class="small" id="slp_all" title="Queue every waiting plate for slicing, each with the profiles of the printer chosen for it">Slice all waiting</button><button class="small" id="mkrefresh">Refresh</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
-    <div class="msgs" id="mkmsgs"></div><div class="msgs" id="mknote"></div><div class="hint" id="slp_allmsg"></div>
+    <div class="toolbar"><h2 style="margin:0">Print</h2><span class="grow hint" id="mkinfo"></span><button class="small" id="slp_all" title="Queue every waiting plate for slicing, each with the profiles of the printer chosen for it">Slice all waiting</button><button class="small" id="mkrefresh">Refresh</button><button class="small" id="mkbbrefresh" title="Ask every printer (through Bambuddy) to report its status and filament again — e.g. after changing a spool">Refresh from Bambuddy</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
+    <div id="mknow" class="mknow"></div><div class="msgs" id="mkmsgs"></div><div class="msgs" id="mknote"></div><div class="hint" id="slp_allmsg"></div>
     <div class="chips" id="mktabs"></div>
     <div id="mk-bases" class="mkpane">
       <p class="hint">Base plates of your built batches, printed in white. A printer is pre-selected — the next <b>available</b> one whose loaded filament is closest to white, with the most left — and under it the <b>filament slot</b> it prints from (✓ same colour, ≈ close). You can pick any printer and any loaded slot. <b>Slice</b> shows if the plate is sliced for that printer's model. <b>Options</b> start from the printer's print defaults (Slicing); change them for one plate here. Nothing prints until you press <b>Start print</b>.</p>
-      <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mkbases"></tbody></table></div>
+      <div class="toolbar" style="margin:0 0 6px"><div class="chips" id="mkbsub" style="margin:0"></div><span class="grow"></span><input type="search" id="mkbq" placeholder="Search name, order or batch" autocomplete="off" style="max-width:240px"></div>
+      <div id="mkb-todo"><div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mkbases"></tbody></table></div></div>
+      <div id="mkb-done" hidden><p class="hint">Base plates already printed whose names are still being made, newest first. <b>Letters</b> says how many of their letters are printed.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Printed</th><th>Letters</th></tr></thead><tbody id="mkbdone"></tbody></table></div></div>
     </div>
     <div id="mk-names" class="mkpane" hidden>
-      <p class="hint">Name plates, one colour each. A printer is pre-selected (available, best colour match), and under it the <b>filament slot</b> it prints from, best match first (✓ same colour, ≈ close). You can pick any printer and any slot loaded in it; after a spool change use Printers → <b>Refresh from Bambuddy</b>. Nothing prints until you press <b>Start print</b>. <b>Merge</b> puts same-colour plates (up to 3 names, not started) on one plate — no rescaling; <b>Split back</b> undoes it before printing.</p>
+      <p class="hint">Letter plates (the names), one colour each, in two lists: first the letters whose <b>base is printed</b> — print these now — then the ones whose base is still to print. A printer is pre-selected (available, best colour match), and under it the <b>filament slot</b> it prints from, best match first (✓ same colour, ≈ close). You can pick any printer and any slot loaded in it; after a spool change use Printers → <b>Refresh from Bambuddy</b>. Nothing prints until you press <b>Start print</b>. <b>Merge</b> puts same-colour plates (up to 3 names, not started) on one plate — no rescaling; <b>Split back</b> undoes it before printing.</p>
       <div id="mkmerge"></div>
-      <div class="toolbar" style="margin:0 0 6px"><label class="hint" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="mkbycolor"> Group by colour (load one spool, print every plate of that colour)</label></div>
+      <div class="toolbar" style="margin:0 0 6px"><label class="hint" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="mkbycolor"> Group by colour (load one spool, print every plate of that colour)</label><span class="grow"></span><input type="search" id="mknq" placeholder="Search name, order or batch" autocomplete="off" style="max-width:240px"></div>
       <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mknames"></tbody></table></div>
     </div>
     <div id="mk-verify" class="mkpane" hidden>
-      <p class="hint">Printed plates waiting for a check. Take the plate off the printer, look at every base and name, and mark each <b>Good</b> or what is wrong. Spoiled letters, a spoiled name, a wrong colour or a broken base get a small <b>Fix</b> plate (same size, only what is spoiled) at the top of Bases / Names. <b>Whole plate failed</b> sends the plate back to print again. An order goes to <b>Orders → Printed – pack it</b> only when its base and name are both checked good.</p>
+      <p class="hint">Printed plates waiting for a check. Take the plate off the printer, look at every base and name, and mark each <b>Good</b> or what is wrong. Spoiled letters, a spoiled name, a wrong colour or a broken base get a small <b>Fix</b> plate (same size, only what is spoiled) at the top of Bases / Letters. <b>Whole plate failed</b> sends the plate back to print again. An order goes to <b>Orders → Printed – pack it</b> only when its base and name are both checked good.</p>
       <div class="toolbar" style="margin:0 0 8px"><label style="margin:0">Checked by</label><select id="vstaff" style="max-width:220px"></select><button class="small" id="vstaffadd">Add name</button><span class="grow"></span><span class="hint" id="vinfo"></span></div>
       <div id="mkverify"></div>
     </div>
@@ -353,7 +370,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <div class="tw"><table><thead><tr><th><input type="checkbox" id="call" title="Tick all shown"></th><th>Name</th><th>Order</th><th>Batch</th><th>Printer</th><th>Checked by</th><th>When</th><th></th></tr></thead><tbody id="mkdone"></tbody></table></div>
     </div>
     <div id="mk-removed" class="mkpane" hidden>
-      <p class="hint">Plates taken off Bases / Names. Nothing was deleted — <b>Put back</b> returns a plate to its list; <b>Printed by hand</b> sends it to Verify. A plate leaves this list once its orders are packed, shipped or cancelled.</p>
+      <p class="hint">Plates taken off Bases / Letters. Nothing was deleted — <b>Put back</b> returns a plate to its list; <b>Printed by hand</b> sends it to Verify. A plate leaves this list once its orders are packed, shipped or cancelled.</p>
       <div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Removed</th><th></th></tr></thead><tbody id="mkremoved"></tbody></table></div>
     </div>
   </div>
@@ -431,7 +448,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="toolbar"><h2 style="margin:0">Printers</h2><span class="grow hint" id="psinfo"></span>
       <label class="check" style="margin:0"><input type="checkbox" id="psauto" checked> Auto-refresh</label>
       <button class="small" id="psrefresh" title="Ask every printer (through Bambuddy) to report its status and filament again — e.g. after changing a spool">Refresh from Bambuddy</button><a class="btn small" id="psdl" href="/api/printer-status?download=1">Download JSON</a><a class="btn small" id="bbopen2" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
-    <p class="hint">Live from Bambuddy: what each printer is doing, its temperatures, the filament in every slot and its queue. Printers and spools are managed in Bambuddy — load a spool and it shows up here; after a filament change press <b>Refresh from Bambuddy</b>. The colour each print uses is chosen per print in <b>Print</b> (its filament slot). <b>Clear plate</b> tells Bambuddy the bed is empty, so the next started print can begin. <b>All fields</b> shows everything Bambuddy reports; access codes and keys are never shown.</p>
+    <p class="hint">Live from Bambuddy: what each printer is printing (which names), the time it will be ready, and the filament in every slot. Temperatures, fans, network and Bambuddy's queue are under <b>Details</b>. Printers and spools are managed in Bambuddy — load a spool and it shows up here; after a filament change press <b>Refresh from Bambuddy</b>. The colour each print uses is chosen per print in <b>Print</b> (its filament slot). <b>Clear plate</b> tells Bambuddy the bed is empty, so the next started print can begin. <b>All fields</b> shows everything Bambuddy reports; access codes and keys are never shown.</p>
     <div class="msgs" id="psmsg"></div>
     <div class="prgrid" id="pslist"></div>
     <details class="kvd" style="margin-top:12px"><summary><b>Farm activity</b> <span class="hint">sending, starting and slicing, newest last</span></summary><div class="log" id="farmlog" style="margin-top:6px"></div></details>
@@ -719,7 +736,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>New orders – to make</b> — <b>EXPRESS</b> orders are at the top. Tick orders (or use the column filters and <b>Select all matching</b>) → <b>Create batch</b>. They move to <b>Ready to print</b>.</li>
       <li><b>Batches → Queue download</b> — the helper in your MakerWorld tab generates each name, one at a time (watch it in the <b>Download queue</b> on the same page).</li>
       <li>When the batch says <b>Ready to build</b> → <b>Queue build</b>.</li>
-      <li><b>Print</b> → <b>Bases</b> / <b>Names</b>: check the printer on each plate and click <b>Start print</b> (Express plates are at the top). Its orders move to <b>Printing</b>. Bases in white; names in the colour of their folder.</li>
+      <li><b>Print</b> → <b>Bases</b> / <b>Letters</b>: check the printer on each plate and click <b>Start print</b> (Express plates are at the top). Its orders move to <b>Printing</b>. Bases in white; names in the colour of their folder.</li>
       <li>When an order's name <b>and</b> base are both printed it moves to <b>Printed – pack it</b>. The labelling team makes the label on the website and presses <b>Label Generated</b> → <b>Label done – ship it</b>.</li>
     </ol>
   </div>
@@ -803,10 +820,10 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Filament</b> is read from Bambuddy: every AMS slot and external spool with Bambu's colour name (<i>Hot Pink</i>, <i>Jade White</i>). Nothing to type in SnapSTL — load the spool and it shows up.</li>
       <li><b>Slicing</b>: pick the Bambuddy profiles for each printer (see Slicing below).</li>
     </ol>
-    <p><b>Print</b> (sidebar) has five lists. <b>Bases</b>: every base plate still to print, with the next <b>available</b> printer and its best-matching filament slot already chosen. <b>Names</b>: every name plate with its colour; a printer and the slot closest to that colour are pre-selected. Any printer and any loaded slot can be chosen — the slot is what the print uses. <b>Fix</b> plates (only what was spoiled) are listed first.</p>
+    <p><b>Print</b> (sidebar) shows on top the printers <b>free for the next print</b> (with the colours loaded) and beds to clear, and has <b>Refresh from Bambuddy</b>. It has five lists. <b>Bases</b>: <i>To print</i> — every base plate still to print, with the next <b>available</b> printer and its best-matching filament slot already chosen; <i>Printed</i> — base plates printed whose letters aren't all printed yet. <b>Letters</b> (the names): every letter plate with its colour, first those whose <b>base is printed</b> (print these now), then those whose base is still to print; a printer and the slot closest to that colour are pre-selected. Both lists have a search (name, order ID or batch). Any printer and any loaded slot can be chosen — the slot is what the print uses. <b>Fix</b> plates (only what was spoiled) are listed first.</p>
     <ul>
-      <li><b>Merge</b> (Names): when two or more plates of one colour, not started yet, have room (up to 3 names in all), a yellow bar suggests <b>Merge onto one plate</b>. The names keep their size (no scaling) and go onto one new plate in the newest batch's <code>Merged/</code> folder; the single plates leave the list. <b>Split back</b> returns them while the merged plate isn't started. <b>Group by colour</b> lists every name plate by colour, so one spool can print them all.</li>
-      <li><b>Verify</b>: a plate Bambu reports as printed comes here, not straight to packing. Choose who is checking (<b>Checked by</b>; <b>Add name</b> adds a staff member — names are shared with every computer), take the plate off the printer and look at every base and name: <b>Good</b>, <b>Letter(s) spoiled</b> (tap the spoiled letters on the picture), <b>Whole name spoiled</b>, <b>Wrong colour</b> or <b>Base broken or warped</b>, then <b>Save check</b>. Each problem gets a small <b>Fix</b> plate with only what was spoiled, at the same size, at the top of Bases / Names; it's printed and checked like any plate. <b>Whole plate failed</b> sends the plate back to print again. A name fixed twice before shows a warning to check the model. An order moves to <b>Orders → Printed – pack it</b> only when its base and its name are both checked good; until then Orders shows <i>Printed – waiting for check</i>. Everything printed before 0.24 counts as checked (<i>Before 0.24</i>).</li>
+      <li><b>Merge</b> (Letters): when two or more plates of one colour, not started yet, have room (up to 3 names in all), a yellow bar suggests <b>Merge onto one plate</b>. The names keep their size (no scaling) and go onto one new plate in the newest batch's <code>Merged/</code> folder; the single plates leave the list. <b>Split back</b> returns them while the merged plate isn't started. <b>Group by colour</b> lists every name plate by colour, so one spool can print them all.</li>
+      <li><b>Verify</b>: a plate Bambu reports as printed comes here, not straight to packing. Choose who is checking (<b>Checked by</b>; <b>Add name</b> adds a staff member — names are shared with every computer), take the plate off the printer and look at every base and name: <b>Good</b>, <b>Letter(s) spoiled</b> (tap the spoiled letters on the picture), <b>Whole name spoiled</b>, <b>Wrong colour</b> or <b>Base broken or warped</b>, then <b>Save check</b> — a <i>Saving…</i> screen covers the card until it's done (a second press saves nothing twice). Each problem gets a small <b>Fix</b> plate with only what was spoiled, at the same size, at the top of Bases / Letters; it's printed and checked like any plate. <b>Whole plate failed</b> sends the plate back to print again. A name fixed twice before shows a warning to check the model. An order moves to <b>Orders → Printed – pack it</b> only when its base and its name are both checked good; until then Orders shows <i>Printed – waiting for check</i>. Everything printed before 0.24 counts as checked (<i>Before 0.24</i>).</li>
       <li><b>Completed</b>: names checked good and not shipped yet — colour, order, batch, printer, who checked it and when, and <i>had a fix</i>. Filter by date or search; tick rows and press <b>Packing slip</b> for a printable list. <b>Found a problem</b> (e.g. while packing) makes a fix plate and takes the order back to Printing.</li>
       <li><b>Removed</b>: plates taken off the lists, with <b>Put back</b> and <b>Printed by hand</b> (sends it to Verify). A plate leaves this list once its orders are packed, shipped or cancelled.</li>
       <li><b>Bed clear</b>: SnapSTL never starts a print on a bed that may still hold a finished print. If the printer shows a finished print, <b>Start print</b> asks you to take it off and confirm the bed is empty (this also clears the plate in Bambuddy). If the printer is busy with another print, the plate waits held in its queue — press <b>Start print</b> again once that print is done and the bed is empty.</li>
@@ -961,7 +978,7 @@ async function loadOrders(){
   $('pagenumber').value=current;$('pagenumber').disabled=!r.total;
   $('prev').disabled=filter.offset===0; $('next').disabled=filter.offset+LIMIT>=r.total;
   $('csvlink').href='/api/orders.csv?'+filterParams({});
-  if(!r.orders.length){$('orders').innerHTML='<tr><td colspan="13" class="empty">No orders here</td></tr>';$('pagecheck').checked=false;return}
+  if(!r.orders.length){$('orders').innerHTML='<tr><td colspan="14" class="empty">No orders here</td></tr>';$('pagecheck').checked=false;return}
   PAGE=r.orders.filter(canTick).map(o=>o.order_id);
   const day=t=>t?new Date(t*1000).toLocaleString([], {dateStyle:'short',timeStyle:'short'}):'';
   $('orders').innerHTML=r.orders.map(o=>{
@@ -994,7 +1011,7 @@ async function loadOrders(){
     const club=o.clubbed_id?`<div class="club" title="Clubbed order ID">${o.clubbed?'clubbed · ':''}${esc(o.clubbed_id)}</div>`
       :o.adhoc?`<div class="club" title="Typed in by hand">ad-hoc${o.added_at?' · added '+day(o.added_at):''}${o.special_request?' · '+esc(o.special_request):''}</div>`:'';
     const exp=['to_make','check_name','ready_to_print','printing','pack_it'].includes(o.tab)?expressBadge(o.express_by,o.express_note):'';
-    return `<tr><td>${cb}</td><td>${esc(o.order_id)}${club}${exp?'<div>'+exp+'</div>':''}</td><td style="white-space:nowrap">${esc(o.order_date)}</td><td>${esc(o.customer_name)}</td><td style="white-space:nowrap">${esc(o.phone)}</td><td class="addr">${esc(o.address)}</td><td>${esc(o.source_status)}</td><td>${nameCell}${notes}</td><td>${!LOGISTICS&&o.tab==='check_name'?'':sw(o.color)}</td><td>${o.quantity}</td><td>${o.target?`${o.target[0]}×${o.target[1]} · ${o.compartments}`:'—'}</td><td><span class="pill ${st[2]}">${esc(st[1])}</span>${o.tab==='printing'&&o.print_done_at&&!o.checked_at?'<div class="pill warn" title="Printed — a person checks it on Print → Verify before packing">Printed – waiting for check</div>':''}${o.checked_by&&o.tab==='pack_it'?`<div class="hint">checked by ${esc(o.checked_by)}</div>`:''}</td><td>${act}</td></tr>`}).join('');
+    return `<tr><td>${cb}</td><td>${esc(o.order_id)}${club}${exp?'<div>'+exp+'</div>':''}</td><td style="white-space:nowrap">${esc(o.order_date)}${waitDays(o)}</td><td>${esc(o.customer_name)}</td><td style="white-space:nowrap">${esc(o.phone)}</td><td class="addr">${esc(o.address)}</td><td>${esc(o.source_status)}</td><td>${nameCell}${notes}</td><td>${!LOGISTICS&&o.tab==='check_name'?'':sw(o.color)}</td><td>${o.quantity}</td><td>${o.target?`${o.target[0]}×${o.target[1]} · ${o.compartments}`:'—'}</td><td><span class="pill ${st[2]}">${esc(st[1])}</span>${o.tab==='printing'&&o.print_done_at&&!o.checked_at?'<div class="pill warn" title="Printed — a person checks it on Print → Verify before packing">Printed – waiting for check</div>':''}${o.checked_by&&o.tab==='pack_it'?`<div class="hint">checked by ${esc(o.checked_by)}</div>`:''}</td><td>${payCell(o.payment)}</td><td>${act}</td></tr>`}).join('');
   applyColumns();
   document.querySelectorAll('[data-ok]').forEach(b=>b.onclick=async()=>{const id=b.dataset.ok;
     const n=document.querySelector(`[data-n="${CSS.escape(id)}"]`).value, c=document.querySelector(`[data-c="${CSS.escape(id)}"]`).value;
@@ -1018,6 +1035,8 @@ function selUI(){$('selcount').textContent=SEL.size?`${SEL.size} order${SEL.size
   $('mkbatch').textContent=SEL.size?`Create batch (${SEL.size})`:'Create batch';
   $('pagecheck').checked=PAGE.length>0&&PAGE.every(id=>SEL.has(id))}
 $('pagecheck').onchange=()=>{for(const id of PAGE)$('pagecheck').checked?SEL.add(id):SEL.delete(id);loadOrders()};
+$('seloldest').onclick=async()=>{const n=Math.max(1,Math.min(500,+$('seln').value||50));
+  const ids=await api('/api/orders/ids?'+filterParams({state:SELKIND}));SEL.clear();ids.slice(0,n).forEach(i=>SEL.add(i));loadOrders()};
 $('selall').onclick=async()=>{const ids=await api('/api/orders/ids?'+filterParams({state:SELKIND}));ids.forEach(i=>SEL.add(i));loadOrders()};
 function filterParams(extra){const p=new URLSearchParams({tab:filter.tab,...extra});for(const [k,v] of Object.entries(filter.f))if(v)p.set('f_'+k,v);return p}
 let ft;document.querySelectorAll('.frow [data-f]').forEach(el=>{const go=()=>{filter.f[el.dataset.f]=el.value.trim();filter.offset=0;loadOrders()};
@@ -1050,18 +1069,22 @@ $('adhocform').onsubmit=async e=>{e.preventDefault();
     for(const k of ['ahname','ahphone','ahnote'])$(k).value='';$('ahqty').value=1;$('ahname').focus();refreshAll()}
   catch(err){$('ahmsg').innerHTML=`<div class="e">${esc(err.message)}</div>`}};
 // Views are kept in this browser only; they never change order data.
-const COLUMN_NAMES=['Order','Date','Customer','Phone','Address','Report status','Name to print','Colour','Qty','Size L×H · comp.','Stage'];
+const COLUMN_NAMES=['Order','Date','Customer','Phone','Address','Report status','Name to print','Colour','Qty','Size L×H · comp.','Stage','Payment'];
+// days since the order, while it's still being made (red from a week)
+const waitDays=o=>{if(!['to_make','check_name','ready_to_print','printing','pack_it'].includes(o.tab)||!o.order_date)return '';
+  const d=Math.floor((Date.now()-new Date(o.order_date+'T00:00:00'))/86400000);return d>=0?`<div class="${d>=7?'reason':'hint'}">${d} day${d===1?'':'s'} waiting</div>`:''};
+const payCell=p=>{const u=(p||'').toUpperCase();return !u?'<span class="hint">—</span>':u==='COD'?'<span class="pill warn">COD</span>':u.includes('COD')?'<span class="pill warn">Partial COD</span>':u==='PREPAID'||u==='ONLINE'?'<span class="pill ok">Prepaid</span>':`<span class="pill">${esc(p)}</span>`};
 const VIEW_KEY='snapstl-order-views-v2';  // v2 (0.23): new tab names
-let visibleColumns=COLUMN_NAMES.map((_,i)=>i+1), orderViews=Object.assign(Object.create(null),{'All columns':{tab:'all',f:{},columns:COLUMN_NAMES.map((_,i)=>i+1)},'Dispatch':{tab:'pack_it',f:{},columns:[1,2,3,4,5,7,8,9,11]},'Production overview':{tab:'printing',f:{},columns:[1,2,7,8,9,10,11]}});
+let visibleColumns=COLUMN_NAMES.map((_,i)=>i+1), orderViews=Object.assign(Object.create(null),{'All columns':{tab:'all',f:{},columns:COLUMN_NAMES.map((_,i)=>i+1)},'Dispatch':{tab:'pack_it',f:{},columns:[1,2,3,4,5,7,8,9,11,12]},'Production overview':{tab:'printing',f:{},columns:[1,2,7,8,9,10,11]}});
 try{Object.assign(orderViews,JSON.parse(localStorage.getItem(VIEW_KEY)||'{}'))}catch{}
-function applyColumns(){document.querySelectorAll('.otable tr').forEach(row=>{if(row.children.length!==13)return; for(let i=1;i<=11;i++)row.children[i].hidden=!visibleColumns.includes(i)})}
+function applyColumns(){document.querySelectorAll('.otable tr').forEach(row=>{if(row.children.length!==14)return; for(let i=1;i<=12;i++)row.children[i].hidden=!visibleColumns.includes(i)})}
 function renderColumns(){$('ordercolumns').innerHTML=COLUMN_NAMES.map((n,i)=>`<label><input type="checkbox" data-column="${i+1}" ${visibleColumns.includes(i+1)?'checked':''}> ${esc(n)}</label>`).join('');
   document.querySelectorAll('[data-column]').forEach(c=>c.onchange=()=>{visibleColumns=[...document.querySelectorAll('[data-column]:checked')].map(x=>+x.dataset.column);applyColumns()});applyColumns()}
 function renderViews(){const selected=$('ordview').value;$('ordview').innerHTML='<option value="">Current view</option>'+Object.keys(orderViews).sort().map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');$('ordview').value=orderViews[selected]?selected:''}
 function saveViews(){try{localStorage.setItem(VIEW_KEY,JSON.stringify(orderViews))}catch{alert('Could not save views in this browser.')}}
 $('saveview').onclick=()=>{const name=prompt('Name this view');if(!name||!name.trim())return;orderViews[name.trim()]={tab:filter.tab,f:{...filter.f},columns:[...visibleColumns]};saveViews();renderViews();$('ordview').value=name.trim()};
 $('deleteview').onclick=()=>{const n=$('ordview').value;if(n&&confirm(`Delete view “${n}”?`)){delete orderViews[n];saveViews();renderViews()}};
-$('ordview').onchange=async()=>{const v=orderViews[$('ordview').value];if(!v)return;filter.tab=v.tab;filter.f={...v.f};filter.offset=0;visibleColumns=v.columns.filter(i=>Number.isInteger(i)&&i>=1&&i<=11);document.querySelectorAll('.frow [data-f]').forEach(el=>el.value=filter.f[el.dataset.f]||'');await loadFacets();document.querySelectorAll('.frow [data-f]').forEach(el=>el.value=filter.f[el.dataset.f]||'');renderColumns();loadOrders()};
+$('ordview').onchange=async()=>{const v=orderViews[$('ordview').value];if(!v)return;filter.tab=v.tab;filter.f={...v.f};filter.offset=0;visibleColumns=v.columns.filter(i=>Number.isInteger(i)&&i>=1&&i<=12);document.querySelectorAll('.frow [data-f]').forEach(el=>el.value=filter.f[el.dataset.f]||'');await loadFacets();document.querySelectorAll('.frow [data-f]').forEach(el=>el.value=filter.f[el.dataset.f]||'');renderColumns();loadOrders()};
 $('pagenumber').onchange=()=>{filter.offset=(+$('pagenumber').value-1)*LIMIT;loadOrders()};
 $('pagesize').onchange=()=>{LIMIT=+$('pagesize').value;filter.offset=0;loadOrders()};
 renderViews();renderColumns();
@@ -1087,7 +1110,19 @@ function bFilter(b){const v=$('bdate').value,now=Date.now()/1000,k=dayKey(b.crea
   if($('bstatus').value&&b.word!==$('bstatus').value)return false;
   const q=$('bsearch').value.trim().toLowerCase();if(q&&!(b.names.some(n=>(n.name||'').toLowerCase().includes(q)||(n.order_id||'').toLowerCase().includes(q))||(b.label||'').toLowerCase().includes(q)))return false;
   return true}
-const nameChip=n=>`<span class="nchip ${['on_the_way','delivered','rto'].includes(n.tab)?'shipped':n.tab==='cancelled'?'cancelled':''}" title="${esc(n.order_id)} · ${esc((TABWORD[n.tab]||[0,n.tab])[1])}"><span class="swatch" style="background:${COLORS[n.color]||'transparent'}"></span>${esc(n.name)}${n.quantity>1?' ×'+n.quantity:''}</span>`;
+const PIC={todo:['○','to print'],printing:['◐','printing'],waiting:['✓','printed'],good:['✓','printed and checked']};
+const pmark=(l,s)=>s?`<span class="pm ${s==='waiting'||s==='good'?'ok':s==='printing'?'info':''}">${l[0]}${PIC[s][0]}</span>`:'';
+const pword=n=>n.base||n.letters?` · Base: ${(PIC[n.base]||[0,'—'])[1]} · Letters: ${(PIC[n.letters]||[0,'—'])[1]}`:'';
+const nameChip=n=>`<span class="nchip ${['on_the_way','delivered','rto'].includes(n.tab)?'shipped':n.tab==='cancelled'?'cancelled':''}" title="${esc(n.order_id)} · ${esc((TABWORD[n.tab]||[0,n.tab])[1])}${pword(n)}"><span class="swatch" style="background:${COLORS[n.color]||'transparent'}"></span>${esc(n.name)}${n.quantity>1?' ×'+n.quantity:''}${pmark('Base',n.base)}${pmark('Letters',n.letters)}</span>`;
+// each name's base and letters: printed (waiting for check, or checked) or not
+const PDONE=s=>s==='waiting'||s==='good';
+const BPART=[['base','base ready, letters pending'],['letters','letters ready, base pending'],['both','base and letters printed'],['none','neither printed yet']];
+const partOf=n=>!n.base&&!n.letters?null:PDONE(n.base)&&PDONE(n.letters)?'both':PDONE(n.base)?'base':PDONE(n.letters)?'letters':'none';
+const BFOCUS={};
+const bNames=b=>BFOCUS[b.id]?b.names.filter(n=>partOf(n)===BFOCUS[b.id]):b.names;
+function bPartLine(b){const c={};for(const n of b.names){const k=partOf(n);if(k)c[k]=(c[k]||0)+1}
+  const segs=BPART.filter(([k])=>c[k]).map(([k,l])=>`<button class="${BFOCUS[b.id]===k?'on':''}" data-bfocus="${b.id}|${k}" title="${BFOCUS[b.id]===k?'Show every name again':'Show only these names'}">${c[k]} ${l}</button>`);
+  return segs.length?`<div class="chips" style="margin:0 0 4px">${segs.join('')}</div>`:''}
 function bProgress(b){const c=b.count,live=c.orders-c.cancelled;if(!c.orders)return '<span class="hint">—</span>';
   const bar=(n,l)=>`<div class="bprog"><span>${l}</span><div class="bar"><i style="width:${live?100*n/live:0}%"></i></div><span class="hint">${n}/${live}</span></div>`;
   return bar(c.printed,'Printed')+bar(c.checked,'Checked')+bar(c.packed,'Packed')+bar(c.shipped,'Shipped')+(c.cancelled?`<div class="hint">${c.cancelled} cancelled</div>`:'')}
@@ -1104,13 +1139,14 @@ function bRender(){const r=BDATA;if(!r)return;const all=r.batches;
   let day=null;
   $('batches').innerHTML=bs.length?bs.map(b=>{const k=dayKey(b.created_at);const head=k!==day?(day=k,`<tr><td colspan="6" style="background:var(--chip);font-weight:600">${esc(dayLabel(k))}</td></tr>`):'';
     return head+bRow(b,showPc)}).join(''):`<tr><td colspan="6" class="empty">${BTAB==='archive'?'Nothing archived yet — a batch moves here once all its orders are on the way':'No batches here — select orders on the Orders tab'}</td></tr>`;
-  bWire()}
+  bWire();
+  document.querySelectorAll('[data-bfocus]').forEach(x=>x.onclick=()=>{const [id,k]=x.dataset.bfocus.split('|');BFOCUS[id]=BFOCUS[id]===k?null:k;bRender()})}
 function bRow(b,showPc){const st=BST[b.status]||[b.status,''];const p=b.progress;const finished=b.status.startsWith('done');
     const models=p?`<div class="hint">Models ${p.ready}/${p.models}${p.failed?` <span class="reason">${p.failed} failed</span>`:''}</div><div class="bar" style="margin-top:4px"><i style="width:${p.models?100*p.ready/p.models:0}%"></i></div>`:'';
     const acts=[`<button class="small" data-b="${b.id}">Open</button>`];
     const pc=`<td class="bpc" ${showPc?'':'hidden'}>${esc(b.computer||'—')}${b.mine?' <span class="pill ok">this one</span>':''}</td>`;
-    const many=b.names.length>8,open=BOPEN.has(b.id);
-    const names=`<div class="nchips">${(many&&!open?b.names.slice(0,8):b.names).map(nameChip).join('')}${many?`<button class="small" data-bmore="${b.id}">${open?'Less':'+'+(b.names.length-8)+' more'}</button>`:''}</div>`;
+    const ns=bNames(b),many=ns.length>8,open=BOPEN.has(b.id);
+    const names=bPartLine(b)+`<div class="nchips">${(many&&!open?ns.slice(0,8):ns).map(nameChip).join('')}${many?`<button class="small" data-bmore="${b.id}">${open?'Less':'+'+(ns.length-8)+' more'}</button>`:''}</div>`;
     const status=`<span class="pill ${BWORD_CLS[b.word]||''}">${esc(b.word)}</span>${b.files_cleaned_at?'<div class="hint">files in the Recycle Bin</div>':b.clean_on?`<div class="hint">files to the Recycle Bin ${new Date(b.clean_on*1000).toLocaleDateString()}</div>`:''}${models}`;
     const head=`<td style="white-space:nowrap"><b>${esc(b.label||'Batch #'+b.id)}</b><div class="hint">${new Date(b.created_at*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} · ${b.plates||0} plates</div></td>`;
     if(!b.mine){return `<tr class="other">${head}<td>${names}</td><td>${bProgress(b)}</td><td>${status}</td>${pc}<td>${acts.join(' ')}</td></tr>`}
@@ -1220,9 +1256,16 @@ function optSummary(o,speed,dflt){dflt=dflt||{};const eff={};
   return (on.length?on.join(' · '):'Bambuddy defaults')+(own?' · changed for this plate':'')}
 function mkShow(t){MKTAB=t;try{localStorage.setItem('mktab',t)}catch{}for(const k of MKPANES)$('mk-'+k).hidden=k!==t;mkChips()}
 function mkChips(){if(!MK)return;const n={bases:MK.bases.length,names:MK.names.length,verify:MK.verify.length,completed:MK.completed.length,removed:MK.removed.length};
-  $('mktabs').innerHTML=[['bases','Bases'],['names','Names'],['verify','Verify'],['completed','Completed'],['removed','Removed']].map(([k,l])=>`<button data-mk="${k}" class="${MKTAB===k?'on':''}"${k==='verify'&&n.verify?' style="border-color:var(--warn);color:var(--warn)"':''}>${l} · ${n[k]}</button>`).join('');
+  $('mktabs').innerHTML=[['bases','Bases'],['names','Letters'],['verify','Verify'],['completed','Completed'],['removed','Removed']].map(([k,l])=>`<button data-mk="${k}" class="${MKTAB===k?'on':''}"${k==='verify'&&n.verify?' style="border-color:var(--warn);color:var(--warn)"':''}>${l} · ${n[k]}</button>`).join('');
   document.querySelectorAll('[data-mk]').forEach(b=>b.onclick=()=>mkShow(b.dataset.mk))}
 const mkKey=r=>r.batch_id+'|'+r.file;
+let MKBSUB='todo';try{MKBSUB=localStorage.getItem('mkbsub')||'todo'}catch{}
+// search: every word must appear in the batch, plate, a name or an order ID
+const mkHit=(r,q)=>{const w=(q||'').toLowerCase().split(/\s+/).filter(Boolean);if(!w.length)return true;
+  const hay=[r.batch,r.file,...(r.names||[]),...(r.order_ids||[])].join(' ').toLowerCase();return w.every(x=>hay.includes(x))};
+// how far the other part of these names is (Letters: their bases; Bases: their letters)
+function mkOther(r){const n=(r.open_items||[]).length;if(!r.other||!n)return '';const k=r.kind==='names'?'Base':'Letters',d=r.other_ready;
+  return `<div class="hint"><span class="pm ${d>=n?'ok':''}">${d>=n?'✓':'○'}</span> ${k} printed: ${n===1?(d?'yes':'not yet'):`${d} of ${n}`}</div>`}
 function sliceCell(r,sel){const k=esc(mkKey(r)),c=sel&&sel.printer?r.choices.find(x=>String(x.id)===sel.printer):null;
   if(!c)return `<span class="pill">Not sliced</span><div class="hint">Choose a printer — a plate is sliced with its printer's profiles</div>`;
   const sl=c.slice,who=`<div class="hint">for ${esc(c.name)}</div>`;
@@ -1247,21 +1290,30 @@ function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={pri
   const held=j&&j.state==='sent'&&j.held;
   const btn=busy?'':`<button class="small primary" data-mkstart="${esc(k)}" title="Send to this printer and start printing (once its bed is cleared)">${held?'Start print':(j&&['failed','cancelled'].includes(j.state)?'Start print again':'Start print')}</button>`;
   const tag=r.extra==='fix'?'<span class="pill err" title="Printed again: only what was spoiled">Fix</span> ':r.extra==='merged'?'<span class="pill info" title="Several plates merged onto this one">Merged</span> ':'';
-  const plate=`<div class="fn">${tag}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>${r.express_by?'<div>'+expressBadge(r.express_by)+'</div>':''}`;
+  const plate=`<div class="fn">${tag}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>${mkOther(r)}${r.express_by?'<div>'+expressBadge(r.express_by)+'</div>':''}`;
   return `<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td>${withColour?`<td style="white-space:nowrap">${sw(r.colors[0]||'')}</td>`:''}<td>${plate}</td>
     <td><select data-mkpr="${esc(k)}" ${busy?'disabled':''}>${opts}</select>${traySel}</td>
     <td>${sliceCell(r,sel)}</td>
     <td>${busy?`<span class="hint">${esc(optSummary(j&&j.options,j&&j.speed))}</span>`:`<details><summary class="hint" style="cursor:pointer">${esc(optSummary(sel.options,sel.speed,d))}</summary>${speedSel}${Object.entries(MK.options).map(([kk,v])=>optSel(kk,v)).join('')}<div class="hint" style="margin-top:4px">For this plate only. Each printer's defaults: <a href="#" data-go="slicing">Slicing</a>.</div></details>`}</td>
     <td>${mkStatus(r)}</td><td style="white-space:nowrap">${btn}${busy?'':r.extra==='merged'?` <button class="small" data-mksplit="${esc(k)}" title="Back to the single plates (only before printing)">Split back</button>`:` <button class="small" data-mkrm="${esc(k)}" title="Take it off this list (e.g. printed by hand) — Put back in Removed">Remove</button>`}</td></tr>`}
-const plateCell=r=>`<div>${r.kind==='bases'?'<b>Bases</b>':`<b>Names</b> ${sw(r.colors[0]||'')}`}</div><div class="fn" style="font-size:12px">${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>`;
+const plateCell=r=>`<div>${r.kind==='bases'?'<b>Bases</b>':`<b>Letters</b> ${sw(r.colors[0]||'')}`}</div><div class="fn" style="font-size:12px">${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>`;
 function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(id).contains(document.activeElement)||$(id).querySelector('details[open]'));
   if(!editing){
-    $('mkbases').innerHTML=MK.bases.length?MK.bases.map(r=>mkRow(r,false)).join(''):'<tr><td colspan="7" class="empty">No base plates waiting — build a batch first (Batches → Queue build)</td></tr>';
-    const byColor=$('mkbycolor').checked,fix=r=>r.extra==='fix'?0:1;
-    const names=[...MK.names].sort((a,b)=>(byColor?(a.colors[0]||'').localeCompare(b.colors[0]||''):0)||fix(a)-fix(b)||(!a.express_by-!b.express_by)||(a.express_by||'').localeCompare(b.express_by||'')||(a.colors[0]||'').localeCompare(b.colors[0]||'')||a.batch_id-b.batch_id);  // fixes, then Express first
-    let last=null;$('mknames').innerHTML=names.length?names.map(r=>{const c=r.colors[0]||'';let head='';
-      if(byColor&&c!==last){last=c;const n=names.filter(x=>(x.colors[0]||'')===c).length;head=`<tr><td colspan="8" style="background:var(--chip)"><b>${sw(c)}</b> <span class="hint">· ${n} plate${n===1?'':'s'}</span></td></tr>`}
-      return head+mkRow(r,true)}).join(''):'<tr><td colspan="8" class="empty">No name plates waiting</td></tr>'}
+    const bq=$('mkbq').value,bl=MK.bases.filter(r=>mkHit(r,bq)),pb=(MK.printed_bases||[]).filter(r=>mkHit(r,bq));
+    $('mkbsub').innerHTML=[['todo','To print',bl.length],['done','Printed',pb.length]].map(([k,l,n])=>`<button data-mkbs="${k}" class="${MKBSUB===k?'on':''}">${l} · ${n}</button>`).join('');
+    $('mkb-todo').hidden=MKBSUB!=='todo';$('mkb-done').hidden=MKBSUB!=='done';
+    $('mkbases').innerHTML=bl.length?bl.map(r=>mkRow(r,false)).join(''):`<tr><td colspan="7" class="empty">${bq?'Nothing matches the search':'No base plates waiting — build a batch first (Batches → Queue build)'}</td></tr>`;
+    $('mkbdone').innerHTML=pb.length?pb.map(r=>`<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td><td><div class="fn">${r.extra==='fix'?'<span class="pill err">Fix</span> ':''}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div></td><td>${esc(r.printer||'—')}</td><td class="hint" style="white-space:nowrap">${r.done_at?new Date(r.done_at*1000).toLocaleString([], {day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}):''}</td><td>${mkOther(r)||'—'}</td></tr>`).join(''):`<tr><td colspan="5" class="empty">${bq?'Nothing matches the search':'No printed base plates waiting for their letters'}</td></tr>`;
+    document.querySelectorAll('[data-mkbs]').forEach(x=>x.onclick=()=>{MKBSUB=x.dataset.mkbs;try{localStorage.setItem('mkbsub',MKBSUB)}catch{}mkRender(true)});
+    const byColor=$('mkbycolor').checked,fix=r=>r.extra==='fix'?0:1,nq=$('mknq').value;
+    const names=[...MK.names].filter(r=>mkHit(r,nq)).sort((a,b)=>(byColor?(a.colors[0]||'').localeCompare(b.colors[0]||''):0)||fix(a)-fix(b)||(!a.express_by-!b.express_by)||(a.express_by||'').localeCompare(b.express_by||'')||(a.colors[0]||'').localeCompare(b.colors[0]||'')||a.batch_id-b.batch_id);  // fixes, then Express first
+    const ready=r=>r.other_ready>=(r.open_items||[]).length;
+    const grp=(title,hint,list)=>{if(!list.length)return '';let last=null;
+      return `<tr><td colspan="8" class="mkgrp"><b>${title}</b> <span class="hint">· ${list.length} plate${list.length===1?'':'s'} — ${hint}</span></td></tr>`+list.map(r=>{const c=r.colors[0]||'';let head='';
+        if(byColor&&c!==last){last=c;const n=list.filter(x=>(x.colors[0]||'')===c).length;head=`<tr><td colspan="8"><b>${sw(c)}</b> <span class="hint">· ${n} plate${n===1?'':'s'}</span></td></tr>`}
+        return head+mkRow(r,true)}).join('')};
+    $('mknames').innerHTML=names.length?grp('Base printed — print these letters now','their bases are printed',names.filter(ready))+grp('Base still to print','print these once their bases are printed',names.filter(r=>!ready(r)))
+      :`<tr><td colspan="8" class="empty">${nq?'Nothing matches the search':'No letter plates waiting'}</td></tr>`}
   $('mkmerge').innerHTML=(MK.merge||[]).map((s,i)=>`<div class="msgs"><div class="w" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>${sw(s.color)} · ${s.plates.length} plates with room — ${s.plates.map(p=>`<b>${esc(p.names.join(', '))}</b> <span class="hint">(${esc(p.batch||'')})</span>`).join(' + ')}</span><span class="grow"></span><button class="small primary" data-merge="${i}" title="Put these ${s.names} names on one ${esc(s.color)} plate (same size, no scaling)">Merge onto one plate</button></div></div>`).join('');
   vRender(force);cRender();
   $('mkremoved').innerHTML=MK.removed.length?MK.removed.map(r=>`<tr><td class="hint">${esc(r.batch)}</td><td>${plateCell(r)}</td><td class="hint">${r.removed_at?new Date(r.removed_at*1000).toLocaleString():''}</td><td style="white-space:nowrap"><button class="small" data-mkback="${esc(mkKey(r))}">Put back</button> <button class="small" data-mkhand="${esc(mkKey(r))}" title="Printed outside SnapSTL: check it on Verify">Printed by hand</button></td></tr>`).join(''):'<tr><td colspan="4" class="empty">Nothing removed</td></tr>';
@@ -1280,7 +1332,7 @@ function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(
     if(!pid){alert('Choose a printer first — the plate is sliced with the Bambuddy profiles of its printer');x.disabled=false;return}
     try{await post('/api/makeit/slice',{plates:[{batch_id:r.batch_id,file:r.file,printer_id:+pid}],again:!!x.dataset.again})}catch(e){alert(e.message)}loadMakeIt()});
   document.querySelectorAll('[data-mkrm]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkrm);
-    if(!confirm('Take this plate off '+(r.kind==='bases'?'Bases':'Names')+'? (e.g. printed by hand) Nothing is deleted — Put back is in Removed.'))return;
+    if(!confirm('Take this plate off '+(r.kind==='bases'?'Bases':'Letters')+'? (e.g. printed by hand) Nothing is deleted — Put back is in Removed.'))return;
     try{await post('/api/makeit/remove',{batch_id:r.batch_id,file:r.file})}catch(e){alert(e.message)}loadMakeIt()});
   document.querySelectorAll('[data-mkback]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkback);
     try{await post('/api/makeit/remove',{batch_id:r.batch_id,file:r.file,put_back:true})}catch(e){alert(e.message)}loadMakeIt()});
@@ -1317,11 +1369,12 @@ function vItem(card,i){const k=vKey(i),s=VSEL[k]||(VSEL[k]={result:'good',pieces
       ${cancelled?'<div class="pill err">Cancelled – don\'t pack</div>':''}${i.fixes?`<div class="pill ${i.warn_model?'err':'warn'}">${i.fixes} fix${i.fixes>1?'es':''} before${i.warn_model?' — check the model':''}</div>`:''}</div>
     <div style="flex:1"><select data-vres="${esc(k)}" style="max-width:220px">${opts}</select>
       ${s.result==='letters'?`<div class="hint" style="margin:4px 0">Tap the spoiled letters (red = print again):</div><div data-vpcs="${esc(k)}">${s.pcs?letterSVG(s.pcs,s.pieces):'<span class="hint">Loading letters…</span>'}</div>`:''}</div></div>`}
-function vRender(force){if(!force&&$('mkverify').contains(document.activeElement))return;vStaffFill();const L=MK.verify||[];
+let VBUSY=false;  // a check is being saved: keep its card (and the saving screen) until it's done
+function vRender(force){if(VBUSY||(!force&&$('mkverify').contains(document.activeElement)))return;vStaffFill();const L=MK.verify||[];
   $('vinfo').textContent=L.length?`${L.length} plate${L.length===1?'':'s'} · ${L.reduce((n,c)=>n+c.items.length,0)} items to check`:'';
-  $('mkverify').innerHTML=L.length?L.map((c,ci)=>`<div class="card" style="display:flex;gap:14px;flex-wrap:wrap">
+  $('mkverify').innerHTML=L.length?L.map((c,ci)=>`<div class="card" data-vcard="${ci}" style="display:flex;gap:14px;flex-wrap:wrap">
     <div style="width:170px">${c.preview?plateSVG({preview:c.preview,kind:c.kind,colors:[c.color]}):''}</div>
-    <div style="flex:1;min-width:260px"><div class="toolbar" style="margin:0 0 4px">${c.extra==='fix'?'<span class="pill err">Fix</span>':c.extra==='merged'?'<span class="pill info">Merged</span>':''}<b>${c.kind==='bases'?'Bases':'Names'} ${c.kind==='names'?sw(c.color):''}</b><span class="fn" style="font-size:12px">${esc(c.file.split('/').pop())}</span></div>
+    <div style="flex:1;min-width:260px"><div class="toolbar" style="margin:0 0 4px">${c.extra==='fix'?'<span class="pill err">Fix</span>':c.extra==='merged'?'<span class="pill info">Merged</span>':''}<b>${c.kind==='bases'?'Bases':'Letters'} ${c.kind==='names'?sw(c.color):''}</b><span class="fn" style="font-size:12px">${esc(c.file.split('/').pop())}</span></div>
       <div class="hint">${esc(c.batch)} · printed on ${esc(c.printer||'?')}${c.done_at?' · '+new Date(c.done_at*1000).toLocaleString():''}</div>
       ${c.items.map(i=>vItem(c,i)).join('')}
       <div class="toolbar" style="margin:8px 0 0"><button class="primary" data-vsave="${ci}">Save check</button><button data-vfail="${ci}" title="The whole plate failed: send it back to print again">Whole plate failed</button><span class="hint" data-vsum="${ci}"></span></div></div></div>`).join(''):'<div class="empty">Nothing waiting for a check. A plate comes here as soon as it is printed.</div>';
@@ -1333,11 +1386,16 @@ function vRender(force){if(!force&&$('mkverify').contains(document.activeElement
     const results=c.items.map(i=>{const s=VSEL[vKey(i)]||{result:'good',pieces:new Set()};return {batch_id:i.batch_id,plate:i.plate,idx:i.idx,result:fail?'plate_failed':s.result,pieces:[...(s.pieces||[])]}});
     const bad=results.filter(r=>r.result!=='good');
     if(bad.some(r=>r.result==='letters'&&!r.pieces.length)){alert('Tap the spoiled letters first.');return}
-    if(fail&&!confirm('The whole plate failed? It goes back to '+(c.kind==='bases'?'Bases':'Names')+' to print again.'))return;
+    if(fail&&!confirm('The whole plate failed? It goes back to '+(c.kind==='bases'?'Bases':'Letters')+' to print again.'))return;
     if(!fail&&bad.length&&!confirm(`${bad.length} item${bad.length>1?'s':''} will get a fix plate (only what is spoiled). The rest are marked good. Save?`))return;
+    if(VBUSY)return;VBUSY=true;const card=document.querySelector(`[data-vcard="${ci}"]`);
+    if(card){card.classList.add('vbusy');card.querySelectorAll('button,select,input').forEach(x=>x.disabled=true);
+      card.insertAdjacentHTML('beforeend',`<div class="vsaving"><span class="spin"></span><b>Saving…</b><span>${fail?'sending the plate back to print':bad.length?'making the fix plate — this can take a few seconds':'moving to Completed'}</span></div>`)}
     try{const r=await post('/api/verify',{carrier:{batch_id:c.batch_id,file:c.file},staff:vStaff(),results});
       for(const i of c.items)delete VSEL[vKey(i)];
-      $('mknote').innerHTML=r.failed?'<div class="w">Sent back to print again.</div>':r.fixes.length?`<div class="w">Fix plate${r.fixes.length>1?'s':''} made: ${r.fixes.map(f=>esc(f.split('/').pop())).join(', ')} — at the top of ${c.kind==='bases'?'Bases':'Names'}.</div>`:'<div class="ok">Checked: all good.</div>'}catch(e){alert(e.message)}loadMakeIt()};
+      $('mknote').innerHTML=r.failed?'<div class="w">Sent back to print again.</div>':r.fixes.length?`<div class="w">Fix plate${r.fixes.length>1?'s':''} made: ${r.fixes.map(f=>esc(f.split('/').pop())).join(', ')} — at the top of ${c.kind==='bases'?'Bases':'Letters'}.</div>`:`<div class="ok">Saved: ${c.items.length} checked good${c.items.length?' — '+esc(c.items.map(i=>i.name).join(', ')):''}. Orders with base and letters both good are in Completed.</div>`}
+    catch(e){if(/already checked/i.test(e.message)){for(const i of c.items)delete VSEL[vKey(i)];$('mknote').innerHTML=`<div class="w">${esc(e.message)}</div>`}else alert(e.message)}
+    finally{VBUSY=false}loadMakeIt()};
   document.querySelectorAll('[data-vsave]').forEach(x=>x.onclick=()=>submit(+x.dataset.vsave,false));
   document.querySelectorAll('[data-vfail]').forEach(x=>x.onclick=()=>submit(+x.dataset.vfail,true))}
 // ---------- Print → Completed (checked good, not shipped) ----------
@@ -1356,6 +1414,7 @@ function cRender(){const L=cRows();
     if(!its.length){alert('No print record for this part on this computer.');x.value='';return}
     if(!vStaff()){alert('Choose who is checking first (Verify tab → Checked by).');x.value='';return}
     if(!confirm(`${r.name}: ${x.options[x.selectedIndex].text}?\n\nA fix plate is made and the order goes back to Printing until it is checked good again.`)){x.value='';return}
+    x.disabled=true;$('mknote').innerHTML='<div class="w"><span class="spin" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle"></span> Making the fix plate…</div>';
     try{const res=await post('/api/verify',{carrier:{batch_id:its[0].batch_id,file:its[0].plate},staff:vStaff(),results:its.map(i=>({...i,result:v}))});
       $('mknote').innerHTML=`<div class="w">Fix plate made: ${res.fixes.map(f=>esc(f.split('/').pop())).join(', ')}</div>`}catch(e){alert(e.message)}loadMakeIt()})}
 $('cdays').onchange=()=>MK&&cRender();$('csearch').oninput=()=>MK&&cRender();
@@ -1380,9 +1439,12 @@ async function loadMakeIt(){let r;try{r=await api('/api/makeit')}catch(e){$('mkm
     +(failed.length?`<div class="e">${failed.length} plate${failed.length>1?'s':''} failed to slice: ${esc(failed[0].slice.error||'')}</div>`:'');
   const busy=r.printers.filter(p=>p.status&&['RUNNING','PREPARE','PAUSE'].includes((p.status.state||'').toUpperCase())).length;
   const clear=r.printers.filter(p=>p.status&&p.status.awaiting_plate_clear).length;
+  const nw=r.now||{free:[],clear:[],busy:0,offline:0},hx=s=>s.hex?'#'+String(s.hex).replace('#','').slice(0,6):(COLORS[(s.color||'').toLowerCase()]||'transparent');
+  $('mknow').innerHTML=r.printers.length?`<b>Free for the next print:</b> ${nw.free.length?nw.free.map(p=>`<span class="nchip" title="${esc(p.spools.map(s=>s.color).filter(Boolean).join(', ')||'no filament reported')}">${esc(p.name)} ${p.spools.slice(0,4).map(s=>`<span class="swatch" style="background:${esc(hx(s))}"></span>`).join('')}</span>`).join(''):'<span class="hint">none right now</span>'}${nw.clear.length?` <span class="pill warn">Bed to clear: ${nw.clear.map(esc).join(', ')}</span>`:''} <span class="hint">· ${nw.busy} busy${nw.offline?` · ${nw.offline} offline`:''}</span>`:'';
   $('mkinfo').innerHTML=`${r.printers.length} printer${r.printers.length===1?'':'s'} · ${busy} printing${clear?` · <a href="#" data-go="printers">${clear} waiting for the bed to be cleared</a>`:''}`;
   mkShow(MKTAB);mkRender()}
-$('mkrefresh').onclick=()=>loadMakeIt();
+$('mkrefresh').onclick=()=>loadMakeIt();$('mkbbrefresh').onclick=()=>refreshFromBambuddy($('mkbbrefresh'),loadMakeIt);
+$('mkbq').oninput=()=>MK&&mkRender(true);$('mknq').oninput=()=>MK&&mkRender(true);
 // Queue panel (Print page, bottom right): downloading, building, slicing, printing — refreshed every 5 s while shown
 let QTAB='slicing',QMIN=false,QDATA=null,QTIMER=null;
 try{QTAB=localStorage.getItem('qtab')||'slicing';QMIN=localStorage.getItem('qmin')==='1'}catch{}
@@ -1483,7 +1545,7 @@ const SLST={queued:['Waiting','info'],uploading:['Sending','info'],slicing:['Sli
 function slicingBox(sl){if(!sl)return;const c=sl.counts||{},items=sl.items||[];
   $('slp_actsum').textContent=`${c.slicing||0} slicing · ${(c.queued||0)+(c.uploading||0)} waiting · ${c.done||0} sliced · ${c.failed||0} failed`;
   $('slp_activity').innerHTML=items.length?`<table><thead><tr><th>State</th><th>Plate</th><th>Batch</th><th>Profiles</th><th>Updated</th></tr></thead><tbody>${items.map(i=>{const st=SLST[i.state]||[i.state,''];const pr=i.presets||{};
-    return `<tr><td><span class="pill ${st[1]}">${st[0]}${i.state==='slicing'&&i.progress?' '+Math.round(i.progress)+'%':''}</span></td><td><div>${i.kind==='bases'?'<b>Bases</b>':`<b>Names</b> ${sw(i.color||'')}`}</div><div class="fn" style="font-size:12px">${esc(i.plate.split('/').pop())}</div>${i.error?`<div class="reason">${esc(i.error)}</div>`:''}</td><td class="hint">${esc(i.batch)}</td><td class="hint">${esc([pr.printer,pr.process,pr.filament].filter(Boolean).join(' · '))}</td><td class="hint" style="white-space:nowrap">${i.updated_at?new Date(i.updated_at*1000).toLocaleString():''}</td></tr>`}).join('')}</tbody></table>`:'<div class="empty">Nothing sliced yet</div>'}
+    return `<tr><td><span class="pill ${st[1]}">${st[0]}${i.state==='slicing'&&i.progress?' '+Math.round(i.progress)+'%':''}</span></td><td><div>${i.kind==='bases'?'<b>Bases</b>':`<b>Letters</b> ${sw(i.color||'')}`}</div><div class="fn" style="font-size:12px">${esc(i.plate.split('/').pop())}</div>${i.error?`<div class="reason">${esc(i.error)}</div>`:''}</td><td class="hint">${esc(i.batch)}</td><td class="hint">${esc([pr.printer,pr.process,pr.filament].filter(Boolean).join(' · '))}</td><td class="hint" style="white-space:nowrap">${i.updated_at?new Date(i.updated_at*1000).toLocaleString():''}</td></tr>`}).join('')}</tbody></table>`:'<div class="empty">Nothing sliced yet</div>'}
 $('slp_actref').onclick=async()=>{try{const p=await api('/api/makeit/presets'+(SLPR?'?printer='+SLPR:''));slicingBox(p.activity)}catch(e){$('slp_actsum').textContent=e.message}};
 
 async function loadFarmSettings(){if(!META.local){$('farmsetcard').hidden=true;return}let r;try{r=await api('/api/farm')}catch(e){$('farmsetinfo').textContent=e.message;return}
@@ -1548,28 +1610,36 @@ const T=(c,t)=>c==null?'—':`${Math.round(c)}°${t?` / ${Math.round(t)}°`:''}`
 function statusCard(p){const m=p.summary||{};const raw=p.status||{};
   const pill=!m.connected?`<span class="pill err">Offline</span>`:`<span class="pill ${m.errors&&m.errors.length?'err':m.raw_state==='RUNNING'?'info':m.raw_state==='PAUSE'?'warn':m.raw_state==='FAILED'?'err':'ok'}">${esc(m.state)}</span>`;
   let h=`<div class="pscard"><div class="top" style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b style="font-size:15px">${esc(p.name)}</b><span class="hint">${esc(m.model||'')}</span><span class="grow"></span>${pill}</div>
-    <div class="line hint">${esc(m.ip||'')}${m.location?` · ${esc(m.location)}`:''}</div>`;
+`;
   if(!m.connected)h+=`<div class="reason" style="margin-top:6px">Bambuddy can't reach this printer${m.error?': '+esc(m.error):''}. Check it's on, on the network, in LAN Only + Developer Mode.</div>`;
   if(m.awaiting_plate_clear)h+=`<div class="msgs"><div class="w">Waiting for the bed to be cleared.${META.local?` <button class="small primary" data-pclear="${p.id}" title="You checked the bed is empty: the next started print may begin">Clear plate</button>`:''}</div></div>`;
-  const j=m.job;
-  h+='<h4>Now</h4>'+(j?`<div class="line"><b>${esc(j.file||'Printing')}</b></div><div class="bar"><i style="width:${Math.max(0,Math.min(100,j.progress||0))}%"></i></div>
-    <div class="line">${j.progress!=null?Math.round(j.progress)+'% done':''}${j.remaining_min?` · ${fmtMin(j.remaining_min)} left`:''}${j.layers?` · layer ${j.layer||0} of ${j.layers}`:''}${j.speed?` · ${esc(j.speed)} speed`:''}</div>${j.stage?`<div class="line hint">${esc(j.stage)}</div>`:''}`
-    :`<div class="line hint">${m.connected?'Not printing':'—'}</div>`);
-  const tp=m.temps||{};h+=`<h4>Temperatures</h4><div class="line">Nozzle ${T(tp.nozzle,tp.nozzle_target)} · Bed ${T(tp.bed,tp.bed_target)}${tp.chamber!=null?` · Chamber ${T(tp.chamber)}`:''}</div>`;
-  const f=m.fans||{};const fans=[f.part!=null?`part ${f.part}%`:'',f.aux!=null?`aux ${f.aux}%`:'',f.heatbreak!=null?`hotend ${f.heatbreak}%`:''].filter(Boolean);if(fans.length)h+=`<div class="line hint">Fans: ${fans.join(' · ')}</div>`;
+  const j=m.job,pl=p.plate,what=pl?`${pl.kind==='bases'?'<b>Bases</b>':`<b>Letters</b> ${sw(pl.color)}`} — ${esc((pl.names||[]).join(', ')||pl.file)}`:'';
+  h+='<h4>Now</h4>'+(j?`<div class="line">${what||`<b>${esc(j.file||'Printing')}</b>`}</div><div class="bar"><i style="width:${Math.max(0,Math.min(100,j.progress||0))}%"></i></div>
+    <div class="line">${j.remaining_min?`<b>Ready at ${finishAt(j.remaining_min)}</b> · `:''}${j.progress!=null?Math.round(j.progress)+'% done':''}</div>${j.stage?`<div class="line hint">${esc(j.stage)}</div>`:''}`
+    :pl&&pl.held?`<div class="line">Waiting to start: ${what}</div><div class="line hint">Starts after Start print, once the bed is clear</div>`
+    :`<div class="line">${!m.connected?'<span class="hint">—</span>':m.awaiting_plate_clear?'Bed to clear first':'<b style="color:var(--ok)">Free for the next print</b>'}</div>`);
   h+=`<h4>Filament</h4><div class="spools">${(m.spools||[]).length?m.spools.map(x=>spoolRow(x)).join(''):'<span class="hint">No filament reported</span>'}</div>`;
-  for(const u of (m.ams_units||[]).filter(u=>u.humidity!=null||u.temp!=null||u.drying))h+=`<div class="line hint">${esc(u.name)}: ${u.humidity!=null?`humidity level ${u.humidity}`:''}${u.temp!=null?` · ${Math.round(u.temp)}°`:''}${u.drying?` · drying, ${u.dry_minutes_left} min left`:''}</div>`;
-  h+='<h4>Problems</h4>'+((m.errors||[]).length?m.errors.map(e=>`<div class="line reason">${esc(e.severity)} · code ${esc(e.code)}${e.actions&&e.actions.length?` · ${esc(e.actions.join(', ').toLowerCase().replace(/_/g,' '))}`:''}</div>`).join(''):(m.print_error?`<div class="line reason">Print error ${esc(m.print_error)}</div>`:'<div class="line hint">None</div>'));
+  const probs=(m.errors||[]).length?m.errors.map(e=>`<div class="line reason">${esc(e.severity)} · code ${esc(e.code)}${e.actions&&e.actions.length?` · ${esc(e.actions.join(', ').toLowerCase().replace(/_/g,' '))}`:''}</div>`).join(''):(m.print_error?`<div class="line reason">Print error ${esc(m.print_error)}</div>`:'');
+  if(probs)h+='<h4>Problems</h4>'+probs;
+  let more='';const tp=m.temps||{};more+=`<div class="line">Nozzle ${T(tp.nozzle,tp.nozzle_target)} · Bed ${T(tp.bed,tp.bed_target)}${tp.chamber!=null?` · Chamber ${T(tp.chamber)}`:''}</div>`;
+  if(j)more+=`<div class="line hint">${j.remaining_min?fmtMin(j.remaining_min)+' left':''}${j.layers?` · layer ${j.layer||0} of ${j.layers}`:''}${j.speed?` · ${esc(j.speed)} speed`:''}${j.file?` · ${esc(j.file)}`:''}</div>`;
+  const f=m.fans||{};const fans=[f.part!=null?`part ${f.part}%`:'',f.aux!=null?`aux ${f.aux}%`:'',f.heatbreak!=null?`hotend ${f.heatbreak}%`:''].filter(Boolean);if(fans.length)more+=`<div class="line hint">Fans: ${fans.join(' · ')}</div>`;
+  for(const u of (m.ams_units||[]).filter(u=>u.humidity!=null||u.temp!=null||u.drying))more+=`<div class="line hint">${esc(u.name)}: ${u.humidity!=null?`humidity level ${u.humidity}`:''}${u.temp!=null?` · ${Math.round(u.temp)}°`:''}${u.drying?` · drying, ${u.dry_minutes_left} min left`:''}</div>`;
   const facts=[m.nozzles&&m.nozzles.length?'Nozzle '+m.nozzles.join(', '):'',m.network?(m.network.wired?'Ethernet':(m.network.wifi_dbm!=null?`Wi-Fi ${m.network.wifi_dbm} dBm${m.network.wifi_dbm>-60?' (good)':m.network.wifi_dbm>-75?' (fair)':' (weak)'}`:'')):'',m.sdcard===false?'No SD card':m.sdcard?'SD card in':'',m.door_open?'Door open':'',m.camera?'Camera on':'',m.timelapse?'Timelapse on':'',m.firmware?'Firmware '+m.firmware:'',m.developer_mode===false?'Developer Mode OFF (Bambuddy can\'t control it)':''].filter(Boolean);
-  h+=`<h4>Printer</h4><div class="line hint">${esc(facts.join(' · ')||'—')}</div>`;
-  const ai=Object.keys(m.ai||{});if(ai.length)h+=`<div class="line hint">AI checks on: ${esc(ai.map(k=>k.replace(/_/g,' ')).join(', '))}</div>`;
-  const q=m.queue||[];h+=`<h4>Queue in Bambuddy</h4>`+(q.length?q.map(x=>`<div class="line">${esc(x.file)} <span class="hint">· ${x.held?'waiting for Start':esc(x.status||'')}</span></div>`).join(''):'<div class="line hint">Empty</div>');
-  h+=kvDetails('All fields (as Bambuddy reports them)',{printer:p.printer,status:raw,queue:p.queue},`p${p.id}.all`)+'</div>';return h}
+  more+=`<div class="line hint">${esc(m.ip||'')}${m.location?` · ${esc(m.location)}`:''}${facts.length?' · '+esc(facts.join(' · ')):''}</div>`;
+  const ai=Object.keys(m.ai||{});if(ai.length)more+=`<div class="line hint">AI checks on: ${esc(ai.map(k=>k.replace(/_/g,' ')).join(', '))}</div>`;
+  const q=m.queue||[];more+=`<div class="line"><b>Queue in Bambuddy</b></div>`+(q.length?q.map(x=>`<div class="line">${esc(x.file)} <span class="hint">· ${x.held?'waiting for Start':esc(x.status||'')}</span></div>`).join(''):'<div class="line hint">Empty</div>');
+  more+=kvDetails('All fields (as Bambuddy reports them)',{printer:p.printer,status:raw,queue:p.queue},`p${p.id}.all`);
+  h+=`<details class="kvd" data-path="p${p.id}.more" ${PSOPEN.has(`p${p.id}.more`)?'open':''} style="margin-top:8px"><summary><b>Details</b> <span class="hint">temperatures, fans, network, firmware, queue</span></summary>${more}</details></div>`;return h}
+// the clock time a print is done (today: 4:35 pm; another day: Sat 1:10 am)
+function finishAt(min){const d=new Date(Date.now()+min*60000),today=d.toDateString()===new Date().toDateString();
+  return (today?'':d.toLocaleDateString([], {weekday:'short'})+' ')+d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}
 async function loadStatusAll(){$('psinfo').textContent='Loading…';let r;try{r=await api('/api/printer-status')}catch(e){$('psmsg').innerHTML=`<div class="e">${esc(e.message)}</div>`;$('psinfo').textContent='';return}
   const bb=r.bambuddy||{};$('bbopen2').href=bb.url||'#';$('bbopen2').hidden=!bb.reachable||!META.local;
   $('psmsg').innerHTML=(r.error?`<div class="e">${esc(r.error)}</div>`:'')+(bb.url&&!bb.connected?farmMsgs(bb):'');
   const ps=r.printers||[],on=ps.filter(p=>p.summary&&p.summary.connected).length,printing=ps.filter(p=>p.summary&&p.summary.raw_state==='RUNNING').length,clear=ps.filter(p=>p.summary&&p.summary.awaiting_plate_clear).length;
-  $('psinfo').textContent=`${ps.length} printer${ps.length===1?'':'s'} · ${on} online · ${printing} printing${clear?` · ${clear} waiting for the bed to be cleared`:''} · updated ${new Date(r.fetched_at*1000).toLocaleTimeString()}`;
+  const free=ps.filter(p=>p.summary&&p.summary.connected&&!p.summary.awaiting_plate_clear&&!p.summary.job&&!p.plate).length;
+  $('psinfo').textContent=`${ps.length} printer${ps.length===1?'':'s'} · ${free} free · ${printing} printing${clear?` · ${clear} waiting for the bed to be cleared`:''} · updated ${new Date(r.fetched_at*1000).toLocaleTimeString()}`;
   if(!$('pslist').querySelector('details[open]')||!ps.length)$('pslist').innerHTML=ps.length?ps.map(statusCard).join(''):'<div class="empty">No printers in Bambuddy — add them there (Open Bambuddy)</div>';
   $('farmlog').textContent=(r.log||[]).join('\n')||'Nothing yet';
   $('pssys').innerHTML=kvDetails('Bambuddy system info',r.system||{},'system');
@@ -1792,7 +1862,7 @@ function refreshAll(){lastKey='';refresh()}
 // ---------- Settings → Usage (0.23) ----------
 const FEATWORD={open_page:['Logistics','Opened the page'],search:['Logistics','Search'],open_order:['Logistics','Opened an order'],
   copy_tracking_link:['Logistics','Copy tracking link'],copy_message:['Logistics','Copy message'],whatsapp:['Logistics','WhatsApp'],
-  copy_order_ids:['Logistics','Copy order IDs'],download_csv:['Logistics','Download (CSV)'],label_generated:['Logistics','Label Generated'],
+  copy_order_ids:['Logistics','Copy order IDs'],copy_order_id:['Logistics','Copy an order ID'],download_csv:['Logistics','Download (CSV)'],label_generated:['Logistics','Label Generated'],
   label_undo:['Logistics','Undo Label Generated'],express_set:['Logistics','Express set or changed'],express_clear:['Logistics','Express removed'],
   name_changed:['Logistics','Name changed with the customer'],note_added:['Logistics','Note added'],cancel_request:['Logistics','Customer wants to cancel'],
   remake_request:['Logistics','Remake request'],use_returned:['Both','Use returned piece'],undo_returned:['Both','Undo returned piece'],
@@ -1806,9 +1876,10 @@ async function loadUsage(){try{const r=await api('/api/usage?days='+$('usagedays
 $('usagedays').onchange=loadUsage;$('usagerefresh').onclick=loadUsage;
 
 // ---------- logistics page (label and customer-care team, 0.23) ----------
-const DMENU=[['Labels',[['labels','Labels to make'],['ship_it','Label done – ship it']]],
-  ['Customer help',[['check_name','Check name first'],['problems','Cancel requests & problems'],['remakes','Remake requests']]],
-  ['Tracking',[['being_made','Being made'],['on_the_way','On the way'],['delivered','Delivered'],['rto','Coming back (RTO)'],['cancelled','Cancelled']]]];
+const DMENU=[['Labels',[['labels','Ready to pack – make label'],['ship_it','Packed – waiting for courier']]],
+  ['Customer help',[['check_name','Confirm name with customer'],['problems','Cancel requests & problems'],['remakes','Remake requests']]],
+  ['Tracking',[['being_made','In queue & printing'],['on_the_way','Shipped'],['delivered','Delivered'],['rto','Returning to us (RTO)'],['cancelled','Cancelled']]]];
+const DSEL=new Set();  // Labels: ticked orders for Label Generated
 const DTITLE=Object.fromEntries(DMENU.flatMap(g=>g[1]));
 let D={view:'labels',q:'',offset:0,rows:[],meta:null,open:null},DLIMIT=100;
 const use=f=>{post('/api/usage',{feature:f}).catch(()=>{})};
@@ -1836,31 +1907,74 @@ async function dList(){
   $('dlist').innerHTML=r.orders.length?r.orders.map(o=>{
     const red=o.late||o.stuck||o.express_red||o.tab==='problems';
     const why=[o.late?`${o.days} days since order`:'',o.stuck?'On the way a long time — check with the courier':''].filter(Boolean).join(' · ');
-    const quick=o.tab==='pack_it'&&!D.q?`<button class="small primary" data-label="${esc(o.order_id)}">Label Generated</button>`:'';
+    const quick=o.tab==='pack_it'?`<button class="small primary" data-label="${esc(o.order_id)}">Label Generated</button>`:'';
+    const tick=o.tab==='pack_it'?`<input type="checkbox" data-dsel="${esc(o.order_id)}" ${DSEL.has(o.order_id)?'checked':''} aria-label="Tick ${esc(o.order_id)}">`:'';
     return `<div class="drow ${red?'red':''}" data-open="${esc(o.order_id)}">
-      <div><div class="who">${esc(o.order_id)} · ${esc(o.customer_name)} <span class="meta">${esc(o.phone)}</span></div>
+      <div><div class="who tick">${tick}<span><span class="cpid" data-copy="${esc(o.order_id)}" title="Click to copy">${esc(o.order_id)}</span> · ${esc(o.customer_name)} <span class="meta">${esc(o.phone)}</span></span></div>
         <div class="what"><b>${esc(o.name)}</b> · ${sw(o.color)} · ×${o.quantity} — ${esc(o.words)}</div>
         <div class="meta">Ordered ${esc(dDate(o.order_date))}${o.days!=null?` (${o.days} day${o.days===1?'':'s'})`:''}${o.clubbed_id?' · clubbed '+esc(o.clubbed_id):''}${o.courier?' · '+esc(o.courier):''}${o.awb?' · AWB '+esc(o.awb):''}${why?' · <b>'+esc(why)+'</b>':''}</div>
         ${o.flag_note?`<div class="reason">${esc(o.flag_note)}</div>`:''}${o.remake_reason&&D.view==='remakes'?`<div class="reason">Remake: ${esc(o.remake_reason)}</div>`:''}</div>
       <div class="acts">${dExpress(o)}${quick}</div></div>`}).join(''):'<div class="hint" style="padding:20px">Nothing here.</div>';
-  document.querySelectorAll('#dlist [data-open]').forEach(el=>el.onclick=e=>{if(e.target.closest('button'))return;dOpen(el.dataset.open)});
+  document.querySelectorAll('#dlist [data-open]').forEach(el=>el.onclick=e=>{if(e.target.closest('button,input,[data-copy]'))return;dOpen(el.dataset.open)});
+  document.querySelectorAll('#dlist [data-copy]').forEach(el=>el.onclick=()=>{copyText(el.dataset.copy,'Order ID '+el.dataset.copy);use('copy_order_id')});
+  const packs=r.orders.filter(o=>o.tab==='pack_it').map(o=>o.order_id);
+  for(const id of [...DSEL])if(!packs.includes(id))DSEL.delete(id);
+  $('dlabelbar').hidden=!packs.length;$('dpastebox').hidden=true;
+  const selUp=()=>{$('dlabelsel').disabled=!DSEL.size;$('dlabelsel').textContent=DSEL.size?`Label Generated for ${DSEL.size} ticked`:'Label Generated for ticked';$('dtickall').checked=packs.length>0&&packs.every(i=>DSEL.has(i))};
+  document.querySelectorAll('#dlist [data-dsel]').forEach(x=>x.onchange=()=>{x.checked?DSEL.add(x.dataset.dsel):DSEL.delete(x.dataset.dsel);selUp()});
+  $('dtickall').onchange=()=>{for(const i of packs)$('dtickall').checked?DSEL.add(i):DSEL.delete(i);document.querySelectorAll('#dlist [data-dsel]').forEach(x=>x.checked=DSEL.has(x.dataset.dsel));selUp()};
+  selUp();
   document.querySelectorAll('#dlist [data-label]').forEach(b=>b.onclick=()=>dLabel(b.dataset.label,false))}
 async function dLabel(id,undo){if(undo&&!confirm('Undo Label Generated for '+id+'? It goes back to Labels to make.'))return;
   try{await post(`/api/logistics/order/${encodeURIComponent(id)}/label`,{undo});dFlash(undo?`${id}: label undone`:`${id}: Label Generated → Label done – ship it`);
     await dLoad();if(D.open)dOpen(D.open)}catch(e){dFlash(e.message,true)}}
-function dMsg(o,key){const t=(D.meta.messages||{})[key]||'';const first=(o.customer_name||'').split(' ')[0]||'there';
+// Label Generated for several orders: one after the other, then one summary
+async function dLabelMany(ids){ids=[...new Set(ids)];if(!ids.length)return;
+  if(!confirm(`Label Generated for ${ids.length} order${ids.length>1?'s':''}?\n\n${ids.slice(0,15).join('\n')}${ids.length>15?'\n…':''}\n\nThey move to Packed – waiting for courier.`))return;
+  $('dlabelsel').disabled=$('dpastego').disabled=true;const ok=[],bad=[];
+  for(const id of ids){dFlash(`Saving labels… ${ok.length+bad.length+1} of ${ids.length}`);
+    try{await post(`/api/logistics/order/${encodeURIComponent(id)}/label`,{undo:false});ok.push(id)}catch(e){bad.push(`${id}: ${e.message}`)}}
+  DSEL.clear();$('dpastego').disabled=false;await dLoad();
+  if(bad.length)$('dmsg').innerHTML=`<div class="e">${ok.length} done. Not done:<br>${bad.map(esc).join('<br>')}</div>`;
+  else dFlash(`${ok.length} label${ok.length>1?'s':''} done → Packed – waiting for courier`)}
+$('dlabelsel').onclick=()=>dLabelMany([...DSEL]);
+$('dlabelpaste').onclick=()=>{$('dpastebox').hidden=false;$('dpastetext').focus()};
+$('dpastex').onclick=()=>{$('dpastebox').hidden=true;$('dpastetext').value=''};
+$('dpastego').onclick=()=>{const ids=$('dpastetext').value.split(/[\s,;]+/).map(s=>s.trim()).filter(Boolean);if(!ids.length){alert('Paste the order IDs first');return}dLabelMany(ids)};
+// which ready-made messages fit an order's status (messages the owner adds fit every order)
+const DMAKING=['to_make','check_name','ready_to_print','printing'];
+const MSGFOR={'Sorry for the wait':DMAKING,'Printing now':['printing'],'Packed, ships soon':['pack_it','ship_it'],'Shipped – tracking':['on_the_way'],
+  'Delivered – review':['delivered'],"Couldn't deliver":['on_the_way','rto'],'Confirm COD order':['to_make','check_name','ready_to_print'],
+  'Express':[...DMAKING,'pack_it'],'Confirm address':[...DMAKING,'pack_it','ship_it'],
+  'Being made':DMAKING,'Shipped':['on_the_way'],'Delivered':['delivered']};
+const msgFits=(o,k)=>!MSGFOR[k]||MSGFOR[k].includes(o.tab);
+// Confirm name with customer: a WhatsApp message that asks exactly what is unclear
+function nameDraft(o){const first=(o.customer_name||'').split(' ')[0]||'there',raw=(o.raw_name||'').trim(),nm=o.name||'',why=o.review_reason||'';
+  const ask=[];
+  if(/no name|no letters/i.test(why))ask.push('We couldn\'t find a name in your order. Which name should we print?');
+  else{
+    if(/small letter/i.test(why))ask.push(`It starts with a small letter. Shall we print "${nm.charAt(0).toUpperCase()+nm.slice(1)}" (capital first letter) or exactly "${nm}"?`);
+    if(/space/i.test(why))ask.push(`It has a space. Shall we print "${nm}" as it is, or as one word "${nm.replace(/\s+/g,'')}"?`);
+    if(/removed/i.test(why))ask.push(`Some characters can't be printed, so it would be "${nm}". Is that OK?`);
+    if(/non-latin/i.test(why))ask.push('Please also send the name in English letters (A–Z), so we can print it correctly.');
+    if(/long name/i.test(why))ask.push(`It's a long name, so the letters will be smaller. Is "${nm}" right, or would you like a shorter version?`);
+    if(!ask.length)ask.push(`We'll print "${nm}". Is that right?`)}
+  if(/no colou?r/i.test(why))ask.push('Which colour would you like it in?');
+  return `Hello ${first}, thank you for your order ${o.order_id}! Before we make your name organizer${o.color?' in '+o.color:''}, please confirm the name${raw?` (you typed "${raw}")`:''}.\n\n${ask.join('\n')}\n\nPlease reply here. Thank you!`}
+function dMsg(o,key){if(key==='__name')return nameDraft(o);const t=(D.meta.messages||{})[key]||'';const first=(o.customer_name||'').split(' ')[0]||'there';
   return t.replace(/\{customer\}/g,first).replace(/\{order_id\}/g,o.order_id).replace(/\{name\}/g,o.name).replace(/\{colour\}/g,o.color)
-    .replace(/\{tracking\}/g,o.tracking||'(tracking link not ready yet)').replace(/\{address\}/g,o.address).replace(/\{needed_by\}/g,dDate(o.express_by)||'the date you asked for')}
+    .replace(/\{tracking\}/g,o.tracking||'(tracking link not ready yet)').replace(/\{address\}/g,o.address).replace(/\{needed_by\}/g,dDate(o.express_by)||'the date you asked for')
+    .replace(/\{courier\}/g,o.courier||'our courier').replace(/\{delivered\}/g,o.delivered_date?' on '+dDate(o.delivered_date):'')}
 function waLink(o,text){let d=(o.phone||'').replace(/\D/g,'');if(d.length===10)d='91'+d;if(d.length===11&&d[0]==='0')d='91'+d.slice(1);
   return `https://wa.me/${d}?text=${encodeURIComponent(text)}`}
 async function dOpen(id){D.open=id;use('open_order');let o;try{o=await api('/api/logistics/order/'+encodeURIComponent(id))}catch(e){dFlash(e.message,true);return}
   const P=$('dpanel');P.hidden=false;
   const notShipped=['to_make','check_name','ready_to_print','printing','pack_it'].includes(o.tab);
   const canName=['to_make','check_name'].includes(o.tab);
-  const msgs=Object.keys(D.meta.messages||{});
+  const msgs=Object.keys(D.meta.messages||{}).filter(k=>msgFits(o,k)),nameAsk=o.tab==='check_name';
   const row=(k,v)=>v?`<dt>${k}</dt><dd>${v}</dd>`:'';
   P.innerHTML=`<button class="dclose small" id="dclose">Close</button>
-    <h2>${esc(o.order_id)}</h2><div>${esc(o.words)} ${dExpress(o)}</div>
+    <h2><span class="cpid" id="dcopyid" title="Click to copy">${esc(o.order_id)}</span></h2><div>${esc(o.words)} ${dExpress(o)}</div>
     ${o.flag_note?`<div class="reason">${esc(o.flag_note)}</div>`:''}${o.label_note&&!o.label_at?`<div class="reason">${esc(o.label_note)}</div>`:''}
     <div class="sect"><dl>
       ${row('Customer',esc(o.customer_name))}${row('Phone',esc(o.phone))}${row('Address',esc(o.address))}
@@ -1877,7 +1991,7 @@ async function dOpen(id){D.open=id;use('open_order');let o;try{o=await api('/api
     ${o.other_orders.length?`<div class="hint" style="margin-top:4px">Other orders of this customer: ${o.other_orders.map(g=>`<a href="#" data-go="${esc(g.order_id)}">${esc(g.order_id)}</a> (${esc(g.words)})`).join(', ')}</div>`:''}</div>
     <div class="sect"><h3>Share</h3><div class="btns">
       <button id="dtrack" ${o.tracking?'':'disabled title="No tracking yet: the website hasn\'t given it an AWB"'}>${o.tracking?'Copy tracking link':'No tracking yet'}</button>
-      <select id="dmsgsel" aria-label="Message">${msgs.map(m=>`<option>${esc(m)}</option>`).join('')}</select>
+      <select id="dmsgsel" aria-label="Message">${nameAsk?'<option value="__name">Confirm the name (made for this order)</option>':''}${msgs.map(m=>`<option>${esc(m)}</option>`).join('')}</select>
       <button id="dmsgcopy">Copy message</button><button id="dwa" ${o.phone?'':'disabled'}>WhatsApp</button></div></div>
     <div class="sect"><h3>Change</h3><div class="btns">
       ${o.tab==='pack_it'?`<button class="primary" id="dlabel">Label Generated</button>`:''}${o.label_at?`<button id="dunlabel">Undo Label Generated</button>`:''}
@@ -1891,6 +2005,7 @@ async function dOpen(id){D.open=id;use('open_order');let o;try{o=await api('/api
       ${o.notes.map(n=>`<div class="dnote">${esc(n.text)}<div class="hint">${new Date(n.at*1000).toLocaleString([], {dateStyle:'short',timeStyle:'short'})}${n.author?' · '+esc(n.author):''}</div></div>`).join('')||'<div class="hint">No notes yet.</div>'}</div>`;
   const act=async(path,body,ok)=>{try{await post(`/api/logistics/order/${encodeURIComponent(o.order_id)}/${path}`,body);dFlash(ok);await dLoad();dOpen(o.order_id)}catch(e){dFlash(e.message,true)}};
   $('dclose').onclick=()=>{P.hidden=true;D.open=null};
+  $('dcopyid').onclick=()=>{copyText(o.order_id,'Order ID '+o.order_id);use('copy_order_id')};
   P.querySelectorAll('[data-go]').forEach(a=>a.onclick=e=>{e.preventDefault();dOpen(a.dataset.go)});
   $('dtrack').onclick=()=>{copyText(o.tracking,'Tracking link');use('copy_tracking_link')};
   $('dmsgcopy').onclick=()=>{copyText(dMsg(o,$('dmsgsel').value),'Message');use('copy_message')};

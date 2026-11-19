@@ -103,10 +103,15 @@ def batch_rows(limit: int = 1000) -> dict:
     """GET /api/batches: every batch with its names, progress and status in words."""
     from . import batches as B
 
+    from . import verify
+
     with db.tx() as con:
         update_archive(con)
         rs = db.rows(con, "SELECT * FROM batches ORDER BY id DESC LIMIT ?", limit)
         orders = _orders(con)
+        # base / letters of each name still being made (this computer's prints)
+        parts = verify.part_status(con, [r for r in rs if not r.get("archived_at")
+                                         and (r.get("computer_id") or computer.ID) == computer.ID])
     out = []
     for r in rs:
         summ = json.loads(r["summary"] or "{}")
@@ -118,7 +123,8 @@ def batch_rows(limit: int = 1000) -> dict:
             "errors": len(summ.get("errors", [])), "label": summ.get("label", ""),
             "computer": r.get("computer_name") or "", "mine": (r.get("computer_id") or computer.ID) == computer.ID,
             "names": [{"name": o["name"], "color": o["color"], "tab": o["tab"], "order_id": o["order_id"],
-                       "quantity": o["quantity"]} for o in sorted(os_, key=lambda o: (o["color"] or "", o["name"] or ""))],
+                       "quantity": o["quantity"], "base": parts.get(o["order_id"], {}).get("bases"),
+                       "letters": parts.get(o["order_id"], {}).get("names")} for o in sorted(os_, key=lambda o: (o["color"] or "", o["name"] or ""))],
             "count": n, "word": status_word(r, n), "archived_at": r.get("archived_at"),
             "files_cleaned_at": r.get("files_cleaned_at"),
             "clean_on": (r["archived_at"] + BATCH_DAYS * 86400) if r.get("archived_at") and not r.get("files_cleaned_at") else None,

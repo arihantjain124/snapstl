@@ -414,3 +414,39 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
   profiles are hidden. If nothing can be listed, saved picks show "(saved)" and no false warning appears.
 - Logistics search also finds the name to print, as the customer typed it or as corrected.
 - Checks: automated tests and a stand-in Bambuddy that fails the same way. Not yet run against the real Bambuddy.
+
+
+### 2026-11-20: User logins and roles planned, then put on hold
+- Owner asked for per-person logins with Admin and Production roles (logistics page unchanged), Verify tied
+  to the signed-in person, only Admin uploading reports, anyone creating batches.
+- Owner decided to **skip logins for now**. The plan, proposed access table and the ways it could break the
+  system are in `docs/plan-user-logins.md`; build it only when the owner asks.
+- Meanwhile the other requested changes go ahead (Print, Printers, Batches, Logistics, Orders) without logins:
+  Verify keeps "Checked by".
+
+
+### 2026-11-20: 0.25.0 easier Print, Printers, Batches, Orders and logistics
+Owner's requests after using 0.24 in production (backlog of 500+ orders, customers asking about delays).
+Agreed: two releases — 0.25.0 now, 0.25.1 (Verify by name, staff PINs, merging with tick boxes) next.
+- **Print:** top line with printers free for the next print (colours loaded), beds to clear, busy / offline;
+  **Refresh from Bambuddy**. *Names* renamed **Letters**. Bases has *To print* / *Printed* (with letters
+  printed x of y); Letters is split into *Base printed — print these letters now* / *Base still to print*.
+  Both have a search (name, order ID, batch).
+- **Verify:** a *Saving…* screen covers the card while a check is saved (fix plates take seconds); the server
+  saves one check at a time and refuses a second save of the same plate ("already checked by …"). The live
+  records had no double saves (207 checks), so this only stops wasted presses.
+- **Batches:** B/L marks per name (base / letters: printed, printing, to print) and a line per batch
+  (*base ready, letters pending* …) that filters the names.
+- **Printers:** what it prints (which names), **Ready at** clock time, filament, problems; temperatures,
+  fans, network, firmware and Bambuddy's queue under *Details*.
+- **Orders:** oldest first (Express still on top); *Payment* column (Prepaid / COD / Partial COD, from the
+  report; filterable); days waiting (red from 7); **Select oldest N**.
+- **Logistics:** statuses renamed (owner approved): *In queue – ready around (date)*, *Printing now*,
+  *Printed – being checked*, *Confirm name with customer*, *Ready to pack – make label*, *Packed – waiting
+  for courier*, *Shipped with (courier)*, *Returning to us (RTO)*. "Ready around" = place in queue / orders
+  finished per day over the last 7 days, for the team only (owner). Order IDs click to copy. Label Generated
+  was hard to find: tick boxes + *Paste order IDs…* + the button on rows in a search too. A WhatsApp draft per
+  name problem; new ready-made messages offered only where they fit (the old defaults are replaced only if
+  never changed — the owner's settings had none saved).
+- Not changed: no logins (on hold, `docs/plan-user-logins.md`); only the order date is kept from the report
+  (not the time), so same-day orders keep order-ID order.

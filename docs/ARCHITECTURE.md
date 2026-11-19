@@ -681,6 +681,8 @@ snapstl.server:app --port 8320`.
   ordered by upload time.
 * The Windows version was written and tested on macOS only (scripts and OS functions); its first
   run on a real Windows PC may need fixes.
+* No per-person logins: the app opens without login on each computer (127.0.0.1) and the logistics page has
+  one shared password. A plan for Admin / Production logins is kept, on hold, in `docs/plan-user-logins.md`.
 * Creating a batch needs the shared records reachable (by design). Other changes wait in the outbox
   while offline and are sent later.
 

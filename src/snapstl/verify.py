@@ -19,6 +19,7 @@ name, each copy) is checked Good. When every item is printed but not all are che
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 
 from . import computer, db
@@ -131,6 +132,31 @@ def item_status(it: dict, chk: dict | None, jobs: dict, extras_by_item: dict) ->
         st = "todo"
     return {"status": st, "carrier": (cb, cf), "extra": x, "job": j,
             "started": bool(j and j["state"] not in NOT_STARTED)}
+
+
+PART_RANK = {"todo": 0, "printing": 1, "waiting": 2, "good": 3}  # waiting = printed, not checked yet
+
+
+def part_status(con, batches: list[dict]) -> dict[str, dict[str, str]]:
+    """Order id → {"bases": status, "names": status} for orders still being made in these batches (this
+    computer's print jobs). Several copies of an order: the furthest behind counts."""
+    if not batches:
+        return {}
+    ids = [b["id"] for b in batches]
+    jobs = latest_jobs(con)
+    checks = latest_checks(con, ids)
+    by_item = _by_item(extra_plates(con, ids))
+    out: dict[str, dict[str, str]] = {}
+    for b in batches:
+        items, state_of = batch_items(con, b)
+        for it in items:
+            if state_of.get(it["order_id"]) != "bundled":
+                continue
+            st = item_status(it, checks.get(key(it)), jobs, by_item)["status"]
+            d = out.setdefault(it["order_id"], {})
+            if it["part"] not in d or PART_RANK[st] < PART_RANK[d[it["part"]]]:
+                d[it["part"]] = st
+    return out
 
 
 # ---------------- order state from checks ----------------
@@ -399,6 +425,11 @@ def _items_of(con, batch_id: int) -> tuple[dict[tuple, dict], dict[str, str]]:
 
 
 ALLOWED = {"bases": ("good", "base", "plate_failed"), "names": ("good", "letters", "name", "colour", "plate_failed")}
+_SUBMIT = threading.Lock()  # one check at a time: a second press waits, then finds the plate already checked
+
+
+class AlreadyChecked(ValueError):
+    pass
 
 
 def submit(carrier: dict, staff: str, results: list[dict], note: str = "") -> dict:
@@ -409,11 +440,19 @@ def submit(carrier: dict, staff: str, results: list[dict], note: str = "") -> di
     staff = " ".join((staff or "").split())
     if not results:
         raise ValueError("Nothing to check")
+    with _SUBMIT:
+        return _submit(carrier, staff, results, note)
+
+
+def _submit(carrier: dict, staff: str, results: list[dict], note: str) -> dict:
+    from . import extras
+
     with db.tx() as con:
         if not staff or staff.lower() not in {s.lower() for s in staff_names(con, all_=True)}:
             raise ValueError("Choose who is checking (add your name first)")
         cb, cf = int(carrier["batch_id"]), str(carrier["file"])
-        j = latest_jobs(con).get((cb, cf)) or {}
+        jobs = latest_jobs(con)
+        j = jobs.get((cb, cf)) or {}
         at = db.now()
         cache: dict[int, tuple] = {}
         wanted, failed, n_good, part = [], False, 0, ""
@@ -430,6 +469,13 @@ def submit(carrier: dict, staff: str, results: list[dict], note: str = "") -> di
                 raise ValueError(f"{it['name']}: choose what is wrong")
             if res == "letters" and not r.get("pieces"):
                 raise ValueError(f"{it['name']}: tap the spoiled letters")
+            # pressed twice, or checked on another screen meanwhile: it must be printed and not checked yet, or
+            # (Completed → Found a problem) checked good before
+            chk = latest_checks(con, [bid]).get(key(it))
+            st = item_status(it, chk, jobs, _by_item(extra_plates(con, [bid])))["status"]
+            if not (st == "waiting" or (st == "good" and res in FIX_RESULTS)):
+                who = f" by {chk['staff']}" if chk and chk.get("staff") else ""
+                raise AlreadyChecked(f"{it['name']} is already checked{who} — nothing was saved twice")
             if res in FIX_RESULTS:
                 wanted.append({"item": it, "result": res,
                                "pieces": [int(x) for x in r.get("pieces") or []] if res == "letters" else None})

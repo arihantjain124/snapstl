@@ -224,3 +224,28 @@ def test_staff_names_are_kept_hidden_not_removed(client):
     assert "Ravi K" in [s["name"] for s in client.get("/api/staff").json()["staff"]]
     with db.tx() as con:
         con.execute("DELETE FROM staff")
+
+
+def test_base_and_letters_status_and_no_double_save(client, bb):
+    """0.25: Letters splits by "base printed"; Bases → Printed; Batches shows base / letters per name; a check
+    saved twice (button pressed again) is refused, not saved twice."""
+    bid, folder = built_batch(client, "PD")
+    assert client.post("/api/staff", json={"name": "Asha"}).status_code == 200
+    m = client.get("/api/makeit").json()
+    assert all(r["other_ready"] == 0 for r in m["names"]) and m["printed_bases"] == []
+    assert client.post("/api/makeit/by-hand", json={"batch_id": bid, "file": BASE}).status_code == 200
+    m = client.get("/api/makeit").json()
+    assert {r["file"]: r["other_ready"] == len(r["open_items"]) for r in m["names"]} == {PINK: True, BLUE: True}
+    assert [(r["file"], r["other_ready"]) for r in m["printed_bases"]] == [(BASE, 0)]  # no letters printed yet
+    names = {n["name"]: n for b in client.get("/api/batches").json()["batches"] if b["id"] == bid for n in b["names"]}
+    assert {k: (n["base"], n["letters"]) for k, n in names.items()} == {"Ayra": ("waiting", "todo"), "Riya": ("waiting", "todo")}
+
+    assert client.post("/api/makeit/by-hand", json={"batch_id": bid, "file": PINK}).status_code == 200
+    card = _cards(client)[(bid, PINK)]
+    assert _check(client, bid, PINK, _res(card, lambda i: "good")).status_code == 200
+    again = _check(client, bid, PINK, _res(card, lambda i: "good"))
+    assert again.status_code == 409 and "already checked by Asha" in again.json()["detail"]
+    with db.tx() as con:
+        assert con.execute("SELECT COUNT(*) FROM plate_checks WHERE batch_id=? AND plate=?", (bid, PINK)).fetchone()[0] == 1
+    m = client.get("/api/makeit").json()
+    assert [(r["file"], r["other_ready"]) for r in m["printed_bases"]] == [(BASE, 1)]  # Ayra's letters printed

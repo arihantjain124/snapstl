@@ -10,9 +10,10 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
 import re
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -99,23 +100,59 @@ def tracking_link(o: dict, rep: dict) -> str:
     return pattern.replace("{awb}", awb).replace("{order_id}", o["order_id"])
 
 
-def words(o: dict, tab: str, rep: dict) -> str:
-    """Where the order is, in the words customer care says on the phone."""
+QUEUED = ("to_make", "check_name", "ready_to_print")  # waiting for its turn to print
+PACE_DAYS = 7
+
+
+def pace(con) -> dict:
+    """For "ready around": each waiting order's place in the queue (1 = next; Express first, then the oldest, as
+    production takes them) and how many orders were finished (checked good) per day over the last week."""
+    pos = {r[0]: i + 1 for i, r in enumerate(con.execute(
+        f"SELECT order_id FROM orders WHERE {_T} IN ({', '.join(repr(t) for t in QUEUED)}) "
+        "ORDER BY (express_by IS NULL), express_by, order_date, COALESCE(clubbed_id,''), order_id"))}
+    since = time.time() - PACE_DAYS * 86400
+    made, first = con.execute("SELECT COUNT(*), MIN(made_at) FROM orders WHERE made_at >= ?", (since,)).fetchone()
+    days = min(float(PACE_DAYS), max(1.0, (time.time() - first) / 86400)) if first else float(PACE_DAYS)
+    return {"pos": pos, "per_day": made / days}
+
+
+def eta(o: dict, tab: str, pc: dict | None) -> str:
+    """The day a waiting order should be printed and checked (ISO date), from its place in the queue and the
+    recent pace; "" when there's nothing to go on. For the team only, not for customers (owner, 2026-11-20)."""
+    if not pc or tab not in QUEUED or pc["per_day"] <= 0 or o["order_id"] not in pc["pos"]:
+        return ""
+    return (date.today() + timedelta(days=math.ceil(pc["pos"][o["order_id"]] / pc["per_day"]))).isoformat()
+
+
+def _short(d: str) -> str:
+    try:
+        x = date.fromisoformat(d[:10])
+    except ValueError:
+        return d
+    return f"{x.day} {x.strftime('%b')}"
+
+
+def words(o: dict, tab: str, rep: dict, ready_by: str = "") -> str:
+    """Where the order is, in the words customer care says on the phone (0.25: agreed with the owner)."""
     if tab == "printing" and o.get("print_done_at") and not o.get("checked_at"):
-        return "Printed – waiting for check"  # Print → Verify (0.24): packed only after a person checks it
+        return "Printed – being checked"  # Print → Verify (0.24): packed only after a person checks it
+    if tab == "printing":
+        return "Printing now"
+    if tab == "check_name":
+        return "Confirm name with customer"
     if tab in MAKING:
-        return "Being made"
+        return "In queue" + (f" – ready around {_short(ready_by)}" if ready_by else "")
     if tab == "pack_it":
-        return o.get("label_note") or "Printed, waiting for label"
+        return o.get("label_note") or "Ready to pack – make label"
     if tab == "ship_it":
-        return "Label done, waiting for courier pickup"
+        return "Packed – waiting for courier"
     if tab == "on_the_way":
-        return "With courier" + (f" ({rep['shipping_partner']})" if rep.get("shipping_partner") else "")
+        return "Shipped" + (f" with {rep['shipping_partner']}" if rep.get("shipping_partner") else "")
     if tab == "delivered":
         d = (rep.get("delivered_date") or "")[:10]
-        return "Delivered" + (f" on {d}" if d else "")
+        return "Delivered" + (f" on {_short(d)}" if d else "")
     if tab == "rto":
-        return "Coming back to us"
+        return "Returning to us (RTO)"
     if tab == "cancelled":
         return "Cancelled"
     if tab == "skipped":
@@ -123,9 +160,10 @@ def words(o: dict, tab: str, rep: dict) -> str:
     return FLAG_WORDS.get(o.get("flag") or "", "Needs checking")
 
 
-def view_of(o: dict, rep: dict) -> dict:
+def view_of(o: dict, rep: dict, pc: dict | None = None) -> dict:
     lg = _settings()
     tab = tabs.tab_of(o)
+    ready_by = eta(o, tab, pc)
     days = _days_since(o.get("order_date"))
     exp = o.get("express_by")
     exp_days = (date.fromisoformat(exp) - date.today()).days if exp and re.match(r"\d{4}-\d{2}-\d{2}$", exp) else None
@@ -136,7 +174,7 @@ def view_of(o: dict, rep: dict) -> dict:
         "address": o.get("address") or "", "name": o.get("name") or "", "raw_name": o.get("raw_name") or "",
         "color": o.get("color") or "", "quantity": o.get("quantity") or 1, "special_request": o.get("special_request") or "",
         "review_reason": o.get("review_reason") or "", "source_status": o.get("source_status") or "",
-        "tab": tab, "words": words(o, tab, rep), "adhoc": o.get("sku") == "Adhoc",
+        "tab": tab, "words": words(o, tab, rep, ready_by), "ready_by": ready_by, "adhoc": o.get("sku") == "Adhoc",
         **{c: o.get(c) for g, cs in db.FIELD_GROUPS.items() for c in cs},
         "courier": rep.get("shipping_partner") or "", "awb": rep.get("awb") or "",
         "payment": rep.get("payment_method") or "", "pickup_date": (rep.get("pickup_date") or "")[:10],
@@ -151,7 +189,8 @@ def _rows(con, where: str, args: list, order: str, limit: int, offset: int) -> t
     total = con.execute(f"SELECT COUNT(*) FROM orders WHERE {where}", args).fetchone()[0]
     rs = db.rows(con, f"SELECT * FROM orders WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?", *args, limit, offset)
     rep = _report(con, [r["order_id"] for r in rs])
-    return total, [view_of(r, rep.get(r["order_id"], {})) for r in rs]
+    pc = pace(con)
+    return total, [view_of(r, rep.get(r["order_id"], {}), pc) for r in rs]
 
 
 def list_orders(request: Request, view: str = "labels", q: str = "", limit: int = 100, offset: int = 0):
@@ -212,10 +251,11 @@ def order_detail(order_id: str):
         rep = _report(con, [order_id, *(g["order_id"] for g in group), *(s["order_id"] for s in same)])
         notes = db.rows(con, "SELECT uid, at, text, author FROM order_notes WHERE order_id=? ORDER BY at DESC", order_id)
         returned = returned_pieces(con, o) if o["state"] in ("ready", "needs_review") else []
-    v = view_of(o, rep.get(order_id, {}))
+        pc = pace(con)
+    v = view_of(o, rep.get(order_id, {}), pc)
     return {**v, "notes": notes, "returned": returned,
-            "group": [view_of(g, rep.get(g["order_id"], {})) for g in group],
-            "other_orders": [view_of(s, rep.get(s["order_id"], {})) for s in same]}
+            "group": [view_of(g, rep.get(g["order_id"], {}), pc) for g in group],
+            "other_orders": [view_of(s, rep.get(s["order_id"], {}), pc) for s in same]}
 
 
 CSV_COLS = ("order_id", "clubbed_id", "order_date", "customer_name", "phone", "address", "name", "color",

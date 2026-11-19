@@ -367,6 +367,7 @@ def _order_view(r: dict) -> dict:
         "tab": tabs.tab_of(r), "first_status": r.get("first_status"), "print_started_at": r.get("print_started_at"),
         **{c: r.get(c) for g, cs in db.FIELD_GROUPS.items() for c in cs},
         "returned": r.get("_returned") or [],
+        "payment": r.get("payment") or "",
     }
 
 
@@ -389,8 +390,11 @@ TABS.update({
     "express": f"express_by IS NOT NULL AND {_T} IN {_MAKING_TABS}",
     "all": "1=1",
 })
-# Express orders first (earliest needed-by date first), then as before
-_ORDER = "ORDER BY (express_by IS NULL), express_by, order_date DESC, COALESCE(clubbed_id,''), order_id"
+# Express orders first (earliest needed-by date first), then the oldest order first (0.25, owner: clear the
+# backlog in order)
+_ORDER = "ORDER BY (express_by IS NULL), express_by, order_date, COALESCE(clubbed_id,''), order_id"
+# payment type from the uploaded report (PREPAID / COD / PARTIAL-COD)
+_PAY = "COALESCE((SELECT json_extract(rr.data, '$.payment_method') FROM report_rows rr WHERE rr.order_id=orders.order_id),'')"
 # Per-column filters: name → (SQL expression, exact match?)
 FILTERS = {
     "order": ("order_id || ' ' || COALESCE(clubbed_id,'')", False),
@@ -403,6 +407,7 @@ FILTERS = {
     "color": ("color", True),
     "qty": ("CAST(quantity AS TEXT)", True),
     "express": ("CASE WHEN express_by IS NULL THEN '' ELSE 'yes' END", True),
+    "payment": (_PAY, False),
 }
 
 
@@ -433,7 +438,7 @@ def list_orders(request: Request, tab: str = "to_make", limit: int = 200, offset
     limit = max(1, min(limit, 1000))
     with db.tx() as con:
         total = con.execute(f"SELECT COUNT(*) FROM orders WHERE {w}", args).fetchone()[0]
-        rs = db.rows(con, f"SELECT *, {_CLUB} AS club_size FROM orders WHERE {w} {_ORDER} LIMIT ? OFFSET ?",
+        rs = db.rows(con, f"SELECT *, {_CLUB} AS club_size, {_PAY} AS payment FROM orders WHERE {w} {_ORDER} LIMIT ? OFFSET ?",
                      *args, limit, offset)
         for r in rs:
             if r["state"] in ("ready", "needs_review") and r.get("name"):
@@ -462,8 +467,7 @@ def order_ids(request: Request, tab: str = "to_make", state: str = "ready"):
         raise HTTPException(400, "Unknown state")
     w, args = _where(request, tab)
     with db.tx() as con:
-        rs = db.rows(con, f"SELECT order_id FROM orders WHERE {w} AND {_T}='to_make' "
-                          "ORDER BY order_date, order_id", *args)
+        rs = db.rows(con, f"SELECT order_id FROM orders WHERE {w} AND {_T}='to_make' {_ORDER}", *args)
     return [r["order_id"] for r in rs]
 
 
@@ -1447,6 +1451,9 @@ def printer_status_all(download: int = 0):
     data["bambuddy"] = {"url": st["url"], "reachable": st["reachable"], "connected": st["connected"], "error": st["error"]}
     data["log"] = farm.WORKER.log[-40:]
     data["slicing"] = makeit.slicing_summary()
+    plates = makeit.active_plates()
+    for p in data.get("printers") or []:
+        p["plate"] = plates.get(p.get("id"))
     if download:
         name = time.strftime("bambuddy-printers-%Y-%m-%d-%H%M.json")
         return StreamingResponse(iter([json.dumps(data, indent=2, default=str)]), media_type="application/json",
