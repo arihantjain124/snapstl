@@ -416,6 +416,12 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
 - Checks: automated tests and a stand-in Bambuddy that fails the same way. Not yet run against the real Bambuddy.
 
 
+### 2026-11-18: Branch selector for testing
+- Owner asked for just the branch picker on main so testers can switch to the published
+  local parametric model branch from Settings → Maintenance → Updates and return to main.
+- The selector shows branches from origin. Branch switching requires confirmation and keeps the
+  existing dirty-file, unpublished-commit and busy batch checks. Models stays on its test branch.
+
 ### 2026-11-20: User logins and roles planned, then put on hold
 - Owner asked for per-person logins with Admin and Production roles (logistics page unchanged), Verify tied
   to the signed-in person, only Admin uploading reports, anyone creating batches.

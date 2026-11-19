@@ -280,3 +280,32 @@ def test_updater_pulls_from_repository(tmp_path, monkeypatch):
     assert c["restart_needed"] is True and c["running"].endswith("first")
     monkeypatch.setattr(updater, "STARTED_AT", updater.head())  # restarted
     assert updater.check(fetch=False)["restart_needed"] is False
+
+    git(src, "switch", "-qc", "change/models")
+    git(src, "push", "-q", "origin", "change/models")
+    assert updater.check()["branches"] == ["change/models", "main"]
+    assert updater.apply("change/models") == {
+        "updated": False, "switched": True, "branch": "change/models",
+        "current": updater.check(fetch=False)["current"],
+    }
+    (src / "a.txt").write_text("3")
+    git(src, "commit", "-qam", "Test design")
+    git(src, "push", "-q", "origin", "change/models")
+    assert updater.check()["behind"] == 1
+    assert updater.apply()["updated"]
+    assert (updater.ROOT / "a.txt").read_text() == "3"
+    assert updater.apply("main")["switched"]
+    assert (updater.ROOT / "a.txt").read_text() == "2"
+
+    git(updater.ROOT, "config", "user.email", "t@t")
+    git(updater.ROOT, "config", "user.name", "t")
+    git(updater.ROOT, "switch", "-q", "change/models")
+    git(updater.ROOT, "commit", "--allow-empty", "-qm", "Local design work")
+    git(updater.ROOT, "switch", "-q", "main")
+    with pytest.raises(RuntimeError, match="has commits outside origin"):
+        updater.apply("change/models")
+    with pytest.raises(RuntimeError, match="Choose a branch published"):
+        updater.apply("HEAD")
+    assert updater.check(fetch=False)["branch"] == "main"
+    git(src, "push", "-q", "origin", "--delete", "change/models")
+    assert updater.check()["branches"] == ["main"]
