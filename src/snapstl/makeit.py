@@ -35,11 +35,18 @@ AVAILABLE_STATES = {"IDLE", "FINISH", "FAILED", ""}
 
 
 # ---------------- plates ↔ orders ----------------
+# the website packed / shipped / delivered it (or it's coming back): made, wherever (owner, 0.26) — it leaves
+# Print, Verify and the base / letters marks even if SnapSTL never printed it
+_ST = "REPLACE(REPLACE(UPPER(COALESCE(source_status,'')),'_','-'),' ','-')"
+SHIPPED_SQL = f"({_ST} IN ('PACK','HANDOVER','IN-TRANSIT','DELIVERED') OR {_ST} LIKE 'RTO%')"
+
+
 def _batch_orders(con, b: dict) -> list[dict]:
     ids = json.loads(b.get("order_ids") or "[]")
     if not ids:
         return []
-    return db.rows(con, f"SELECT order_id, name, color, state, quantity, made_at, express_by FROM orders "
+    return db.rows(con, f"SELECT order_id, name, color, CASE WHEN state='bundled' AND {SHIPPED_SQL} THEN 'shipped' "
+                        f"ELSE state END AS state, quantity, made_at, express_by FROM orders "
                         f"WHERE order_id IN ({','.join('?' * len(ids))})", *ids)
 
 
@@ -123,8 +130,9 @@ def _verify() -> dict:
 
 
 def printers_now(prs: list[dict], active_jobs: dict[int, int]) -> dict:
-    """Print's top line: printers free for the next print (with the filament loaded), beds to clear, busy, offline."""
-    free, clear, busy, offline = [], [], 0, 0
+    """Print's top line: printers free for the next print (with the filament loaded), beds to clear, the ones
+    printing (with % and minutes left), offline."""
+    free, clear, busy, offline, printing = [], [], 0, 0, []
     for p in prs:
         if not p.get("active", True):
             continue
@@ -139,7 +147,10 @@ def printers_now(prs: list[dict], active_jobs: dict[int, int]) -> dict:
                                     for s in p.get("spools") or []]})
         else:
             busy += 1
-    return {"free": free, "clear": clear, "busy": busy, "offline": offline}
+            if st.get("progress") is not None and str(st.get("state", "")).upper() in farm.BUSY_STATES:
+                printing.append({"id": p["id"], "name": p["name"], "progress": st.get("progress"),
+                                 "remaining": st.get("remaining_time"), "state": st.get("state")})
+    return {"free": free, "clear": clear, "busy": busy, "offline": offline, "printing": printing}
 
 
 def active_plates() -> dict[int, dict]:
@@ -178,7 +189,7 @@ def board(prs: list[dict] | None = None) -> dict:
             latest[(j["batch_id"], j["plate"])] = j
         mine = {b["id"]: b for b in batches}
         extra_rows = [x for x in verify.extra_plates(con) if x["batch_id"] in mine]
-        open_ids = {r[0] for r in con.execute("SELECT order_id FROM orders WHERE state='bundled'")}
+        open_ids = {r[0] for r in con.execute(f"SELECT order_id FROM orders WHERE state='bundled' AND NOT {SHIPPED_SQL}")}
         express = {r[0]: r[1] for r in con.execute("SELECT order_id, express_by FROM orders WHERE express_by IS NOT NULL "
                                                    "AND state='bundled'")}
         rows, removed, printed = [], [], []
@@ -187,8 +198,8 @@ def board(prs: list[dict] | None = None) -> dict:
             j = latest.get((b["id"], p["file"]))
             label = summ.get("label") or f"Batch #{b['id']}"
             open_orders = [i for i in ids if i in open_ids]
-            if j and j["state"] == "merged":
-                return  # printed on a merged plate
+            if j and j["state"] in ("merged", "divided"):
+                return  # printed on a merged plate, or split into smaller plates
             if j and j["state"] == "removed":
                 if open_orders:  # hidden once its orders are packed / shipped / cancelled
                     removed.append({"batch_id": b["id"], "batch": label, "file": p["file"], "kind": p["kind"],
@@ -374,6 +385,8 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
     j = _latest(batch_id, file)
     if j and j["state"] == "merged":
         raise farm.FarmError("This plate is part of a merged plate — print that one, or Split back first")
+    if j and j["state"] == "divided":
+        raise farm.FarmError("This plate was split into smaller plates — print those, or Join back first")
     bed = bed_state(printer)
     if bed == "check":
         if not bed_clear:
@@ -448,6 +461,8 @@ def remove(batch_id: int, file: str, put_back: bool = False) -> dict:
     _, plate = _plate(batch_id, file)
     if plate.get("extra") == "merged" and not put_back:
         raise farm.FarmError("Use Split back for a merged plate")
+    if plate.get("extra") == "divided" and not put_back:
+        raise farm.FarmError("Use Join back for a part of a split plate")
     j = _latest(batch_id, file)
     if put_back:
         if not j or j["state"] != "removed":

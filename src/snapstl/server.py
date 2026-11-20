@@ -54,6 +54,11 @@ async def _lifespan(_app):
     except Exception as e:  # noqa: BLE001  (never block starting the app)
         print(f"SnapSTL: Printing backfill skipped: {e}")
     try:
+        from .ingest import repair_026
+        print("SnapSTL: 0.26 repair:", repair_026())  # one-time: stuck PRINT orders, packed ≠ problem
+    except Exception as e:  # noqa: BLE001
+        print(f"SnapSTL: 0.26 repair skipped: {e}")
+    try:
         from .ingest import recheck_small_first
         recheck_small_first()               # one-time (0.23.1): waiting names with a small first letter → Check name
     except Exception as e:  # noqa: BLE001
@@ -66,6 +71,8 @@ async def _lifespan(_app):
     sync.LOOP.start()   # shared order records (Supabase), if connected in Settings
     farm.WORKER.start()  # Push to queue → Bambuddy (connects by itself on a fresh install)
     archive.CLEANER.start()  # once a day: old batch folders / unused models → Recycle Bin
+    from .reportwatch import WATCHER
+    WATCHER.start()  # a new report in Downloads is imported by itself (Settings: report_import)
     bambuddy_host.start_watch()  # Bambuddy computer: Keep running (starts Bambuddy / Docker when they stop)
     yield
     from .logistics import stop as stop_logistics
@@ -84,7 +91,7 @@ OPEN_PATHS = {"/login", "/api/login", "/api/auth-check", "/favicon.ico"}
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]", "::1")
 # Things only the SnapSTL computer itself may do (helper, Finder, folders, portal setup, reset, print-farm
 # setup: Bambuddy connection, slicing settings, clearing a bed).
-MAC_ONLY_PREFIXES = ("/api/helper/", "/api/downloads/reveal", "/api/portal", "/api/maintenance/reset",
+MAC_ONLY_PREFIXES = ("/api/helper/", "/api/downloads/reveal", "/api/portal", "/api/help-portal", "/api/maintenance/reset",
                      "/api/update", "/api/shared-records", "/api/setup", "/api/farm/")
 
 
@@ -143,7 +150,7 @@ async def access_control(request: Request, call_next):
 
 # Work that may go on without the shared records: connecting them, settings, the helper's running downloads
 WITHOUT_SHARED = ("/api/shared-records", "/api/sync", "/api/settings", "/api/helper/", "/api/update",
-                  "/api/login", "/api/logout", "/api/portal", "/api/maintenance/backup", "/api/farm/connect",
+                  "/api/login", "/api/logout", "/api/portal", "/api/help-portal", "/api/maintenance/backup", "/api/farm/connect",
                   "/api/bambuddy-host")
 
 
@@ -189,10 +196,10 @@ def auth_check(request: Request):
 
 
 # ---------------- web portal for other computers (this computer only) ----------------
-def _portal_urls() -> list[str]:
+def _portal_urls(port: int = 8002) -> list[str]:
     """Current LAN addresses, with copyable numeric IPs first."""
     hosts = [*platform_os.lan_ips(), platform_os.lan_name()]
-    return [f"http://{host}:8002" for host in dict.fromkeys(hosts) if host]
+    return [f"http://{host}:{port}" for host in dict.fromkeys(hosts) if host]
 
 
 def _port() -> int:
@@ -281,8 +288,35 @@ async def portal_update(req: Request):
     SETTINGS.lan_access = enable
     save_settings(SETTINGS)
     from . import logistics
-    await run_in_threadpool(logistics.start if enable else logistics.stop)
+    await run_in_threadpool(logistics.PACK.start if enable else logistics.PACK.stop)
     return portal_info() | {"restarting": False, "note": "Saved"}
+
+
+@app.get("/api/help-portal")
+def help_portal_info():
+    """Settings → Connections → Customer help page (port 8003, its own password)."""
+    from .logistics import HELP, HELP_PORT
+    return {"enabled": SETTINGS.help_access, "password_set": auth.HELP.enabled(), **HELP.status(),
+            "urls": _portal_urls(HELP_PORT) if SETTINGS.help_access else []}
+
+
+@app.post("/api/help-portal")
+async def help_portal_update(req: Request):
+    body = await req.json()
+    pw = str(body.get("password", ""))
+    if pw:
+        try:
+            auth.HELP.set_password(pw)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+    enable = bool(body.get("enabled", SETTINGS.help_access))
+    if enable and not auth.HELP.enabled():
+        raise HTTPException(400, "Set a password for the customer help page first (at least 10 characters)")
+    SETTINGS.help_access = enable
+    save_settings(SETTINGS)
+    from . import logistics
+    await run_in_threadpool(logistics.HELP.start if enable else logistics.HELP.stop)
+    return help_portal_info() | {"note": "Saved"}
 
 
 
@@ -392,6 +426,7 @@ TABS.update({
     "to_make_adhoc": f"{_T}='to_make' AND sku='Adhoc'",  # typed in by hand (ingest.add_adhoc)
     "to_make_returned": f"{_T}='to_make' AND {_RETURNED}",  # a returned piece could be sent instead
     "express": f"express_by IS NOT NULL AND {_T} IN {_MAKING_TABS}",
+    "production": f"{_T} IN ('ready_to_print','printing')",  # 0.26: one list on the Orders page
     "all": "1=1",
 })
 # Express orders first (earliest needed-by date first), then the oldest order first (0.25, owner: clear the
@@ -481,7 +516,7 @@ def order_facets(request: Request, tab: str = "to_make"):
     with db.tx() as con:
         counts = {k: 0 for k in TABS}
         counts.update({r[0]: r[1] for r in con.execute(f"SELECT {_T}, COUNT(*) FROM orders GROUP BY 1")})
-        for k in ("to_make_single", "to_make_clubbed", "to_make_adhoc", "to_make_returned", "express", "all"):
+        for k in ("to_make_single", "to_make_clubbed", "to_make_adhoc", "to_make_returned", "express", "production", "all"):
             counts[k] = con.execute(f"SELECT COUNT(*) FROM orders WHERE {TABS[k]}").fetchone()[0]
         w = TABS.get(tab, "1=1")
         statuses = [r["v"] for r in db.rows(con, f"SELECT DISTINCT source_status v FROM orders WHERE {w} ORDER BY v")]
@@ -622,6 +657,46 @@ async def new_batch(req: Request):
         return B.create_batch([str(x) for x in body.get("order_ids", [])][:2000], SETTINGS)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/batches/next")
+async def next_batch(req: Request):
+    """Orders → Make next batch ({count}): the oldest orders to make (Express first) into a batch; its models are
+    downloaded and its plates built by themselves (when a model fails, Batches waits for a person)."""
+    body = await req.json()
+    n = max(1, min(int(body.get("count") or 50), 500))
+    errs = SETTINGS.validate()
+    if errs:
+        raise HTTPException(400, "; ".join(errs))
+    with db.tx() as con:
+        ids = [r[0] for r in con.execute(f"SELECT order_id FROM orders WHERE {_T}='to_make' {_ORDER} LIMIT ?", (n,))]
+    if not ids:
+        raise HTTPException(400, "Nothing to make: To make is empty")
+    try:
+        out = B.create_batch(ids, SETTINGS)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    with db.tx() as con:
+        con.execute("UPDATE batches SET auto_build=1 WHERE id=?", (out["batch_id"],))
+    try:
+        return out | {"download": B.start_download(out["batch_id"]), "download_error": ""}
+    except ValueError as e:  # the batch is made; the download waits for what's missing (e.g. the license password)
+        return out | {"download": None, "download_error": str(e)}
+
+
+@app.get("/api/report-import")
+def report_import_info():
+    """Settings / Orders: the Downloads folder watched for new reports, and the last import done by itself."""
+    from . import reportwatch
+
+    return {"on": SETTINGS.report_import, "folder": str(reportwatch.folder()), "last": reportwatch.WATCHER.last}
+
+
+@app.post("/api/report-import")
+async def report_import_set(req: Request):
+    SETTINGS.report_import = bool((await req.json()).get("on"))
+    save_settings(SETTINGS)
+    return report_import_info()
 
 
 @app.post("/api/batches/{batch_id}/download")
@@ -1341,6 +1416,26 @@ async def makeit_split(req: Request):
         raise HTTPException(409, str(e)) from e
 
 
+@app.post("/api/makeit/divide")
+async def makeit_divide(req: Request):
+    """Split a plate that isn't started into smaller plates ({batch_id, file, sizes: [2, 1]})."""
+    b = await req.json()
+    try:
+        return await run_in_threadpool(extras.divide, int(b.get("batch_id") or 0), str(b.get("file", "")),
+                                       list(b.get("sizes") or []))
+    except (extras.ExtraError, ValueError) as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.post("/api/makeit/join")
+async def makeit_join(req: Request):
+    b = await req.json()
+    try:
+        return extras.join(int(b.get("batch_id") or 0), str(b.get("file", "")))
+    except extras.ExtraError as e:
+        raise HTTPException(409, str(e)) from e
+
+
 @app.post("/api/verify")
 async def verify_submit(req: Request):
     """Print → Verify (and Completed → Found a problem): {carrier: {batch_id, file}, staff, results, note}."""
@@ -1363,6 +1458,43 @@ def verify_letters(batch_id: int, plate: str, idx: int):
         return {"pieces": verify.letter_pieces(batch_id, plate, idx)}
     except (ValueError, extras.ExtraError) as e:
         raise HTTPException(409, str(e)) from e
+
+
+@app.get("/api/printers/now")
+def printers_now_light():
+    """Every page, every 30 s: each printer's state, for the "printer finished / failed" alert."""
+    cfg = farm.load_config()
+    if not farm.status(cfg)["connected"]:
+        return {"printers": []}
+    try:
+        prs = farm.printers(cfg)
+    except farm.FarmError:
+        return {"printers": []}
+    return {"printers": [{"id": p["id"], "name": p["name"], "state": (p.get("status") or {}).get("state", ""),
+                          "connected": (p.get("status") or {}).get("connected", False),
+                          "clear": (p.get("status") or {}).get("awaiting_plate_clear", False)} for p in prs]}
+
+
+@app.get("/api/stats")
+def stats_get(days: int = 30):
+    """Stats page: made per day against new orders, backlog, printers, checkers, waiting times."""
+    from . import stats
+
+    return stats.stats(days, SETTINGS.daily_target)
+
+
+@app.post("/api/stats/target")
+async def stats_target(req: Request):
+    """The daily target (orders made per day) shown on Stats."""
+    try:
+        n = int((await req.json()).get("target") or 0)
+    except (TypeError, ValueError) as e:
+        raise HTTPException(400, "Type a number") from e
+    if not 0 <= n <= 10000:
+        raise HTTPException(400, "Type a number from 0 to 10000")
+    SETTINGS.daily_target = n
+    save_settings(SETTINGS)
+    return {"target": n}
 
 
 @app.get("/api/staff")
@@ -1720,6 +1852,9 @@ async def put_settings(req: Request):
     except (TypeError, ValueError) as e:
         raise HTTPException(400, f"Invalid settings: {e}") from e
     new.lan_access = SETTINGS.lan_access  # changed only through /api/portal (this computer)
+    new.help_access = SETTINGS.help_access  # … and /api/help-portal
+    new.daily_target = SETTINGS.daily_target  # Stats → daily target
+    new.report_import = SETTINGS.report_import  # /api/report-import
     if is_local(req):  # on the SnapSTL computer: folders can be changed
         out = Path(new.output_dir).expanduser()
         if not out.is_absolute():

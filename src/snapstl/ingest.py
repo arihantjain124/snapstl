@@ -413,17 +413,49 @@ def _status_flags(con, s: IngestSummary, cur: dict, new: str) -> None:
         if (made or making) and o not in _SHIPPED and not o.startswith("RTO"):
             flag("cancelled_in_production", "Cancelled – don't pack")
         return
-    if made or making:
-        if _past_print(n) and not made and o in ("PRINT", "AWB-EXPIRED") and cur.get("sku") != ADHOC_SKU \
-                and (cur.get("first_status") or "PRINT") == "PRINT":
-            flag("past_print_not_made", f"Website says {new} but SnapSTL hasn't printed it")
-        return
-    if state in ("ready", "needs_review"):
-        if _past_print(n) and cur.get("sku") != ADHOC_SKU and (cur.get("first_status") or "PRINT") == "PRINT":
-            flag("past_print_not_made", f"Website says {new} but SnapSTL hasn't made it")
+    # 0.26 (owner): packed, in transit or delivered means it was made — wherever it was made. No flag; the
+    # Print lists leave such orders out (makeit.SHIPPED_SQL).
+    if made or making or state in ("ready", "needs_review"):
         return
     if state == "not_needed" and (n in PRINT_STATUSES or n == "AWB-EXPIRED") and o in ("PACK", "HANDOVER"):
         flag("back_to_print", f"Back to {new} after it was packed outside SnapSTL – check whether it is made")
+
+
+# ---------------- one-time repair (0.26) ----------------
+MADE_BEFORE = "2026-11-13"  # owner, 2026-11-21: orders from before this date were made outside SnapSTL
+
+
+def repair_026() -> dict:
+    """Once after updating to 0.26:
+    * orders the website still says PRINT, dated from MADE_BEFORE, never in a batch, kept as "not needed"
+      (shared records said so and the report never changed their status) → back to To make / Check name;
+    * the same from before MADE_BEFORE (and AWB EXPIRED ones) → Skipped (made before SnapSTL);
+    * the flag "website moved it on, but SnapSTL never made it" is cleared everywhere (owner: packed means made)."""
+    out = {"back": 0, "skipped": 0, "unflagged": 0}
+    with db.tx() as con:
+        if con.execute("SELECT 1 FROM sync_state WHERE key='repair_026'").fetchone():
+            return out
+        rows = db.rows(con, "SELECT order_id, order_date, source_status, review_reason FROM orders WHERE state='not_needed' "
+                            "AND batch_id IS NULL AND batch_uid IS NULL AND label_at IS NULL AND flag IS NULL "
+                            "AND made_at IS NULL AND COALESCE(sku,'')<>?", ADHOC_SKU)
+        for r in rows:
+            st = tabs.norm_status(r["source_status"])
+            if st == "PRINT" and (r["order_date"] or "") >= MADE_BEFORE:
+                con.execute("UPDATE orders SET state=?, updated_at=? WHERE order_id=?",
+                            ("needs_review" if r["review_reason"] else "ready", db.now(), r["order_id"]))
+                out["back"] += 1
+            elif st in ("PRINT", "AWB-EXPIRED"):
+                con.execute("UPDATE orders SET state='skipped', updated_at=? WHERE order_id=?", (db.now(), r["order_id"]))
+                out["skipped"] += 1
+        for (oid,) in con.execute("SELECT order_id FROM orders WHERE flag='past_print_not_made'").fetchall():
+            db.set_group(con, oid, "flag")
+            out["unflagged"] += 1
+        if any(out.values()):
+            db.add_activity(con, "cleanup", f"0.26: {out['back']} orders back to To make (website still says PRINT), "
+                                            f"{out['skipped']} older ones skipped (made before {MADE_BEFORE}), "
+                                            f"{out['unflagged']} packed / shipped orders out of Problems")
+        con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('repair_026', '1')")
+    return out
 
 
 # ---------------- review actions ----------------

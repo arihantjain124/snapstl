@@ -191,3 +191,36 @@ def test_queue_ready_around_from_the_recent_pace(client):
     days = lambda n: (date.today() + timedelta(days=math.ceil(n * 6.5 / 2))).isoformat()  # noqa: E731
     assert q["Q1"]["ready_by"] == days(1) and q["Q3"]["ready_by"] == days(3)
     assert q["Q1"]["words"].startswith("In queue – ready around ")
+
+
+def test_packing_page_shows_only_made_orders_and_whole_clubbed_orders(client):
+    """0.26 packing page: made (checked) orders only, oldest first; a clubbed order only when every name is made,
+    and a search shows the whole clubbed order; an order not ready says where it is."""
+    upload(client, [("K1", "PRINT"), ("K2", "PRINT"), ("K3", "PRINT"), ("K4", "PRINT")])
+    with db.tx() as con:
+        con.execute("UPDATE orders SET clubbed_id='C9' WHERE order_id IN ('K2','K3')")
+        con.execute("UPDATE orders SET order_date='2026-11-10' WHERE order_id='K1'")
+        con.execute("UPDATE orders SET order_date='2026-11-02' WHERE order_id IN ('K2','K3','K4')")
+        con.execute("UPDATE orders SET state='bundled', made_at=1 WHERE order_id IN ('K1','K2','K4')")
+        con.execute("UPDATE orders SET state='bundled' WHERE order_id='K3'")  # still being made
+        for oid, n in (("K1", "Riya"), ("K2", "Tara"), ("K3", "Zoravar"), ("K4", "Ayra")):
+            con.execute("UPDATE orders SET name=?, raw_name=? WHERE order_id=?", (n, n, oid))
+
+    def pk(**p):
+        return client.get("/api/pack/list", params=p).json()
+
+    r = pk()
+    assert [[o["order_id"] for o in g["orders"]] for g in r["groups"]] == [["K4"], ["K1"]] and r["held_clubbed"] == 1
+    with db.tx() as con:
+        con.execute("UPDATE orders SET made_at=1 WHERE order_id='K3'")
+    r = pk()
+    assert [[o["order_id"] for o in g["orders"]] for g in r["groups"]] == [["K2", "K3"], ["K4"], ["K1"]]
+    assert act(client, "K2", "label").status_code == 200  # one label covers the clubbed order
+    assert [g["key"] for g in pk()["groups"]] == ["K4", "K1"] and [g["key"] for g in pk(view="today")["groups"]] == ["C9"]
+    assert [g["key"] for g in pk(q="zorav")["groups"]] == ["C9"]  # a search shows the whole clubbed order
+    assert pk(q="K4")["groups"] == [] and pk(q="Private")["groups"] == []  # only the name to print is searched
+    upload(client, [("K5", "PRINT")])
+    with db.tx() as con:
+        con.execute("UPDATE orders SET name='Mehr', raw_name='mehr' WHERE order_id='K5'")
+    r = pk(q="mehr")
+    assert r["groups"] == [] and r["not_ready"][0]["order_id"] == "K5"

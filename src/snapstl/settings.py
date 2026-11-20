@@ -178,6 +178,9 @@ class Settings:
         """License password of the model currently set in makerworld_url."""
         return str(self.license_passwords.get(self.design_id, ""))
     delay_between_downloads_s: float = 3.0
+    daily_target: int = 0  # Stats: orders to make per day (0 = not set)
+    report_import: bool = True  # import new Order Reconciliation Reports from the Downloads folder by itself
+    help_access: bool = False  # the customer help page on port 8003 (its own password)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -200,7 +203,7 @@ class Settings:
                     or s.logistics.messages == old_default_messages():
                 s.logistics.messages = default_messages()
         for k in ("output_dir", "downloads_dir", "makerworld_url", "lan_access", "delay_between_downloads_s",
-                  "license_passwords"):
+                  "license_passwords", "daily_target", "report_import", "help_access"):
             if k in d:
                 setattr(s, k, d[k])
         return s

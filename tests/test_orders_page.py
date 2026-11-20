@@ -53,10 +53,11 @@ def test_express_orders_come_first(client):
 
 def test_clear_flag(client):
     upload(client, [("F1", "PRINT")])
-    upload(client, [("F1", "PACK")], "b.csv")  # website packed it, SnapSTL never made it
-    assert ids(client, "problems") == ["F1"] and order(client, "F1")["flag"] == "past_print_not_made"
+    with db.tx() as con:  # e.g. customer wants to cancel
+        db.set_group(con, "F1", "flag", flag="cancel_request", flag_note="call")
+    assert ids(client, "problems") == ["F1"]
     assert client.post("/api/orders/F1/clear-flag").status_code == 200
-    assert ids(client, "problems") == [] and ids(client, "ship_it") == ["F1"]
+    assert ids(client, "problems") == [] and ids(client, "to_make") == ["F1"]
     assert client.post("/api/orders/nope/clear-flag").status_code == 404
     used = {r["feature"]: r["count"] for r in client.get("/api/usage", params={"days": 7}).json()["rows"]}
     assert used["clear_flag"] == 1  # Settings → Usage
@@ -116,3 +117,33 @@ def test_oldest_first_payment_and_select_oldest(client):
     with db.tx() as con:
         con.execute("UPDATE orders SET express_by='2026-12-01' WHERE order_id='O1'")
     assert ids(client, "to_make") == ["O1", "O2", "O3"]
+
+
+def test_make_next_batch_and_reports_from_downloads(client, tmp_path, monkeypatch):
+    """0.26: Make next batch takes the oldest orders to make (Express first) and marks the batch to build by
+    itself; a new report in Downloads is imported once."""
+    from snapstl import reportwatch
+
+    upload(client, [("X1", "PRINT"), ("X2", "PRINT"), ("X3", "PRINT")])
+    with db.tx() as con:
+        for oid, d in (("X1", "2026-11-10"), ("X2", "2026-11-01"), ("X3", "2026-11-05")):
+            con.execute("UPDATE orders SET order_date=? WHERE order_id=?", (d, oid))
+    r = client.post("/api/batches/next", json={"count": 2})
+    assert r.status_code == 200, r.text
+    with db.tx() as con:
+        b = con.execute("SELECT order_ids, auto_build FROM batches WHERE id=?", (r.json()["batch_id"],)).fetchone()
+    assert sorted(__import__("json").loads(b[0])) == ["X2", "X3"] and b[1] == 1
+    assert "license password" in r.json()["download_error"] or r.json()["download"]  # made (download may wait)
+    assert ids(client, "to_make") == ["X1"]
+    assert client.post(f"/api/batches/{r.json()['batch_id']}/cancel").status_code == 200  # never built by later tests
+
+    monkeypatch.setenv("SNAPSTL_REPORT_DIR", str(tmp_path))
+    (tmp_path / "Order_Reconciliation_Report_abc.csv").write_bytes(report([("Y1", "PRINT")]))
+    (tmp_path / "something else.csv").write_bytes(b"x")
+    import os
+    import time
+    old = time.time() - 60
+    for f in tmp_path.iterdir():
+        os.utime(f, (old, old))
+    assert [x["file"] for x in reportwatch.import_new()] == ["Order_Reconciliation_Report_abc.csv"]
+    assert "Y1" in ids(client, "to_make") and reportwatch.import_new() == []  # once

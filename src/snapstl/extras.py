@@ -344,6 +344,75 @@ def split(batch_id: int, file: str) -> dict:
     return {"ok": True, "plates": len(plates)}
 
 
+# ---------------- divide (0.26): one plate into smaller ones, e.g. to spread a night run ----------------
+def divide(batch_id: int, file: str, sizes: list[int], staff: str = "") -> dict:
+    """A batch's own plate (bases or letters), not started, into smaller plates: `sizes` = how many items on
+    each (e.g. [1, 1, 1] or [2, 1]), in plate order. Same size, no scaling, saved under `Split/`. The plate
+    leaves its list (print job state `divided`); **Join back** returns it while no part is started."""
+    from .makeit import _batch_orders, plate_order_ids
+
+    with db.tx() as con:
+        b = _own(con, batch_id)
+        pl = next((x for x in _plates(b) if x["file"] == file), None)
+        if pl is None:
+            raise ExtraError("Only a batch's own plate can be split (use Split back for a merged plate)")
+        if _latest_state(con, b["id"], file) not in MERGEABLE + ("failed", "cancelled"):  # a failed print may be split too
+            raise ExtraError(f"{Path(file).name} is already started, printed, removed, merged or split")
+        orders = _batch_orders(con, b)
+        state = {o["order_id"]: o["state"] for o in orders}
+        on = plate_order_ids(_plates(b), orders).get(file, [])
+        items = [it for it in verify.plate_items(b["id"], pl, on) if state.get(it["order_id"]) == "bundled"]
+        sizes = [int(s) for s in sizes if int(s) > 0]
+        if len(items) < 2:
+            raise ExtraError("This plate has only one item left to print")
+        if len(sizes) < 2 or sum(sizes) != len(items):
+            raise ExtraError(f"The parts must add up to the {len(items)} items on the plate")
+        part, color = pl["kind"], ((pl.get("colors") or [""])[0] or "") if pl["kind"] == "names" else ""
+        head = "Bases" if part == "bases" else _title(color)
+        made, k = [], 0
+        for n in sizes:
+            chunk = [{**it, "src": file, "src_batch": b["id"]} for it in items[k:k + n]]
+            k += n
+            parts = []
+            for it in chunk:
+                m, _ = item_mesh(b, it)
+                parts.append(make_part(f"{it['name']} - {_word(part)} · {it['order_id']} #{len(parts) + 1}", m))
+            names = " + ".join(it["name"] for it in chunk)
+            f, prev = _write(Path(b["out_dir"]) / "Split", f"Part - {head} - {names}", parts, _plate_cfg(b), part)
+            _record(con, b["id"], f"Split/{f}", "divided", part, color, chunk, prev, names, staff)
+            made.append(f"Split/{f}")
+        now = db.now()
+        con.execute("INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,created_at,"
+                    "updated_at,computer_id) VALUES (?,?,?,?,0,'','divided',?,?,?)",
+                    (b["id"], file, part, color, now, now, computer.ID))
+        db.add_activity(con, "merge", f"Split {Path(file).name} into {len(made)} plates ({' + '.join(map(str, sizes))})")
+    return {"files": made}
+
+
+def join(batch_id: int, file: str) -> dict:
+    """Join back the parts of a split plate (any one of them given) while none of them is started."""
+    with db.tx() as con:
+        x = con.execute("SELECT * FROM extra_plates WHERE batch_id=? AND file=? AND kind='divided' AND state='active'",
+                        (batch_id, file)).fetchone()
+        if x is None:
+            raise ExtraError("Not a part of a split plate")
+        src = json.loads(x["items"])[0].get("src")
+        parts = [dict(p) for p in con.execute("SELECT * FROM extra_plates WHERE batch_id=? AND kind='divided' "
+                                              "AND state='active'", (batch_id,))
+                 if json.loads(p["items"])[0].get("src") == src]
+        for p in parts:
+            if _latest_state(con, batch_id, p["file"]) not in (None, "failed", "cancelled", "removed"):
+                raise ExtraError(f"{Path(p['file']).name} is started or printed — the plate can't be joined back")
+        for p in parts:
+            con.execute("UPDATE extra_plates SET state='joined' WHERE id=?", (p["id"],))
+        now = db.now()
+        con.execute("INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,created_at,"
+                    "updated_at,computer_id) VALUES (?,?,?,?,0,'','unmerged',?,?,?)",
+                    (batch_id, src, x["part"], x["color"], now, now, computer.ID))
+        db.add_activity(con, "merge", f"Joined {len(parts)} parts back into {Path(src).name}")
+    return {"ok": True, "file": src}
+
+
 def suggestions(names_rows: list[dict]) -> list[dict]:
     """Merge ideas for Print → Names: same-colour plates not started, ≤ 3 names in all (fewest names first)."""
     by: dict[str, list[dict]] = {}

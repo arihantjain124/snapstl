@@ -47,6 +47,9 @@ VIEWS: dict[str, tuple[str, str]] = {  # key → (SQL where, order by)
     "delivered": (f"{_T}='delivered'", "order_date DESC, order_id"),
     "rto": (f"{_T}='rto'", "order_date DESC, order_id"),
     "cancelled": (f"{_T}='cancelled'", "order_date DESC, order_id"),
+    # 0.26: waiting a week or more and not shipped — message them before they ask (customer help)
+    "late": (f"{_T} IN ({', '.join(repr(t) for t in NOT_SHIPPED)}) AND order_date <= date('now','localtime','-7 days')",
+             "order_date, order_id"),
 }
 FLAG_WORDS = {
     "past_print_not_made": "Website moved it on, but it was never made",
@@ -443,7 +446,63 @@ def usage(days: int = 30):
     return {"rows": rows, "shared": False}
 
 
+# ---------------- packing page (port 8002, 0.26) ----------------
+def _groups(con, rows: list[dict]) -> list[dict]:
+    """Orders shipped together (same clubbed order ID) as one group, oldest first."""
+    by: dict[str, list[dict]] = {}
+    for r in rows:
+        by.setdefault(r.get("clubbed_id") or r["order_id"], []).append(r)
+    out = []
+    for k, os_ in by.items():
+        os_.sort(key=lambda o: o["order_id"])
+        out.append({"key": k, "clubbed_id": os_[0].get("clubbed_id") or "", "order_date": min(o["order_date"] or "" for o in os_),
+                    "express_by": min((o["express_by"] for o in os_ if o.get("express_by")), default=None),
+                    "label_at": max((o.get("label_at") or 0) for o in os_) or None, "label_note": os_[0].get("label_note") or "",
+                    "orders": [{"order_id": o["order_id"], "name": o.get("name") or "", "color": o.get("color") or "",
+                                "quantity": o.get("quantity") or 1} for o in os_]})
+    out.sort(key=lambda g: (g["express_by"] is None, g["express_by"] or "", g["order_date"], g["key"]))
+    return out
+
+
+def _name_search(q: str) -> tuple[str, list]:
+    """Packing page (owner, 0.26): only the name to print — what the packer reads on the piece — as it will
+    print or as the customer typed it."""
+    q = f"%{q.strip()}%"
+    return "(COALESCE(name,'') LIKE ? OR COALESCE(raw_name,'') LIKE ?)", [q, q]
+
+
+def pack_list(request: Request, view: str = "ready", q: str = ""):
+    """Packing page: only orders made and checked (Ready to pack), a clubbed order only when every name of it is
+    made; or the ones labelled today (Packed today, to undo a mistake). A search shows the whole clubbed order;
+    an order that isn't ready says where it is instead."""
+    start = datetime.combine(date.today(), datetime.min.time()).timestamp()
+    with db.tx() as con:
+        made = db.rows(con, f"SELECT *, {_T} AS tab FROM orders WHERE {_T}='pack_it'")
+        clubs = {r["clubbed_id"] for r in made if r.get("clubbed_id")}
+        partners = db.rows(con, f"SELECT *, {_T} AS tab FROM orders WHERE clubbed_id IN ({','.join('?' * len(clubs))})",
+                           *clubs) if clubs else []
+        waiting = {r["clubbed_id"] for r in partners if r["tab"] in MAKING}  # a name of it isn't made yet
+        ready = [r for r in made if not (r.get("clubbed_id") and r["clubbed_id"] in waiting)]
+        today = db.rows(con, f"SELECT *, {_T} AS tab FROM orders WHERE label_at >= ? AND {_T}='ship_it'", start)
+        groups = {"ready": _groups(con, ready), "today": _groups(con, today)}
+        held = len({r["clubbed_id"] for r in made if r.get("clubbed_id") in waiting})
+        out = {"counts": {k: len(v) for k, v in groups.items()}, "held_clubbed": held, "not_ready": []}
+        if q.strip():
+            w, args = _name_search(q)
+            hit = {r["order_id"] for r in db.rows(con, f"SELECT order_id FROM orders WHERE {w}", *args)}
+            shown = [g for g in groups["ready"] + groups["today"] if any(o["order_id"] in hit for o in g["orders"])]
+            seen = {o["order_id"] for g in shown for o in g["orders"]}
+            rest = db.rows(con, f"SELECT *, {_T} AS tab FROM orders WHERE {w} ORDER BY order_date DESC LIMIT 20", *args)
+            out["not_ready"] = [{"order_id": r["order_id"], "name": r.get("name") or "", "color": r.get("color") or "",
+                                 "words": words(r, r["tab"], {})} for r in rest if r["order_id"] not in seen][:10]
+            out["groups"] = shown
+        else:
+            out["groups"] = groups["today" if view == "today" else "ready"]
+    return out
+
+
 ROUTES = [  # (method, path, endpoint) — registered on the main app and on the logistics listener
+    ("GET", "/api/pack/list", pack_list),
     ("GET", "/api/logistics/orders", list_orders),
     ("GET", "/api/logistics/counts", counts),
     ("GET", "/api/logistics/meta", meta),

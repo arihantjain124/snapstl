@@ -25,17 +25,17 @@ from typing import Callable
 
 # (key, words on the Orders page, group)
 TABS = (
-    ("to_make", "New orders – to make", "make"),
-    ("check_name", "Check name first", "make"),
-    ("ready_to_print", "Ready to print", "make"),
-    ("printing", "Printing", "make"),
-    ("pack_it", "Printed – pack it", "pack"),
-    ("ship_it", "Label done – ship it", "pack"),
-    ("on_the_way", "On the way", "records"),
+    ("to_make", "To make", "make"),
+    ("check_name", "Check name", "make"),
+    ("ready_to_print", "In production – waiting to print", "make"),
+    ("printing", "In production – printing", "make"),
+    ("pack_it", "Ready to pack", "pack"),
+    ("ship_it", "Packed", "pack"),
+    ("on_the_way", "Shipped", "records"),
     ("delivered", "Delivered", "records"),
-    ("rto", "Coming back (RTO)", "records"),
+    ("rto", "Returned (RTO)", "records"),
     ("cancelled", "Cancelled", "records"),
-    ("problems", "Problems – check", "records"),
+    ("problems", "Problems", "records"),
     ("skipped", "Skipped", "records"),
 )
 KEYS = tuple(k for k, _, _ in TABS)

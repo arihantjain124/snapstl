@@ -122,6 +122,7 @@ CREATE INDEX IF NOT EXISTS print_jobs_batch ON print_jobs(batch_id);
 MIGRATIONS = [
     ("batches", "settings", "TEXT"),       # JSON settings snapshot used for this batch
     ("batches", "finished_at", "REAL"),
+    ("batches", "auto_build", "INTEGER"),  # 0.26 Make next batch: build the plates once every model is in
     ("orders", "customer_name", "TEXT"),   # shown in the UI
     ("orders", "phone", "TEXT"),
     ("orders", "address", "TEXT"),         # address, city, state, pincode joined
@@ -278,6 +279,7 @@ def _upgrade_stamps(con) -> None:
 
 # columns of tables made in POST_SCHEMA
 LATE_MIGRATIONS = [
+    ("print_jobs", "started_at", "REAL"),  # 0.26: when Bambuddy said it is printing (Stats: hours printing)
     ("staff", "pin_hash", "TEXT"),         # 0.25.1: salted hash of the person's 4-digit PIN (staff.py)
     ("staff", "pin_changed", "REAL"),
 ]

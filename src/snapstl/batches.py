@@ -644,8 +644,12 @@ class Manager:
                 continue
             p = batch_progress(b)
             if p["models"] - p["ready"] - p["failed"] == 0:
-                with db.tx() as con:  # all downloaded (or failed): wait for "Build plates"
-                    con.execute("UPDATE batches SET status='models_ready' WHERE id=? AND status='waiting'", (b["id"],))
+                with db.tx() as con:
+                    if b.get("auto_build") and p["ready"] and not p["failed"]:  # Make next batch: build by itself
+                        con.execute("UPDATE batches SET status='build_requested' WHERE id=? AND status='waiting'", (b["id"],))
+                        self._ev.set()
+                    else:  # all downloaded (or some failed): wait for "Build plates"
+                        con.execute("UPDATE batches SET status='models_ready' WHERE id=? AND status='waiting'", (b["id"],))
 
     def _build(self, b: dict) -> None:
         batch_id = b["id"]

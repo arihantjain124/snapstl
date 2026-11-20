@@ -651,9 +651,19 @@ SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn snapstl.server:ap
   records; `uv run snapstl-db export` saves a copy of them in the backups folder.
 
 
-### Logistics page (label and customer-care team)
+### Packing page (port 8002) and customer help page (port 8003) — 0.26
 
-Open `http://HOST-IP:8002` and sign in with the logistics password.
+**Packing page** — open `http://HOST-IP:8002` and sign in with the packing password (Settings → Connections →
+Packing page). It shows only orders **made and checked**, oldest first (Express on top); a clubbed order only
+when every name of it is made. Each row: the names with colour and quantity, the order IDs (click to copy) and
+**Label Generated**. Tick several (or **Paste order IDs…**) to do many at once; **Packed today** lists today's
+labels with **Undo**. The search looks only at the **name to print** (what the packer reads on the piece); it
+shows the whole clubbed order, and an order not ready says where it is.
+
+**Customer help** — open `http://HOST-IP:8003` and sign in with its own password (Settings → Connections →
+Customer help page). Everything below (search, status, tracking, notes, WhatsApp, name check, Express, cancel,
+remake), plus **Late – message first**: orders waiting a week or more, each with **WhatsApp: sorry** (a note
+is saved).
 
 - **Search** (top): order ID, phone (any way it's written), customer name or the name to print (as
   the customer typed it or as corrected) — a phone search shows all of that customer's orders. "Last report uploaded" says how fresh the statuses are.

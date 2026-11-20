@@ -89,6 +89,13 @@ body.offline main section:not(#t-settings):not(#t-help) :is(button,input,select,
 .mkgrp{background:var(--chip)}
 .vbusy{position:relative}.vsaving{position:absolute;inset:0;z-index:3;display:flex;align-items:center;justify-content:center;gap:10px;font-size:16px;border-radius:inherit;background:color-mix(in srgb,var(--panel) 85%,transparent)}
 .spin{width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;flex:none}@keyframes spin{to{transform:rotate(360deg)}}
+.stiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:10px}
+.stile{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel)}.stile b{display:block;font-size:24px;margin:2px 0}.stile .hint{font-size:12px}
+.stile.good{border-color:var(--ok)}.stile.bad{border-color:var(--err)}
+.stchart{display:flex;align-items:flex-end;gap:3px;height:160px;border-bottom:1px solid var(--line);padding-top:6px;overflow-x:auto}
+.stcol{flex:1;min-width:14px;display:flex;gap:1px;align-items:flex-end;height:100%;position:relative}.stcol i{display:block;flex:1;border-radius:3px 3px 0 0}
+.stcol i.m{background:var(--ok)}.stcol i.n{background:var(--line)}.stcol .tg{position:absolute;left:0;right:0;border-top:2px dashed var(--warn)}
+.stlbl{display:flex;gap:3px;font-size:10px;color:var(--muted)}.stlbl span{flex:1;min-width:14px;text-align:center;overflow:hidden}
 .nchip.shipped{opacity:.55}.nchip.cancelled{text-decoration:line-through;opacity:.55}
 .bprog{display:grid;grid-template-columns:60px 90px 44px;gap:6px;align-items:center;font-size:12px}
 .bprog .bar{margin:0}
@@ -130,6 +137,13 @@ details.objsbox summary{cursor:pointer;font-weight:600;margin:10px 0 6px}
 .drow{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;cursor:pointer}
 .drow:hover{border-color:var(--accent)}
 .drow.red{border-left-color:var(--err);background:var(--errbg)}
+.pcard{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px 14px;align-items:center;background:var(--panel);border:1px solid var(--line);border-left:6px solid var(--ok);border-radius:10px;padding:12px 14px;margin-bottom:8px}
+.pcard.exp{border-left-color:var(--err)}.pcard.done{border-left-color:var(--line);opacity:.85}
+.pcard input[type=checkbox]{width:22px;height:22px;margin:0}
+.pnames{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:20px;font-weight:600}.pnames span.q{font-size:14px;color:var(--muted);font-weight:400}
+.pids{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:14px;margin-top:4px}
+.pcard .pact button{font-size:15px;padding:10px 16px}
+@media (max-width:640px){.pcard{grid-template-columns:auto minmax(0,1fr)}.pcard .pact{grid-column:1/-1}}
 .drow .who{font-weight:600}
 .cpid{cursor:copy;border-bottom:1px dashed var(--muted)}.cpid:hover{color:var(--accent);border-color:var(--accent)}
 .drow .tick{display:flex;align-items:center;gap:8px}.drow .tick input{width:20px;height:20px;margin:0}
@@ -217,6 +231,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <button data-t="printers"><span class="ic">◉</span>Printers</button>
     <button data-t="slicing"><span class="ic">▣</span>Slicing</button>
     <button data-t="settings"><span class="ic">⚙</span>Settings</button>
+    <button data-t="stats"><span class="ic">▥</span>Stats</button>
     <button data-t="activity"><span class="ic">☰</span>Activities</button>
     <button data-t="help"><span class="ic">?</span>Help</button>
   </nav>
@@ -244,6 +259,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <button id="orefresh" title="Load the latest from the shared records (every computer's changes) and show it">↻ Refresh</button>
       <span class="grow hint" id="ingestmsg"></span>
     </div>
+    <div class="msgs" id="reportage"></div>
     <div class="msgs" id="ingestres"></div>
   </div>
   <div class="card">
@@ -276,7 +292,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <span id="selcount" class="hint">No orders selected</span>
       <button id="selall" class="small">Select all matching</button>
       <button id="selclear" class="small">Clear</button>
-      <button id="seloldest" class="small" title="Select the oldest orders that can go into a batch (Express first), as many as in the box">Select oldest</button><input id="seln" type="number" min="1" max="500" value="50" aria-label="How many oldest orders to select" style="width:70px">
+      <button id="seloldest" class="small" title="Select the oldest orders that can go into a batch (Express first), as many as in the box">Select oldest</button><button id="mknext" class="small primary" title="Make a batch of the oldest orders (Express first), as many as in the box: their models download and the plates build by themselves">Make next batch</button><input id="seln" type="number" min="1" max="500" value="50" aria-label="How many oldest orders to select" style="width:70px">
       <span class="grow"></span>
       <button id="mkbatch" class="primary" disabled>Create batch</button>
     </div>
@@ -287,6 +303,21 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
 </section>
 
+
+<section id="t-pack" hidden>
+  <div class="dtop">
+    <input type="search" id="pq" placeholder="Search the name on the piece" autocomplete="off" aria-label="Search the name to print">
+    <button id="prefresh">Refresh</button><span class="dfresh" id="pinfo"></span>
+  </div>
+  <div class="chips" id="pchips"></div>
+  <div class="dlabelbar" id="pbar" hidden><label class="tick" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="ptickall"> Tick all</label>
+    <button class="primary" id="plabelsel" disabled>Label Generated for ticked</button>
+    <button id="ppaste">Paste order IDs…</button><button id="pcopy" title="Copy the order IDs of every order shown, for the website">Copy order IDs</button>
+    <div id="ppastebox" hidden style="flex-basis:100%"><textarea id="ppastetext" rows="4" placeholder="One order ID per line" style="width:100%"></textarea>
+      <div class="btns" style="margin-top:6px"><button class="primary" id="ppastego">Label Generated for these</button><button id="ppastex">Cancel</button></div></div></div>
+  <div class="msgs" id="pmsg"></div>
+  <div id="plist"></div>
+</section>
 
 <section id="t-desk" hidden>
   <div class="dtop">
@@ -344,8 +375,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 
 <section id="t-makeit" hidden>
   <div class="card">
-    <div class="toolbar"><h2 style="margin:0">Print</h2><span class="grow hint" id="mkinfo"></span><button class="small" id="slp_all" title="Queue every waiting plate for slicing, each with the profiles of the printer chosen for it">Slice all waiting</button><button class="small" id="mkrefresh">Refresh</button><button class="small" id="mkbbrefresh" title="Ask every printer (through Bambuddy) to report its status and filament again — e.g. after changing a spool">Refresh from Bambuddy</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
-    <div id="mknow" class="mknow"></div><div class="msgs" id="mkmsgs"></div><div class="msgs" id="mknote"></div><div class="hint" id="slp_allmsg"></div>
+    <div class="toolbar"><h2 style="margin:0">Print</h2><span class="grow hint" id="mkinfo"></span><button class="small" id="slp_all" title="Queue every waiting plate for slicing, each with the profiles of the printer chosen for it">Slice all waiting</button><button class="small" id="mkrefresh">Refresh</button><label class="hint" style="display:flex;gap:4px;align-items:center;margin:0" title="A sound and a notice when a printer finishes or fails"><input type="checkbox" id="pralertson"> Alerts</label><button class="small" id="mkbbrefresh" title="Ask every printer (through Bambuddy) to report its status and filament again — e.g. after changing a spool">Refresh from Bambuddy</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
+    <div id="mknow"></div><div class="msgs" id="mkmsgs"></div><div class="msgs" id="mknote"></div><div class="hint" id="slp_allmsg"></div>
     <div class="chips" id="mktabs"></div>
     <div id="mk-bases" class="mkpane">
       <p class="hint">Base plates of your built batches, printed in white. A printer is pre-selected — the next <b>available</b> one whose loaded filament is closest to white, with the most left — and under it the <b>filament slot</b> it prints from (✓ same colour, ≈ close). You can pick any printer and any loaded slot. <b>Slice</b> shows if the plate is sliced for that printer's model. <b>Options</b> start from the printer's print defaults (Slicing); change them for one plate here. Nothing prints until you press <b>Start print</b>.</p>
@@ -554,6 +585,11 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <div class="sec" data-sec="folders" hidden>
     <p class="intro">Where SnapSTL saves files on this computer. It never deletes batch folders or downloaded models — you clean them up yourself.</p>
     <div class="card" style="max-width:900px">
+      <h2>Reports from Downloads</h2>
+      <label class="check"><input type="checkbox" id="riauto"> Import a new <i>Order Reconciliation Report</i> by itself when it is saved in Downloads</label>
+      <p class="hint" id="riinfo"></p>
+    </div>
+    <div class="card" style="max-width:900px">
       <h2>Folders</h2>
       <label>Plates (output) folder <span class="hint">— each day and batch gets its own folder here</span></label>
       <div class="row2" style="grid-template-columns:1fr auto"><input id="o_dir"><button id="o_pick" hidden>Choose…</button></div>
@@ -623,13 +659,21 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         </div>
       </div>
       <div class="card" id="portalcard">
-        <h2>Logistics access</h2>
-        <p class="hint">Host a read-only orders table on port 8002. Employees can browse categories, filter, copy rows and save views. This computer keeps data current through its normal shared-records sync. Save starts or stops logistics immediately; the full app keeps running.</p>
-        <label class="check"><input type="checkbox" id="lan"> Enable the logistics page on port 8002 (labels, Express, customer questions)</label>
-        <label for="portalpw"><b>Set or change logistics password</b></label>
+        <h2>Packing page (port 8002)</h2>
+        <p class="hint">For the packing team: only orders made and checked, oldest first, with <b>Label Generated</b>. A clubbed order shows only when every name of it is made. Save starts or stops it at once; the full app keeps running.</p>
+        <label class="check"><input type="checkbox" id="lan"> Enable the packing page on port 8002</label>
+        <label for="portalpw"><b>Set or change the packing page password</b></label>
         <p class="hint" id="portalpwhint">Use at least 10 characters. Employees enter this password when signing in.</p>
         <div class="toolbar"><input id="portalpw" type="password" autocomplete="new-password" placeholder="Enter a new password (10+ characters)" aria-describedby="portalpwhint" style="flex:1;min-width:220px"><button id="portalpwshow" type="button" aria-controls="portalpw" aria-pressed="false">Show</button><button id="portalsave" class="primary">Save logistics access</button></div>
         <p class="hint" id="portalinfo" aria-live="polite"></p><div id="logisticsurls"></div>
+      </div>
+      <div class="card" id="helpcard">
+        <h2>Customer help page (port 8003)</h2>
+        <p class="hint">For customer care: search any order, its status, tracking, notes, WhatsApp messages, name check, Express, cancel and remake requests, and the <b>Late</b> list to message first. It has its own password.</p>
+        <label class="check"><input type="checkbox" id="helpon"> Enable the customer help page on port 8003</label>
+        <label for="helppw"><b>Set or change the customer help password</b></label>
+        <div class="toolbar"><input id="helppw" type="password" autocomplete="new-password" placeholder="Enter a new password (10+ characters)" style="flex:1;min-width:220px"><button id="helpsave" class="primary">Save customer help</button></div>
+        <p class="hint" id="helpinfo" aria-live="polite"></p>
       </div>
     </div>
   </div>
@@ -722,6 +766,21 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <div class="savebar" id="savebar" hidden><span class="hint grow" id="savehint">Changes here are kept when you press <b>Save settings</b>.</span><button id="reset" title="Product, plate and folder settings back to SnapSTL's defaults">Restore defaults</button><button id="save" class="primary">Save settings</button></div>
 </section>
 
+<div id="pralerts" class="msgs" style="position:fixed;top:10px;right:14px;z-index:50;max-width:440px"></div>
+<section id="t-stats" hidden>
+  <div class="card">
+    <div class="toolbar"><h2 style="margin:0">Stats</h2><span class="grow hint" id="stfrom"></span>
+      <label for="stdays" style="margin:0">Last</label><select id="stdays" style="max-width:130px"><option value="7">7 days</option><option value="14">14 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select>
+      <button class="small" id="strefresh">Refresh</button></div>
+    <div class="stiles" id="sttiles"></div>
+  </div>
+  <div class="card"><h3 style="margin-top:0">Made per day and new orders per day</h3><p class="hint">Made = base and letters checked good (counted since checks started on 18 Nov 2026). When the green bars are shorter than the grey ones, the backlog grows.</p><div id="stchart"></div></div>
+  <div class="grid2">
+    <div class="card"><h3 style="margin-top:0">Printers</h3><div class="tw"><table><thead><tr><th>Printer</th><th style="text-align:right">Plates printed</th><th style="text-align:right">Failed</th><th style="text-align:right">Hours printing</th><th>Last used</th></tr></thead><tbody id="stprinters"></tbody></table></div><p class="hint">Hours printing are counted from 0.26 on.</p></div>
+    <div class="card"><h3 style="margin-top:0">Checked by</h3><div class="tw"><table><thead><tr><th>Person</th><th style="text-align:right">Parts good</th><th style="text-align:right">Problems found</th><th style="text-align:right">Orders</th></tr></thead><tbody id="stcheckers"></tbody></table></div></div>
+  </div>
+</section>
+
 <section id="t-activity" hidden>
   <div class="card">
     <div class="toolbar"><h2 style="margin:0">Activities</h2><span class="grow hint" id="actinfo"></span><button class="small" id="actrefresh">Refresh</button></div>
@@ -753,12 +812,12 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <h2>Daily workflow</h2>
     <ol>
       <li><b>Orders → Upload report (.xlsx)</b> — the webstore <i>Order Reconciliation Report</i>. Only <code>Magicians_35</code> orders are kept. Uploading the same or a newer report never creates duplicates; it only updates statuses.</li>
-      <li><b>Check name first</b> — fix names that start with a small letter, or have spaces, symbols or a missing colour, then <b>Approve</b>. Use <b>Skip</b> for orders you don't want to make.</li>
-      <li><b>New orders – to make</b> — <b>EXPRESS</b> orders are at the top. Tick orders (or use the column filters and <b>Select all matching</b>) → <b>Create batch</b>. They move to <b>Ready to print</b>.</li>
+      <li><b>Check name</b> — fix names that start with a small letter, or have spaces, symbols or a missing colour, then <b>Approve</b>. Use <b>Skip</b> for orders you don't want to make.</li>
+      <li><b>To make</b> — <b>EXPRESS</b> orders are at the top. Tick orders (or use the column filters and <b>Select all matching</b>) → <b>Create batch</b>. They move to <b>Ready to print</b>.</li>
       <li><b>Batches → Queue download</b> — the helper in your MakerWorld tab generates each name, one at a time (watch it in the <b>Download queue</b> on the same page).</li>
       <li>When the batch says <b>Ready to build</b> → <b>Queue build</b>.</li>
       <li><b>Print</b> → <b>Bases</b> / <b>Letters</b>: check the printer on each plate and click <b>Start print</b> (Express plates are at the top). Its orders move to <b>Printing</b>. Bases in white; names in the colour of their folder.</li>
-      <li>When an order's name <b>and</b> base are both printed it moves to <b>Printed – pack it</b>. The labelling team makes the label on the website and presses <b>Label Generated</b> → <b>Label done – ship it</b>.</li>
+      <li>When an order's name <b>and</b> base are both printed it moves to <b>Ready to pack</b>. The labelling team makes the label on the website and presses <b>Label Generated</b> → <b>Label done – ship it</b>.</li>
     </ol>
   </div>
 
@@ -767,17 +826,16 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <table>
       <tr><th>Tab</th><th>What's in it</th></tr>
       <tr><th colspan="2">Make</th></tr>
-      <tr><td>New orders – to make</td><td>The website says PRINT: make these. Sub-tabs: <b>Single</b> (one name), <b>Clubbed</b> (one customer, several names, one parcel), <b>Ad-hoc</b> (typed in with <b>Add ad-hoc order</b>, ID <b>AH-…</b>), <b>Returned piece available</b> (a returned order with exactly the same name and colour: <b>Use returned piece</b> sends it instead of making a new one), <b>Express</b>.</td></tr>
-      <tr><td>Check name first</td><td>PRINT, but the name or colour needs a person (first letter small, space, symbols, missing colour, special request).</td></tr>
-      <tr><td>Ready to print</td><td>In a batch; no plate of it started yet.</td></tr>
-      <tr><td>Printing</td><td>A plate holding it was started in Print. <b>Remake</b> makes it again from the start.</td></tr>
+      <tr><td>To make</td><td>The website says PRINT: make these. Sub-tabs: <b>Single</b> (one name), <b>Clubbed</b> (one customer, several names, one parcel), <b>Ad-hoc</b> (typed in with <b>Add ad-hoc order</b>, ID <b>AH-…</b>), <b>Returned piece available</b> (a returned order with exactly the same name and colour: <b>Use returned piece</b> sends it instead of making a new one), <b>Express</b>.</td></tr>
+      <tr><td>Check name</td><td>PRINT, but the name or colour needs a person (first letter small, space, symbols, missing colour, special request).</td></tr>
+      <tr><td>In production</td><td>In a batch: waiting to print (no plate started yet) or printing (a plate holding it was started in Print). <b>Remake</b> makes it again from the start.</td></tr>
       <tr><th colspan="2">Pack &amp; ship</th></tr>
-      <tr><td>Printed – pack it</td><td>Name and base both printed (or sent with a returned piece). "Label expired" means the website needs a new label.</td></tr>
-      <tr><td>Label done – ship it</td><td>The labelling team pressed <b>Label Generated</b>, or the website says PACK or HANDOVER.</td></tr>
+      <tr><td>Ready to pack</td><td>Name and base both printed (or sent with a returned piece). "Label expired" means the website needs a new label.</td></tr>
+      <tr><td>Packed</td><td>The labelling team pressed <b>Label Generated</b>, or the website says PACK or HANDOVER.</td></tr>
       <tr><th colspan="2">Records</th></tr>
-      <tr><td>On the way · Delivered · Coming back (RTO) · Cancelled</td><td>What the website says. For customer questions and records.</td></tr>
-      <tr><td>Problems – check</td><td>Something doesn't add up, e.g. the website packed an order SnapSTL never made, an order was cancelled while being made, or a status SnapSTL doesn't know. Sort it out, then <b>Clear flag</b>.</td></tr>
-      <tr><td>Skipped</td><td>You pressed Skip. <b>Make anyway</b> moves it back to New orders.</td></tr>
+      <tr><td>Shipped · Delivered · Returned (RTO) · Cancelled</td><td>What the website says. For customer questions and records.</td></tr>
+      <tr><td>Problems</td><td>A real problem: an order cancelled while being made, a customer who wants to cancel, or an order sent back to print after it was packed. Sort it out, then <b>Clear flag</b>. (An order the website packed, shipped or delivered is made, wherever it was made: it is never a problem.)</td></tr>
+      <tr><td>Skipped</td><td>You pressed Skip (also orders from before 13 Nov 2026 the website still says PRINT: made before SnapSTL). <b>Make anyway</b> moves it back to To make.</td></tr>
     </table>
     <p>A report never moves an order backwards: work done in SnapSTL (printed, label done) stays. <b>EXPRESS · needed by …</b> = the customer needs it by that date (red from 3 days before).</p>
     <p>Filter columns with the boxes under their headings — filters combine. Choose columns and save the current category, filters and columns as a view in this browser. Change rows per page below the table. <b>Export CSV</b> exports matching orders.</p>
@@ -930,7 +988,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
 
   <div class="card" id="h-portal">
-    <h2>Logistics page</h2><p>On the Mac or Windows host, enable <b>Settings → Connections → Logistics access</b> and set a password. Press Save to start hosting immediately. Employees open <code>http://HOST-IP:8002</code> and sign in. Allow SnapSTL incoming connections in the Mac firewall, or TCP 8002 for the local subnet in Windows Firewall if needed.</p><p>Employees can read, copy, filter and export orders, choose columns and save views. Refresh orders reloads the host's synchronized data; it also reloads every minute. Uploads, changes, batches, printers, slicing and settings are unavailable. The full app stays local on Mac and Windows.</p>
+    <h2>Packing page (8002) and customer help (8003)</h2><p><b>Packing page</b> (port 8002): only orders made and checked, oldest first, with <b>Label Generated</b>; a clubbed order shows once every name is made; <b>Packed today</b> to undo. <b>Customer help</b> (port 8003, its own password): search, status, tracking, notes, WhatsApp, name check, Express, cancel, remake, and <b>Late – message first</b>. Enable each in <b>Settings → Connections</b> with its password.</p><p>On the Mac or Windows host, enable <b>Settings → Connections → Packing page</b> and set a password. Press Save to start hosting immediately. Employees open <code>http://HOST-IP:8002</code> and sign in. Allow SnapSTL incoming connections in the Mac firewall, or TCP 8002 for the local subnet in Windows Firewall if needed.</p><p>Employees can read, copy, filter and export orders, choose columns and save views. Refresh orders reloads the host's synchronized data; it also reloads every minute. Uploads, changes, batches, printers, slicing and settings are unavailable. The full app stays local on Mac and Windows.</p>
   </div>
 
   <div class="card" id="h-data">
@@ -949,11 +1007,12 @@ const LOGISTICS=false;
 const $=id=>document.getElementById(id);
 const COLORS={pink:'#f4a7c0','hot pink':'#ff4fa0','baby pink':'#f9c9d9',lavender:'#b9a3e3',red:'#e5534b',orange:'#f39a3d',yellow:'#f2d04b',green:'#5fb36a',blue:'#4a86d9','baby blue':'#9fd0f3','sky blue':'#7cc4f0',purple:'#9a6bd1',black:'#333',white:'#fafafa',grey:'#999',lightgray:'#ccc'};
 // Orders tabs (0.23, tabs.py): [key, words, pill colour], in three groups
-const TABGROUPS=[['Make',[['to_make','New orders – to make','ok'],['check_name','Check name first','warn'],['ready_to_print','Ready to print','info'],['printing','Printing','info']]],
-  ['Pack & ship',[['pack_it','Printed – pack it','ok'],['ship_it','Label done – ship it','ok']]],
-  ['Records',[['on_the_way','On the way',''],['delivered','Delivered',''],['rto','Coming back (RTO)','warn'],['cancelled','Cancelled',''],['problems','Problems – check','err'],['skipped','Skipped',''],['all','All','']]]];
+// 0.26: fewer, simpler words; Ready to print + Printing are one list (In production)
+const TABGROUPS=[['Make',[['to_make','To make','ok'],['check_name','Check name','warn'],['production','In production','info']]],
+  ['Pack & ship',[['pack_it','Ready to pack','ok'],['ship_it','Packed','ok']]],
+  ['Records',[['on_the_way','Shipped',''],['delivered','Delivered',''],['rto','Returned (RTO)','warn'],['cancelled','Cancelled',''],['problems','Problems','err'],['skipped','Skipped',''],['all','All','']]]];
 const TABS=TABGROUPS.flatMap(g=>g[1]);
-const TABWORD=Object.fromEntries(TABS.map(t=>[t[0],t]));
+const TABWORD=Object.fromEntries([...TABS,['ready_to_print','In production – waiting to print','info'],['printing','In production – printing','info']].map(t=>[t[0],t]));
 const SUBTABS=[['to_make','All new'],['to_make_single','Single'],['to_make_clubbed','Clubbed'],['to_make_adhoc','Ad-hoc'],['to_make_returned','Returned piece available'],['express','Express']];
 const FLAGWORD={past_print_not_made:'Website moved it on, but SnapSTL never made it',cancelled_in_production:'Cancelled – don’t pack',cancel_request:'Customer wants to cancel',back_to_print:'Back to print after it was packed – check whether it is made',unknown_status:'Status SnapSTL doesn’t know'};
 // Express: "needed by 25 Nov", red from 3 days before
@@ -980,8 +1039,8 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   for(const s of PAGES)$('t-'+s).hidden=s!==t;
-  if(t==='orders')loadOrders(); if(t==='batches')loadBatches(); if(t==='activity'){loadActivity();loadQueue()} if(t==='makeit'){loadMakeIt();loadQueues()} if(t==='printers')loadStatusAll(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
-const PAGES=['orders','batches','makeit','printers','slicing','settings','activity','help'];
+  if(t==='orders'){loadOrders();reportAge()} if(t==='batches')loadBatches(); if(t==='activity'){loadActivity();loadQueue()} if(t==='makeit'){loadMakeIt();loadQueues()} if(t==='printers')loadStatusAll(); if(t==='stats')loadStats(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadHelpPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
+const PAGES=['orders','batches','makeit','printers','slicing','settings','stats','activity','help'];
 const OLD_PAGES={downloads:'activity',pstatus:'printers'};  // pages merged in 0.19 (the download queue is on Activities since 0.24)
 
 // ---------- orders ----------
@@ -1038,7 +1097,7 @@ async function loadOrders(){
     const n=document.querySelector(`[data-n="${CSS.escape(id)}"]`).value, c=document.querySelector(`[data-c="${CSS.escape(id)}"]`).value;
     try{await post(`/api/orders/${encodeURIComponent(id)}/name`,{name:n,color:c});refreshAll()}catch(e){alert(e.message)}});
   document.querySelectorAll('[data-skip]').forEach(b=>b.onclick=async()=>{await post(`/api/orders/${encodeURIComponent(b.dataset.skip)}/skip`);refreshAll()});
-  document.querySelectorAll('[data-reset]').forEach(b=>b.onclick=async()=>{if(!confirm('Make this order again? It goes back to New orders – to make.'))return;await post(`/api/orders/${encodeURIComponent(b.dataset.reset)}/reset`);refreshAll()});
+  document.querySelectorAll('[data-reset]').forEach(b=>b.onclick=async()=>{if(!confirm('Make this order again? It goes back to To make.'))return;await post(`/api/orders/${encodeURIComponent(b.dataset.reset)}/reset`);refreshAll()});
   document.querySelectorAll('[data-clearflag]').forEach(b=>b.onclick=async()=>{if(!confirm('Is this problem handled? The order goes back to its normal tab.'))return;
     try{await post(`/api/orders/${encodeURIComponent(b.dataset.clearflag)}/clear-flag`);refreshAll()}catch(e){alert(e.message)}});
   document.querySelectorAll('[data-reuse]').forEach(b=>b.onclick=async()=>{if(!confirm(`Send the returned piece of ${b.dataset.rto} for this order instead of making it?\n\nCheck the piece first: not damaged, same name and colour.`))return;
@@ -1056,6 +1115,16 @@ function selUI(){$('selcount').textContent=SEL.size?`${SEL.size} order${SEL.size
   $('mkbatch').textContent=SEL.size?`Create batch (${SEL.size})`:'Create batch';
   $('pagecheck').checked=PAGE.length>0&&PAGE.every(id=>SEL.has(id))}
 $('pagecheck').onchange=()=>{for(const id of PAGE)$('pagecheck').checked?SEL.add(id):SEL.delete(id);loadOrders()};
+$('mknext').onclick=async()=>{const n=Math.max(1,Math.min(500,+$('seln').value||50));
+  if(!confirm(`Make a batch of the ${n} oldest orders in To make (Express first)?\n\nTheir models download and the plates build by themselves. If a model fails, Batches waits for you.`))return;
+  $('mknext').disabled=true;try{const r=await post('/api/batches/next',{count:n});SEL.clear();
+    $('ingestres').innerHTML=r.download_error?`<div class="w">Batch #${r.batch_id} made with ${r.orders} order(s), but the download didn't start: ${esc(r.download_error)} Then press <b>Queue download</b> on Batches.</div>`
+      :`<div class="o">Batch #${r.batch_id} made with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped)`:''}: downloading the models, then the plates build by themselves. Follow it on <b>Batches</b>.</div>`;refreshAll()}
+  catch(e){alert(e.message)}finally{$('mknext').disabled=false}};
+// the last report: red when more than a day old (a new one in Downloads is imported by itself)
+async function reportAge(){try{const m=await api('/api/logistics/meta'),ri=await api('/api/report-import');if(!m.last_upload){$('reportage').innerHTML='';return}
+  const h=(Date.now()-new Date(m.last_upload))/36e5;
+  $('reportage').innerHTML=h>=24?`<div class="e">The last report was uploaded ${Math.floor(h)} hours ago — download a new <i>Order Reconciliation Report</i> from the website${ri.on?' (saved in Downloads it is imported by itself)':''}, so statuses are fresh.</div>`:'';}catch{}}
 $('seloldest').onclick=async()=>{const n=Math.max(1,Math.min(500,+$('seln').value||50));
   const ids=await api('/api/orders/ids?'+filterParams({state:SELKIND}));SEL.clear();ids.slice(0,n).forEach(i=>SEL.add(i));loadOrders()};
 $('selall').onclick=async()=>{const ids=await api('/api/orders/ids?'+filterParams({state:SELKIND}));ids.forEach(i=>SEL.add(i));loadOrders()};
@@ -1309,7 +1378,9 @@ function sliceCell(r,sel){const k=esc(mkKey(r)),c=sel&&sel.printer?r.choices.fin
   const btn=`<button class="small" data-mkslice="${k}" title="Queue this plate for slicing with ${esc(c.name)}'s profiles">Slice</button>`;
   if(sl&&sl.state==='failed')return `<span class="pill err">Slicing failed</span> ${btn}<div class="reason">${esc(sl.error||'')}</div>${who}`;
   return `<span class="pill">Not sliced</span> ${btn}${who}`}
-function mkStatus(r){const j=r.job;if(!j||j.state==='reprint')return `<span class="hint">${j?'reprint — choose a printer':'not started'}</span>`;return jobPill(j)}
+function mkStatus(r){const j=r.job;if(!j||j.state==='reprint')return `<span class="hint">${j?'reprint — choose a printer':'not started'}</span>`;
+  const st=j.state==='printing'?((mkPrinter(j.printer_id)||{}).status||{}):{};
+  return jobPill(j)+(st.remaining_time?`<div><b>Ready at ${finishAt(st.remaining_time)}</b></div>`:'')}
 const trayLbl=t=>`${t.slot} — ${t.name||t.color||t.hex||'?'}${t.material?' '+t.material:''}${t.remain!=null?' · '+t.remain+'%':''}${t.match===2?' ✓':t.match===1?' ≈':''}`;
 function mkTrays(r,sel){const c=r.choices.find(x=>String(x.id)===sel.printer);return c?(c.trays||[]):[]}
 function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={printer:String(r.suggested??(r.job&&r.job.printer_id?r.job.printer_id:'')),options:{...((r.job&&r.job.options)||{})},speed:(r.job&&r.job.speed)||'',tray:(r.job&&r.job.ams_tray!=null)?String(r.job.ams_tray):''});
@@ -1323,7 +1394,9 @@ function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={pri
   const optSel=(kk,vals)=>`<label style="margin:4px 0 2px">${OPTLBL[kk]}</label><select data-mkopt="${esc(k)}" data-k="${kk}">${dflt(setVal(d[kk])?optVal(d[kk]):'')}${vals.map(v=>`<option value="${v}" ${setVal(sel.options[kk])&&String(sel.options[kk])===String(v)?'selected':''}>${optVal(v)}</option>`).join('')}</select>`;
   const held=j&&j.state==='sent'&&j.held;
   const btn=busy?'':`<button class="small primary" data-mkstart="${esc(k)}" title="Send to this printer and start printing (once its bed is cleared)">${held?'Start print':(j&&['failed','cancelled'].includes(j.state)?'Start print again':'Start print')}</button>`;
-  const tag=r.extra==='fix'?'<span class="pill err" title="Printed again: only what was spoiled">Fix</span> ':r.extra==='merged'?'<span class="pill info" title="Several plates merged onto this one">Merged</span> ':'';
+  const tag=r.extra==='fix'?'<span class="pill err" title="Printed again: only what was spoiled">Fix</span> ':r.extra==='merged'?'<span class="pill info" title="Several plates merged onto this one">Merged</span> ':r.extra==='divided'?'<span class="pill info" title="Part of a plate split into smaller ones">Part</span> ':'';
+  const nOpen=(r.open_items||[]).length,divOpts=n=>{const o=[Array(n).fill(1)];if(n===3)o.push([2,1]);if(n===4)o.push([2,2]);if(n>4)o.push([...Array(Math.floor(n/2)).fill(2),...(n%2?[1]:[])]);return o};
+  const divSel=!busy&&!r.extra&&nOpen>=2&&(!j||['reprint','unmerged','failed','cancelled'].includes(j.state))?` <select class="small" data-mkdiv="${esc(k)}" title="Split this plate into smaller plates (same size), e.g. to print on different printers for a night run" style="max-width:110px"><option value="">Split…</option>${divOpts(nOpen).map(s=>`<option value="${s.join(',')}">${s.join(' + ')}</option>`).join('')}</select>`:'';
   const plate=`<div class="fn">${tag}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>${mkOther(r)}${r.express_by?'<div>'+expressBadge(r.express_by)+'</div>':''}`;
   const mt=withColour&&canMerge(r)?(()=>{const c0=MERGESEL.size?(([...MERGESEL.values()][0].colors[0]||'').toLowerCase()):null,other=c0!==null&&c0!==(r.colors[0]||'').toLowerCase();
     return `<input type="checkbox" data-mkmsel="${esc(k)}" ${MERGESEL.has(k)?'checked':''} ${other?'disabled title="Only plates of the same colour can be merged"':'title="Tick to merge with other plates of this colour"'} style="margin-right:6px;vertical-align:middle">`})():'';
@@ -1331,7 +1404,7 @@ function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={pri
     <td><select data-mkpr="${esc(k)}" ${busy?'disabled':''}>${opts}</select>${traySel}</td>
     <td>${sliceCell(r,sel)}</td>
     <td>${busy?`<span class="hint">${esc(optSummary(j&&j.options,j&&j.speed))}</span>`:`<details><summary class="hint" style="cursor:pointer">${esc(optSummary(sel.options,sel.speed,d))}</summary>${speedSel}${Object.entries(MK.options).map(([kk,v])=>optSel(kk,v)).join('')}<div class="hint" style="margin-top:4px">For this plate only. Each printer's defaults: <a href="#" data-go="slicing">Slicing</a>.</div></details>`}</td>
-    <td>${mkStatus(r)}</td><td style="white-space:nowrap">${btn}${busy?'':r.extra==='merged'?` <button class="small" data-mksplit="${esc(k)}" title="Back to the single plates (only before printing)">Split back</button>`:` <button class="small" data-mkrm="${esc(k)}" title="Take it off this list (e.g. printed by hand) — Put back in Removed">Remove</button>`}</td></tr>`}
+    <td>${mkStatus(r)}</td><td style="white-space:nowrap">${btn}${busy?'':r.extra==='merged'?` <button class="small" data-mksplit="${esc(k)}" title="Back to the single plates (only before printing)">Split back</button>`:r.extra==='divided'?` <button class="small" data-mkjoin="${esc(k)}" title="Put the parts back on one plate (only while no part is started)">Join back</button>`:` <button class="small" data-mkrm="${esc(k)}" title="Take it off this list (e.g. printed by hand) — Put back in Removed">Remove</button>`}${divSel}</td></tr>`}
 const plateCell=r=>`<div>${r.kind==='bases'?'<b>Bases</b>':`<b>Letters</b> ${sw(r.colors[0]||'')}`}</div><div class="fn" style="font-size:12px">${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>`;
 function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(id).contains(document.activeElement)||$(id).querySelector('details[open]'));
   if(!editing){
@@ -1371,6 +1444,12 @@ function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(
   document.querySelectorAll('[data-mksplit]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mksplit);
     if(!confirm('Split this merged plate back into its single plates?'))return;
     try{await post('/api/makeit/split',{batch_id:r.batch_id,file:r.file});delete MKSEL[x.dataset.mksplit]}catch(e){alert(e.message)}loadMakeIt()});
+  document.querySelectorAll('[data-mkdiv]').forEach(x=>x.onchange=async()=>{const r=find(x.dataset.mkdiv),sizes=x.value.split(',').map(Number);if(!x.value)return;
+    if(!confirm(`Split ${r.file.split('/').pop()} into ${sizes.length} plates (${sizes.join(' + ')})?\n\n${r.names.join(', ')}\n\nSame size, no scaling. Join back undoes it while no part is started.`)){x.value='';return}
+    x.disabled=true;$('mknote').innerHTML='<div class="w"><span class="spin" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle"></span> Splitting…</div>';
+    try{const res=await post('/api/makeit/divide',{batch_id:r.batch_id,file:r.file,sizes});$('mknote').innerHTML=`<div class="ok">Split into ${res.files.length} plates: ${res.files.map(f=>esc(f.split('/').pop())).join(', ')}</div>`}catch(e){$('mknote').innerHTML='';alert(e.message)}loadMakeIt()});
+  document.querySelectorAll('[data-mkjoin]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkjoin);if(!confirm('Put the parts of this split plate back on one plate?'))return;
+    try{await post('/api/makeit/join',{batch_id:r.batch_id,file:r.file})}catch(e){alert(e.message)}loadMakeIt()});
   document.querySelectorAll('[data-mkhand]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkhand);
     if(!confirm('This plate was printed outside SnapSTL? It goes to Verify to be checked.'))return;
     try{await post('/api/makeit/by-hand',{batch_id:r.batch_id,file:r.file})}catch(e){alert(e.message)}loadMakeIt()});
@@ -1398,6 +1477,37 @@ function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(
       if(/finished print on its bed/i.test(e.message)){if(confirm(e.message+'\n\nIs the bed empty and the plate clean now?')){try{await send({...body,bed_clear:true})}catch(e2){if(/anyway|filament|warn/i.test(e2.message)&&confirm(e2.message+'\n\nStart anyway?')){try{await send({...body,bed_clear:true,force:true})}catch(e3){alert(e3.message)}}else alert(e2.message)}}}
       else if(/anyway|filament|warn/i.test(e.message)&&confirm(e.message+'\n\nStart anyway?')){try{await send({...body,force:true})}catch(e2){alert(e2.message)}}else alert(e.message)}
     document.activeElement&&document.activeElement.blur();loadMakeIt()})}
+// ---------- Print next (0.26): the best plate for a free printer, started like Start print ----------
+// fix plates first, then Express, then letters whose base is printed in a loaded colour (✓), then base plates
+// (oldest first), then letters whose base isn't printed yet; only plates that fit this printer's filament
+function pickFor(pid){const rank=r=>{const c=r.choices.find(x=>x.id===pid);if(!c||!c.online||!c.available||r.job_active)return null;
+    if(c.slice&&c.slice.state==='needs_presets')return null;const t=(c.trays||[]).find(x=>x.tray===c.best_tray),m=t?t.match:0;
+    const exact=m===2,ok=m>=1;if(r.kind==='names'&&!exact)return null;if(r.kind==='bases'&&!ok)return null;
+    const basesOk=r.kind==='bases'||r.other_ready>=(r.open_items||[]).length;
+    return [r.extra==='fix'?0:1,r.express_by?0:1,r.kind==='names'&&basesOk?0:r.kind==='bases'?1:2,r.batch_id]};
+  return [...MK.names,...MK.bases].map(r=>[rank(r),r]).filter(x=>x[0]).sort((a,b)=>{for(let i=0;i<4;i++)if(a[0][i]!==b[0][i])return a[0][i]-b[0][i];return 0}).map(x=>x[1])[0]||null}
+async function printNext(pid){const r=pickFor(pid),pr=mkPrinter(pid);
+  if(!r){alert(`Nothing to print on ${pr.name||'this printer'} with the filament loaded in it.\n\nLoad another colour (then Refresh from Bambuddy), or choose a plate by hand.`);return}
+  const k=mkKey(r),c=r.choices.find(x=>x.id===pid);MKSEL[k]={...(MKSEL[k]||{options:{},speed:''}),printer:String(pid),tray:c.best_tray!=null?String(c.best_tray):''};
+  $('mknq').value='';$('mkbq').value='';MKLSUB='todo';MKBSUB='todo';mkShow(r.kind==='bases'?'bases':'names');mkRender(true);
+  const b=document.querySelector(`[data-mkstart="${CSS.escape(k)}"]`);if(b){b.scrollIntoView({block:'center'});b.click()}}
+// ---------- printer finished / failed: a sound and a notice on every page (0.26) ----------
+let PRSTATE=null,ALERTS=[];try{if(localStorage.getItem('pralerts')===null)localStorage.setItem('pralerts','1')}catch{}
+const alertsOn=()=>{try{return localStorage.getItem('pralerts')!=='0'}catch{return true}};
+function beep(){try{const a=new (window.AudioContext||window.webkitAudioContext)();[0,.25,.5].forEach((t,i)=>{const o=a.createOscillator(),g=a.createGain();o.frequency.value=i===2?1046:784;o.connect(g);g.connect(a.destination);g.gain.setValueAtTime(.2,a.currentTime+t);g.gain.exponentialRampToValueAtTime(.001,a.currentTime+t+.22);o.start(a.currentTime+t);o.stop(a.currentTime+t+.23)})}catch{}}
+function alertsRender(){$('pralerts').innerHTML=ALERTS.map((a,i)=>`<div class="${a.bad?'e':'w'}" style="display:flex;gap:8px;align-items:center"><span>${esc(a.text)}</span><span class="grow"></span><button class="small" data-pago="${i}">Print</button><button class="small" data-pax="${i}">OK</button></div>`).join('');
+  document.querySelectorAll('[data-pax]').forEach(x=>x.onclick=()=>{ALERTS.splice(+x.dataset.pax,1);alertsRender()});
+  document.querySelectorAll('[data-pago]').forEach(x=>x.onclick=()=>{ALERTS.splice(+x.dataset.pago,1);alertsRender();show('makeit')})}
+async function watchPrinters(){if(document.hidden&&PRSTATE)return;let r;try{r=await api('/api/printers/now')}catch{return}
+  const now={};for(const p of r.printers)now[p.id]=p;
+  if(PRSTATE&&alertsOn())for(const p of r.printers){const was=PRSTATE[p.id];if(!was||!p.connected)continue;
+    const busy=s=>['RUNNING','PREPARE','PAUSE','SLICING','INIT'].includes((s||'').toUpperCase());
+    let text='';if(busy(was.state)&&(p.state||'').toUpperCase()==='FINISH')text=`${p.name} finished — take the plate off and clear the bed`;
+    else if(busy(was.state)&&(p.state||'').toUpperCase()==='FAILED')text=`${p.name}: the print failed — check the printer`;
+    if(text){ALERTS.unshift({text,bad:/failed/.test(text)});ALERTS=ALERTS.slice(0,6);beep();alertsRender();
+      try{if(window.Notification&&Notification.permission==='granted')new Notification('SnapSTL',{body:text})}catch{}
+      if(tab==='makeit')loadMakeIt()}}
+  PRSTATE=now}
 // ---------- Print → Verify (0.25.1: one card per name, saved under the person whose PIN was typed) ----------
 const VSEL={};const VRES={names:[['good','Good'],['letters','Letter(s) spoiled'],['name','Whole name spoiled'],['colour','Wrong colour']],bases:[['good','Good'],['base','Base broken or warped']]};
 const vKey=i=>i.batch_id+'|'+i.plate+'|'+i.idx;
@@ -1511,10 +1621,14 @@ async function loadMakeIt(){let r;try{r=await api('/api/makeit')}catch(e){$('mkm
   const busy=r.printers.filter(p=>p.status&&['RUNNING','PREPARE','PAUSE'].includes((p.status.state||'').toUpperCase())).length;
   const clear=r.printers.filter(p=>p.status&&p.status.awaiting_plate_clear).length;
   const nw=r.now||{free:[],clear:[],busy:0,offline:0},hx=s=>s.hex?'#'+String(s.hex).replace('#','').slice(0,6):(COLORS[(s.color||'').toLowerCase()]||'transparent');
-  $('mknow').innerHTML=r.printers.length?`<b>Free for the next print:</b> ${nw.free.length?nw.free.map(p=>`<span class="nchip" title="${esc(p.spools.map(s=>s.color).filter(Boolean).join(', ')||'no filament reported')}">${esc(p.name)} ${p.spools.slice(0,4).map(s=>`<span class="swatch" style="background:${esc(hx(s))}"></span>`).join('')}</span>`).join(''):'<span class="hint">none right now</span>'}${nw.clear.length?` <span class="pill warn">Bed to clear: ${nw.clear.map(esc).join(', ')}</span>`:''} <span class="hint">· ${nw.busy} busy${nw.offline?` · ${nw.offline} offline`:''}</span>`:'';
+  $('mknow').innerHTML=r.printers.length?`<div class="mknow"><b>Free for the next print:</b> ${nw.free.length?nw.free.map(p=>`<span class="nchip" title="${esc(p.spools.map(s=>s.color).filter(Boolean).join(', ')||'no filament reported')}">${esc(p.name)} ${p.spools.slice(0,4).map(s=>`<span class="swatch" style="background:${esc(hx(s))}"></span>`).join('')} <button class="small primary" data-pnext="${p.id}" title="Pick the best plate for this printer and start it">Print next</button></span>`).join(''):'<span class="hint">none right now</span>'}${nw.clear.length?` <span class="pill warn">Bed to clear: ${nw.clear.map(esc).join(', ')}</span>`:''} <span class="hint">· ${nw.busy} busy${nw.offline?` · ${nw.offline} offline`:''}</span></div>`
+    +((nw.printing||[]).length?`<div class="mknow"><b>Printing:</b> ${nw.printing.map(p=>`<span class="nchip" style="flex-direction:column;align-items:flex-start;border-radius:8px;padding:3px 8px"><span>${esc(p.name)} · ${Math.round(p.progress||0)}%</span>${p.remaining?`<b style="font-size:12px">ready at ${finishAt(p.remaining)}</b>`:''}</span>`).join('')}</div>`:''):'';
+  document.querySelectorAll('[data-pnext]').forEach(x=>x.onclick=()=>printNext(+x.dataset.pnext));
   $('mkinfo').innerHTML=`${r.printers.length} printer${r.printers.length===1?'':'s'} · ${busy} printing${clear?` · <a href="#" data-go="printers">${clear} waiting for the bed to be cleared</a>`:''}`;
   mkShow(MKTAB);mkRender()}
-$('mkrefresh').onclick=()=>loadMakeIt();$('mkbbrefresh').onclick=()=>refreshFromBambuddy($('mkbbrefresh'),loadMakeIt);
+$('mkrefresh').onclick=()=>loadMakeIt();
+$('pralertson').checked=alertsOn();$('pralertson').onchange=()=>{try{localStorage.setItem('pralerts',$('pralertson').checked?'1':'0')}catch{}
+  if($('pralertson').checked){beep();try{if(window.Notification&&Notification.permission==='default')Notification.requestPermission()}catch{}}};$('mkbbrefresh').onclick=()=>refreshFromBambuddy($('mkbbrefresh'),loadMakeIt);
 $('mkbq').oninput=()=>MK&&mkRender(true);$('mknq').oninput=()=>MK&&mkRender(true);
 // Queue panel (Print page, bottom right): downloading, building, slicing, printing — refreshed every 5 s while shown
 let QTAB='slicing',QMIN=false,QDATA=null,QTIMER=null;
@@ -1786,6 +1900,10 @@ async function loadPortal(){if(!META.local){$('portalcard').hidden=true;return}
   document.querySelectorAll('[data-copy-logistics]').forEach(b=>b.onclick=async()=>{const input=b.previousElementSibling;try{await navigator.clipboard.writeText(input.value);b.textContent='Copied'}catch{input.focus();input.select();b.textContent=document.execCommand('copy')?'Copied':'Select and copy address'}});
   $('portalinfo').innerHTML=!p.lan_access?'Off — logistics is disabled.':p.error?esc(p.error):p.listening_on_network?`Listening on port 8002. Employees open ${urls}. If it opens on this computer at http://127.0.0.1:8002 but not another computer, allow incoming TCP 8002 for the local subnet in the host’s firewall and check both computers are on the same network.`:'Enabled, but not listening. Press Save to start logistics.';}
 $('portalpwshow').onclick=()=>{const show=$('portalpw').type==='password';$('portalpw').type=show?'text':'password';$('portalpwshow').textContent=show?'Hide':'Show';$('portalpwshow').setAttribute('aria-pressed',String(show))};
+async function loadHelpPortal(){if(!META.local){$('helpcard').hidden=true;return}
+  const p=await api('/api/help-portal');$('helpon').checked=p.enabled;
+  $('helpinfo').innerHTML=!p.enabled?(p.password_set?'Off.':'Off — set a password, tick Enable and Save.'):p.error?esc(p.error):p.listening_on_network?`Listening on port 8003. Customer care opens ${p.urls.map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join(' or ')}. Allow incoming TCP 8003 for the local subnet in the firewall if another computer can't open it.`:'Enabled, but not listening. Press Save.'}
+$('helpsave').onclick=async()=>{const b=$('helpsave');b.disabled=true;try{await post('/api/help-portal',{enabled:$('helpon').checked,password:$('helppw').value});$('helppw').value='';await loadHelpPortal()}catch(e){$('helpinfo').textContent=e.message;$('helpinfo').style.color='var(--err)'}finally{b.disabled=false}};
 $('portalsave').onclick=async()=>{const b=$('portalsave');b.disabled=true;try{await post('/api/portal',{enabled:$('lan').checked,password:$('portalpw').value});$('portalpw').value='';await loadPortal()}catch(e){$('portalinfo').textContent=e.message;$('portalinfo').style.color='var(--err)'}finally{b.disabled=false}};
 
 // ---------- settings sections ----------
@@ -1793,9 +1911,42 @@ const SETSECS=[['setup','Setup'],['product','Product'],['plates','Plates'],['fol
 let SETSEC='setup';try{SETSEC=localStorage.getItem('setsec')||'setup'}catch{}
 function setSec(sec){if(!SETSECS.some(x=>x[0]===sec))sec='setup';SETSEC=sec;try{localStorage.setItem('setsec',sec)}catch{}
   document.querySelectorAll('#t-settings [data-sec]').forEach(d=>d.hidden=d.dataset.sec!==sec);
-  $('savebar').hidden=!['product','plates','folders','logistics'].includes(sec);if(sec==='usage')loadUsage();if(sec==='staff')loadStaff();
+  $('savebar').hidden=!['product','plates','folders','logistics'].includes(sec);if(sec==='usage')loadUsage();if(sec==='folders')loadReportImport();if(sec==='staff')loadStaff();
   $('setchips').innerHTML=SETSECS.map(([k,l])=>`<button data-ss="${k}" class="${k===sec?'on':''}">${l}</button>`).join('');
   document.querySelectorAll('[data-ss]').forEach(b=>b.onclick=()=>setSec(b.dataset.ss))}
+// ---------- Settings → Folders: reports from Downloads (0.26) ----------
+async function loadReportImport(){try{const r=await api('/api/report-import');$('riauto').checked=r.on;
+  $('riinfo').innerHTML=`Watched folder: <code>${esc(r.folder)}</code> (checked every minute; files saved in the last 2 days, each once).`+(r.last.length?` Last: ${r.last.map(x=>esc(x.file)+(x.ok?` — ${x.new} new, ${x.updated} updated`:` — ${esc(x.error)}`)).join('; ')}`:'')}catch{}}
+$('riauto').onchange=async()=>{try{await post('/api/report-import',{on:$('riauto').checked})}catch(e){alert(e.message)}loadReportImport()};
+// ---------- Stats (0.26) ----------
+async function loadStats(){let r;try{r=await api('/api/stats?days='+$('stdays').value)}catch(e){$('sttiles').innerHTML=`<div class="e">${esc(e.message)}</div>`;return}
+  const b=r.backlog,t=r.today,fmt=v=>v==null?'—':v,dt=d=>d?new Date(d+'T12:00:00').toLocaleDateString([], {day:'numeric',month:'short'}):'—';
+  const tile=(label,val,hint,cls)=>`<div class="stile ${cls||''}"><span class="hint">${label}</span><b>${val}</b><span class="hint">${hint||''}</span></div>`;
+  $('stfrom').textContent=`updated ${new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;
+  $('sttiles').innerHTML=
+    tile('Made today',`${t.made}${t.target?' / '+t.target:''}`,t.target?(t.made>=t.target?'target reached':`${t.target-t.made} more to reach the target`):`<a href="#" id="stsettarget">Set a daily target</a>`,t.target?(t.made>=t.target?'good':''):'')
+    +tile('Made per day',r.pace7,`last 7 days (last 30: ${r.pace30})`)
+    +tile('New orders per day',r.new7,'last 7 days',r.new7>r.pace7?'bad':'good')
+    +tile('Waiting to be made',b.waiting,`To make ${b.to_make} · Check name ${b.check_name} · In production ${b.in_production}`)
+    +tile('Days to clear the backlog',fmt(b.days_to_clear),b.days_at_target!=null?`at the target: ${b.days_at_target} days`:'at the pace of the last 7 days',b.days_to_clear>7?'bad':'')
+    +tile('Oldest order waiting',dt(b.oldest),b.oldest?`${Math.floor((Date.now()-new Date(b.oldest+'T00:00:00'))/864e5)} days ago`:'',b.oldest&&(Date.now()-new Date(b.oldest+'T00:00:00'))/864e5>=7?'bad':'')
+    +tile('Ready to pack',b.to_pack,'made, no label yet')
+    +tile('Plates printed today',t.plates,'')
+    +tile('Order → made',r.times.order_to_made!=null?r.times.order_to_made+' days':'—','average, orders made in this period')
+    +tile('Order → shipped',r.times.order_to_shipped!=null?r.times.order_to_shipped+' days':'—','average (courier pickup)')
+    +tile('Fixes',r.rates.fix_pct+'%','of checked parts needed a fix',r.rates.fix_pct>=10?'bad':'')
+    +tile('Cancelled · RTO',`${r.rates.cancelled} · ${r.rates.rto}`,`of ${r.rates.orders} orders in this period`)
+    +tile('Cash on delivery',r.rates.cod_pct+'%','of orders in this period')
+    +(t.target?tile('Daily target',t.target,'<a href="#" id="stsettarget">Change</a>'):'');
+  const mx=Math.max(1,...r.days.map(d=>Math.max(d.made,d.new)),t.target||0);
+  $('stchart').innerHTML=`<div class="stchart">${r.days.map(d=>`<div class="stcol" title="${dt(d.day)}: made ${d.made} · new ${d.new} · plates ${d.plates}"><i class="m" style="height:${100*d.made/mx}%"></i><i class="n" style="height:${100*d.new/mx}%"></i>${t.target?`<span class="tg" style="bottom:${100*t.target/mx}%"></span>`:''}</div>`).join('')}</div>
+    <div class="stlbl">${r.days.map((d,i)=>`<span>${i%Math.ceil(r.days.length/10)===0?dt(d.day):''}</span>`).join('')}</div>
+    <p class="hint"><span class="swatch" style="background:var(--ok)"></span> made · <span class="swatch" style="background:var(--line)"></span> new orders${t.target?' · dashed line: daily target':''}</p>`;
+  $('stprinters').innerHTML=r.printers.length?r.printers.map(p=>`<tr><td>${esc(p.name||'—')}</td><td style="text-align:right">${p.done||0}</td><td style="text-align:right">${p.failed||0}${p.fail_pct?` <span class="hint">(${p.fail_pct}%)</span>`:''}</td><td style="text-align:right">${p.hours||'—'}</td><td class="hint">${p.last?new Date(p.last*1000).toLocaleString([], {day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}):''}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No prints in this period</td></tr>';
+  $('stcheckers').innerHTML=r.checkers.length?r.checkers.map(c=>`<tr><td>${esc(c.name)}</td><td style="text-align:right">${c.good||0}</td><td style="text-align:right">${c.problems||0}${c.problem_pct?` <span class="hint">(${c.problem_pct}%)</span>`:''}</td><td style="text-align:right">${c.orders||0}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">No checks in this period</td></tr>';
+  if($('stsettarget'))$('stsettarget').onclick=async e=>{e.preventDefault();const v=prompt('How many orders should be made per day? (0 = no target)',t.target||'');if(v===null)return;
+    try{await post('/api/stats/target',{target:+v||0});loadStats()}catch(err){alert(err.message)}}}
+$('stdays').onchange=loadStats;$('strefresh').onclick=loadStats;
 // ---------- Settings → Staff (0.25.1): people, their PINs, the owner PIN ----------
 let STAFF=null,OWNERPIN='';
 const stMsg=(m,bad)=>{$('stmsg').innerHTML=`<div class="${bad?'e':'o'}">${esc(m)}</div>`};
@@ -2001,9 +2152,51 @@ async function loadUsage(){try{const r=await api('/api/usage?days='+$('usagedays
   catch(e){$('usagerows').innerHTML=`<tr><td colspan="4" class="empty">${esc(e.message)}</td></tr>`}}
 $('usagedays').onchange=loadUsage;$('usagerefresh').onclick=loadUsage;
 
+// ---------- packing page (port 8002, 0.26): only made and checked orders, oldest first ----------
+let PVIEW='ready';const PSEL=new Map();let PDATA=null,PQT;
+async function pLoad(){const q=$('pq').value.trim();let r;
+  try{r=await api('/api/pack/list?'+new URLSearchParams({view:PVIEW,q}))}catch(e){$('pmsg').innerHTML=`<div class="e">${esc(e.message)}</div>`;return}PDATA=r;
+  $('pinfo').textContent='updated '+new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+  $('pchips').innerHTML=q?`<button class="on">Search: “${esc(q)}”</button>`:[['ready','Ready to pack',r.counts.ready],['today','Packed today',r.counts.today]].map(([k,l,n])=>`<button data-pv="${k}" class="${PVIEW===k?'on':''}">${l} · ${n}</button>`).join('')
+    +(r.held_clubbed&&!q&&PVIEW==='ready'?`<span class="hint" style="align-self:center">${r.held_clubbed} clubbed order${r.held_clubbed>1?'s':''} wait for their other names</span>`:'');
+  document.querySelectorAll('[data-pv]').forEach(b=>b.onclick=()=>{PVIEW=b.dataset.pv;PSEL.clear();pLoad()});
+  const G=r.groups,ready=g=>!g.label_at;
+  for(const k of [...PSEL.keys()])if(!G.some(g=>g.key===k&&ready(g)))PSEL.delete(k);
+  $('pbar').hidden=!G.some(ready);
+  const ago=d=>{const n=Math.floor((Date.now()-new Date(d+'T00:00:00'))/864e5);return n>0?` · ${n} day${n>1?'s':''}`:''};
+  $('plist').innerHTML=(G.length?G.map(g=>`<div class="pcard ${g.express_by?'exp':''} ${g.label_at?'done':''}">
+    <div>${ready(g)?`<input type="checkbox" data-psel="${esc(g.key)}" ${PSEL.has(g.key)?'checked':''} aria-label="Tick">`:''}</div>
+    <div><div class="pnames">${g.orders.map(o=>`<span>${sw(o.color)} ${esc(o.name)}${o.quantity>1?` <span class="q">×${o.quantity}</span>`:''}</span>`).join('')}</div>
+      <div class="pids">${g.orders.map(o=>`<span class="cpid" data-copy="${esc(o.order_id)}" title="Click to copy">${esc(o.order_id)}</span>`).join('')}${g.clubbed_id?`<span class="hint">clubbed · <span class="cpid" data-copy="${esc(g.clubbed_id)}" title="Click to copy">${esc(g.clubbed_id)}</span></span>`:''}</div>
+      <div class="hint">Ordered ${esc(dDate(g.order_date))}${ago(g.order_date)}${g.express_by?' · '+expressBadge(g.express_by):''}</div>${g.label_note&&!g.label_at?`<div class="reason">${esc(g.label_note)}</div>`:''}</div>
+    <div class="pact">${ready(g)?`<button class="primary" data-plabel="${esc(g.orders[0].order_id)}">Label Generated</button>`:`<span class="hint">Label done ${new Date(g.label_at*1000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</span> <button class="small" data-punlabel="${esc(g.orders[0].order_id)}">Undo</button>`}</div></div>`).join('')
+    :`<div class="empty">${q?'Nothing ready to pack matches the search':PVIEW==='today'?'No labels made today yet':'Nothing to pack right now'}</div>`)
+    +(r.not_ready.length?`<div class="card" style="margin-top:10px"><b>Not ready to pack yet</b>${r.not_ready.map(o=>`<div class="pids" style="font-size:15px">${sw(o.color)} <b>${esc(o.name)}</b> <span class="cpid" data-copy="${esc(o.order_id)}">${esc(o.order_id)}</span> — ${esc(o.words)}</div>`).join('')}</div>`:'');
+  document.querySelectorAll('#plist [data-copy]').forEach(el=>el.onclick=()=>{copyText(el.dataset.copy,'Order ID '+el.dataset.copy);use('copy_order_id')});
+  document.querySelectorAll('#plist [data-psel]').forEach(x=>x.onchange=()=>{const g=G.find(y=>y.key===x.dataset.psel);x.checked?PSEL.set(g.key,g.orders[0].order_id):PSEL.delete(g.key);pSel()});
+  document.querySelectorAll('#plist [data-plabel]').forEach(b=>b.onclick=()=>pLabel([b.dataset.plabel]));
+  document.querySelectorAll('#plist [data-punlabel]').forEach(b=>b.onclick=async()=>{if(!confirm('Undo Label Generated for '+b.dataset.punlabel+'? It goes back to Ready to pack.'))return;
+    try{await post(`/api/logistics/order/${encodeURIComponent(b.dataset.punlabel)}/label`,{undo:true});pFlash('Label undone')}catch(e){pFlash(e.message,true)}pLoad()});
+  pSel()}
+function pSel(){const G=(PDATA&&PDATA.groups||[]).filter(g=>!g.label_at);$('plabelsel').disabled=!PSEL.size;$('plabelsel').textContent=PSEL.size?`Label Generated for ${PSEL.size} ticked`:'Label Generated for ticked';$('ptickall').checked=G.length>0&&G.every(g=>PSEL.has(g.key))}
+function pFlash(m,bad){$('pmsg').innerHTML=`<div class="${bad?'e':'o'}">${esc(m)}</div>`;clearTimeout(pFlash.t);pFlash.t=setTimeout(()=>$('pmsg').innerHTML='',5000)}
+async function pLabel(ids){ids=[...new Set(ids)];if(!ids.length)return;if(ids.length>1&&!confirm(`Label Generated for ${ids.length} orders?`))return;
+  const ok=[],bad=[];for(const id of ids){pFlash(`Saving… ${ok.length+bad.length+1} of ${ids.length}`);
+    try{await post(`/api/logistics/order/${encodeURIComponent(id)}/label`,{undo:false});ok.push(id)}catch(e){bad.push(`${id}: ${e.message}`)}}
+  PSEL.clear();$('ppastebox').hidden=true;$('ppastetext').value='';use('label_generated');await pLoad();
+  if(bad.length)$('pmsg').innerHTML=`<div class="e">${ok.length} done. Not done:<br>${bad.map(esc).join('<br>')}</div>`;else pFlash(`${ok.length} label${ok.length>1?'s':''} done → Packed today`)}
+$('pq').oninput=()=>{clearTimeout(PQT);PQT=setTimeout(()=>{if($('pq').value.trim())use('search');pLoad()},300)};
+$('prefresh').onclick=()=>pLoad();
+$('ptickall').onchange=()=>{for(const g of (PDATA.groups||[]).filter(g=>!g.label_at))$('ptickall').checked?PSEL.set(g.key,g.orders[0].order_id):PSEL.delete(g.key);pLoad()};
+$('plabelsel').onclick=()=>pLabel([...PSEL.values()]);
+$('ppaste').onclick=()=>{$('ppastebox').hidden=false;$('ppastetext').focus()};
+$('ppastex').onclick=()=>{$('ppastebox').hidden=true;$('ppastetext').value=''};
+$('ppastego').onclick=()=>{const ids=$('ppastetext').value.split(/[\s,;]+/).map(s=>s.trim()).filter(Boolean);if(!ids.length){alert('Paste the order IDs first');return}pLabel(ids)};
+$('pcopy').onclick=()=>{const ids=(PDATA.groups||[]).filter(g=>!g.label_at).flatMap(g=>g.orders.map(o=>o.order_id));copyText(ids.join('\n'),`${ids.length} order IDs`);use('copy_order_ids')};
+
 // ---------- logistics page (label and customer-care team, 0.23) ----------
 const DMENU=[['Labels',[['labels','Ready to pack – make label'],['ship_it','Packed – waiting for courier']]],
-  ['Customer help',[['check_name','Confirm name with customer'],['problems','Cancel requests & problems'],['remakes','Remake requests']]],
+  ['Customer help',[['late','Late – message first'],['check_name','Confirm name with customer'],['problems','Cancel requests & problems'],['remakes','Remake requests']]],
   ['Tracking',[['being_made','In queue & printing'],['on_the_way','Shipped'],['delivered','Delivered'],['rto','Returning to us (RTO)'],['cancelled','Cancelled']]]];
 const DSEL=new Set();  // Labels: ticked orders for Label Generated
 const DTITLE=Object.fromEntries(DMENU.flatMap(g=>g[1]));
@@ -2033,7 +2226,8 @@ async function dList(){
   $('dlist').innerHTML=r.orders.length?r.orders.map(o=>{
     const red=o.late||o.stuck||o.express_red||o.tab==='problems';
     const why=[o.late?`${o.days} days since order`:'',o.stuck?'On the way a long time — check with the courier':''].filter(Boolean).join(' · ');
-    const quick=o.tab==='pack_it'?`<button class="small primary" data-label="${esc(o.order_id)}">Label Generated</button>`:'';
+    const quick=D.view==='late'&&!D.q&&o.phone?`<button class="small primary" data-sorry="${esc(o.order_id)}" title="Open WhatsApp with the Sorry for the wait message (you press Send); a note is saved">WhatsApp: sorry</button>`
+      :o.tab==='pack_it'?`<button class="small primary" data-label="${esc(o.order_id)}">Label Generated</button>`:'';
     const tick=o.tab==='pack_it'?`<input type="checkbox" data-dsel="${esc(o.order_id)}" ${DSEL.has(o.order_id)?'checked':''} aria-label="Tick ${esc(o.order_id)}">`:'';
     return `<div class="drow ${red?'red':''}" data-open="${esc(o.order_id)}">
       <div><div class="who tick">${tick}<span><span class="cpid" data-copy="${esc(o.order_id)}" title="Click to copy">${esc(o.order_id)}</span> · ${esc(o.customer_name)} <span class="meta">${esc(o.phone)}</span></span></div>
@@ -2042,6 +2236,9 @@ async function dList(){
         ${o.flag_note?`<div class="reason">${esc(o.flag_note)}</div>`:''}${o.remake_reason&&D.view==='remakes'?`<div class="reason">Remake: ${esc(o.remake_reason)}</div>`:''}</div>
       <div class="acts">${dExpress(o)}${quick}</div></div>`}).join(''):'<div class="hint" style="padding:20px">Nothing here.</div>';
   document.querySelectorAll('#dlist [data-open]').forEach(el=>el.onclick=e=>{if(e.target.closest('button,input,[data-copy]'))return;dOpen(el.dataset.open)});
+  document.querySelectorAll('#dlist [data-sorry]').forEach(b=>b.onclick=async()=>{const o=r.orders.find(x=>x.order_id===b.dataset.sorry);
+    window.open(waLink(o,dMsg(o,'Sorry for the wait')),'_blank','noopener');use('whatsapp_late');
+    try{await post(`/api/logistics/order/${encodeURIComponent(o.order_id)}/note`,{text:'WhatsApp: Sorry for the wait (from the Late list)'});b.textContent='Sent ✓';b.disabled=true}catch(e){dFlash(e.message,true)}});
   document.querySelectorAll('#dlist [data-copy]').forEach(el=>el.onclick=()=>{copyText(el.dataset.copy,'Order ID '+el.dataset.copy);use('copy_order_id')});
   const packs=r.orders.filter(o=>o.tab==='pack_it').map(o=>o.order_id);
   for(const id of [...DSEL])if(!packs.includes(id))DSEL.delete(id);
@@ -2148,7 +2345,7 @@ async function dOpen(id){D.open=id;use('open_order');let o;try{o=await api('/api
       <label>Colour<input name="color" value="${esc(o.color)}" maxlength="30" required></label>
       <label>Why is it changed?<input name="reason" maxlength="300" required placeholder="e.g. Customer asked: Riya → Riyaa"></label>
       <label class="tick"><input type="checkbox" name="ok" required> Confirmed with customer</label>`,
-    f=>act('name',{name:f.get('name'),color:f.get('color'),reason:f.get('reason'),confirmed:f.get('ok')==='on'},'Name saved — the order is in New orders – to make'));
+    f=>act('name',{name:f.get('name'),color:f.get('color'),reason:f.get('reason'),confirmed:f.get('ok')==='on'},'Name saved — the order is in To make'));
   if($('dexp'))$('dexp').onclick=()=>form(`<label>Customer needs it by<input type="date" name="by" value="${esc(o.express_by||'')}"></label>
       <label>Note<input name="note" maxlength="300" value="${esc(o.express_note||'')}" placeholder="e.g. birthday on 25th"></label>
       <div class="hint">Leave the date empty to remove Express.${o.group.length?' Applies to the whole clubbed order.':''}</div>`,
@@ -2158,7 +2355,7 @@ async function dOpen(id){D.open=id;use('open_order');let o;try{o=await api('/api
       <div class="hint">Production sees it at once in Problems – check. Also cancel it on the website.</div>`,
     f=>act('cancel-request',{note:f.get('note')},'Cancel request sent to production'));
   if($('dremake'))$('dremake').onclick=()=>form(`<label>Why must it be made again?<input name="reason" maxlength="300" required placeholder="e.g. arrived broken"></label>`,
-    f=>act('remake',{reason:f.get('reason')},'Remake requested — it is in New orders – to make'));
+    f=>act('remake',{reason:f.get('reason')},'Remake requested — it is in To make'));
   $('dnoteform').onsubmit=e=>{e.preventDefault();act('note',{text:$('dnotetext').value},'Note added')};
 }
 let dqT;$('dq').oninput=()=>{clearTimeout(dqT);dqT=setTimeout(()=>{D.q=$('dq').value.trim();D.offset=0;if(D.q)use('search');dLoad()},300)};
@@ -2172,15 +2369,18 @@ $('dcsv').onclick=()=>use('download_csv');
   META={computer:{name:''}};document.body.classList.add('logistics');
   document.querySelector('aside').hidden=true;document.querySelector('.content').style.marginLeft='0';
   for(const id of PAGES)$('t-'+id).remove();
-  $('t-desk').hidden=false;
-  $('status').textContent='SnapSTL · Logistics';
+  if(LOGISTICS==='pack'){$('t-desk').remove();$('t-pack').hidden=false;$('status').textContent='SnapSTL · Packing';
+    await pLoad();use('open_pack');setInterval(()=>{if(document.activeElement!==$('pq')&&!PSEL.size&&$('ppastebox').hidden)pLoad()},60000);return}
+  $('t-pack').remove();$('t-desk').hidden=false;
+  $('status').textContent='SnapSTL · Customer help';
   await dLoad();use('open_page');setInterval(()=>{if(!D.open&&!document.querySelector('#dform form'))dLoad()},60000);return;
 }META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;
   if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders';t=OLD_PAGES[t]||t}catch{}if(!PAGES.includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;
   document.querySelectorAll('.fm').forEach(x=>x.textContent='Show in '+META.file_manager);
   if(META.os==='windows')document.body.classList.add('win');
   $('pcname').textContent=META.computer.name+(META.shared_records?' · shared records':'');$('resetsharedl').hidden=!META.shared_records;$('dbshared').hidden=!META.shared_records;$('dblocal').hidden=!!META.shared_records;show(t);refresh();loadHealth();setInterval(refresh,2000);
-  if(META.local){loadUpdates(1);setInterval(()=>loadUpdates(1),6*3600*1000)}})();
+  if(META.local){loadUpdates(1);setInterval(()=>loadUpdates(1),6*3600*1000)}
+  watchPrinters();setInterval(watchPrinters,30000);setInterval(()=>{if(tab==='makeit'&&!document.hidden&&!VBUSY)loadMakeIt()},60000)})();
 </script>
 </body>
 </html>

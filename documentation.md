@@ -475,3 +475,29 @@ Agreed: two releases — 0.25.0 now, 0.25.1 (Verify by name, staff PINs, merging
 - **Merging with tick boxes:** tick letter plates of one colour (not started; letter **fix** plates too), up to 3
   names; other colours can't be ticked; Split back returns exactly the plates merged (each item records `src`).
 - On update day: set the owner PIN and everyone's PIN in Settings → Staff on the farm computer.
+
+
+### 2026-11-21: 0.26.0 Stats, packing and customer help pages, Print next, fixes for stuck orders
+Owner's requests after using 0.25 (backlog, packers mixing up similar names from other days, staff who find
+English hard — the language help was skipped by the owner).
+- **Found:** 86 orders (11–17 Nov) stuck as "not needed" with website status PRINT: their first upload marked
+  them so, and the shared records kept that. Owner: from 13 Nov nothing was made until the website says
+  pack / in transit → 77 back to To make / Check name; 9 older ones (and AWB EXPIRED) → Skipped. One-time
+  repair at startup (`ingest.repair_026`). 77 orders were in Problems only because the website had packed /
+  shipped them: owner — packed means made, wherever → the flag is gone and such orders leave Print, Verify and
+  the base / letters marks (`makeit.SHIPPED_SQL`). Practice run on a copy: Problems 164 → 1.
+- **Statuses:** To make · Check name · In production (waiting to print + printing) · Ready to pack · Packed ·
+  Shipped · Delivered · Returned (RTO) · Cancelled · Problems (real ones only) · Skipped.
+- **Stats** page: made per day vs new orders per day (chart), backlog and days to clear, daily target (set on
+  the page), per printer (plates, failed, hours printing from 0.26: `print_jobs.started_at`), per checker,
+  order → made / shipped days, fixes, cancelled / RTO, COD share. On the owner's data: ~51 made vs ~49 new per
+  day; X5 BOB and X2 BOB fail 37% / 45% of prints.
+- **Print:** "ready at" clock time under the % of printing plates and in the top line; **Print next** on each
+  free printer (fix plates, Express, letters whose base is printed in a loaded colour, bases, then the rest —
+  through the usual Start print, bed-clear confirmation included); a sound and a notice on every page when a
+  printer finishes or fails (Alerts switch on Print); **Split…** a plate not started (or failed) into smaller
+  plates (1 + 1 + 1, 2 + 1 …) to spread a night run; **Join back** while no part is started.
+- **Orders:** **Make next batch** (oldest first, Express on top; downloads and builds by itself unless a model
+  fails); a new report saved in Downloads is imported by itself (Settings → Folders); red warning when the
+  last report is more than a day old.
+- **Packing page (8002)** and **customer help (8003, own password and cookie)** — see README.

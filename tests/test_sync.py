@@ -511,10 +511,9 @@ def test_report_columns_reach_the_shared_records(two):
             ups = rc.execute("SELECT filename, magicians_rows, computer_name FROM snapstl.report_uploads "
                              "ORDER BY uploaded_at").fetchall()
             assert [u["filename"] for u in ups] == ["old.csv", "new.csv", "older.csv"] and ups[0]["computer_name"] == "PC A"
-            # listed to make, never made, now delivered: flagged (0.23)
+            # listed to make, never made, now delivered: delivered (0.26: made, wherever — no flag)
             full = rc.execute("SELECT tab, flag FROM snapstl.order_records WHERE order_id='R1'").fetchone()
-            assert (full["tab"], full["flag"]) == ("problems", "past_print_not_made")
-            assert rc.execute("SELECT tab FROM snapstl.orders_full WHERE order_id='R1'").fetchone()["tab"] == "problems"
+            assert (full["tab"], full["flag"]) == ("delivered", None)
         with pytest.raises(sync.SyncError, match="never deleted"):
             with sync._remote() as rc:
                 rc.execute("DELETE FROM snapstl.report_rows")

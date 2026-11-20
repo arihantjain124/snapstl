@@ -143,6 +143,8 @@ Snapstl/
 │   ├── maintenance.py        backups, clean-up (keeps made orders), reset
 │   ├── auth.py               portal password (other computers) + signed session cookie; `snapstl-admin`
 │   ├── staff.py              staff PINs + owner PIN (Print → Verify, Settings → Staff; 0.25.1)
+│   ├── stats.py              Stats page: made per day, backlog, printers, checkers (0.26)
+│   ├── reportwatch.py        imports a new report saved in Downloads by itself (0.26)
 │   └── static/
 │       ├── index.html        the whole UI: side navigation (Orders, Batches, Downloads, Settings, Help)
 │       └── login.html        used only if a portal password is set

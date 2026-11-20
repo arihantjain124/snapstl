@@ -1313,6 +1313,8 @@ class Worker:
                     changes["progress"] = 100.0
             if new == "printing" and j.get("speed") and not j.get("speed_set"):
                 changes |= self._apply_speed(j, cfg)
+            if new == "printing" and j["state"] != "printing":
+                changes["started_at"] = time.time()  # Stats: hours printing per printer
             if new == "printing":
                 s = printer_status(j["printer_id"], cfg, max_age=10)
                 if s.get("progress") is not None:

@@ -34,7 +34,7 @@ RESULTS = {
     "plate_failed": "Whole plate failed",
 }
 FIX_RESULTS = ("letters", "name", "colour", "base")  # a small fix plate is made for these
-NOT_STARTED = ("removed", "merged", "unmerged")      # print job states that don't mean "a print started"
+NOT_STARTED = ("removed", "merged", "unmerged", "divided")      # print job states that don't mean "a print started"
 MAX_FIXES_WARN = 2                                   # a third fix of one item: check the model
 
 
