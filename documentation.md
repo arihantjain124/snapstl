@@ -562,3 +562,13 @@ Agreed: two releases — 0.25.0 now, 0.25.1 (Verify by name, staff PINs, merging
   that computer. Moving it to Development withdraws it for new work. Queued work keeps its pinned revision.
 - Local generation uses the batch's product settings and scaling table. Queue build remains a separate
   action and runs the existing fit checks. A synthetic order passed a real OpenSCAD batch run.
+
+### 2026-11-20: External APIs for drafting 3D models
+
+- Owner asked which APIs can draft new models and what they cost. Zoo's Agent API generates editable
+  KCL and exports geometry through its CAD engine. Adam offers engineering tasks with downloadable
+  CAD outputs. CADAM is a separate open-source app that generates editable OpenSCAD, with inference
+  billed by the configured model provider. Tripo, Meshy and Hunyuan3D generate meshes for visual concepts.
+- **Open:** benchmark a synthetic multi-part design before choosing a provider. The existing Models
+  workflow expects OpenSCAD source. A CAD provider would need a translation or import step and
+  dimensional review. No provider was connected.
