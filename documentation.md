@@ -501,3 +501,13 @@ English hard — the language help was skipped by the owner).
   fails); a new report saved in Downloads is imported by itself (Settings → Folders); red warning when the
   last report is more than a day old.
 - **Packing page (8002)** and **customer help (8003, own password and cookie)** — see README.
+
+
+### 2026-11-21: 0.26.1 the sync never hangs on a leftover connection
+- After updating to 0.26.0 the farm computer stayed on "Connecting to the shared order records…": the app was
+  restarted in the middle of a sync, Supabase's pooler kept that transaction open (a read of `snapstl.staff`),
+  and the new app's setup (which changes that table) waited for it forever. It cleared when Supabase ended the
+  leftover transaction; nothing was lost.
+- Fix: every shared-records session sets `idle_in_transaction_session_timeout` (2 minutes), and the setup uses
+  `lock_timeout` (20 s): when a table is held it says "The shared records are busy … trying again in a minute"
+  and the next sync tries again. Test: `test_a_leftover_connection_never_hangs_the_sync`.

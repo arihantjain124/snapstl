@@ -440,6 +440,13 @@ _setup_done = ""  # connection string the tables were last checked on
 _lock = threading.RLock()
 
 
+# 0.26.1: never hang. A sync cut off midway (app restarted) can leave its transaction open in the pooler; the
+# setup then waited for it forever ("Connecting to the shared order records…"). Now a transaction left idle
+# ends by itself, and the setup gives up after LOCK_WAIT and tries again at the next sync.
+IDLE_TX_TIMEOUT = "120s"
+LOCK_WAIT = "20s"
+
+
 @contextmanager
 def _remote(url: str | None = None):
     """One transaction on the shared records (committed at the end, rolled back on error)."""
@@ -455,9 +462,15 @@ def _remote(url: str | None = None):
         raise SyncError(f"Can't reach the shared records: {_short(e)}") from e
     try:
         with con:
+            con.execute(f"SET idle_in_transaction_session_timeout = '{IDLE_TX_TIMEOUT}'")
             if _setup_done != url:
-                con.execute("SELECT pg_advisory_xact_lock(83170002)")
-                con.execute(_SETUP_SQL)
+                con.execute(f"SET LOCAL lock_timeout = '{LOCK_WAIT}'")
+                try:
+                    con.execute("SELECT pg_advisory_xact_lock(83170002)")
+                    con.execute(_SETUP_SQL)
+                except psycopg.errors.LockNotAvailable as e:
+                    raise SyncError("The shared records are busy (an earlier connection still holds a table) — "
+                                    "trying again in a minute") from e
                 r = con.execute(f"SELECT value FROM {SCHEMA}.meta WHERE key='schema_version'").fetchone()
                 have = int(r["value"]) if r else 0
                 if have > SCHEMA_VERSION:

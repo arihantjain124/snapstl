@@ -6,6 +6,7 @@ Each "computer" is its own local SQLite database + computer id; both sync with t
 import csv
 import io
 import os
+import time
 from contextlib import contextmanager
 
 import pytest
@@ -807,3 +808,26 @@ def test_print_checks_and_staff_reach_every_computer(two):
         import psycopg
         with pytest.raises(psycopg.Error):
             rc.execute("DELETE FROM snapstl.print_checks")
+
+
+def test_a_leftover_connection_never_hangs_the_sync(two, monkeypatch):
+    """0.26.1: a sync cut off midway (app restarted) can leave its transaction open, holding a table. The setup
+    used to wait for it forever ("Connecting to the shared order records…"); now it gives up and retries."""
+    import psycopg
+
+    pc = two
+    with pc("A"):
+        ok(sync.sync_now())
+        monkeypatch.setattr(sync, "LOCK_WAIT", "1s")
+        monkeypatch.setattr(sync, "_setup_done", "")  # as after a restart: the setup runs again
+        held = psycopg.connect(os.environ["SNAPSTL_TEST_DATABASE_URL"])
+        try:
+            held.execute("SELECT * FROM snapstl.staff").fetchall()  # left open, like the cut-off sync
+            t = time.time()
+            s = sync.sync_now()
+            assert "busy" in s["error"] and time.time() - t < 15
+        finally:
+            held.close()
+        ok(sync.sync_now())  # and works again once the old connection is gone
+        with sync._remote() as rc:
+            assert rc.execute("SHOW idle_in_transaction_session_timeout").fetchone()["idle_in_transaction_session_timeout"] == "2min"
