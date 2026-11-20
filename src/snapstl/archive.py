@@ -119,6 +119,7 @@ def batch_rows(limit: int = 1000) -> dict:
         n = progress(os_)
         item = {
             "id": r["id"], "created_at": r["created_at"], "finished_at": r.get("finished_at"), "status": r["status"],
+            "model_source": B.model_source(r),
             "orders": len(json.loads(r["order_ids"] or "[]")), "plates": len(summ.get("plates", [])),
             "errors": len(summ.get("errors", [])), "label": summ.get("label", ""),
             "computer": r.get("computer_name") or "", "mine": (r.get("computer_id") or computer.ID) == computer.ID,
@@ -129,6 +130,8 @@ def batch_rows(limit: int = 1000) -> dict:
             "files_cleaned_at": r.get("files_cleaned_at"),
             "clean_on": (r["archived_at"] + BATCH_DAYS * 86400) if r.get("archived_at") and not r.get("files_cleaned_at") else None,
         }
+        if item["model_source"] == "builtin" and r["status"] == "waiting":
+            item["word"] = "Generating models"
         if r["status"] in B.OPEN:
             item["progress"] = B.batch_progress(r)
         out.append(item)

@@ -448,9 +448,12 @@ The bottom of the sidebar shows at a glance whether the **Helper**, **Bambuddy**
    **Select oldest**, or **Select all matching** — then click **Create batch**. They move to **Ready to print**.
    On **Batches**, each name shows **B** (base) and **L** (letters): ✓ printed, ◐ printing, ○ to print, and
    each batch says e.g. *4 base ready, letters pending* — click it to see just those names.
-4. **Download the models.** Go to **Batches → Queue download**. The helper makes each name in your
-   MakerWorld tab, one at a time; follow it in the **Download queue** on the Batches page. If MakerWorld shows a security
-   check in that tab, complete it and the helper carries on.
+4. **Prepare the models.** Go to **Batches → Queue download** and choose a source.
+   - **MakerWorld** uses the SnapSTL Helper in Chrome. Complete any security check in that tab.
+   - **Built-in organizer · Letter Contour** appears after you move that design to **Production**
+     in Models on this computer. **Queue generation** uses local OpenSCAD and the batch's saved
+     product and scaling settings. The built-in design accepts a single line of 1–15 letters A–Z.
+     Check **Objects** for any generation errors.
 5. **Build the plates.** When the batch says **Ready to build**, click **Queue build**.
 6. **Check the fit.** The batch should say **Fit check: N/N**. A name that wouldn't fit its base is
    never printed and goes back to Ready.
@@ -519,6 +522,11 @@ When the computers are connected to the shared order records:
 To browse orders from another computer, enable **Settings → Connections → Logistics access** on the host, set a password and press Save, then open `http://HOST-IP:8002`. This is the **logistics page** for the labelling and customer-care team (below).
 
 ## Models preview
+
+Only **Name Desk Organizer → Letter Contour** is eligible for batches. After reviewing its preview,
+click **Move to Production** to make it available in the batch source picker on this computer.
+Click **Move to Development** to withdraw it. Queued work can finish with the approved revision,
+and existing generated models can still be used to rebuild plates.
 
 The local CAD development branch includes **Models → Name Desk Organizer → Letter Contour**.
 Open **Models**, choose the font and parameters, and click **Generate preview**. Switch between

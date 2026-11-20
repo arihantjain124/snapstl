@@ -136,7 +136,7 @@ Snapstl/
 │   ├── cache.py              downloaded models in the visible Downloads folder (readable names, never auto-deleted);
 │   │                         key = name + options + compartments + license hash; one-time move from old cache
 │   ├── meshes.py             OBJ → trimesh, dims, to_origin
-│   ├── model_studio.py       local CAD, seating checks, model approvals, STL downloads and 3MF preview plates
+│   ├── model_studio.py       local CAD, seating checks, model approvals, preview plates and built-in organizer pairs
 │   ├── scaling.py            Scaling Rules v1.1 (pick_band, scale_pair)
 │   ├── grouping.py           names by colour 3→2→1; bases 3 per plate (colour groups first)
 │   ├── packing.py            2-D footprint packing, Z rotation only, gap/margin verification
@@ -357,16 +357,23 @@ Batches **never start, download or build by themselves** — every step is a but
 | Status | Meaning | UI buttons |
 |---|---|---|
 | `created` ("Created — not queued") | orders reserved (`in_batch`) | **Queue download**, Cancel |
-| `waiting` ("Downloading") | its missing models are in the download queue | Build now with what's ready, Cancel / Stop |
+| `waiting` ("Downloading" / "Generating models") | model jobs are queued or running | Cancel / Stop, or Build now with what's ready for MakerWorld |
 | `models_ready` ("Ready to build") | every model downloaded (or failed) | **Queue build**, Cancel / Stop |
 | `build_requested` → `building` ("Queued to build") | builder thread, one batch at a time | — |
 | `done` / `done_with_problems` / `failed` | finished | Open, Show in Finder, Download ZIP (on demand), **Re-download**, **Rebuild plates** |
 | `cancelled` | never built and cancelled | — |
 
-* `create_batch` → `created`. `start_download(force=False)` (**Queue download**) queues only models not
-  in the Downloads folder; downloads are processed oldest first (de-duplicated by cache key).
-* **Re-download** = `start_download(force=True)`: queues **every** model of a finished batch again; the
-  new result overwrites the saved model folder. Progress counts models with a live download as not ready.
+* `create_batch` → `created`. `start_download(force=False, source=…)` (**Queue download**) captures
+  the chosen source and queues models missing from the cache. MakerWorld is the default for older batches.
+* Built-in batches use only the local Production approval for Name Desk Organizer / Letter Contour.
+  The batch pins the approved snapshot and fit settings in its local settings JSON. Built-in cache
+  keys also include the batch's model and scaling settings. The worker claims local jobs separately
+  from the Helper, validates the scaled insert and recess in OpenSCAD geometry, then saves the raw
+  parts for the ordinary Scaling v1.1 and written-3MF checks. Local generation waits for every job
+  to finish before manual **Queue build**. Moving the design to Development withdraws it from new jobs
+  and leaves previously queued work and saved geometry usable.
+* **Re-download** / **Prepare models again** = `start_download(force=True)`: prepares every model of
+  a finished batch from the selected source. Progress counts models with a live job as not ready.
 * **Rebuild plates** = `request_build` on a finished batch: builds again from the saved models into a
   **new** `Batch N - <date>` folder; the old folder stays (`summary.previous_folders`). No downloads.
 * **Cancel** a never-built batch → `cancelled`, orders back to `ready`. **Stop** (same endpoint) on a
@@ -465,7 +472,7 @@ the files. Clashing file names get ` (2)`; names over 200 characters are shorten
 | Auth (optional) | `POST /api/login`, `POST /api/logout`, `GET /api/auth-check` |
 | State | `GET /api/meta`, `GET /api/state` (counts, downloader, queue, builder log) |
 | Orders | `POST /api/ingest` (multipart `file`), `GET /api/orders`, `GET /api/orders/ids`, `GET /api/orders/facets`, `GET /api/orders.csv`, `POST /api/orders/adhoc` `{name,phone,color,quantity?,note?}`, `POST /api/orders/{id}/name` `{name,color}`, `POST /api/orders/{id}/reset` (Remake / Make anyway; records a remake when the webstore status would keep it elsewhere), `POST /api/orders/{id}/skip`, `POST /api/orders/{id}/clear-flag`, `POST /api/orders/{id}/use-returned` `{rto_order_id}`, `POST /api/orders/{id}/undo-returned` |
-| Batches | `POST /api/batches` `{order_ids}`, `POST /api/batches/{id}/download` (`{force:true}` = Re-download), `POST /api/batches/{id}/build` (also Rebuild), `POST /api/batches/{id}/cancel`, `GET /api/batches`, `GET /api/batches/{id}`, `GET /api/batches/{id}/file?path=`, `POST /api/batches/{id}/reveal` (local only), `GET /api/batches/{id}/zip` |
+| Batches | `POST /api/batches` `{order_ids}`, `POST /api/batches/{id}/download` (optional `source` is `makerworld` or `builtin`, `force:true` prepares all models again), `POST /api/batches/{id}/build` (also Rebuild), `POST /api/batches/{id}/cancel`, `GET /api/batches`, `GET /api/batches/{id}`, `GET /api/batches/{id}/file?path=`, `POST /api/batches/{id}/reveal` (local only), `GET /api/batches/{id}/zip` |
 | Downloads | `GET /api/downloads` (queue + Downloads folder stats), `POST /api/downloads/retry`, `POST /api/downloads/reveal` (local only), `POST /api/downloader/pause`, `POST /api/downloader/resume` |
 | Helper | `GET /api/helper/config`, `GET /api/helper/next`, `POST /api/helper/ping`, `POST /api/helper/jobs/{id}/result`, `…/fail`, `…/release`, `GET /api/helper.zip` |
 | Settings | `GET` / `PUT /api/settings` (includes `makerworld_url`, `license_passwords`), `POST /api/settings/reset` |
@@ -729,7 +736,8 @@ Models → Start print packs and verifies the selected preview as one 3MF in
 Bambuddy worker slices with the selected printer's profiles, creates the queued item with
 `manual_start: true` and uses the selected loaded slot for `ams_mapping`. A busy printer keeps
 the job held for a later Resume click and the ordinary clear-bed confirmation. These models
-have no order or batch lifecycle.
+use the standalone print lifecycle. The approved Letter Contour organizer can also supply raw pairs
+through the separate batch source picker described in §8.
 
 ## Updates (git)
 

@@ -554,3 +554,11 @@ Agreed: two releases — 0.25.0 now, 0.25.1 (Verify by name, staff PINs, merging
 
 ### 2026-11-20: Main merged into the Models branch
 - Owner requested the 0.25.1 updates on `change/local-parametric-model` only. Kept both branches’ session log entries and the Models instructions in Help.
+
+### 2026-11-20: Built-in organizer as a batch source
+
+- Owner asked for the approved Name Desk Organizer in the batch source picker and confirmed that it
+  should generate real batch models. The picker offers Letter Contour once it is in Production on
+  that computer. Moving it to Development withdraws it for new work. Queued work keeps its pinned revision.
+- Local generation uses the batch's product settings and scaling table. Queue build remains a separate
+  action and runs the existing fit checks. A synthetic order passed a real OpenSCAD batch run.

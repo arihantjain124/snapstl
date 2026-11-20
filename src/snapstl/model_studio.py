@@ -1,4 +1,4 @@
-"""Local catalog and validated STL previews, separate from production downloads and batches."""
+"""Local catalog, validated STL previews and the approved organizer used by batches."""
 from __future__ import annotations
 
 import hashlib
@@ -38,6 +38,8 @@ RENDER_LOCK = Lock()
 PREVIEW_LOCK = Lock()
 APPROVAL_LOCK = Lock()
 PREVIEWS: OrderedDict[str, tuple[dict, dict[str, bytes], dict]] = OrderedDict()
+ORGANIZER_MODEL = "name-desk-organizer"
+ORGANIZER_DESIGN = "letter-contour"
 
 
 class ModelError(ValueError):
@@ -288,6 +290,15 @@ def set_approval(request: ApprovalRequest) -> dict:
     return {"stage": state["stage"]}
 
 
+def approved_organizer() -> dict | None:
+    """Capture the local approval for new batches. Older snapshots remain usable by queued batches."""
+    with APPROVAL_LOCK:
+        state = _approval(ORGANIZER_MODEL, ORGANIZER_DESIGN)
+        if state.get("stage") == "production":
+            return {"snapshot": state["snapshot"], "values": state["values"]}
+    return None
+
+
 def catalog(product: ModelParams | None = None) -> dict:
     models, errors = [], []
     root = CATALOG_ROOT.resolve()
@@ -310,6 +321,8 @@ def catalog(product: ModelParams | None = None) -> dict:
                                       if effective.status != "developed" or p["group"] == "production"]
                 for param in item["parameters"]:
                     param["default"] = defaults[param["id"]]
+                is_organizer = (model.id, design.id, model.adapter) == (ORGANIZER_MODEL, ORGANIZER_DESIGN, "organizer-v1")
+                item["batch_eligible"] = is_organizer and effective.status == "developed" and source != package
                 designs.append(item | {"revision": revision, "adapter": model.adapter})
             except (ModelError, OSError, ValidationError) as exc:
                 reason = str(exc) if isinstance(exc, ModelError) else "A model file could not be read."
@@ -399,6 +412,33 @@ def _organizer(meshes, scaling: ScalingSettings, text: str, compartments: int):
     }, result
 
 
+def _organizer_params(values, params, scaling):
+    if not re.fullmatch(r"[A-Za-z]{1,15}", values["text"]):
+        raise ModelError("The built-in organizer needs one line of 1–15 letters A–Z.")
+    band = pick_band(len(values["text"]), scaling.bands)
+    params.update(base_length=min(band.length, scaling.max_length), base_height=band.height,
+                  compartments=band.compartments)
+
+
+def batch_pair(approval: dict, text: str, product: ModelParams, scaling: ScalingSettings, compartments: int):
+    """Render the pinned design and validate its scaled fit. Return raw meshes for the batch builder."""
+    root = APPROVAL_ROOT.resolve() / ORGANIZER_MODEL / ORGANIZER_DESIGN / approval["snapshot"]
+    design = Design.model_validate_json(_read(root, "design.json", 250_000))
+    _, files = _snapshot(root, design)
+    product_values = {k.lower(): v for k, v in asdict(product).items()}
+    values = {p.id: p.value((approval["values"] | product_values | {"text": text}).get(p.id, p.default))
+              for p in design.parameters}
+    params = {p.id: values[p.id] for p in design.parameters if p.type != "color"}
+    _organizer_params(values, params, scaling)
+    if params["compartments"] != compartments:
+        raise ModelError("The compartment count does not match the batch scaling table.")
+    with RENDER_LOCK:
+        binary, _ = _engine()
+        meshes = _export_parts(binary, files, design, params, organizer=True)
+        _organizer(meshes, scaling, text, compartments)
+    return meshes
+
+
 def preview(request: PreviewRequest, scaling: ScalingSettings, product: ModelParams | None = None) -> dict:
     package = CATALOG_ROOT.resolve() / request.model_id
     model, design = _selection(package, request.design_id)
@@ -415,17 +455,30 @@ def preview(request: PreviewRequest, scaling: ScalingSettings, product: ModelPar
     values = {p.id: p.value(request.values.get(p.id, defaults[p.id])) for p in design.parameters}
     params = {p.id: values[p.id] for p in design.parameters if p.type != "color"}
     if model.adapter == "organizer-v1":
-        if not re.fullmatch(r"[A-Za-z]{1,15}", values["text"]):
-            raise ModelError("Use one line of 1–15 letters A–Z for this draft.")
-        band = pick_band(len(values["text"]), scaling.bands)
-        params.update(base_length=min(band.length, scaling.max_length), base_height=band.height,
-                      compartments=band.compartments)
+        _organizer_params(values, params, scaling)
     if not RENDER_LOCK.acquire(blocking=False):
         raise ModelError("OpenSCAD is rendering another preview. Try again in a moment.")
     try:
         return _render(model, design, revision, files, values, params, scaling)
     finally:
         RENDER_LOCK.release()
+
+
+def _export_parts(binary, files, design, params, organizer):
+    with TemporaryDirectory(prefix="snapstl-model-") as directory:
+        work = Path(directory)
+        for relative, data in files.items():
+            path = work / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        if organizer:
+            base_part, name_part = design.parts
+            name = _export(binary, work, design, params, name_part)
+            x, y = name.bounds[0][:2].tolist()
+            width, height = dims(name)[:2]
+            bounds = {"label_left": x, "label_bottom": y, "label_width": width, "label_height": height}
+            return _export(binary, work, design, params | bounds, base_part), name
+        return [_export(binary, work, design, params, part) for part in design.parts]
 
 
 def _render(model, design, revision, files, values, params, scaling):
@@ -436,22 +489,7 @@ def _render(model, design, revision, files, values, params, scaling):
         if key in PREVIEWS:
             PREVIEWS.move_to_end(key)
             return PREVIEWS[key][0]
-    with TemporaryDirectory(prefix="snapstl-model-") as directory:
-        work = Path(directory)
-        for relative, data in files.items():
-            path = work / relative
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
-        if model.adapter == "organizer-v1":
-            base_part, name_part = design.parts
-            name = _export(binary, work, design, params, name_part)
-            x, y = name.bounds[0][:2].tolist()
-            width, height = dims(name)[:2]
-            bounds = {"label_left": x, "label_bottom": y, "label_width": width, "label_height": height}
-            meshes = [_export(binary, work, design, params | bounds, base_part), name]
-        else:
-            meshes = [_export(binary, work, design, params, part) for part in design.parts]
-
+    meshes = _export_parts(binary, files, design, params, organizer=model.adapter == "organizer-v1")
     checks = {"checks": ["Closed, positive-volume parts"]}
     transforms = [part.assembly for part in design.parts]
     fit = None

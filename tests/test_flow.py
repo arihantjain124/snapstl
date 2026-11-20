@@ -4,6 +4,7 @@ import os
 import time
 import zipfile
 from pathlib import Path
+from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
@@ -144,6 +145,89 @@ def test_batch_with_helper_builds_plates(client):
     assert states["F1"] == "bundled" and states["F4"] == "ready"
     q = client.get("/api/downloads").json()["items"]
     assert {x["name"] for x in q if x["state"] == "done"} >= {"Ayra", "Manvi", "Riya"}
+
+
+def test_batch_uses_only_the_approved_builtin_organizer(client, monkeypatch, tmp_path):
+    from snapstl import model_studio, server
+    from snapstl.settings import save_settings
+
+    monkeypatch.setattr(model_studio, "APPROVAL_ROOT", tmp_path / "approvals")
+    monkeypatch.setattr(model_studio, "PREVIEWS", model_studio.OrderedDict())
+    real_cad = os.environ.get("SNAPSTL_TEST_OPENSCAD") == "1"
+    exporting = Event()
+    resume = Event()
+    observed = []
+    export_part = model_studio._export
+
+    def export(binary, work, design, params, part):
+        if part.id == "name":
+            observed.append((params["text"], params["compartments"], params["clearance"]))
+            if len(observed) > 1:
+                exporting.set()
+                assert resume.wait(20)
+        if real_cad:
+            return export_part(binary, work, design, params, part)
+        return base_mesh(length=250) if part.id == "base" else name_mesh(5)
+
+    if not real_cad:
+        monkeypatch.setattr(model_studio, "_engine", lambda: ("fixture", "fixture-version"))
+
+        def fit(meshes, scaling, text, compartments):
+            base, name, result = model_studio.scale_pair(*meshes, len(text), scaling)
+            return [base, name], None, {}, result
+
+        monkeypatch.setattr(model_studio, "_organizer", fit)
+    monkeypatch.setattr(model_studio, "_export", export)
+    monkeypatch.setattr(server.SETTINGS, "license_passwords", {})
+    save_settings(server.SETTINGS)
+    model_id, design_id = "name-desk-organizer", "letter-contour"
+    identity = {"model_id": model_id, "design_id": design_id}
+    models_url = "/api/model-studio"
+
+    def eligible():
+        catalog = client.get(models_url + "/catalog").json()
+        return [(model["id"], d["id"]) for model in catalog["models"]
+                for d in model["designs"] if d["batch_eligible"]]
+
+    assert eligible() == []
+    data = report([("BUILTIN1", "PRINT", "Magicians_35", "AaLiq", "Pink", 1)])
+    assert client.post("/api/ingest", files={"file": ("r.csv", data, "text/csv")}).status_code == 200
+    bid = client.post("/api/batches", json={"order_ids": ["BUILTIN1"]}).json()["batch_id"]
+    path = f"/api/batches/{bid}"
+    assert client.post(path + "/download", json={"source": "builtin"}).status_code == 400
+    assert client.post(path + "/download", json={"source": "makerworld"}).status_code == 400
+    assert status(client, bid) == "created"
+
+    model = next(m for m in client.get(models_url + "/catalog").json()["models"] if m["id"] == model_id)
+    preview = client.post(models_url + "/preview", json=identity | {
+        "revision": model["designs"][0]["revision"], "values": {"text": "AaLiq", "clearance": 0.35},
+    })
+    assert preview.status_code == 200, preview.text
+    approval = client.post(models_url + "/approval", json=identity | {
+        "action": "promote", "preview_key": preview.json()["key"],
+    })
+    assert approval.json()["stage"] == "production"
+    assert eligible() == [(model_id, design_id)]
+    try:
+        queued = client.post(path + "/download", json={"source": "builtin"})
+        assert queued.json()["downloads_queued"] == 1, queued.text
+        assert exporting.wait(15)
+        assert client.get("/api/helper/next", params={"on_page": 1}).json()["job"] is None
+        assert client.post(path + "/build").status_code == 400
+        assert client.post(models_url + "/approval", json=identity | {"action": "reopen"}).json()["stage"] == "development"
+        assert eligible() == []
+    finally:
+        resume.set()
+    wait_for(lambda: status(client, bid) == "models_ready")
+    models = client.get(path + "/models").json()["items"]
+    assert len(models) == 1 and models[0]["status"] == "ready" and models[0]["license_check"] is None
+    batch = build_and_wait(client, bid)
+    assert batch["model_source"] == "builtin" and batch["status"] == "done", batch
+    assert batch["summary"]["fit"] == {"checked": 1, "ok": 1}
+    assert {p["kind"] for p in batch["summary"]["plates"]} == {"bases", "names"}
+    assert observed == [("AaLiq", 5, 0.35), ("AaLiq", 5, 0.35)]
+    assert client.post(path + "/download", json={"source": "builtin", "force": True}).status_code == 400
+    assert client.post(path + "/models/redownload", json={"key": models[0]["key"]}).status_code == 400
 
 
 def test_failed_download_retries_then_batch_builds_without_it(client):

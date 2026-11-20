@@ -14,6 +14,7 @@ there when the batch is created, so they leave Ready on every computer and no or
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 import uuid
@@ -22,7 +23,7 @@ import time
 import traceback
 from dataclasses import asdict
 
-from . import cache, computer, db, watermark
+from . import cache, computer, db, model_studio, watermark
 from .meshes import dims, obj_to_mesh
 from .orders import Order
 from .pipeline import build, new_batch_dir
@@ -31,6 +32,7 @@ from .settings import Settings, load_settings
 
 CLAIM_TIMEOUT_S = 6 * 60
 MAX_ATTEMPTS = 3
+LOCAL_JOB = "json_extract(model_json, '$._builtin') IS NOT NULL"
 NO_PASSWORD = ("Add the license password for this model first (Settings → MakerWorld model → License password). "
                "SnapSTL only downloads with the password so models come without MakerWorld's watermark.")
 # Batch lifecycle:
@@ -54,15 +56,27 @@ def _expand(rows: list[dict], settings: Settings) -> list[Order]:
     return orders
 
 
-def model_key(o: Order, settings: Settings) -> str:
+def model_key(o: Order, settings: Settings, builtin: dict | None = None) -> str:
     """Download key for one organizer: name + model options + compartments + model link + its password."""
+    if builtin:
+        payload = ["builtin-organizer-v1", builtin, o.name, o.compartments,
+                   asdict(settings.model), asdict(settings.scaling)]
+        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:24]
     return cache.cache_key(o.name, settings.model, o.compartments, settings.license_password,
                            design=settings.design_id)
 
 
-def _needed(orders: list[Order], settings: Settings) -> dict[str, tuple[str, int]]:
+def _needed(orders: list[Order], settings: Settings, builtin: dict | None = None) -> dict[str, tuple[str, int]]:
     """cache_key → (name, compartments) for every distinct model the orders need."""
-    return {model_key(o, settings): (o.name, o.compartments) for o in orders}
+    return {model_key(o, settings, builtin): (o.name, o.compartments) for o in orders}
+
+
+def _builtin(batch) -> dict | None:
+    return json.loads(batch["settings"] or "{}").get("builtin_organizer")
+
+
+def model_source(batch) -> str:
+    return "builtin" if _builtin(batch) else "makerworld"
 
 
 # ---------------- batch lifecycle ----------------
@@ -135,32 +149,48 @@ def _was_built(b) -> bool:
     return bool(b["out_dir"])
 
 
-def start_download(batch_id: int, force: bool = False) -> dict:
-    """Queue this batch's models for the helper.
+def start_download(batch_id: int, force: bool = False, source: str | None = None) -> dict:
+    """Queue the batch's chosen source. An omitted source keeps the batch's current choice.
 
     force=False (Queue download): only models that aren't in the Downloads folder yet.
     force=True  (Re-download):    every model again — the new download replaces the saved one.
     Allowed before building and, for Re-download, on finished batches too.
     """
+    if source not in (None, "builtin", "makerworld"):
+        raise ValueError("Choose MakerWorld or the built-in organizer.")
+    approval = model_studio.approved_organizer() if source == "builtin" else None
+    if source == "builtin" and not approval:
+        raise ValueError("Move Letter Contour to Production in Models to use it for a batch.")
     with db.tx() as con:
+        con.execute("BEGIN IMMEDIATE")
         b = con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
         _require_mine(b)
         allowed = ("created", "waiting", "models_ready") + (FINISHED if force else ())
         if b is None or b["status"] not in allowed:
             raise ValueError("This batch can't be queued for download right now"
                              + ("" if force else " — use Re-download for a finished batch"))
-        settings = _with_current_passwords(con, b)
-        if not settings.license_password:
+        existing = _builtin(b)
+        builtin = existing if source is None else approval
+        if builtin and source is None and model_studio.approved_organizer() != builtin:
+            raise ValueError("This batch's organizer approval is no longer current. Choose a model source again.")
+        if builtin != existing and b["status"] not in ("created", *FINISHED):
+            raise ValueError("The model source can be changed before preparing a new batch or when redoing a finished batch.")
+        settings, orders = _batch_orders(con, b)
+        if not builtin:
+            settings = _with_current_passwords(con, b)
+        if not builtin and not settings.license_password:
             raise ValueError(NO_PASSWORD)
-        ids = json.loads(b["order_ids"] or "[]")
-        rows = db.rows(con, f"SELECT * FROM orders WHERE order_id IN ({','.join('?' * len(ids))})", *ids)
-        orders = _expand(rows, settings)
-        con.execute("UPDATE batches SET status='waiting' WHERE id=?", (batch_id,))
+        snapshot = settings.to_dict()
+        if builtin:
+            snapshot["builtin_organizer"] = builtin
+        con.execute("UPDATE batches SET status='waiting', settings=? WHERE id=?", (json.dumps(snapshot), batch_id))
         queued = 0
-        for key, (name, comps) in _needed(orders, settings).items():
+        for key, (name, comps) in _needed(orders, settings, builtin).items():
             if not force and cache.load_exists(key):
                 continue
-            queued += _queue(con, key, name, comps, settings, batch_id)
+            queued += _queue(con, key, name, comps, settings, batch_id, builtin=builtin)
+        if builtin != existing:
+            _cancel_unneeded_downloads(con)
     MANAGER.wake()
     return {"batch_id": batch_id, "downloads_queued": queued}
 
@@ -180,12 +210,17 @@ def _with_current_passwords(con, b) -> Settings:
     return settings
 
 
-def _queue(con, key: str, name: str, comps: int, settings: Settings, batch_id: int, manual: bool = False) -> int:
+def _queue(con, key: str, name: str, comps: int, settings: Settings, batch_id: int,
+           manual: bool = False, builtin: dict | None = None) -> int:
     """Queue one model unless it's already queued / being downloaded. Returns 1 if queued."""
     if con.execute("SELECT 1 FROM downloads WHERE cache_key=? AND computer_id=? AND state IN ('queued','claimed')",
                    (key, computer.ID)).fetchone():
         return 0
-    model = {**asdict(settings.model), "_license": settings.license_password, "_design": settings.design_id}
+    model = asdict(settings.model)
+    if builtin:
+        model.update(_builtin=builtin, _scaling=asdict(settings.scaling))
+    else:
+        model.update(_license=settings.license_password, _design=settings.design_id)
     if manual:
         model["_manual"] = True  # re-download of one object: kept even if its batch is finished
     con.execute(
@@ -214,16 +249,20 @@ def redownload_model(batch_id: int, key: str) -> dict:
         _require_mine(b)
         if b is None or b["status"] in ("cancelled", "building", "build_requested"):
             raise ValueError("This batch's objects can't be re-downloaded right now")
-        settings = _with_current_passwords(con, b)
-        if not settings.license_password:
+        builtin = _builtin(b)
+        if builtin and model_studio.approved_organizer() != builtin:
+            raise ValueError("This batch's organizer approval is no longer current. Choose a model source for the whole batch.")
+        settings, orders = _batch_orders(con, b)
+        if not builtin:
+            settings = _with_current_passwords(con, b)
+        if not builtin and not settings.license_password:
             raise ValueError(NO_PASSWORD)
-        _, orders = _batch_orders(con, b)
-        needed = _needed(orders, settings)
+        needed = _needed(orders, settings, builtin)
         if key not in needed:
             raise ValueError("That object isn't part of this batch (was the license password changed? "
                              "use Re-download for the whole batch)")
         name, comps = needed[key]
-        queued = _queue(con, key, name, comps, settings, batch_id, manual=True)
+        queued = _queue(con, key, name, comps, settings, batch_id, manual=True, builtin=builtin)
         if b["status"] in ("created", "models_ready"):
             con.execute("UPDATE batches SET status='waiting' WHERE id=?", (batch_id,))
     MANAGER.wake()
@@ -267,11 +306,12 @@ def batch_models(batch_id: int) -> list[dict]:
         if b is None:
             raise KeyError(batch_id)
         mine = _mine(b)
+        builtin = _builtin(b)
         settings, orders = _batch_orders(con, b)
         out = []
         by_key: dict[str, list[Order]] = {}
         for o in orders:
-            by_key.setdefault(model_key(o, settings), []).append(o)
+            by_key.setdefault(model_key(o, settings, builtin), []).append(o)
         for key, os_ in by_key.items():
             last = con.execute("SELECT * FROM downloads WHERE cache_key=? AND computer_id=? ORDER BY id DESC LIMIT 1",
                                (key, b["computer_id"] or computer.ID)).fetchone()
@@ -316,7 +356,7 @@ def batch_progress(batch: dict) -> dict:
         return {"models": 0, "ready": 0, "failed": 0}
     with db.tx() as con:
         rows = db.rows(con, f"SELECT * FROM orders WHERE order_id IN ({','.join('?' * len(ids))})", *ids)
-        need = _needed(_expand(rows, settings), settings)
+        need = _needed(_expand(rows, settings), settings, _builtin(batch))
         failed = 0
         ready = 0
         for key in need:
@@ -343,14 +383,20 @@ def request_build(batch_id: int) -> None:
     if b is None or b["status"] not in ("waiting", "models_ready") + FINISHED:
         raise ValueError("Queue the download first — plates are built from downloaded models")
     prog = batch_progress(dict(b))
+    if _builtin(b) and b["status"] == "waiting":
+        raise ValueError("Wait for local generation to finish before building plates.")
     if b["status"] in FINISHED and prog["models"] - prog["ready"] - prog["failed"] > 0:
         raise ValueError("Some of this batch's objects are still being re-downloaded — "
                          "rebuild once they're in, so the plates use the fresh downloads")
     if prog["ready"] == 0:
+        if _builtin(b):
+            raise ValueError("No models passed local generation. Check the errors in the batch's Objects list.")
         raise ValueError("None of this batch's models are in the Downloads folder — queue a download first")
     with db.tx() as con:
-        con.execute("UPDATE batches SET status='build_requested' WHERE id=? AND status IN (?,?,?,?,?)",
-                    (batch_id, "waiting", "models_ready", *FINISHED))
+        changed = con.execute("UPDATE batches SET status='build_requested' WHERE id=? AND status=? AND settings IS ?",
+                              (batch_id, b["status"], b["settings"])).rowcount
+        if not changed:
+            raise ValueError("The batch changed while checking its models. Refresh and try again.")
     MANAGER.wake()
 
 
@@ -380,7 +426,7 @@ def _cancel_unneeded_downloads(con) -> None:
         ids = json.loads(b["order_ids"] or "[]")
         if ids:
             rows = db.rows(con, f"SELECT * FROM orders WHERE order_id IN ({','.join('?' * len(ids))})", *ids)
-            needed |= set(_needed(_expand(rows, settings), settings))
+            needed |= set(_needed(_expand(rows, settings), settings, _builtin(b)))
     for d in db.rows(con, "SELECT d.id, d.cache_key, d.model_json, b.status AS bstatus FROM downloads d "
                           "LEFT JOIN batches b ON b.id=d.batch_id WHERE d.state='queued' AND d.computer_id=?",
                      computer.ID):
@@ -398,13 +444,15 @@ def _kick_sync() -> None:
 
 
 # ---------------- download queue ----------------
-def _claim_next() -> dict | None:
+def _claim_next(builtin: bool = False) -> dict | None:
     t = db.now()
+    source = LOCAL_JOB if builtin else f"NOT ({LOCAL_JOB})"
     with db.tx() as con:
+        con.execute("BEGIN IMMEDIATE")
         # re-queue claims left behind by a crash / restart
         con.execute("UPDATE downloads SET state='queued', updated_at=? WHERE state='claimed' AND claimed_at < ? "
-                    "AND computer_id=?", (t, t - CLAIM_TIMEOUT_S, computer.ID))
-        d = con.execute("SELECT * FROM downloads WHERE state='queued' AND computer_id=? ORDER BY id LIMIT 1",
+                    f"AND computer_id=? AND {source}", (t, t - CLAIM_TIMEOUT_S, computer.ID))
+        d = con.execute(f"SELECT * FROM downloads WHERE state='queued' AND computer_id=? AND {source} ORDER BY id LIMIT 1",
                         (computer.ID,)).fetchone()
         if d is None:
             return None
@@ -450,7 +498,7 @@ def check_license(model: dict, check: dict | None) -> str:
 
 def store_result(job_id: int, plate_1: bytes, plate_2: bytes, check: dict | None = None) -> dict:
     with db.tx() as con:
-        d = con.execute("SELECT * FROM downloads WHERE id=?", (job_id,)).fetchone()
+        d = con.execute(f"SELECT * FROM downloads WHERE id=? AND NOT ({LOCAL_JOB})", (job_id,)).fetchone()
     if d is None:
         raise KeyError(job_id)
     model = json.loads(d["model_json"])
@@ -484,7 +532,7 @@ def store_result(job_id: int, plate_1: bytes, plate_2: bytes, check: dict | None
 
 def store_failure(job_id: int, error: str) -> None:
     with db.tx() as con:
-        d = con.execute("SELECT attempts FROM downloads WHERE id=?", (job_id,)).fetchone()
+        d = con.execute(f"SELECT attempts FROM downloads WHERE id=? AND NOT ({LOCAL_JOB})", (job_id,)).fetchone()
         if d is None:
             raise KeyError(job_id)
         state = "queued" if d["attempts"] < MAX_ATTEMPTS else "failed"
@@ -498,7 +546,7 @@ def store_failure(job_id: int, error: str) -> None:
 def retry_failed() -> int:
     with db.tx() as con:
         n = con.execute("UPDATE downloads SET state='queued', attempts=0, error=NULL, updated_at=? "
-                        "WHERE state='failed' AND computer_id=?", (db.now(), computer.ID)).rowcount
+                        f"WHERE state='failed' AND computer_id=? AND NOT ({LOCAL_JOB})", (db.now(), computer.ID)).rowcount
     DOWNLOADER.wake()
     return n
 
@@ -592,11 +640,34 @@ def helper_next() -> dict | None:
 
 def helper_release(job_id: int) -> None:
     """The helper stopped mid-name (paused / tab closed): put it back without counting a try."""
+    with db.tx() as con:
+        if not con.execute(f"SELECT 1 FROM downloads WHERE id=? AND NOT ({LOCAL_JOB})", (job_id,)).fetchone():
+            return
     _unclaim(job_id)
     DOWNLOADER.current = None
 
 
 DOWNLOADER = Downloader()
+
+
+def _generate_local_model(job: dict) -> None:
+    params = json.loads(job["model_json"])
+    settings = Settings.from_dict({"model": params, "scaling": params["_scaling"]})
+    error = None
+    try:
+        base, name = model_studio.batch_pair(params["_builtin"], job["name"], settings.model,
+                                             settings.scaling, job["compartments"])
+        if watermark.detect(base).present:
+            raise model_studio.ModelError("The base did not pass the watermark check.")
+        cache.store(job["cache_key"], base, name, {"name": job["name"], "compartments": job["compartments"],
+                    "source": "builtin", "downloaded": time.strftime("%Y-%m-%d %H:%M:%S"), "watermark": False})
+    except model_studio.ModelError as exc:
+        error = str(exc)
+    except (OSError, ValueError):
+        error = "Could not read the approved organizer or save its generated models."
+    with db.tx() as con:
+        con.execute("UPDATE downloads SET state=?, error=?, watermark=?, updated_at=? WHERE id=?",
+                    ("failed" if error else "done", error, None if error else 0, db.now(), job["id"]))
 
 
 # ---------------- builder thread ----------------
@@ -635,6 +706,9 @@ class Manager:
                 self._log(f"Builder error: {e}")
 
     def _tick(self) -> None:
+        if job := _claim_next(builtin=True):
+            _generate_local_model(job)
+            self.wake()
         with db.tx() as con:
             batches = db.rows(con, "SELECT * FROM batches WHERE status IN ('waiting','build_requested') AND computer_id=? "
                                    "ORDER BY id", computer.ID)
@@ -660,17 +734,18 @@ class Manager:
                 rows = db.rows(con, f"SELECT * FROM orders WHERE order_id IN ({','.join('?' * len(ids))}) "
                                     "ORDER BY order_date, order_id", *ids)
             orders = _expand(rows, settings)
+            builtin = _builtin(b)
             meshes = {}
             marked: dict[str, bool] = {}  # cache key → watermark found
             for o in orders:
-                key = model_key(o, settings)
+                key = model_key(o, settings, builtin)
                 got = cache.load(key)
                 if got:
                     if key not in marked:
                         marked[key] = watermark.detect(got[0]).present
                     if not marked[key]:
                         meshes[o.idx] = got
-            watermarked = sorted({o.name for o in orders if marked.get(model_key(o, settings))})
+            watermarked = sorted({o.name for o in orders if marked.get(model_key(o, settings, builtin))})
             usable = [o for o in orders if o.idx in meshes]
             missing = sorted({o.name for o in orders if o.idx not in meshes} - set(watermarked))
             if not usable:

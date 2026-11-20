@@ -694,10 +694,10 @@ async def new_batch(req: Request):
 
 @app.post("/api/batches/{batch_id}/download")
 async def batch_download(batch_id: int, req: Request):
-    """Queue download; with {"force": true} it's Re-download (every model fetched again)."""
+    """Prepare models from the chosen source. Force prepares every model again."""
     body = await req.json() if (await req.body()) else {}
     try:
-        return B.start_download(batch_id, force=bool(body.get("force")))
+        return B.start_download(batch_id, force=bool(body.get("force")), source=body.get("source"))
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
@@ -1010,12 +1010,14 @@ async def maintenance_reset(req: Request):
 @app.get("/api/downloads")
 def downloads():
     """Download queue for the UI: active + failed first, then the 30 most recent finished."""
+    columns = ("id,name,compartments,state,attempts,error,updated_at,batch_id,watermark,license_check,"
+               f"CASE WHEN {B.LOCAL_JOB} THEN 'builtin' ELSE 'makerworld' END AS source")
     with db.tx() as con:
-        active = db.rows(con, "SELECT id,name,compartments,state,attempts,error,updated_at,batch_id,watermark,license_check FROM downloads "
+        active = db.rows(con, f"SELECT {columns} FROM downloads "
                               "WHERE state IN ('claimed','queued','failed') AND computer_id=? "
                               "ORDER BY CASE state WHEN 'claimed' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, id LIMIT 500",
                      computer.ID)
-        recent = db.rows(con, "SELECT id,name,compartments,state,attempts,error,updated_at,batch_id,watermark,license_check FROM downloads "
+        recent = db.rows(con, f"SELECT {columns} FROM downloads "
                               "WHERE state='done' AND computer_id=? ORDER BY updated_at DESC LIMIT 30", computer.ID)
     return {"items": active + recent, "downloader": DOWNLOADER.snapshot(), "folder": cache.stats()}
 
@@ -1069,6 +1071,7 @@ def _own_batch(batch_id: int) -> dict:
 def batch(batch_id: int):
     r = _batch(batch_id)
     return {"id": r["id"], "created_at": r["created_at"], "status": r["status"],
+            "model_source": B.model_source(r),
             "computer": r.get("computer_name") or "", "mine": (r.get("computer_id") or computer.ID) == computer.ID,
             "order_ids": json.loads(r["order_ids"] or "[]"), "summary": json.loads(r["summary"] or "{}"),
             "progress": B.batch_progress(r) if r["status"] in B.OPEN else None}

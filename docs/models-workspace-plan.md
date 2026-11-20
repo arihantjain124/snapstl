@@ -147,6 +147,10 @@ The app reads `models/` in its checkout by default or the local directory in `SN
 The manifest's design ID, source and declared assets determine its revision. The organizer's
 specific options and measured results are in [DESIGN.md](../models/name-desk-organizer/DESIGN.md).
 
+On this branch, moving **Name Desk Organizer → Letter Contour** to Production makes it the only built-in
+source in **Batches → Queue download**. Moving it to Development withdraws the source from new jobs.
+Each queued batch keeps its approved local snapshot and uses the existing manual build and fit checks.
+
 ## Build and review
 
 Use `change/local-parametric-model` for all model packages and shared Models changes.
