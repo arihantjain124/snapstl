@@ -579,3 +579,12 @@ Agreed: two releases — 0.25.0 now, 0.25.1 (Verify by name, staff PINs, merging
   design or prompt. Added guidance to the Models skill for CADAM-style multi-view iteration and
   adapting an exported OpenSCAD file, its controls and printable parts into Models.
 - **Open:** evaluate a CADAM-generated multi-part design with the owner and verify its printed fit.
+
+### 2026-11-20: Using CADAM directly
+
+- Owner clarified they want the CADAM app driven through their existing chat agent, and asked for
+  direct-use guidance if unavailable. CADAM's published app requires sign-in and its source lists
+  Claude, Google and OpenRouter providers. No documented CADAM MCP connection was found.
+- Adam's separate engineering product offers an MCP connection and a paid-plan Codex connection.
+  Whether those connect to CADAM's workspace remains unverified. The agent skill's CADAM-style
+  workflow is an import and review process, rather than a running CADAM integration.
