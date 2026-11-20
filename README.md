@@ -563,10 +563,6 @@ desktop app or an unrestricted local development server so OpenSCAD can detect C
 **Build a model with an agent**
 explains how to use the skill in Codex or Claude Code and how to give fit feedback. See the
 [Models workflow](docs/models-workspace-plan.md) and [organizer design record](models/name-desk-organizer/DESIGN.md).
-The skill uses a CADAM-style render-and-review workflow. To bring in a design from CADAM, export
-its `.scad` source and give it and any required assets to your agent. Ask it to add the design
-to Models with its adjustable controls and printable parts. The agent adapts and checks the
-design before you review it in Models.
 
 ## Updates
 

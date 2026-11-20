@@ -720,8 +720,6 @@ snapstl.server:app --port 8320`.
 ## Models
 
 Models reads manifests and OpenSCAD packages from the checkout and verifies standalone previews.
-The `snapstl-models` skill guides Codex or Claude Code through multi-view design review and
-adapting CADAM-exported OpenSCAD and its declared assets into this catalog.
 The local approval action pins the reviewed source and development values under
 `APP_DIR/model-approvals`. Reopening to Development restores the working source and the tuned
 defaults. Production fields remain editable in either stage.
