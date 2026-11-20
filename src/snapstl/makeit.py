@@ -113,6 +113,60 @@ def choose(plates: list[dict], prs: list[dict], active: dict[int, int]) -> dict[
     return out
 
 
+def _verify() -> dict:
+    from . import staff
+
+    v = verify.name_cards()
+    with db.tx() as con:
+        on = staff.pins_on(con)
+    return {"verify": v["cards"], "verify_waiting_other": v["waiting_other"], "pins_on": on}
+
+
+def printers_now(prs: list[dict], active_jobs: dict[int, int]) -> dict:
+    """Print's top line: printers free for the next print (with the filament loaded), beds to clear, busy, offline."""
+    free, clear, busy, offline = [], [], 0, 0
+    for p in prs:
+        if not p.get("active", True):
+            continue
+        st = p.get("status") or {}
+        if not st.get("connected"):
+            offline += 1
+        elif st.get("awaiting_plate_clear"):
+            clear.append(p["name"])
+        elif available(p, active_jobs.get(p["id"], 0)):
+            free.append({"id": p["id"], "name": p["name"],
+                         "spools": [{"color": s.get("color") or s.get("name") or "", "hex": s.get("hex") or ""}
+                                    for s in p.get("spools") or []]})
+        else:
+            busy += 1
+    return {"free": free, "clear": clear, "busy": busy, "offline": offline}
+
+
+def active_plates() -> dict[int, dict]:
+    """Printer id → the SnapSTL plate it has now (sent or printing): its kind, colour and names."""
+    out: dict[int, dict] = {}
+    with db.tx() as con:
+        jobs = db.rows(con, f"SELECT * FROM print_jobs WHERE state IN ({','.join('?' * len(farm.ACTIVE))}) "
+                            "AND computer_id=? AND printer_id<>0 ORDER BY id", *farm.ACTIVE, computer.ID)
+        summ = {}
+        for j in jobs:
+            if j["batch_id"] not in summ:
+                b = con.execute("SELECT summary FROM batches WHERE id=?", (j["batch_id"],)).fetchone()
+                summ[j["batch_id"]] = json.loads((b and b[0]) or "{}")
+            p = next((x for x in summ[j["batch_id"]].get("plates") or [] if x["file"] == j["plate"]), None)
+            names = (p or {}).get("names")
+            if p is None:
+                x = con.execute("SELECT items FROM extra_plates WHERE batch_id=? AND file=?",
+                                (j["batch_id"], j["plate"])).fetchone()
+                names = [i.get("name") for i in json.loads((x and x[0]) or "[]")]
+            cur = out.get(j["printer_id"])
+            if cur is None or j["state"] == "printing":  # what it prints now wins over what waits
+                out[j["printer_id"]] = {"kind": j["kind"], "color": j["color"] or "", "names": names or [],
+                                        "file": j["plate"].rsplit("/", 1)[-1], "state": j["state"],
+                                        "held": bool(j.get("held"))}
+    return out
+
+
 # ---------------- the board ----------------
 def board(prs: list[dict] | None = None) -> dict:
     """Bases and Names to print (with printer choices and pre-selections), Verify, Completed, Removed."""
@@ -127,7 +181,7 @@ def board(prs: list[dict] | None = None) -> dict:
         open_ids = {r[0] for r in con.execute("SELECT order_id FROM orders WHERE state='bundled'")}
         express = {r[0]: r[1] for r in con.execute("SELECT order_id, express_by FROM orders WHERE express_by IS NOT NULL "
                                                    "AND state='bundled'")}
-        rows, removed = [], []
+        rows, removed, printed = [], [], []
 
         def add(b, summ, p, ids, extra=None):
             j = latest.get((b["id"], p["file"]))
@@ -143,6 +197,11 @@ def board(prs: list[dict] | None = None) -> dict:
                 return
             active = bool(j and j["state"] in farm.ACTIVE)
             done = bool(j and j["state"] == "done")
+            if done and open_orders:  # Bases → Printed / Letters → Printed (whole plate failed is there)
+                printed.append({"batch_id": b["id"], "batch": label, "file": p["file"], "kind": p["kind"],
+                                "names": p.get("names", []), "colors": p.get("colors", []), "order_ids": ids,
+                                "open_items": open_orders, "extra": extra, "printer": j.get("printer_name") or "",
+                                "done_at": j.get("updated_at")})
             if done or not (open_orders or active):
                 return  # printed (→ Verify) or its orders are made / gone
             rows.append({
@@ -165,6 +224,17 @@ def board(prs: list[dict] | None = None) -> dict:
             p = {"kind": x["part"], "file": x["file"], "colors": [x["color"]] if x["part"] == "names" else [],
                  "names": [i.get("name") + (f" ({i['letters']})" if i.get("letters") else "") for i in x["items"]]}
             add(b, json.loads(b.get("summary") or "{}"), p, [i.get("order_id") for i in x["items"]], x["kind"])
+        parts = verify.part_status(con, batches)
+    # how far each order's other part is: Letters splits into "base printed" / "base still to print",
+    # Bases → Printed shows how far the letters are
+    for r in rows + printed:
+        other = "bases" if r["kind"] == "names" else "names"
+        r["other"] = {o: parts.get(o, {}).get(other, "todo") for o in r["open_items"]}
+        r["other_ready"] = sum(s in ("waiting", "good") for s in r["other"].values())
+    # a printed plate stays listed while something on it isn't checked yet or its other part isn't printed
+    printed = [r for r in printed if any(parts.get(o, {}).get(r["kind"]) != "good" for o in r["open_items"])
+               or r["other_ready"] < len(r["open_items"])]
+    printed.sort(key=lambda r: -(r["done_at"] or 0))
     prs = prs or []
     # fix plates first, then plates holding an Express order (earliest needed-by date), the rest as before;
     # free printers are pre-selected for them first
@@ -201,8 +271,10 @@ def board(prs: list[dict] | None = None) -> dict:
         r["slice"] = slice_state(r, pid)
         r["sliced"] = bool(r["slice"] and r["slice"]["state"] == "done")
     names = [r for r in pending if r["kind"] == "names"]
-    return {"bases": [r for r in pending if r["kind"] == "bases"], "names": names,
-            "merge": extras.suggestions(names), "verify": verify.cards(), "completed": verify.completed(),
+    return {"bases": [r for r in pending if r["kind"] == "bases"], "names": names, "printed_bases": [r for r in printed if r["kind"] == "bases"],
+            "printed_letters": [r for r in printed if r["kind"] == "names"],
+            "now": printers_now(prs, active_jobs),
+            "merge": extras.suggestions(names), **_verify(), "completed": verify.completed(),
             "removed": removed, "staff": verify.staff_list()}
 
 

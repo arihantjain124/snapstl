@@ -192,6 +192,9 @@ CREATE TABLE IF NOT EXISTS snapstl.staff (
     updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 COMMENT ON TABLE snapstl.staff IS 'Staff who check prints (Print → Verify); a name is hidden, never removed. Newest `changed` wins.';
+ALTER TABLE snapstl.staff ADD COLUMN IF NOT EXISTS pin_hash text;
+ALTER TABLE snapstl.staff ADD COLUMN IF NOT EXISTS pin_changed double precision;
+COMMENT ON COLUMN snapstl.staff.pin_hash IS 'Salted scrypt hash of the 4-digit PIN typed on Print → Verify (0.25.1); newest pin_changed wins.';
 CREATE TABLE IF NOT EXISTS snapstl.print_checks (
     uid        text PRIMARY KEY,
     batch_uid  text,

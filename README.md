@@ -359,14 +359,29 @@ Bambuddy**). SnapSTL only reads them.
      in Print (or Start print slices first). **Slicing activity** lists what was sliced, what's
      waiting and what failed.
 
-**Print** (sidebar) is where plates are printed. It has four lists:
+**Print** (sidebar) is where plates are printed. On top it shows the printers **free for the next
+print** (with the colours loaded) and beds to clear, and has **Refresh from Bambuddy**. Its lists:
 
-- **Bases**: every base plate of your built batches that still has to be printed. A printer is
+- **Bases** → *To print*: every base plate of your built batches that still has to be printed. A printer is
   already chosen: the next **available** printer (connected, idle, bed cleared, nothing of yours on
   its way) that has white loaded, with the **most filament left**. You can pick any
-  other printer that fits.
-- **Names**: every name plate with its colour. You can only pick printers that have that colour
-  loaded, as Bambuddy reports it. One is pre-selected when such a printer is available.
+  other printer that fits. *Printed*: base plates already printed whose letters aren't all printed yet,
+  with how many are. Search by name, order ID or batch.
+- **Letters** (the names; called *Names* before 0.25): every letter plate with its colour, in two groups —
+  **Base printed — print these letters now**, then **Base still to print**. You can only pick printers that
+  have that colour loaded, as Bambuddy reports it. One is pre-selected when such a printer is available.
+  Search by name, order ID or batch.
+- **Verify** (0.25.1): one card per name, once its letters **and** its base are printed — put them together,
+  mark each part, then **Confirm – ready to pack** (or **Save – send problems for reprint**). A *Saving…* screen
+  covers the card until it's done; pressing again saves nothing twice. People type their **PIN** once (Done /
+  switch person; signed out after 30 minutes without a check) and every check is saved under them. **Whole
+  plate failed…** is on each card and in Bases → Printed / Letters → Printed (a letters plate can be sent back
+  before its bases are printed).
+- **Merge** (Letters): tick letter plates of one colour (fix plates too), not started, up to 3 names, then
+  **Merge onto one plate**; **Split back** returns exactly those plates while it isn't started.
+- **Settings → Staff**: the owner PIN (set it first; forgotten: `uv run snapstl-admin reset-owner-pin` on that
+  computer), the people who check prints and their 4-digit PINs (shared with every computer, stored only as a
+  scrambled code). Until anyone has a PIN, Verify lets people pick their name as before.
 - **Completed**: printed plates. **Reprint** is there only for a print that failed: it asks first,
   then the plate goes back to Bases or Names.
 - **Removed**: plates you took off Bases or Names with **Remove** (for example printed by hand).
@@ -428,8 +443,11 @@ The bottom of the sidebar shows at a glance whether the **Helper**, **Bambuddy**
    - Type in the boxes under the column names to filter. Choose columns under **Choose columns**; **Save current view** remembers the columns, category and filters in this browser. Use the controls below the table to change pages and rows per page.
    - In **Check name first**, fix the name or colour and click **Approve**. Names starting with a small
      letter (e.g. *riya*) land here too: usually a typing slip, so check it with the customer.
-3. **Make a batch.** In **New orders – to make**, tick orders (or **Select all matching**), then click
-   **Create batch**. They move to **Ready to print**.
+3. **Make a batch.** In **New orders – to make** (oldest first, Express on top; each shows how many days it
+   has waited and its **Payment**: Prepaid / COD / Partial COD), tick orders — or type how many and press
+   **Select oldest**, or **Select all matching** — then click **Create batch**. They move to **Ready to print**.
+   On **Batches**, each name shows **B** (base) and **L** (letters): ✓ printed, ◐ printing, ○ to print, and
+   each batch says e.g. *4 base ready, letters pending* — click it to see just those names.
 4. **Download the models.** Go to **Batches → Queue download**. The helper makes each name in your
    MakerWorld tab, one at a time; follow it in the **Download queue** on the Batches page. If MakerWorld shows a security
    check in that tab, complete it and the helper carries on.
@@ -677,11 +695,20 @@ Open `http://HOST-IP:8002` and sign in with the logistics password.
 
 - **Search** (top): order ID, phone (any way it's written), customer name or the name to print (as
   the customer typed it or as corrected) — a phone search shows all of that customer's orders. "Last report uploaded" says how fresh the statuses are.
-- **Labels:** *Labels to make* (printed orders; "label expired" and Express first, **Copy order IDs**
-  for the website; **Label Generated** on each row) and *Label done – ship it*.
-- **Customer help:** *Check name first*, *Cancel requests & problems*, *Remake requests*.
-- **Tracking:** *Being made*, *On the way* (red when stuck more than 5 days), *Delivered*, *Coming back
-  (RTO)*, *Cancelled*. Orders not labelled 7 days after ordering are red.
+- **Labels:** *Ready to pack – make label* (printed orders; "label expired" and Express first, **Copy
+  order IDs** for the website; tick orders — or **Paste order IDs…** — and press **Label Generated**;
+  each row also has its own **Label Generated**) and *Packed – waiting for courier*.
+- **Customer help:** *Confirm name with customer* (its WhatsApp message asks exactly what is unclear),
+  *Cancel requests & problems*, *Remake requests*.
+- **Tracking:** *In queue & printing*, *Shipped* (red when stuck more than 5 days), *Delivered*,
+  *Returning to us (RTO)*, *Cancelled*. Orders not labelled 7 days after ordering are red.
+- **Status words:** *In queue – ready around 28 Nov* (its place in the queue — Express first, then the
+  oldest — divided by the orders finished per day over the last 7 days; for the team, not for customers),
+  *Printing now*, *Printed – being checked*, *Ready to pack – make label*, *Packed – waiting for courier*,
+  *Shipped with (courier)*, *Delivered on (date)*, *Returning to us (RTO)*.
+- Click an order ID to copy it.
+- Ready-made messages are offered only where they fit the order's status (e.g. *Sorry for the wait*,
+  *Printing now*, *Shipped – tracking*, *Delivered – review*, *Couldn't deliver*, *Confirm COD order*).
 - Click an order: full details, its clubbed orders and the customer's other orders, then
   - **Share:** Copy tracking link (the webstore's ClickPost page), Copy message (ready-made replies),
     WhatsApp (opens WhatsApp with the message; you press Send);

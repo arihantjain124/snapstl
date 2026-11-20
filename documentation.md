@@ -491,3 +491,66 @@ and a throwaway Postgres in place of Supabase; copies deleted afterwards.
   owner approves all models for production. The model skill records this rule and how to plan
   colour changes by layer.
 - **Open**. Bookmark draft review, slicer colour check and physical print trial.
+
+### 2026-11-18: Branch selector for testing
+- Owner asked for just the branch picker on main so testers can switch to the published
+  local parametric model branch from Settings → Maintenance → Updates and return to main.
+- The selector shows branches from origin. Branch switching requires confirmation and keeps the
+  existing dirty-file, unpublished-commit and busy batch checks. Models stays on its test branch.
+
+### 2026-11-20: User logins and roles planned, then put on hold
+- Owner asked for per-person logins with Admin and Production roles (logistics page unchanged), Verify tied
+  to the signed-in person, only Admin uploading reports, anyone creating batches.
+- Owner decided to **skip logins for now**. The plan, proposed access table and the ways it could break the
+  system are in `docs/plan-user-logins.md`; build it only when the owner asks.
+- Meanwhile the other requested changes go ahead (Print, Printers, Batches, Logistics, Orders) without logins:
+  Verify keeps "Checked by".
+
+
+### 2026-11-20: 0.25.0 easier Print, Printers, Batches, Orders and logistics
+Owner's requests after using 0.24 in production (backlog of 500+ orders, customers asking about delays).
+Agreed: two releases — 0.25.0 now, 0.25.1 (Verify by name, staff PINs, merging with tick boxes) next.
+- **Print:** top line with printers free for the next print (colours loaded), beds to clear, busy / offline;
+  **Refresh from Bambuddy**. *Names* renamed **Letters**. Bases has *To print* / *Printed* (with letters
+  printed x of y); Letters is split into *Base printed — print these letters now* / *Base still to print*.
+  Both have a search (name, order ID, batch).
+- **Verify:** a *Saving…* screen covers the card while a check is saved (fix plates take seconds); the server
+  saves one check at a time and refuses a second save of the same plate ("already checked by …"). The live
+  records had no double saves (207 checks), so this only stops wasted presses.
+- **Batches:** B/L marks per name (base / letters: printed, printing, to print) and a line per batch
+  (*base ready, letters pending* …) that filters the names.
+- **Printers:** what it prints (which names), **Ready at** clock time, filament, problems; temperatures,
+  fans, network, firmware and Bambuddy's queue under *Details*.
+- **Orders:** oldest first (Express still on top); *Payment* column (Prepaid / COD / Partial COD, from the
+  report; filterable); days waiting (red from 7); **Select oldest N**.
+- **Logistics:** statuses renamed (owner approved): *In queue – ready around (date)*, *Printing now*,
+  *Printed – being checked*, *Confirm name with customer*, *Ready to pack – make label*, *Packed – waiting
+  for courier*, *Shipped with (courier)*, *Returning to us (RTO)*. "Ready around" = place in queue / orders
+  finished per day over the last 7 days, for the team only (owner). Order IDs click to copy. Label Generated
+  was hard to find: tick boxes + *Paste order IDs…* + the button on rows in a search too. A WhatsApp draft per
+  name problem; new ready-made messages offered only where they fit (the old defaults are replaced only if
+  never changed — the owner's settings had none saved).
+- Not changed: no logins (on hold, `docs/plan-user-logins.md`); only the order date is kept from the report
+  (not the time), so same-day orders keep order-ID order.
+
+
+### 2026-11-20: 0.25.1 Verify by name, staff PINs, merging with tick boxes
+- **Verify by name:** one card per order, shown once its letters and its base are both printed (owner: a person
+  checks a name with its base, and Verify no longer fills up with half-printed plates). Parts already checked
+  show "checked by …". **Confirm – ready to pack** / **Save – send problems for reprint** replace *Save check*.
+  The info line says how many names wait for their other part. Search by name or order.
+- **Whole plate failed…** moved to the printed plate: on each card (the plate that part was printed on) and in
+  Bases → Printed and the new Letters → Printed (so a spoiled letters plate can go back before its bases are
+  printed — found while explaining the update to the owner); every unchecked item on that plate goes back to print.
+- **Staff PINs** (owner: a check must be saved under the person who really did it, without logins): Settings →
+  Staff holds the owner PIN (this computer, `owner-pin.json`; reset with `snapstl-admin reset-owner-pin`), the
+  people and their 4-digit PINs (shared with every computer as salted hashes, new columns `staff.pin_hash` /
+  `pin_changed`; no schema version bump — older apps leave them alone). On Verify a person types their PIN once
+  (30 minutes without a check signs them out). Until anyone has a PIN, Verify keeps the name picker, so the update
+  doesn't stop checking. Limit (told to the owner): two people sharing one PIN can't be stopped.
+- **Merging with tick boxes:** tick letter plates of one colour (not started; letter **fix** plates too), up to 3
+  names; other colours can't be ticked; Split back returns exactly the plates merged (each item records `src`).
+- On update day: set the owner PIN and everyone's PIN in Settings → Staff on the farm computer.
+
+### 2026-11-20: Main merged into the Models branch
+- Owner requested the 0.25.1 updates on `change/local-parametric-model` only. Kept both branches’ session log entries and the Models instructions in Help.

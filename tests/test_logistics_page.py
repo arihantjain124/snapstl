@@ -49,7 +49,7 @@ def test_label_generated_and_undo(client):
     assert act(client, "L2", "label").status_code == 409  # not printed yet
     assert act(client, "L1", "label").status_code == 200
     o = detail(client, "L1")
-    assert o["tab"] == "ship_it" and o["label_by"] == "logistics" and o["words"].startswith("Label done")
+    assert o["tab"] == "ship_it" and o["label_by"] == "logistics" and o["words"].startswith("Packed")
     assert lst(client) == [] and lst(client, "ship_it") == ["L1"]
     assert act(client, "L1", "label", {"undo": True}).status_code == 200
     assert detail(client, "L1")["tab"] == "pack_it"
@@ -138,10 +138,10 @@ def test_search_late_and_tracking(client, monkeypatch):
                     "\"pickup_date\": \"2026-01-02 10:00:00\"}', '@x', 'r.csv', 1)")
     assert lst(client, q="9876543210") == ["S1"] and lst(client, q="meera") == ["S1"] and lst(client, q="S2") == ["S2"]
     s1 = detail(client, "S1")
-    assert s1["late"] and s1["tracking"] == "" and s1["words"] == "Being made"
+    assert s1["late"] and s1["tracking"] == "" and s1["words"].startswith("In queue")
     s2 = detail(client, "S2")
     assert s2["tracking"] == "https://shopdeck.clickpost.ai/en?waybill=90739741525&cp_id=105"
-    assert s2["stuck"] and s2["words"] == "With courier (Blue Dart AIR)"
+    assert s2["stuck"] and s2["words"] == "Shipped with Blue Dart AIR"
     monkeypatch.setattr(server.SETTINGS.logistics, "tracking_url", "https://example.test/t/{order_id}")
     assert detail(client, "S2")["tracking"] == "https://example.test/t/S2"
     csv = client.get("/api/logistics/orders.csv", params={"view": "being_made"}).text
@@ -161,7 +161,7 @@ def test_logistics_settings(client):
     from snapstl import server
 
     s = client.get("/api/settings").json()
-    assert s["logistics"]["tracking_url"].startswith("https://shopdeck.clickpost.ai/") and "Shipped" in s["logistics"]["messages"]
+    assert s["logistics"]["tracking_url"].startswith("https://shopdeck.clickpost.ai/") and "Shipped – tracking" in s["logistics"]["messages"]
     good = {**s, "logistics": {**s["logistics"], "tracking_url": "https://store.test/track/{order_id}", "late_days": 5,
                                "messages": {"Hi": "Hello {customer}"}}}
     r = client.put("/api/settings", json=good)
@@ -172,3 +172,22 @@ def test_logistics_settings(client):
                 {"late_days": 99}, {"stuck_days": "x"}, {"messages": {"": "text"}}):
         assert client.put("/api/settings", json={**s, "logistics": {**s["logistics"], **bad}}).status_code == 400, bad
     assert client.put("/api/settings", json=s).status_code == 200  # back to the defaults
+
+
+def test_queue_ready_around_from_the_recent_pace(client):
+    """0.25: a waiting order says when it should be ready: its place in the queue (Express first, then oldest)
+    divided by the orders finished per day over the last week."""
+    import math
+    import time
+    from datetime import date, timedelta
+
+    upload(client, [("Q1", "PRINT"), ("Q2", "PRINT"), ("Q3", "PRINT"), ("M1", "PRINT"), ("M2", "PRINT")])
+    with db.tx() as con:
+        for oid, d in (("Q1", "2026-11-01"), ("Q2", "2026-11-02"), ("Q3", "2026-11-03")):
+            con.execute("UPDATE orders SET order_date=? WHERE order_id=?", (d, oid))
+        # two finished, the first 6.5 days ago → 2 per 6.5 days
+        con.execute("UPDATE orders SET state='bundled', made_at=? WHERE order_id IN ('M1','M2')", (time.time() - 6.5 * 86400,))
+    q = {o["order_id"]: o for o in client.get("/api/logistics/orders", params={"view": "being_made", "limit": 50}).json()["orders"]}
+    days = lambda n: (date.today() + timedelta(days=math.ceil(n * 6.5 / 2))).isoformat()  # noqa: E731
+    assert q["Q1"]["ready_by"] == days(1) and q["Q3"]["ready_by"] == days(3)
+    assert q["Q1"]["words"].startswith("In queue – ready around ")

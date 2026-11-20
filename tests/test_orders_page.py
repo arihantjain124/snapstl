@@ -99,3 +99,20 @@ def test_make_anyway_on_a_delivered_order(client):
     assert client.post("/api/orders/M1/reset").status_code == 200
     o = order(client, "M1")
     assert o["tab"] == "to_make" and o["remake_at"] and o["remake_reason"]
+
+
+def test_oldest_first_payment_and_select_oldest(client):
+    """0.25: the backlog is listed oldest first (Express still on top), with the payment type from the report."""
+    upload(client, [("O1", "PRINT"), ("O2", "PRINT"), ("O3", "PRINT")])
+    with db.tx() as con:
+        for oid, d in (("O1", "2026-11-10"), ("O2", "2026-11-01"), ("O3", "2026-11-05")):
+            con.execute("UPDATE orders SET order_date=? WHERE order_id=?", (d, oid))
+        con.execute("INSERT OR REPLACE INTO report_rows(order_id, data, status_at, file, sent) VALUES "
+                    "('O3', '{\"payment_method\": \"COD\"}', '@x', 'r.csv', 1)")
+    assert ids(client, "to_make") == ["O2", "O3", "O1"]
+    assert client.get("/api/orders/ids", params={"tab": "to_make"}).json() == ["O2", "O3", "O1"]
+    assert order(client, "O3")["payment"] == "COD" and order(client, "O1")["payment"] == ""
+    assert ids(client, "all", f_payment="cod") == ["O3"]
+    with db.tx() as con:
+        con.execute("UPDATE orders SET express_by='2026-12-01' WHERE order_id='O1'")
+    assert ids(client, "to_make") == ["O1", "O2", "O3"]

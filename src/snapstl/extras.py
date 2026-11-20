@@ -4,8 +4,10 @@
   cut from the plate it was printed on (already scaled), packed onto a small new plate in the same
   batch folder under `Fixes/`. A name's letters are the separate pieces of its mesh, left to right; a
   small piece (the dot of an i) goes with the nearest letter; letters that touch are one piece.
-* **Merged plate** (Print → Names → Merge): name plates of one colour, not started yet, up to 3 names
-  in all, packed onto one plate saved in the newest of their batch folders under `Merged/`. The single
+* **Merged plate** (Print → Letters → tick plates → Merge): name plates of one colour, not started yet, up to 3
+  names in all — also letter **fix** plates (0.25.1: their pieces are taken as they are on the fix plate) —
+  packed onto one plate saved in the newest of their batch folders under `Merged/`. Each item records the
+  plate it came from (`src`, `src_batch`) so Split back returns exactly those plates. The single
   plates leave the list (print job state `merged`, nothing deleted); **Split back** returns them while
   the merged plate isn't started.
 
@@ -250,26 +252,55 @@ MERGEABLE = (None, "reprint", "unmerged")  # not started (or back in the list af
 
 
 def merge(plates: list[dict], staff: str = "") -> dict:
-    """Merge name plates [{batch_id, file}] of one colour (≤ 3 names in all) onto one plate."""
+    """Merge letter plates [{batch_id, file}] of one colour (≤ 3 names in all; letter fix plates too) onto one plate."""
     from .makeit import _batch_orders, plate_order_ids
 
     if len(plates) < 2:
         raise ExtraError("Choose at least two plates to merge")
     with db.tx() as con:
-        items, colors, batches = [], set(), {}
+        items, colors, batches, parts = [], set(), {}, []
         for p in plates:
             b = _own(con, int(p["batch_id"]))
             batches[b["id"]] = b
             pl = next((x for x in _plates(b) if x["file"] == p["file"]), None)
-            if pl is None or pl["kind"] != "names":
-                raise ExtraError("Only name plates can be merged")
-            if _latest_state(con, b["id"], pl["file"]) not in MERGEABLE:
-                raise ExtraError(f"{Path(pl['file']).name} is already started, printed, removed or merged")
+            fix = None
+            if pl is None:
+                fix = con.execute("SELECT * FROM extra_plates WHERE batch_id=? AND file=? AND state='active'",
+                                  (b["id"], p["file"])).fetchone()
+            if fix is not None and (fix["kind"] != "fix" or fix["part"] != "names"):
+                fix = None
+            if (pl is None or pl["kind"] != "names") and fix is None:
+                raise ExtraError("Only letter plates (and letter fix plates) can be merged")
+            file = pl["file"] if pl else fix["file"]
+            if _latest_state(con, b["id"], file) not in MERGEABLE:
+                raise ExtraError(f"{Path(file).name} is already started, printed, removed or merged")
+            src = {"src": file, "src_batch": b["id"]}
+            if fix is not None:
+                colors.add((fix["color"] or "").lower())
+                fitems = json.loads(fix["items"] or "[]")
+                state = {r[0]: r[1] for r in con.execute(
+                    f"SELECT order_id, state FROM orders WHERE order_id IN ({','.join('?' * len(fitems))})",
+                    [i.get("order_id") for i in fitems])} if fitems else {}
+                fitems = [i for i in fitems if state.get(i.get("order_id")) == "bundled"]
+                ids = {i.get("order_id") for i in fitems}
+                path = Path(b.get("out_dir") or "") / file
+                if not path.is_file():
+                    raise ExtraError(f"The fix plate file is gone ({Path(file).name})")
+                for o in read_3mf(path):  # the fix plate's pieces as they are (already cut and scaled)
+                    if any(f"· {oid}" in o.name for oid in ids):
+                        parts.append(make_part(o.name, trimesh.Trimesh(np.asarray(o.vertices), np.asarray(o.faces),
+                                                                       process=True)))
+                items += [{**i, **src} for i in fitems]
+                continue
             colors.add(((pl.get("colors") or [""])[0] or "").lower())
             orders = _batch_orders(con, b)
             state = {o["order_id"]: o["state"] for o in orders}
             on = plate_order_ids(_plates(b), orders).get(pl["file"], [])
-            items += [it for it in verify.plate_items(b["id"], pl, on) if state.get(it["order_id"]) == "bundled"]
+            for it in verify.plate_items(b["id"], pl, on):
+                if state.get(it["order_id"]) == "bundled":
+                    m, _ = item_mesh(b, it)
+                    parts.append(make_part(f"{it['name']} - Name · {it['order_id']} #{len(parts) + 1}", m))
+                    items.append({**it, **src})
         if len(colors) != 1:
             raise ExtraError("Only plates of the same colour can be merged")
         if not items:
@@ -277,12 +308,8 @@ def merge(plates: list[dict], staff: str = "") -> dict:
         if len(items) > MAX_MERGE:
             raise ExtraError(f"At most {MAX_MERGE} names on one plate ({len(items)} chosen)")
         color = colors.pop()
-        parts = []
-        for it in items:
-            m, _ = item_mesh(batches[int(it["batch_id"])], it)
-            parts.append(make_part(f"{it['name']} - Name · {it['order_id']} #{len(parts) + 1}", m))
         home = batches[max(batches)]
-        names = " + ".join(it["name"] for it in items)
+        names = " + ".join(it["name"] + (f" ({it['letters']})" if it.get("letters") else "") for it in items)
         file, prev = _write(Path(home["out_dir"]) / "Merged", f"Merged - {_title(color)} - {names}", parts,
                             _plate_cfg(home), "names")
         file = f"Merged/{file}"
@@ -307,7 +334,7 @@ def split(batch_id: int, file: str) -> dict:
             raise ExtraError("This merged plate is started or printed — it can't be split back")
         con.execute("UPDATE extra_plates SET state='split' WHERE id=?", (x["id"],))
         now = db.now()
-        plates = {(int(i["batch_id"]), i["plate"]) for i in json.loads(x["items"])}
+        plates = {(int(i.get("src_batch") or i["batch_id"]), i.get("src") or i["plate"]) for i in json.loads(x["items"])}
         for bid, pf in plates:
             if _latest_state(con, bid, pf) == "merged":
                 con.execute("INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,created_at,"

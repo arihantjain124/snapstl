@@ -108,7 +108,8 @@ def test_batch_with_helper_builds_plates(client):
     r = client.post("/api/batches", json={"order_ids": ["F1", "F2", "F3"]})
     assert r.status_code == 200, r.text
     bid = r.json()["batch_id"]
-    states = {o["order_id"]: o["state"] for o in client.get("/api/orders?tab=all&limit=10").json()["orders"]}
+    states = {o["order_id"]: o["state"] for o in client.get("/api/orders?tab=all&limit=500").json()["orders"]
+              if o["order_id"].startswith("F")}  # oldest first since 0.25: other tests' orders may come first
     assert states == {"F1": "in_batch", "F2": "in_batch", "F3": "in_batch", "F4": "ready"}
     assert client.post("/api/batches", json={"order_ids": ["F1"]}).status_code == 400
 
@@ -138,7 +139,8 @@ def test_batch_with_helper_builds_plates(client):
     assert not list(folder.parent.parent.rglob("*.zip"))  # no ZIP written anywhere
     r = client.get(f"/api/batches/{bid}/zip")  # optional on-demand download still works
     assert r.status_code == 200 and len([n for n in zipfile.ZipFile(io.BytesIO(r.content)).namelist() if n.endswith(".3mf")]) == 3
-    states = {o["order_id"]: o["state"] for o in client.get("/api/orders?tab=all&limit=10").json()["orders"]}
+    states = {o["order_id"]: o["state"] for o in client.get("/api/orders?tab=all&limit=500").json()["orders"]
+              if o["order_id"].startswith("F")}  # oldest first since 0.25: other tests' orders may come first
     assert states["F1"] == "bundled" and states["F4"] == "ready"
     q = client.get("/api/downloads").json()["items"]
     assert {x["name"] for x in q if x["state"] == "done"} >= {"Ayra", "Manvi", "Riya"}

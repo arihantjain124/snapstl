@@ -276,6 +276,24 @@ def _upgrade_stamps(con) -> None:
     con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('stamps_v2', '1')")
 
 
+# columns of tables made in POST_SCHEMA
+LATE_MIGRATIONS = [
+    ("staff", "pin_hash", "TEXT"),         # 0.25.1: salted hash of the person's 4-digit PIN (staff.py)
+    ("staff", "pin_changed", "REAL"),
+]
+
+
+def _add_columns(con, migrations) -> None:
+    for table, col, typ in migrations:
+        cols = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+        if col not in cols:
+            try:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+            except sqlite3.OperationalError as e:  # another thread added it a moment ago (first start)
+                if "duplicate column" not in str(e):
+                    raise
+
+
 def connect(path: Path | None = None) -> sqlite3.Connection:
     p = path or DB_PATH
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -284,15 +302,9 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA foreign_keys=ON")
     con.executescript(SCHEMA)
-    for table, col, typ in MIGRATIONS:
-        cols = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
-        if col not in cols:
-            try:
-                con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
-            except sqlite3.OperationalError as e:  # another thread added it a moment ago (first start)
-                if "duplicate column" not in str(e):
-                    raise
+    _add_columns(con, MIGRATIONS)
     con.executescript(POST_SCHEMA)
+    _add_columns(con, LATE_MIGRATIONS)
     # older rows: everything here is this computer's, and every batch gets a unique id
     con.execute("UPDATE batches SET computer_id=?, computer_name=? WHERE computer_id IS NULL", (computer.ID, computer.NAME))
     con.execute("UPDATE downloads SET computer_id=? WHERE computer_id IS NULL", (computer.ID,))

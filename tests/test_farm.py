@@ -525,12 +525,14 @@ def test_make_it_bases_names_start_completed_ready_to_ship(client, bb):
     bb.queue[1]["status"] = bb.queue[2]["status"] = "completed"
     farm.WORKER.refresh()
     m = client.get("/api/makeit").json()
-    assert {c["file"] for c in m["verify"]} == {base, pink} and [r["file"] for r in m["names"]] == [blue]
+    from .test_verify import by_plate
+    assert {f for _, f in by_plate(m["verify"])} == {base, pink} and [r["file"] for r in m["names"]] == [blue]
+    assert [c["order_id"] for c in m["verify"]] == ["PM1"] and m["verify_waiting_other"] == 1  # PM2: blue not printed
     tab = lambda t: sorted(o["order_id"] for o in client.get(f"/api/orders?tab={t}&limit=50").json()["orders"] if o["order_id"].startswith("PM"))
     assert tab("pack_it") == [] and tab("printing") == ["PM1", "PM2"]
     o1 = next(o for o in client.get("/api/orders?tab=printing&limit=50").json()["orders"] if o["order_id"] == "PM1")
     assert o1["print_done_at"] and not o1["checked_at"]  # Printed – waiting for check
-    card = {c["file"]: c for c in m["verify"]}
+    card = {f: c for (_, f), c in by_plate(m["verify"]).items()}
     good = lambda f: [{"batch_id": i["batch_id"], "plate": i["plate"], "idx": i["idx"], "result": "good"} for i in card[f]["items"]]
     check = lambda f, res, staff="Asha": client.post("/api/verify", json={"carrier": {"batch_id": bid, "file": f},
                                                                           "staff": staff, "results": res})
@@ -545,10 +547,10 @@ def test_make_it_bases_names_start_completed_ready_to_ship(client, bb):
     # blue printed but the whole plate failed → back to Names to print again; PM2 stays in Printing
     bb.queue[3]["status"] = "completed"
     farm.WORKER.refresh()
-    card = {c["file"]: c for c in client.get("/api/makeit").json()["verify"]}
-    assert list(card) == [blue]
-    bad = [{**x, "result": "plate_failed"} for x in good(blue)]
-    assert check(blue, bad).json()["failed"]
+    card = {f: c for (_, f), c in by_plate(client.get("/api/makeit").json()["verify"]).items()}
+    assert set(card) == {base, blue}  # PM2's base and its blue letters: one card for Riya
+    r = client.post("/api/verify/plate-failed", json={"carrier": {"batch_id": bid, "file": blue}, "staff": "Asha"})
+    assert r.status_code == 200 and r.json()["failed"]
     m = client.get("/api/makeit").json()
     assert [r["file"] for r in m["names"]] == [blue] and m["names"][0]["job"]["state"] == "reprint"
     assert m["verify"] == [] and tab("printing") == ["PM2"]

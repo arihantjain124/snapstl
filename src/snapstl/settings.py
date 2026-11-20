@@ -107,8 +107,34 @@ class PlateSettings:
 
 
 def default_messages() -> dict:
-    """Ready-made replies on the logistics page. {customer} {order_id} {name} {colour} {tracking} {address}
-    {needed_by} are filled in from the order."""
+    """Ready-made replies on the logistics page (0.25). {customer} {order_id} {name} {colour} {tracking} {address}
+    {needed_by} {courier} {delivered} are filled in from the order. The page offers each one only for the
+    statuses it fits (`MSGFOR` in index.html); messages the owner adds are offered for every order."""
+    return {
+        "Sorry for the wait": "Hello {customer}, we're sorry your name organizer \"{name}\" (order {order_id}) is "
+                              "taking longer than usual. We have a lot of orders right now and are making them "
+                              "in order. Yours is in the queue and we'll send you the tracking link as soon as it "
+                              "ships. Thank you for your patience!",
+        "Printing now": "Hello {customer}, good news: your \"{name}\" name organizer in {colour} (order {order_id}) "
+                        "is being printed now. We'll send you the tracking link as soon as it ships.",
+        "Packed, ships soon": "Hello {customer}, your \"{name}\" name organizer (order {order_id}) is made and "
+                              "packed. It goes to the courier soon and we'll send you the tracking link.",
+        "Shipped – tracking": "Hello {customer}, your order {order_id} is on its way with {courier}. "
+                              "Track it here: {tracking}",
+        "Delivered – review": "Hello {customer}, your order {order_id} was delivered{delivered}. We hope you love "
+                              "your \"{name}\" name organizer! A short review or a photo would mean a lot to us.",
+        "Couldn't deliver": "Hello {customer}, the courier couldn't deliver order {order_id}. Please reply with "
+                            "your full address and a phone number that works, so we can send it again.",
+        "Confirm COD order": "Hello {customer}, thank you for ordering a name organizer \"{name}\" in {colour} "
+                             "(order {order_id}, cash on delivery). Please reply YES to confirm, and we'll make it.",
+        "Express": "Hello {customer}, we've marked order {order_id} as express. We'll do our best to "
+                   "deliver it by {needed_by}.",
+        "Confirm address": "Hello {customer}, please confirm the delivery address for order {order_id}: {address}",
+    }
+
+
+def old_default_messages() -> dict:
+    """The messages before 0.25: replaced by the new ones when the owner never changed them."""
     return {
         "Being made": "Hello {customer}, your name organizer \"{name}\" (order {order_id}) is being made. "
                       "We'll send you the tracking link as soon as it ships.",
@@ -170,7 +196,8 @@ class Settings:
             s.plate = PlateSettings(**_known(PlateSettings, {**asdict(s.plate), **d["plate"]}))
         if isinstance(d.get("logistics"), dict):
             s.logistics = LogisticsSettings(**_known(LogisticsSettings, {**asdict(s.logistics), **d["logistics"]}))
-            if not isinstance(s.logistics.messages, dict) or not s.logistics.messages:
+            if not isinstance(s.logistics.messages, dict) or not s.logistics.messages \
+                    or s.logistics.messages == old_default_messages():
                 s.logistics.messages = default_messages()
         for k in ("output_dir", "downloads_dir", "makerworld_url", "lan_access", "delay_between_downloads_s",
                   "license_passwords"):

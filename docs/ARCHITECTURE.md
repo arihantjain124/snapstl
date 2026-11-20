@@ -146,6 +146,7 @@ Snapstl/
 │   ├── orders.py             `Order` dataclass (one organizer copy inside a batch)
 │   ├── maintenance.py        backups, clean-up (keeps made orders), reset
 │   ├── auth.py               portal password (other computers) + signed session cookie; `snapstl-admin`
+│   ├── staff.py              staff PINs + owner PIN (Print → Verify, Settings → Staff; 0.25.1)
 │   └── static/
 │       ├── index.html        the whole UI: side navigation (Orders, Batches, Downloads, Settings, Help)
 │       └── login.html        used only if a portal password is set
@@ -685,6 +686,8 @@ snapstl.server:app --port 8320`.
   ordered by upload time.
 * The Windows version was written and tested on macOS only (scripts and OS functions); its first
   run on a real Windows PC may need fixes.
+* No per-person logins: the app opens without login on each computer (127.0.0.1) and the logistics page has
+  one shared password. A plan for Admin / Production logins is kept, on hold, in `docs/plan-user-logins.md`.
 * Creating a batch needs the shared records reachable (by design). Other changes wait in the outbox
   while offline and are sent later.
 

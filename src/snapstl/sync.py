@@ -236,6 +236,9 @@ CREATE TABLE IF NOT EXISTS {SCHEMA}.staff (
     updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 COMMENT ON TABLE {SCHEMA}.staff IS 'Staff who check prints (Print → Verify); a name is hidden, never removed. Newest `changed` wins.';
+ALTER TABLE {SCHEMA}.staff ADD COLUMN IF NOT EXISTS pin_hash text;
+ALTER TABLE {SCHEMA}.staff ADD COLUMN IF NOT EXISTS pin_changed double precision;
+COMMENT ON COLUMN {SCHEMA}.staff.pin_hash IS 'Salted scrypt hash of the 4-digit PIN typed on Print → Verify (0.25.1); newest pin_changed wins.';
 CREATE TABLE IF NOT EXISTS {SCHEMA}.print_checks (
     uid        text PRIMARY KEY,
     batch_uid  text,
@@ -855,28 +858,36 @@ def _push_checks(rc) -> None:
     with db.tx() as con:
         staff = db.rows(con, "SELECT * FROM staff WHERE COALESCE(sent,0)=0")
         checks = db.rows(con, f"SELECT * FROM plate_checks WHERE COALESCE(sent,0)=0 LIMIT {PUSH_BATCH}")
-    _many(rc, f"INSERT INTO {SCHEMA}.staff AS s(name, added_at, hidden, changed) VALUES (%(name)s, %(added_at)s, "
-              "%(hidden)s, %(changed)s) ON CONFLICT (name) DO UPDATE SET hidden = CASE WHEN COALESCE(EXCLUDED.changed, 0) "
-              "> COALESCE(s.changed, 0) THEN EXCLUDED.hidden ELSE s.hidden END, changed = GREATEST(s.changed, "
-              "EXCLUDED.changed), updated_at = clock_timestamp() RETURNING name",
-          [{**x, "hidden": bool(x["hidden"])} for x in staff])
+    _many(rc, f"INSERT INTO {SCHEMA}.staff AS s(name, added_at, hidden, changed, pin_hash, pin_changed) VALUES "
+              "(%(name)s, %(added_at)s, %(hidden)s, %(changed)s, %(pin_hash)s, %(pin_changed)s) ON CONFLICT (name) DO "
+              "UPDATE SET hidden = CASE WHEN COALESCE(EXCLUDED.changed, 0) > COALESCE(s.changed, 0) THEN EXCLUDED.hidden "
+              "ELSE s.hidden END, changed = GREATEST(s.changed, EXCLUDED.changed), "
+              "pin_hash = CASE WHEN COALESCE(EXCLUDED.pin_changed, 0) > COALESCE(s.pin_changed, 0) THEN EXCLUDED.pin_hash "
+              "ELSE s.pin_hash END, pin_changed = GREATEST(s.pin_changed, EXCLUDED.pin_changed), "
+              "updated_at = clock_timestamp() RETURNING name",
+          [{**x, "hidden": bool(x["hidden"]), "pin_hash": x.get("pin_hash"), "pin_changed": x.get("pin_changed")}
+           for x in staff])
     _many(rc, f"INSERT INTO {SCHEMA}.print_checks({', '.join(CHECK_COLS)}) VALUES "
               f"({', '.join('%(' + c + ')s' for c in CHECK_COLS)}) ON CONFLICT (uid) DO NOTHING RETURNING uid",
           [{c: x.get(c) for c in CHECK_COLS} for x in checks])
     with db.tx() as con:
         for x in staff:  # only if it wasn't changed again meanwhile
-            con.execute("UPDATE staff SET sent=1 WHERE name=? AND changed IS ?", (x["name"], x["changed"]))
+            con.execute("UPDATE staff SET sent=1 WHERE name=? AND changed IS ? AND pin_changed IS ?",
+                        (x["name"], x["changed"], x.get("pin_changed")))
         con.executemany("UPDATE plate_checks SET sent=1 WHERE uid=?", [(x["uid"],) for x in checks])
 
 
 def _pull_checks(rc) -> None:
-    staff = rc.execute(f"SELECT name, added_at, hidden, changed FROM {SCHEMA}.staff").fetchall()
+    staff = rc.execute(f"SELECT name, added_at, hidden, changed, pin_hash, pin_changed FROM {SCHEMA}.staff").fetchall()
     with db.tx() as con:
         for x in staff:
             con.execute("INSERT INTO staff(name, added_at, hidden, changed, sent) VALUES (?,?,?,?,1) ON CONFLICT(name) "
                         "DO UPDATE SET hidden=excluded.hidden, changed=excluded.changed, sent=1 "
                         "WHERE COALESCE(excluded.changed, 0) > COALESCE(staff.changed, 0)",
                         (x["name"], x["added_at"], int(bool(x["hidden"])), x["changed"]))
+            con.execute("UPDATE staff SET pin_hash=?, pin_changed=? WHERE name=? "
+                        "AND COALESCE(?, 0) > COALESCE(pin_changed, 0)",
+                        (x["pin_hash"], x["pin_changed"], x["name"], x["pin_changed"]))
         r = con.execute("SELECT value FROM sync_state WHERE key='checks_pulled_until'").fetchone()
     q = f"SELECT *, stored_at::text AS stored_text FROM {SCHEMA}.print_checks"
     rows = (rc.execute(q + f" WHERE stored_at > %s::timestamptz - interval '{PULL_OVERLAP_S} seconds' "
