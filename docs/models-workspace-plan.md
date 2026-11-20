@@ -177,3 +177,7 @@ guides the conversation and CAD iterations. Open the development checkout and in
 checkout can develop the brief and parameters, with local CAD execution handled in a workspace
 that has the toolchain. [Codex project skills](https://developers.openai.com/api/reference/cli)
 · [Claude Code project skills](https://code.claude.com/docs/en/skills)
+
+The skill also supports adapting CADAM-exported OpenSCAD into a model package. The agent examines
+the source and dependencies, maps adjustable parameters to the manifest, separates printable
+parts, and checks multiple views before owner review. CADAM itself is a separate application.

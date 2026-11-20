@@ -572,3 +572,10 @@ Agreed: two releases — 0.25.0 now, 0.25.1 (Verify by name, staff PINs, merging
 - **Open:** benchmark a synthetic multi-part design before choosing a provider. The existing Models
   workflow expects OpenSCAD source. A CAD provider would need a translation or import step and
   dimensional review. No provider was connected.
+
+### 2026-11-20: CADAM-style workflow in the agent skill
+
+- Owner clarified that they want to use their existing Claude or Codex agent and bring in a CADAM
+  design or prompt. Added guidance to the Models skill for CADAM-style multi-view iteration and
+  adapting an exported OpenSCAD file, its controls and printable parts into Models.
+- **Open:** evaluate a CADAM-generated multi-part design with the owner and verify its printed fit.

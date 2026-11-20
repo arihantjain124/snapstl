@@ -50,6 +50,38 @@ a new revision of its design. Keep each named concept independently selectable a
 
 ## Build the agreed drafts
 
+### CADAM-style design and importing a CADAM export
+
+Use the owner's Codex or Claude Code session to build and revise OpenSCAD directly. Follow the
+CADAM workflow of exposing meaningful dimensions, rendering and inspecting the result from several
+directions, and correcting the source through repeated preview. CADAM's public project and examples
+are at https://github.com/Adam-CAD/CADAM. This workflow uses the current agent and SnapSTL's
+OpenSCAD renderer.
+
+When the owner supplies a CADAM `.scad` export, read the complete file and any accompanying assets.
+Preserve the supplied geometry and parameter defaults where possible. Identify every `include`,
+`use`, `import`, and font dependency. Confirm the owner can use and distribute those assets before
+adding them to the public repository. Declare each required local asset in the manifest. The preview
+renderer supplies only the package's declared files, so system-installed libraries and paths outside
+the package are not available. If a file is missing, ask for it or replace the dependency with an
+owner-approved equivalent and record the change.
+
+CADAM's OpenSCAD Customizer annotations can suggest control labels, ranges and choices. Inspect
+the source and map the controls the owner needs to explicit `model.json` parameters. Use descriptive
+stable IDs. A comment like `// [10:1:200]` can inform minimum, step and maximum, but do not guess
+units or safe fit limits. Mark fit adjustments as Development fields. For each printable part, add
+a manifest part and a `part` selector in the SCAD source. Preserve the original design's dimensions,
+origins and mating relationships when adapting a multi-part export. If one script displays a whole
+assembly, separate the printable parts and record their assembly transforms before claiming they are
+individually printable.
+
+Before presenting the draft, render and inspect the assembly and each part from isometric, front,
+back, left, right, top and bottom views as applicable. Use the existing Models viewer or local
+OpenSCAD image exports and the image viewer available to the agent. Correct missing geometry,
+disconnected parts and visibly incorrect features, then render again. Record what was checked in
+`DESIGN.md`, including dimensions and any views or physical tests still pending. The owner's
+review in Models and the normal Production approval remain necessary.
+
 1. Work on the shared `change/local-parametric-model` branch and use an isolated SnapSTL instance.
    Merge that branch into `main` together only after the owner approves all models for production.
    Start with the implemented
