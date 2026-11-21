@@ -1406,7 +1406,7 @@ const cap=s=>s?s[0].toUpperCase()+s.slice(1):s;
 const setVal=v=>v!==''&&v!=null;
 
 // ---------- Print: Bases / Names / Completed / Removed ----------
-let MK=null,MKTAB='bases',MKFAST=null;const MKGOING=new Set();  // plates whose Start print is being sentconst MKSEL={};const OPTLBL={bed_levelling:'Bed levelling',flow_cali:'Flow calibration',timelapse:'Timelapse'};
+let MK=null,MKTAB='bases',MKFAST=null;const MKGOING=new Set();/* plates whose Start print is being sent */const MKSEL={};const OPTLBL={bed_levelling:'Bed levelling',flow_cali:'Flow calibration',timelapse:'Timelapse'};
 const MKPANES=['bases','names','verify','completed','removed'];
 try{MKTAB=localStorage.getItem('mktab')||'bases'}catch{}if(!MKPANES.includes(MKTAB))MKTAB='bases';
 const mkPrinter=id=>(MK&&MK.printers.find(p=>String(p.id)===String(id)))||{};

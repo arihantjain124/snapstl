@@ -583,3 +583,8 @@ English hard — the language help was skipped by the owner).
   `db.tx()` re-ran the whole schema + column checks. Now: bed state once per printer; tables / columns made once
   per database file per run (`db._SCHEMA_DONE`); batch labels read once (`verify._label`); `/api/makeit` works
   one request at a time and requests that arrived meanwhile share its answer. On the farm's data: 9 s → ~1 s.
+
+### 2026-11-22: 0.28.2 Print shows its plates again
+- 0.28.1 put a `// comment` in the middle of a line of the page script, which commented out the rest of the line
+  (`MKSEL`, `OPTLBL`): Print → Bases / Letters showed the counts but no plates. Fixed; `tests/test_page_script.py`
+  now checks the Print page's globals are declared and that no code is glued after a `//` comment.
