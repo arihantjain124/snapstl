@@ -511,3 +511,21 @@ English hard — the language help was skipped by the owner).
 - Fix: every shared-records session sets `idle_in_transaction_session_timeout` (2 minutes), and the setup uses
   `lock_timeout` (20 s): when a table is held it says "The shared records are busy … trying again in a minute"
   and the next sync tries again. Test: `test_a_leftover_connection_never_hangs_the_sync`.
+
+
+### 2026-11-21: 0.27.0 Letters and Bases slice with their own profiles
+- Owner: letters are the most important part; their top layers showed print lines. Letters print only on the P1S
+  (colours in the AMS), at Standard speed with a better finish; bases faster without losing strength or look;
+  0.4 mm nozzle only (no 0.6 for now). Both picked automatically by what is printed.
+- Measured (Bambuddy print history): 3 bases about 9.6 h on P1S, 11.7 h on A1; a letter plate about 0.8 h.
+- **Slicing → Letters** per printer: a Letters process profile and Letters speed. Letter plates (fix and merged
+  letter plates too) slice with it (a separate slice key) and print at that speed; bases keep the printer's
+  profiles. Once any printer has a Letters profile, letter plates are offered and pre-selected only on those
+  printers, and Start print elsewhere is refused (farm.letters_printers / may_print).
+- Profile files for the owner to import in Bambuddy (C:\Users\Admin\SnapSTL\Bambuddy profiles\process, and
+  "SnapSTL letters + bases profiles.zip"), made from the current ones:
+  * SnapSTL Letters 0.20mm P1S: ironing topmost (12%, 0.10 mm, 30 mm/s), Arachne walls, one wall on top off,
+    outer wall 150, top surface 120 mm/s, seam back + scarf seam on outer walls.
+  * SnapSTL Bases 0.20mm P1S / A1: same layer height, walls and 15% infill; infill combination on; seam back +
+    scarf seam. Expected saving is small (about 5-10%); bigger savings need 0.24-0.28 mm layers or a 0.6 mm
+    nozzle, which the owner declined for now (look first).

@@ -251,22 +251,29 @@ def board(prs: list[dict] | None = None) -> dict:
     # free printers are pre-selected for them first
     pending = sorted(rows, key=lambda r: (r["extra"] != "fix", r["express_by"] is None, r["express_by"] or ""))
     active_jobs = farm.active_counts()
-    for r in pending:
+    fcfg = farm.load_config()
+    for r in pending:  # letters only on printers with a Letters profile, once any has one (0.27)
         r["choices"] = [{"id": p["id"], "name": p["name"], "why_not": "", "note": farm.match_note(r, p),
                          "available": available(p, active_jobs.get(p["id"], 0)), "left": spool_left(p, r["need"]),
                          "online": bool((p.get("status") or {}).get("connected")),
                          "state": (p.get("status") or {}).get("state", ""), "bed": bed_state(p),
-                         "trays": farm.tray_choices(r["need"], p), "best_tray": farm.best_tray(r["need"], p)} for p in prs]
-    pick = choose(pending, prs, active_jobs) if prs else {}
+                         "trays": farm.tray_choices(r["need"], p), "best_tray": farm.best_tray(r["need"], p)}
+                        for p in prs if farm.may_print(p["id"], r["kind"], fcfg)]
+    pick = {}
+    if prs:
+        for kind in ("bases", "names"):  # each kind only onto the printers that may print it
+            rows_k = [r for r in pending if r["kind"] == kind]
+            pick |= choose(rows_k, [p for p in prs if farm.may_print(p["id"], kind, fcfg)], active_jobs)
     keys: dict = {}
 
     def slice_state(r: dict, pid) -> dict | None:
         """This plate's slice for a printer's profiles (None = not sliced for it yet)."""
         if not pid:
             return None
-        if pid not in keys:
-            keys[pid] = (farm.target(pid)[0], farm.missing_presets(pid))
-        key, missing = keys[pid]
+        k = (pid, r["kind"])
+        if k not in keys:
+            keys[k] = (farm.target(pid, fcfg, r["kind"])[0], farm.missing_presets(pid, fcfg, r["kind"]))
+        key, missing = keys[k]
         if missing:
             return {"state": "needs_presets", "printer": missing}
         x = farm.slice_for(slices, r["batch_id"], r["file"], key)
@@ -368,7 +375,7 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
     a busy printer gets the plate held in its queue (press Start print again once it's done and empty)."""
     b, plate = _plate(batch_id, file)
     # the printer's print defaults (Slicing), with what was set on this plate on top
-    dflt = farm.print_defaults(int(printer_id)) if printer_id else {}
+    dflt = farm.print_defaults(int(printer_id), kind=plate["kind"]) if printer_id else {}  # letters: their speed
     speed = speed or dflt.get("speed", "")
     opts = farm.clean_options({**{k: v for k, v in dflt.items() if k != "speed"},
                                **{k: v for k, v in (options or {}).items() if v not in ("", None)}})
@@ -379,7 +386,10 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
     if printer is None:
         raise farm.FarmError("Choose a printer")
     tray = farm.pick_tray(plate, printer, tray)  # the filament slot it prints from (any loaded one)
-    missing = farm.missing_presets(printer["id"])
+    if not farm.may_print(printer["id"], plate["kind"]):
+        raise farm.FarmError(f"{printer['name']} has no Letters profile — letters print on the printers that have one "
+                             "(Slicing → Letters)")
+    missing = farm.missing_presets(printer["id"], kind=plate["kind"])
     if missing:
         raise farm.FarmError(f"Pick the slicing profiles for {missing} in Slicing first")
     j = _latest(batch_id, file)

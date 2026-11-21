@@ -66,6 +66,10 @@ DEFAULTS = {
     # before 0.22.7, per printer model (e.g. "A1"): still used for a printer with no profiles of its own
     "presets_by_model": {},
     "print_defaults": {},         # Bambuddy printer id (str) → {speed, bed_levelling, flow_cali, timelapse, plate_type}
+    # 0.27: letter plates (names) slice with their own process profile and print at their own speed; bases use
+    # the printer's profiles above. Once any printer has a Letters profile, letters go only to those printers.
+    "letters_process_by_printer": {},  # printer id (str) → {source, id, name}
+    "letters_speed_by_printer": {},    # printer id (str) → "standard" … ("" = the printer's default speed)
     # on the Windows Bambuddy computer: start Bambuddy / Docker / the slicer service when they stop (bambuddy_host)
     "keep_bambuddy_running": True,
 }
@@ -546,16 +550,62 @@ def bambuddy_presets(cfg: dict | None = None, refresh: bool = False, status: dic
 
 
 
-def chosen_presets(printer_id: int | None, cfg: dict | None = None) -> dict:
+LETTERS = "names"  # the plate kind of letter plates
+
+
+def chosen_presets(printer_id: int | None, cfg: dict | None = None, kind: str = "bases") -> dict:
     """The Bambuddy profiles picked for a printer in Slicing (no built-in defaults). A printer with none of
-    its own uses what was picked for its model before 0.22.7."""
+    its own uses what was picked for its model before 0.22.7. Letter plates (`kind` "names") use the printer's
+    Letters process profile when one is picked (0.27)."""
     cfg = cfg or load_config()
     if not printer_id:
         return {}
     own = (cfg.get("presets_by_printer") or {}).get(str(printer_id))
-    if own:
-        return dict(own)
-    return dict((cfg.get("presets_by_model") or {}).get(WORKER.model_of(printer_id)) or {})
+    out = dict(own) if own else dict((cfg.get("presets_by_model") or {}).get(WORKER.model_of(printer_id)) or {})
+    lp = letters_process(printer_id, cfg)
+    if kind == LETTERS and lp and out:
+        out["process"] = lp
+    return out
+
+
+def letters_process(printer_id: int | None, cfg: dict | None = None) -> dict | None:
+    cfg = cfg or load_config()
+    return (cfg.get("letters_process_by_printer") or {}).get(str(printer_id)) if printer_id else None
+
+
+def letters_printers(cfg: dict | None = None) -> set[int]:
+    """Printers with a Letters profile; when there are any, letter plates go only to them."""
+    cfg = cfg or load_config()
+    return {int(k) for k, v in (cfg.get("letters_process_by_printer") or {}).items() if v}
+
+
+def may_print(printer_id: int, kind: str, cfg: dict | None = None) -> bool:
+    lp = letters_printers(cfg)
+    return kind != LETTERS or not lp or int(printer_id) in lp
+
+
+def set_letters(printer_id: int, process: str | None, speed: str = "") -> dict:
+    """Slicing → Letters: the process profile ("source:id" from Bambuddy's list; "" = none, letters use the
+    printer's profile) and the speed letter plates print at on this printer."""
+    if speed and speed not in SPEEDS_SET:
+        raise FarmError("Speed is silent, standard, sport or ludicrous")
+    cfg = load_config()
+    lp = cfg.setdefault("letters_process_by_printer", {})
+    if process:
+        hit = next((p for p in bambuddy_presets(cfg)["process"] if p["key"] == process), None)
+        if hit is None:
+            raise FarmError("Choose a process profile from Bambuddy's list")
+        src, pid = process.split(":", 1)
+        lp[str(printer_id)] = {"source": src, "id": pid, "name": hit["name"]}
+    else:
+        lp.pop(str(printer_id), None)
+    sp = cfg.setdefault("letters_speed_by_printer", {})
+    if speed:
+        sp[str(printer_id)] = speed
+    else:
+        sp.pop(str(printer_id), None)
+    save_config(cfg)
+    return {"process": lp.get(str(printer_id)), "speed": sp.get(str(printer_id), "")}
 
 
 def set_presets(keys: dict, printer_id: int, clear: bool = False) -> dict:
@@ -605,20 +655,20 @@ def forget_local_slicing() -> None:
                     "('queued','uploading','slicing') AND computer_id=?", (db.now(), computer.ID))
 
 
-def missing_presets(printer_id: int | None, cfg: dict | None = None) -> str | None:
+def missing_presets(printer_id: int | None, cfg: dict | None = None, kind: str = "bases") -> str | None:
     """The printer (its name) whose slicing profiles aren't picked yet (None = all picked)."""
-    p = chosen_presets(printer_id, cfg)
+    p = chosen_presets(printer_id, cfg, kind)
     return None if all(p.get(s) for s in PRESET_SLOTS) else (WORKER.name_of(printer_id) or "this printer")
 
 
-def target(printer_id: int | None, cfg: dict | None = None) -> tuple[str, dict]:
+def target(printer_id: int | None, cfg: dict | None = None, kind: str = "bases") -> tuple[str, dict]:
     """What a plate is sliced with for a printer: (key, profiles) — the profiles picked for that printer, plus
     its plate type (`"plate"`, when one is picked in Print defaults). The key names those, so printers with the
     same profiles and plate share one slice, and picking other profiles or another plate means a new slice."""
     import hashlib
 
     cfg = cfg or load_config()
-    presets = chosen_presets(printer_id, cfg)
+    presets = chosen_presets(printer_id, cfg, kind)  # letters: their own process profile (a different key)
     plate = print_defaults(printer_id, cfg).get("plate_type") or ""
     if plate and all(presets.get(s) for s in PRESET_SLOTS):  # the plate type is sliced in, so it's part of the key
         presets["plate"] = {"name": plate}
@@ -627,11 +677,14 @@ def target(printer_id: int | None, cfg: dict | None = None) -> tuple[str, dict]:
     return key, presets
 
 
-def print_defaults(printer_id: int | None, cfg: dict | None = None) -> dict:
+def print_defaults(printer_id: int | None, cfg: dict | None = None, kind: str = "bases") -> dict:
     """A printer's print defaults (Slicing): {speed, bed_levelling, flow_cali, timelapse, plate_type}; "" =
-    Bambuddy's (plate_type "" = the process profile's plate)."""
+    Bambuddy's (plate_type "" = the process profile's plate). Letter plates: the Letters speed when set."""
     cfg = cfg or load_config()
-    return dict((cfg.get("print_defaults") or {}).get(str(printer_id)) or {}) if printer_id else {}
+    out = dict((cfg.get("print_defaults") or {}).get(str(printer_id)) or {}) if printer_id else {}
+    if kind == LETTERS and printer_id and (cfg.get("letters_speed_by_printer") or {}).get(str(printer_id)):
+        out["speed"] = cfg["letters_speed_by_printer"][str(printer_id)]
+    return out
 
 
 def set_print_defaults(printer_id: int, values: dict) -> dict:
@@ -700,17 +753,19 @@ def request_slices(plates: list[tuple[int, str, str, str]], printer_ids: list[in
     sliced, already sliced with those profiles (unless `again`)."""
     cfg = load_config()
     cur = latest_slices()
-    targets = {}
-    for pid in (printer_ids or [None]):
-        key, presets = target(pid, cfg)
-        if not all(presets.get(s) for s in PRESET_SLOTS):
-            continue  # no Bambuddy profiles picked for this printer model yet (Slicing) — nothing is guessed
-        targets[key] = presets
+
+    def targets(kind: str) -> dict:  # letters and bases may use different profiles (0.27)
+        out = {}
+        for pid in (printer_ids or [None]):
+            key, presets = target(pid, cfg, kind)
+            if all(presets.get(s) for s in PRESET_SLOTS):  # none picked for this printer yet: nothing is guessed
+                out[key] = presets
+        return out
     n = 0
     now = db.now()
     with db.tx() as con:
         for bid, plate, kind, color in plates:
-            for key, presets in targets.items():
+            for key, presets in targets(kind).items():
                 s = cur.get((bid, plate, key))
                 if s and s["state"] in ("queued", "uploading", "slicing") or (s and s["state"] == "done" and not again):
                     continue
@@ -1116,10 +1171,10 @@ class Worker:
             raise FarmError(f"The plate file is gone: {src}")
         cfg = load_config()
         # sliced by Bambuddy for this printer's model, or slice it now and send it after
-        missing = missing_presets(j["printer_id"], cfg)
+        missing = missing_presets(j["printer_id"], cfg, j["kind"])
         if missing:
             raise FarmError(f"Pick the slicing profiles for {missing} in Slicing, then Start print again")
-        key, _ = target(j["printer_id"], cfg)
+        key, _ = target(j["printer_id"], cfg, j["kind"])
         s = slice_for(latest_slices(j["batch_id"]), j["batch_id"], j["plate"], key)
         if s and s["state"] == "done" and s["sliced_file_id"]:
             file_id = int(s["sliced_file_id"])
@@ -1231,7 +1286,7 @@ class Worker:
             return
         sl = latest_slices()
         for j in js:
-            s = slice_for(sl, j["batch_id"], j["plate"], target(j["printer_id"])[0])
+            s = slice_for(sl, j["batch_id"], j["plate"], target(j["printer_id"], kind=j["kind"])[0])
             if s is None or s["state"] == "done":
                 _set(j["id"], state="queued")
             elif s["state"] == "failed":

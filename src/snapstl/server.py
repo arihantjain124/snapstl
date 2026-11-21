@@ -1249,6 +1249,7 @@ def makeit_board():
             st["error"] = str(e)
     for p in prs:  # Print: a plate's options start from its printer's print defaults (Slicing)
         p["defaults"] = farm.print_defaults(p["id"], cfg)
+        p["defaults_letters"] = farm.print_defaults(p["id"], cfg, "names")
     return {"status": st, "printers": prs, **makeit.board(prs),
             "options": {k: list(v) for k, v in farm.OPTIONS.items()},
             "speeds": list(farm.SPEEDS_SET),
@@ -1303,8 +1304,12 @@ def makeit_presets(printer: int = 0, refresh: int = 0):
             "speeds": list(farm.SPEEDS_SET), "options": {k: list(v) for k, v in farm.OPTIONS.items()},
             "plates": list(farm.PLATE_TYPES), "activity": makeit.slicing_summary()}
     chosen = farm.chosen_presets(printer, cfg)
+    lp = farm.letters_process(printer, cfg)
     base |= {"chosen": {k: f"{v['source']}:{v['id']}" for k, v in chosen.items()},
-             "names": {k: v["name"] for k, v in chosen.items()}}
+             "names": {k: v["name"] for k, v in chosen.items()},
+             "letters": {"process": f"{lp['source']}:{lp['id']}" if lp else "", "name": (lp or {}).get("name", ""),
+                         "speed": (cfg.get("letters_speed_by_printer") or {}).get(str(printer), "")},
+             "letters_printers": sorted(farm.letters_printers(cfg))}
     try:  # local (yours in Bambuddy) + standard profiles only — no cloud (ARCHITECTURE #62)
         avail, notice = farm.preset_listing(cfg, refresh=bool(refresh))
     except farm.FarmError as e:
@@ -1330,6 +1335,20 @@ async def makeit_presets_save(req: Request):
     except farm.FarmError as e:
         raise _farm_err(e) from e
     return {"names": {k: v["name"] for k, v in chosen.items()}}
+
+
+@app.put("/api/makeit/letters")
+async def makeit_letters_save(req: Request):
+    """Slicing → Letters: {printer_id, process ("source:id" or "" = none), speed ("" = the printer's)}. Letter plates
+    slice with that process profile and print at that speed; with any set, letters print only on those printers."""
+    b = await req.json()
+    if not b.get("printer_id"):
+        raise HTTPException(400, "Choose a printer")
+    try:
+        return await run_in_threadpool(farm.set_letters, int(b["printer_id"]), str(b.get("process") or ""),
+                                       str(b.get("speed") or ""))
+    except farm.FarmError as e:
+        raise _farm_err(e) from e
 
 
 @app.put("/api/makeit/print-defaults")

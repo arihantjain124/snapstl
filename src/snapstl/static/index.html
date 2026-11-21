@@ -445,6 +445,14 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
         <p class="hint under" id="slp_listmsg"></p>
         <div class="toolbar" style="margin-top:10px"><button id="slp_save" class="primary">Save</button><button id="slp_clear" hidden>Remove</button><span class="grow"></span><button id="slp_reload" class="small" title="Read Bambuddy's profiles again (also its Bambu / Orca cloud lists)">Reload from Bambuddy</button></div>
         <p class="hint" id="slp_msg"></p>
+        <div id="sllet" style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px">
+          <h3 style="margin:0 0 4px">Letters (name plates)</h3>
+          <p class="hint">Letter plates slice with this process profile and print at this speed on this printer; base plates use the profiles above. Once any printer has a Letters profile, letters print <b>only</b> on those printers — the others print bases. Print and <b>Print next</b> pick the right profile by themselves.</p>
+          <label for="sllet_proc">Letters process profile</label><select id="sllet_proc"></select>
+          <label for="sllet_speed">Letters speed</label><select id="sllet_speed" style="max-width:260px"></select>
+          <div class="toolbar" style="margin-top:8px"><button id="sllet_save" class="primary">Save letters</button><span class="hint" id="sllet_who"></span></div>
+          <p class="hint" id="sllet_msg"></p>
+        </div>
       </div>
     </div>
    </div>
@@ -1337,6 +1345,8 @@ let MK=null,MKTAB='bases';const MKSEL={};const OPTLBL={bed_levelling:'Bed levell
 const MKPANES=['bases','names','verify','completed','removed'];
 try{MKTAB=localStorage.getItem('mktab')||'bases'}catch{}if(!MKPANES.includes(MKTAB))MKTAB='bases';
 const mkPrinter=id=>(MK&&MK.printers.find(p=>String(p.id)===String(id)))||{};
+// a plate's print defaults on a printer: letter plates use the printer's Letters speed (Slicing → Letters, 0.27)
+const mkDefaults=(r,id)=>{const p=mkPrinter(id);return (r&&r.kind==='names'&&p.defaults_letters)||p.defaults||{}};
 // a plate prints with its printer's print defaults (Slicing), with what's changed on this plate on top
 function optSummary(o,speed,dflt){dflt=dflt||{};const eff={};
   for(const [k,v] of Object.entries(dflt))if(k!=='speed'&&setVal(v))eff[k]=v;
@@ -1386,7 +1396,7 @@ function mkTrays(r,sel){const c=r.choices.find(x=>String(x.id)===sel.printer);re
 function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={printer:String(r.suggested??(r.job&&r.job.printer_id?r.job.printer_id:'')),options:{...((r.job&&r.job.options)||{})},speed:(r.job&&r.job.speed)||'',tray:(r.job&&r.job.ams_tray!=null)?String(r.job.ams_tray):''});
   const ch=r.choices.find(x=>String(x.id)===sel.printer),trays=mkTrays(r,sel);
   if(ch&&!trays.some(t=>String(t.tray)===sel.tray))sel.tray=ch.best_tray!=null?String(ch.best_tray):'';
-  const j=r.job,busy=r.job_active&&!(j&&j.state==='sent'&&j.held),d=mkPrinter(sel.printer).defaults||{};
+  const j=r.job,busy=r.job_active&&!(j&&j.state==='sent'&&j.held),d=mkDefaults(r,sel.printer)||{};
   const opts='<option value="">— choose a printer —</option>'+r.choices.map(c=>`<option value="${c.id}" ${String(c.id)===sel.printer?'selected':''}>${esc(c.name)} · ${[!c.online?'offline':c.available?'available':(c.state?c.state.toLowerCase():'busy'),c.note].filter(Boolean).map(esc).join(' · ')}</option>`).join('');
   const traySel=sel.printer?(trays.length?`<select data-mktray="${esc(k)}" ${busy?'disabled':''} title="The filament slot this plate prints from (✓ same colour, ≈ close) — any loaded slot can be chosen" style="margin-top:4px">${trays.map(t=>`<option value="${t.tray}" ${String(t.tray)===sel.tray?'selected':''}>${esc(trayLbl(t))}</option>`).join('')}</select>${(()=>{const t=trays.find(x=>String(x.tray)===sel.tray);return t&&t.hex?` <span class="dot" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;background:${esc(t.hex)}"></span>`:''})()}`:'<div class="hint">No filament reported — Bambuddy picks the slot</div>'):'';
   const dflt=v=>`<option value="">Printer default${setVal(v)?' ('+esc(v)+')':''}</option>`;
@@ -1466,11 +1476,11 @@ function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(
   document.querySelectorAll('[data-mktray]').forEach(x=>x.onchange=()=>{MKSEL[x.dataset.mktray].tray=x.value;x.blur();mkRender(true)});
   document.querySelectorAll('[data-mkspeed]').forEach(x=>x.onchange=()=>{MKSEL[x.dataset.mkspeed].speed=x.value});
   document.querySelectorAll('[data-mkopt]').forEach(x=>x.onchange=()=>{const v=x.value;MKSEL[x.dataset.mkopt].options[x.dataset.k]=v===''?'':v==='true'?true:v==='false'?false:v});
-  document.querySelectorAll('.mktable details').forEach(d=>d.ontoggle=()=>{if(!d.open){const s=d.querySelector('[data-mkopt]');if(s){const k=s.dataset.mkopt,m=MKSEL[k];d.querySelector('summary').textContent=optSummary(m.options,m.speed,mkPrinter(m.printer).defaults)}}});
+  document.querySelectorAll('.mktable details').forEach(d=>d.ontoggle=()=>{if(!d.open){const s=d.querySelector('[data-mkopt]');if(s){const k=s.dataset.mkopt,m=MKSEL[k];d.querySelector('summary').textContent=optSummary(m.options,m.speed,mkDefaults(find(k),m.printer))}}});
   document.querySelectorAll('[data-mkstart]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mkstart),sel=MKSEL[x.dataset.mkstart];
     if(!sel.printer){alert('Choose a printer');return}
     const pr=r.choices.find(c=>String(c.id)===sel.printer),tr=mkTrays(r,sel).find(t=>String(t.tray)===sel.tray);
-    if(!confirm(`Start printing ${r.kind==='bases'?'this base plate':'this '+(r.colors[0]||'')+' name plate'} on ${pr?pr.name:'that printer'}?\n\nFilament: ${tr?trayLbl(tr):'Bambuddy picks the slot'}\n${optSummary(sel.options,sel.speed,mkPrinter(sel.printer).defaults)}\n\nIt prints as soon as the printer is free and its bed has been cleared.`))return;
+    if(!confirm(`Start printing ${r.kind==='bases'?'this base plate':'this '+(r.colors[0]||'')+' name plate'} on ${pr?pr.name:'that printer'}?\n\nFilament: ${tr?trayLbl(tr):'Bambuddy picks the slot'}\n${optSummary(sel.options,sel.speed,mkDefaults(r,sel.printer))}\n\nIt prints as soon as the printer is free and its bed has been cleared.`))return;
     x.disabled=true;const body={batch_id:r.batch_id,file:r.file,printer_id:+sel.printer,tray:sel.tray===''?null:+sel.tray,options:sel.options,speed:sel.speed||''};
     const send=async b=>{const res=await post('/api/makeit/start',b);if(res&&res.held)alert(`${pr?pr.name:'The printer'} is printing something else. The plate waits (held) in its queue and does not start by itself — press Start print again once that print is done and the bed is empty.`)};
     try{await send(body)}catch(e){
@@ -1689,7 +1699,17 @@ async function loadPresets(refresh){$('slp_msg').textContent=refresh?'Reading Ba
     :`<b>${esc(slName(SLPR))}</b>: ${p.set_for[SLPR]?'its plates are sliced with the profiles below.':'<b style="color:var(--warn)">No profiles picked yet</b> — plates for this printer aren\'t sliced or printed until you save them.'}`;
   $('slp_presetrows').hidden=!p.printers.length;fillPresetSelects();
   $('slp_save').textContent=`Save for ${slName(SLPR)}`;$('slp_clear').hidden=!p.set_for[SLPR];
-  renderDefaults(p);slicingBox(p.activity)}
+  renderDefaults(p);renderLetters(p);slicingBox(p.activity)}
+function renderLetters(p){const L=p.letters||{process:'',speed:'',name:''},procs=(p.available&&p.available.process)||[];
+  $('sllet_proc').innerHTML='<option value="">— none: letters use the process profile above —</option>'
+    +(L.process&&!procs.some(x=>x.key===L.process)?`<option value="${esc(L.process)}" selected>${esc(L.name)} (saved)</option>`:'')
+    +procs.map(x=>`<option value="${esc(x.key)}" ${x.key===L.process?'selected':''}>${esc(x.name)}</option>`).join('');
+  $('sllet_speed').innerHTML='<option value="">Same as this printer\'s default speed</option>'+(p.speeds||[]).map(v=>`<option value="${v}" ${L.speed===v?'selected':''}>${cap(v)}</option>`).join('');
+  const lp=p.letters_printers||[];
+  $('sllet_who').textContent=lp.length?`Letters print on: ${lp.map(id=>slName(id)).join(', ')}`:'No Letters profile yet: letters print on any printer with the profiles above.';
+  $('sllet_save').textContent=`Save letters for ${slName(SLPR)}`;$('sllet_msg').textContent=''}
+$('sllet_save').onclick=async()=>{try{await putJSON('/api/makeit/letters',{printer_id:SLPR,process:$('sllet_proc').value,speed:$('sllet_speed').value});
+  await loadPresets();$('sllet_msg').textContent='Saved — letter plates on this printer use it from the next slice.'}catch(e){$('sllet_msg').textContent=e.message}};
 let SLSEL={};  // what's picked in each list right now (saved or not)
 const slWords=q=>(q||'').toLowerCase().replace(/[@_,;]+/g,' ').split(/\s+/).filter(Boolean);
 const slHay=x=>`${x.name} ${SRC_LABEL[x.source]||x.source} ${x.source} ${x.key}`.toLowerCase().replace(/[@_]+/g,' ');

@@ -379,6 +379,9 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   before its bases are printed).
 - **Merge** (Letters): tick letter plates of one colour (fix plates too), not started, up to 3 names, then
   **Merge onto one plate**; **Split back** returns exactly those plates while it isn't started.
+- **Slicing → Letters** (0.27): per printer, a Letters process profile and speed. Letter plates slice and print with
+  them; bases use the printer's own profiles. Once any printer has a Letters profile, letters go only to those
+  printers (e.g. the P1S with colours in the AMS) — Print and Print next pick it by themselves.
 - **Settings → Staff**: the owner PIN (set it first; forgotten: `uv run snapstl-admin reset-owner-pin` on that
   computer), the people who check prints and their 4-digit PINs (shared with every computer, stored only as a
   scrambled code). Until anyone has a PIN, Verify lets people pick their name as before.

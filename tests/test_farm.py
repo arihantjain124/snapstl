@@ -839,3 +839,35 @@ def test_queue_panel_lists_downloading_building_slicing_printing(client, bb):
     q = wait_for(lambda: (lambda q: q if any(j["plate"] == pink for j in q["printing"]) else None)(client.get("/api/queues").json()))
     j = next(j for j in q["printing"] if j["plate"] == pink)
     assert j["printer_name"] == "Names A" and j["batch"]
+
+
+def test_letters_slice_with_their_own_profile_and_only_on_letter_printers(client, bb):
+    """0.27: Slicing → Letters: letter plates slice with the printer's Letters process profile and print at the
+    Letters speed; bases keep the printer's profiles. With any Letters profile set, letters go only to those printers."""
+    client.get("/api/farm")
+    bid, folder = built_batch(client, "PL")
+    base, pink = "Bases/Bases - Ayra + Riya.3mf", "Names/pink/Pink - Ayra.3mf"
+    assert client.put("/api/makeit/letters", json={"printer_id": 1, "process": "local:99"}).status_code == 400
+    r = client.put("/api/makeit/letters", json={"printer_id": 1, "process": "local:7", "speed": "standard"})
+    assert r.status_code == 200 and r.json()["process"]["name"] == "Organizer 0.24mm"
+    p = client.get("/api/makeit/presets?printer=1").json()
+    assert p["letters"] == {"process": "local:7", "name": "Organizer 0.24mm", "speed": "standard"} and p["letters_printers"] == [1]
+    assert farm.target(1, kind="names")[0] != farm.target(1)[0]  # letters and bases: separate slices
+
+    bb.slicer = "ok"
+    for f in (pink, base):
+        assert client.post("/api/makeit/slice", json={"plates": [{"batch_id": bid, "file": f, "printer_id": 1}]}).json()["queued"] == 1
+        wait_for(lambda f=f: makeit_row(client, "names" if f == pink else "bases", f)["sliced"])
+    procs = [b[1]["process_preset"] for b in bb.slice_bodies[-2:]]
+    assert procs[0] == {"source": "local", "id": "7"} and procs[1] != procs[0]  # letters: Letters; base: the printer's
+
+    m = client.get("/api/makeit").json()
+    row = next(r for r in m["names"] if r["file"] == pink)
+    assert {c["id"] for c in row["choices"]} == {1}  # letters only on the printer with a Letters profile
+    assert len(next(r for r in m["bases"] if r["file"] == base)["choices"]) > 1
+    assert next(x for x in m["printers"] if x["id"] == 1)["defaults_letters"]["speed"] == "standard"
+    r = client.post("/api/makeit/start", json={"batch_id": bid, "file": pink, "printer_id": 2})
+    assert r.status_code in (400, 409) and "Letters profile" in r.json()["detail"]
+    # removing it: letters may print anywhere again, with the printer's profiles
+    assert client.put("/api/makeit/letters", json={"printer_id": 1, "process": ""}).json()["process"] is None
+    assert farm.target(1, kind="names")[0] == farm.target(1)[0] and farm.letters_printers() == set()
