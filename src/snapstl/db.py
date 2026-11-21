@@ -203,6 +203,11 @@ CREATE INDEX IF NOT EXISTS order_notes_order ON order_notes(order_id, at);
 CREATE TABLE IF NOT EXISTS usage_counts (day TEXT NOT NULL, feature TEXT NOT NULL, count INTEGER NOT NULL,
     sent INTEGER, PRIMARY KEY (day, feature));
 -- Print → Verify (0.24): who may check prints (a name is hidden, never removed); shared with every computer
+-- spare name pieces in stock (0.28, spares.py); shared with every computer, never deleted
+CREATE TABLE IF NOT EXISTS spares (uid TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT, part TEXT NOT NULL,
+    note TEXT, staff TEXT, added_at REAL, used_by TEXT, used_at REAL, removed_at REAL, changed REAL, computer TEXT,
+    sent INTEGER);
+CREATE INDEX IF NOT EXISTS spares_name ON spares(name, color);
 CREATE TABLE IF NOT EXISTS staff (name TEXT PRIMARY KEY COLLATE NOCASE, added_at REAL, hidden INTEGER NOT NULL DEFAULT 0,
     changed REAL, sent INTEGER);
 -- one row per printed item checked (a base or a name of one copy of an order on a plate); the newest row of an

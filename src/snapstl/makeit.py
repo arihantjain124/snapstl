@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import computer, db, extras, farm, verify
+from . import computer, db, extras, farm, spares, verify
 
 AVAILABLE_STATES = {"IDLE", "FINISH", "FAILED", ""}
 
@@ -236,8 +236,12 @@ def board(prs: list[dict] | None = None) -> dict:
                  "names": [i.get("name") + (f" ({i['letters']})" if i.get("letters") else "") for i in x["items"]]}
             add(b, json.loads(b.get("summary") or "{}"), p, [i.get("order_id") for i in x["items"]], x["kind"])
         parts = verify.part_status(con, batches)
+        dupes = extras.duplicates(con)  # 0.28: the same names on two plates (a double press) — Remove the copy
+        stock = spares.in_stock_orders(con, [o for r in rows for o in r["open_items"]])  # a spare piece fits
     # how far each order's other part is: Letters splits into "base printed" / "base still to print",
     # Bases → Printed shows how far the letters are
+    for r in rows:
+        r["in_stock"] = [o for o in r["open_items"] if o in stock]
     for r in rows + printed:
         other = "bases" if r["kind"] == "names" else "names"
         r["other"] = {o: parts.get(o, {}).get(other, "todo") for o in r["open_items"]}
@@ -292,7 +296,7 @@ def board(prs: list[dict] | None = None) -> dict:
     return {"bases": [r for r in pending if r["kind"] == "bases"], "names": names, "printed_bases": [r for r in printed if r["kind"] == "bases"],
             "printed_letters": [r for r in printed if r["kind"] == "names"],
             "now": printers_now(prs, active_jobs),
-            "merge": extras.suggestions(names), **_verify(), "completed": verify.completed(),
+            "merge": extras.suggestions(names), "duplicates": dupes, **_verify(), "completed": verify.completed(),
             "removed": removed, "staff": verify.staff_list()}
 
 
@@ -397,6 +401,12 @@ def start_print(batch_id: int, file: str, printer_id: int, options: dict | None,
         raise farm.FarmError("This plate is part of a merged plate — print that one, or Split back first")
     if j and j["state"] == "divided":
         raise farm.FarmError("This plate was split into smaller plates — print those, or Join back first")
+    if plate.get("extra") in ("merged", "divided"):
+        with db.tx() as con:
+            copy = next((d for d in extras.duplicates(con) if d["batch_id"] == batch_id and d["file"] == file), None)
+        if copy:
+            raise farm.FarmError(f"These names are already on {Path(copy['of']['file']).name} — this plate is a copy. "
+                                 "Press Remove on it instead of printing it again.")
     bed = bed_state(printer)
     if bed == "check":
         if not bed_clear:
@@ -469,11 +479,7 @@ def printed_by_hand(batch_id: int, file: str) -> dict:
 def remove(batch_id: int, file: str, put_back: bool = False) -> dict:
     """Take a plate off Bases / Names (nothing is deleted), or put it back."""
     _, plate = _plate(batch_id, file)
-    if plate.get("extra") == "merged" and not put_back:
-        raise farm.FarmError("Use Split back for a merged plate")
-    if plate.get("extra") == "divided" and not put_back:
-        raise farm.FarmError("Use Join back for a part of a split plate")
-    j = _latest(batch_id, file)
+    j = _latest(batch_id, file)  # 0.28: merged plates and split parts can be removed too (e.g. a copy)
     if put_back:
         if not j or j["state"] != "removed":
             raise farm.FarmError("This plate isn't removed")

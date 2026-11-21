@@ -16,7 +16,9 @@ Both are rows of `extra_plates` (see verify.py for how items, checks and orders 
 from __future__ import annotations
 
 import json
+import threading
 import uuid
+from functools import wraps
 from pathlib import Path
 
 import numpy as np
@@ -35,6 +37,99 @@ DOT_SHARE = 0.25  # a piece smaller than this share of the median letter is a do
 
 class ExtraError(Exception):
     pass
+
+
+# 0.28: merge / split back / split / join run one at a time. Writing a plate takes a few seconds; a second press
+# in that time used to pass the "already merged" check and make the same plate twice (printed twice).
+_EDIT = threading.Lock()
+
+
+def _one_at_a_time(fn):
+    @wraps(fn)
+    def run(*a, **k):
+        with _EDIT:
+            return fn(*a, **k)
+    return run
+
+
+def _src_keys(items: list[dict]) -> set[tuple]:
+    """What an extra plate prints: each item with the plate it was taken from (a fix of a printed merged plate
+    has another source, so it isn't a copy)."""
+    return {(int(i["batch_id"]), i["plate"], int(i["idx"]), int(i.get("src_batch") or i["batch_id"]),
+             i.get("src") or i["plate"]) for i in items}
+
+
+def duplicates(con) -> list[dict]:
+    """Active merged / split-part plates that print only what another active one prints (a double press before
+    0.28): [{batch_id, file, of: {batch_id, file}}]. The copy is the one not started (the newer if neither is)."""
+    xs = [x for x in con.execute("SELECT id, batch_id, file, items FROM extra_plates WHERE state='active' "
+                                 "AND kind IN ('merged','divided') ORDER BY id")]
+    keys = {x[0]: _src_keys(json.loads(x[3] or "[]")) for x in xs}
+    out, seen = [], set()
+    for a in xs:
+        for b in xs:
+            if b[0] <= a[0] or a[0] in seen or b[0] in seen or not keys[a[0]] or keys[a[0]] != keys[b[0]]:
+                continue
+            sa, sb = _latest_state(con, a[1], a[2]), _latest_state(con, b[1], b[2])
+            started = lambda s: s not in MERGEABLE + ("failed", "cancelled", "removed")  # noqa: E731
+            if sb == "removed" or sa == "removed":
+                continue
+            if started(sb) and not started(sa):
+                copy, keep = a, b
+            elif not started(sb):
+                copy, keep = b, a
+            else:
+                continue  # both printed: nothing to take off any more
+            seen.add(copy[0])
+            out.append({"batch_id": copy[1], "file": copy[2], "of": {"batch_id": keep[1], "file": keep[2]}})
+    return out
+
+
+def printed_twice(con) -> list[dict]:
+    """Merged / split-part plates printed although another active one printed the same names (a double press):
+    their letters / bases are spares. [{part, items}] — the newer plate of each pair."""
+    xs = [x for x in con.execute("SELECT id, batch_id, file, items, part FROM extra_plates WHERE state='active' "
+                                 "AND kind IN ('merged','divided') ORDER BY id")]
+    keys = {x[0]: _src_keys(json.loads(x[3] or "[]")) for x in xs}
+    out, seen = [], set()
+    for a in xs:
+        for b in xs:
+            if b[0] <= a[0] or b[0] in seen or not keys[a[0]] or keys[a[0]] != keys[b[0]]:
+                continue
+            if _latest_state(con, a[1], a[2]) == "done" and _latest_state(con, b[1], b[2]) == "done":
+                seen.add(b[0])
+                out.append({"part": b[4], "items": json.loads(b[3] or "[]")})
+    return out
+
+
+def repair_028() -> int:
+    """One time at startup: take the copies made by a double press off Letters (state `removed`, Put back undoes);
+    the letters of copies already printed twice go to Spare pieces (letters only)."""
+    from . import spares
+
+    with db.tx() as con:
+        if con.execute("SELECT 1 FROM sync_state WHERE key='repair_028'").fetchone():
+            return 0
+        extra = printed_twice(con)
+        n = 0
+        for d in duplicates(con):
+            now = db.now()
+            x = con.execute("SELECT part, color FROM extra_plates WHERE batch_id=? AND file=? AND state='active'",
+                            (d["batch_id"], d["file"])).fetchone()
+            con.execute("INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,created_at,"
+                        "updated_at,computer_id) VALUES (?,?,?,?,0,'','removed',?,?,?)",
+                        (d["batch_id"], d["file"], x[0], x[1], now, now, computer.ID))
+            db.add_activity(con, "merge", f"Removed {Path(d['file']).name}: the same names are on "
+                                          f"{Path(d['of']['file']).name} (pressed twice)")
+            n += 1
+        con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('repair_028', ?)", (str(n),))
+    for x in extra:
+        for it in x["items"]:
+            if it.get("name"):
+                spares.add(it["name"], it.get("color") or "", "names" if x["part"] == "names" else "bases",
+                           "Printed twice (merge pressed twice) — found by the 0.28 update")
+                n += 1
+    return n
 
 
 # ---------------- reading items back from their plate ----------------
@@ -251,6 +346,7 @@ def _latest_state(con, batch_id: int, file: str) -> str | None:
 MERGEABLE = (None, "reprint", "unmerged")  # not started (or back in the list after a failed print)
 
 
+@_one_at_a_time
 def merge(plates: list[dict], staff: str = "") -> dict:
     """Merge letter plates [{batch_id, file}] of one colour (≤ 3 names in all; letter fix plates too) onto one plate."""
     from .makeit import _batch_orders, plate_order_ids
@@ -307,6 +403,10 @@ def merge(plates: list[dict], staff: str = "") -> dict:
             raise ExtraError("Nothing left to print on these plates")
         if len(items) > MAX_MERGE:
             raise ExtraError(f"At most {MAX_MERGE} names on one plate ({len(items)} chosen)")
+        mine = _src_keys(items)
+        for x in con.execute("SELECT file, items FROM extra_plates WHERE state='active' AND kind IN ('merged','divided')"):
+            if mine & _src_keys(json.loads(x[1] or "[]")):
+                raise ExtraError(f"Already merged: these names are on {Path(x[0]).name} — refresh the page")
         color = colors.pop()
         home = batches[max(batches)]
         names = " + ".join(it["name"] + (f" ({it['letters']})" if it.get("letters") else "") for it in items)
@@ -323,6 +423,7 @@ def merge(plates: list[dict], staff: str = "") -> dict:
     return {"batch_id": home["id"], "file": file, "names": names}
 
 
+@_one_at_a_time
 def split(batch_id: int, file: str) -> dict:
     """Split back a merged plate that isn't started: its single plates return to Names."""
     with db.tx() as con:
@@ -345,6 +446,7 @@ def split(batch_id: int, file: str) -> dict:
 
 
 # ---------------- divide (0.26): one plate into smaller ones, e.g. to spread a night run ----------------
+@_one_at_a_time
 def divide(batch_id: int, file: str, sizes: list[int], staff: str = "") -> dict:
     """A batch's own plate (bases or letters), not started, into smaller plates: `sizes` = how many items on
     each (e.g. [1, 1, 1] or [2, 1]), in plate order. Same size, no scaling, saved under `Split/`. The plate
@@ -389,6 +491,7 @@ def divide(batch_id: int, file: str, sizes: list[int], staff: str = "") -> dict:
     return {"files": made}
 
 
+@_one_at_a_time
 def join(batch_id: int, file: str) -> dict:
     """Join back the parts of a split plate (any one of them given) while none of them is started."""
     with db.tx() as con:
@@ -421,6 +524,8 @@ def suggestions(names_rows: list[dict]) -> list[dict]:
             continue
         if ((r.get("job") or {}).get("state")) not in MERGEABLE:
             continue
+        if r.get("other_ready", 0) < len(r.get("open_items") or []):
+            continue  # 0.28: only letters whose bases are printed (else they wait printed until the bases are)
         n = len(r.get("open_items") or r.get("names") or [])
         if 0 < n < MAX_MERGE:
             by.setdefault(((r.get("colors") or [""])[0] or "").lower(), []).append({**r, "_n": n})

@@ -144,9 +144,7 @@ def test_spoiled_letters_only(client, bb, monkeypatch):
 def test_merge_name_plates_across_batches_and_split_back(client, bb):
     b1, f1 = built_batch(client, "PO")
     b2, f2 = built_batch(client, "PN")
-    m = client.get("/api/makeit").json()
-    sug = {s["color"]: s for s in m["merge"]}
-    assert set(sug) == {"pink", "blue"} and sug["pink"]["names"] == 2
+    assert client.get("/api/makeit").json()["merge"] == []  # 0.28: merge ideas only once the bases are printed
     plates = [{"batch_id": b1, "file": PINK}, {"batch_id": b2, "file": PINK}]
     assert client.post("/api/makeit/merge", json={"plates": plates + [{"batch_id": b1, "file": BLUE}]}).status_code == 409
     r = client.post("/api/makeit/merge", json={"plates": plates})

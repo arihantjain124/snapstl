@@ -22,7 +22,7 @@ from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from . import (archive, auth, bambuddy_host, cache, computer, config, db, extras, farm, makeit, platform_os, sync, tabs,
-               updater, verify)
+               spares, updater, verify)
 from .ingest import add_adhoc, ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
 from . import staff as staff_pins
@@ -58,6 +58,11 @@ async def _lifespan(_app):
         print("SnapSTL: 0.26 repair:", repair_026())  # one-time: stuck PRINT orders, packed ≠ problem
     except Exception as e:  # noqa: BLE001
         print(f"SnapSTL: 0.26 repair skipped: {e}")
+    try:
+        from .extras import repair_028
+        print("SnapSTL: 0.28 repair:", repair_028())  # one-time: merged plates made twice by a double press
+    except Exception as e:  # noqa: BLE001
+        print(f"SnapSTL: 0.28 repair skipped: {e}")
     try:
         from .ingest import recheck_small_first
         recheck_small_first()               # one-time (0.23.1): waiting names with a small first letter → Check name
@@ -405,6 +410,8 @@ def _order_view(r: dict) -> dict:
         "tab": tabs.tab_of(r), "first_status": r.get("first_status"), "print_started_at": r.get("print_started_at"),
         **{c: r.get(c) for g, cs in db.FIELD_GROUPS.items() for c in cs},
         "returned": r.get("_returned") or [],
+        "spares": r.get("_spares") or [],  # 0.28: spare pieces in stock that fit
+        "reuse_words": spares.describe(r.get("reuse_of")),
         "payment": r.get("payment") or "",
     }
 
@@ -418,6 +425,7 @@ _RTO = "REPLACE(UPPER(COALESCE({t}.source_status,'')),'_','-') LIKE 'RTO-%'"
 _RETURNED = (f"EXISTS (SELECT 1 FROM orders rt WHERE rt.order_id<>orders.order_id AND rt.name=orders.name "
              f"AND COALESCE(rt.color,'')=COALESCE(orders.color,'') AND {_RTO.format(t='rt')} AND rt.reused_by IS NULL "
              "AND COALESCE(orders.name,'')<>'')")
+_RETURNED = f"({_RETURNED} OR {spares.match_sql()})"  # 0.28: or a spare piece in stock
 _MAKING_TABS = "('to_make','check_name','ready_to_print','printing','pack_it')"
 TABS = {k: f"{_T}='{k}'" for k in tabs.KEYS}
 TABS.update({
@@ -482,7 +490,9 @@ def list_orders(request: Request, tab: str = "to_make", limit: int = 200, offset
         for r in rs:
             if r["state"] in ("ready", "needs_review") and r.get("name"):
                 r["_returned"] = returned_pieces(con, r)
-    return {"total": total, "orders": [_order_view(r) for r in rs]}
+                r["_spares"] = spares.for_order(con, r)
+        in_stock = spares.waiting_matches(con)
+    return {"total": total, "orders": [_order_view(r) for r in rs], "in_stock": in_stock}
 
 
 def returned_pieces(con, o: dict) -> list[dict]:
@@ -614,6 +624,59 @@ async def use_returned(order_id: str, req: Request):
     return {"ok": True}
 
 
+@app.post("/api/orders/{order_id}/use-spare")
+async def use_spare(order_id: str, req: Request):
+    """Send this order with a complete spare piece from stock instead of making it (0.28)."""
+    try:
+        spares.use(order_id, str((await req.json()).get("uid") or ""))
+    except spares.SpareError as e:
+        raise HTTPException(409, str(e)) from e
+    sync.LOOP.kick()
+    return {"ok": True}
+
+
+@app.get("/api/spares")
+def spares_list():
+    """Orders → Spare pieces (0.28)."""
+    with db.tx() as con:
+        return spares.listing(con) | {"in_stock": spares.waiting_matches(con)}
+
+
+@app.post("/api/spares")
+async def spares_add(req: Request):
+    b = await req.json()
+    try:
+        out = spares.add(str(b.get("name") or ""), str(b.get("color") or ""), str(b.get("part") or ""),
+                         str(b.get("note") or ""), str(b.get("staff") or ""), int(b.get("count") or 1))
+    except (spares.SpareError, ValueError) as e:
+        raise HTTPException(400, str(e)) from e
+    sync.LOOP.kick()
+    return {"added": out}
+
+
+@app.put("/api/spares/{uid}")
+async def spares_edit(uid: str, req: Request):
+    b = await req.json()
+    try:
+        spares.edit(uid, str(b.get("name") or ""), str(b.get("color") or ""), str(b.get("part") or ""),
+                    str(b.get("note") or ""))
+    except spares.SpareError as e:
+        raise HTTPException(400, str(e)) from e
+    sync.LOOP.kick()
+    return {"ok": True}
+
+
+@app.post("/api/spares/{uid}/remove")
+async def spares_remove(uid: str, req: Request):
+    b = await req.json()
+    try:
+        spares.remove(uid, bool(b.get("put_back")))
+    except spares.SpareError as e:
+        raise HTTPException(400, str(e)) from e
+    sync.LOOP.kick()
+    return {"ok": True}
+
+
 @app.post("/api/orders/{order_id}/undo-returned")
 def undo_returned(order_id: str):
     with db.tx() as con:
@@ -621,7 +684,10 @@ def undo_returned(order_id: str):
         if cur is None or not cur["reuse_of"]:
             raise HTTPException(409, "This order doesn't use a returned piece")
         db.set_group(con, order_id, "reuse")
-        db.set_group(con, cur["reuse_of"], "reuse")
+        if cur["reuse_of"].startswith(spares.PREFIX):
+            spares.release(con, order_id, cur["reuse_of"])  # the spare piece is in stock again
+        else:
+            db.set_group(con, cur["reuse_of"], "reuse")
         db.count_usage(con, "undo_returned")
     sync.LOOP.kick()
     return {"ok": True}
@@ -669,7 +735,8 @@ async def next_batch(req: Request):
     if errs:
         raise HTTPException(400, "; ".join(errs))
     with db.tx() as con:
-        ids = [r[0] for r in con.execute(f"SELECT order_id FROM orders WHERE {_T}='to_make' {_ORDER} LIMIT ?", (n,))]
+        ids = [r[0] for r in con.execute(f"SELECT order_id FROM orders WHERE {_T}='to_make' "  # not those with a
+                                         f"AND NOT {spares.match_sql(complete=True)} {_ORDER} LIMIT ?", (n,))]  # spare
     if not ids:
         raise HTTPException(400, "Nothing to make: To make is empty")
     try:
@@ -1335,6 +1402,16 @@ async def makeit_presets_save(req: Request):
     except farm.FarmError as e:
         raise _farm_err(e) from e
     return {"names": {k: v["name"] for k, v in chosen.items()}}
+
+
+@app.put("/api/printers/external")
+async def printers_external(req: Request):
+    """Printers → External spool (0.28): {printer_id, on}. A printer with an AMS offers its external spool for
+    printing only when on."""
+    b = await req.json()
+    if not b.get("printer_id"):
+        raise HTTPException(400, "Choose a printer")
+    return await run_in_threadpool(farm.set_external, int(b["printer_id"]), bool(b.get("on")))
 
 
 @app.put("/api/makeit/letters")

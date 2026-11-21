@@ -145,6 +145,7 @@ Snapstl/
 │   ├── staff.py              staff PINs + owner PIN (Print → Verify, Settings → Staff; 0.25.1)
 │   ├── stats.py              Stats page: made per day, backlog, printers, checkers (0.26)
 │   ├── reportwatch.py        imports a new report saved in Downloads by itself (0.26)
+│   ├── spares.py             spare name pieces in stock, matched to new orders, shared (0.28)
 │   └── static/
 │       ├── index.html        the whole UI: side navigation (Orders, Batches, Downloads, Settings, Help)
 │       └── login.html        used only if a portal password is set

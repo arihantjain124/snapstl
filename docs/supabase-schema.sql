@@ -232,6 +232,25 @@ CREATE OR REPLACE TRIGGER usage_counts_no_delete BEFORE DELETE ON snapstl.usage_
     FOR EACH ROW EXECUTE FUNCTION snapstl.refuse_delete();
 CREATE OR REPLACE TRIGGER usage_counts_no_truncate BEFORE TRUNCATE ON snapstl.usage_counts
     FOR EACH STATEMENT EXECUTE FUNCTION snapstl.refuse_delete();
+
+CREATE TABLE IF NOT EXISTS snapstl.spares (
+    uid        text PRIMARY KEY,
+    name       text NOT NULL,
+    color      text,
+    part       text NOT NULL,
+    note       text,
+    staff      text,
+    added_at   double precision,
+    used_by    text,
+    used_at    double precision,
+    removed_at double precision,
+    changed    double precision,
+    computer   text,
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+COMMENT ON TABLE snapstl.spares IS 'Spare name pieces in stock (0.28): part both | names | bases; used_by = the order sent with it; removed_at = taken out of stock. Never deleted; newest `changed` wins.';
+CREATE OR REPLACE TRIGGER spares_no_delete BEFORE DELETE ON snapstl.spares
+    FOR EACH ROW EXECUTE FUNCTION snapstl.refuse_delete();
 -- The rest of the webstore report for every Magicians_35 order (report.py), for reading and querying.
 CREATE TABLE IF NOT EXISTS snapstl.report_rows (
     order_id                  text PRIMARY KEY,
@@ -438,7 +457,7 @@ DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['order_records', 'batch_records', 'meta', 'report_rows', 'report_uploads',
-                           'order_notes', 'usage_counts', 'staff', 'print_checks'] LOOP
+                           'order_notes', 'usage_counts', 'staff', 'print_checks', 'spares'] LOOP
     IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = format('snapstl.%I', t)::regclass) THEN
       EXECUTE format('ALTER TABLE snapstl.%I ENABLE ROW LEVEL SECURITY', t);
     END IF;

@@ -22,7 +22,7 @@ import time
 import traceback
 from dataclasses import asdict
 
-from . import cache, computer, db, watermark
+from . import cache, computer, db, spares, watermark
 from .meshes import dims, obj_to_mesh
 from .orders import Order
 from .pipeline import build, new_batch_dir
@@ -94,6 +94,13 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
         q = ",".join("?" * len(order_ids))
         rows = db.rows(con, f"SELECT * FROM orders WHERE state='ready' AND reuse_of IS NULL AND flag IS NULL "
                             f"AND order_id IN ({q}) ORDER BY order_date, order_id", *order_ids)
+        # 0.28: an order with a complete spare piece in stock is sent with it, not printed again
+        in_stock = {r[0] for r in con.execute(f"SELECT order_id FROM orders WHERE order_id IN ({q}) "
+                                              f"AND {spares.match_sql(complete=True)}", order_ids)}
+    rows = [r for r in rows if r["order_id"] not in in_stock]
+    if in_stock and not rows:
+        raise ValueError(f"{len(in_stock)} selected order{'s have' if len(in_stock) > 1 else ' has'} a spare piece in "
+                         "stock — use it (Orders → To make → Piece in stock) instead of making it again")
     if not rows:
         raise ValueError("None of the selected orders are ready (they may need review or be in another batch)")
     uid = uuid.uuid4().hex
@@ -125,7 +132,7 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
         if state_at:  # already in the shared records exactly like this: nothing to push
             con.execute(f"DELETE FROM sync_outbox WHERE order_id IN ({','.join('?' * len(ids))})", ids)
     return {"batch_id": batch_id, "orders": len(ids), "skipped": len(order_ids) - len(ids),
-            "taken_elsewhere": taken, "models": len(_needed(orders, settings))}
+            "taken_elsewhere": taken, "models": len(_needed(orders, settings)), "in_stock": len(in_stock)}
 
 
 FINISHED = ("done", "done_with_problems", "failed")

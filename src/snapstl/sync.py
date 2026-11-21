@@ -61,6 +61,7 @@ from .ingest import PRINT_STATUSES as _PS  # noqa: E402
 
 PRINT_SQL = ", ".join(f"'{x}'" for x in sorted(_PS))
 from . import report as _report  # noqa: E402
+from . import spares as _spares  # noqa: E402
 from . import tabs as _tabs  # noqa: E402
 
 REPORT_SQL = _report.setup_sql(SCHEMA).strip() + "\n"
@@ -276,14 +277,14 @@ CREATE OR REPLACE TRIGGER usage_counts_no_delete BEFORE DELETE ON {SCHEMA}.usage
     FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.refuse_delete();
 CREATE OR REPLACE TRIGGER usage_counts_no_truncate BEFORE TRUNCATE ON {SCHEMA}.usage_counts
     FOR EACH STATEMENT EXECUTE FUNCTION {SCHEMA}.refuse_delete();
-{REPORT_SQL}-- Only SnapSTL (the database owner, through the connection string) reads or writes these tables.
+{_spares.PG_SQL.format(S=SCHEMA)}{REPORT_SQL}-- Only SnapSTL (the database owner, through the connection string) reads or writes these tables.
 -- Row level security with no policies refuses everyone else, and Supabase's API roles get no access
 -- even if the schema is ever exposed in the Data API settings. The owner bypasses RLS.
 DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['order_records', 'batch_records', 'meta', 'report_rows', 'report_uploads',
-                           'order_notes', 'usage_counts', 'staff', 'print_checks'] LOOP
+                           'order_notes', 'usage_counts', 'staff', 'print_checks', 'spares'] LOOP
     IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = format('{SCHEMA}.%I', t)::regclass) THEN
       EXECUTE format('ALTER TABLE {SCHEMA}.%I ENABLE ROW LEVEL SECURITY', t);
     END IF;
@@ -859,6 +860,7 @@ def _push_notes(rc) -> int:
             con.execute("UPDATE usage_counts SET sent=1 WHERE day=? AND feature=? AND count=?",
                         (u["day"], u["feature"], u["count"]))
     _push_checks(rc)
+    _spares.push(rc, SCHEMA, _many)
     return len(notes)
 
 
@@ -891,6 +893,7 @@ def _push_checks(rc) -> None:
 
 
 def _pull_checks(rc) -> None:
+    _spares.pull(rc, SCHEMA)
     staff = rc.execute(f"SELECT name, added_at, hidden, changed, pin_hash, pin_changed FROM {SCHEMA}.staff").fetchall()
     with db.tx() as con:
         for x in staff:
@@ -1118,6 +1121,7 @@ def _save_copy(rc, dest) -> dict:
     usage_rows = rc.execute(f"SELECT * FROM {SCHEMA}.usage_counts ORDER BY day, feature").fetchall()
     staff = rc.execute(f"SELECT * FROM {SCHEMA}.staff ORDER BY name").fetchall()
     checks = rc.execute(f"SELECT * FROM {SCHEMA}.print_checks ORDER BY stored_at").fetchall()
+    spare_rows = rc.execute(f"SELECT * FROM {SCHEMA}.spares ORDER BY added_at").fetchall()
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -1125,7 +1129,7 @@ def _save_copy(rc, dest) -> dict:
         json.dump({"saved_at": time.time(), "by": computer.NAME, "order_records": orders,
                    "batch_records": batches, "report_rows": reports, "report_uploads": uploads,
                    "shop_report_lines": lines, "order_notes": notes, "usage_counts": usage_rows,
-                   "staff": staff, "print_checks": checks},
+                   "staff": staff, "print_checks": checks, "spares": spare_rows},
                   f, default=str, indent=1)
     os.replace(tmp, dest)
     return {"orders": len(orders), "batches": len(batches)}

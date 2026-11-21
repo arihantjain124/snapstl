@@ -70,6 +70,8 @@ DEFAULTS = {
     # the printer's profiles above. Once any printer has a Letters profile, letters go only to those printers.
     "letters_process_by_printer": {},  # printer id (str) → {source, id, name}
     "letters_speed_by_printer": {},    # printer id (str) → "standard" … ("" = the printer's default speed)
+    # 0.28: printer id (str) → True: also print from the external spool although the printer has an AMS
+    "external_spool_by_printer": {},
     # on the Windows Bambuddy computer: start Bambuddy / Docker / the slicer service when they stop (bambuddy_host)
     "keep_bambuddy_running": True,
 }
@@ -347,12 +349,31 @@ def tray_id(unit: dict | None, tray: dict) -> int:
     return uid if uid >= 128 else uid * 4 + int(tray.get("id", 0) or 0) % 4
 
 
-def spools(s: dict, cmap: dict) -> list[dict]:
+def external_on(printer_id: int, cfg: dict | None = None) -> bool:
+    """Printers → External spool (0.28): a printer with an AMS offers its external spool only when switched on."""
+    cfg = cfg or load_config()
+    return bool((cfg.get("external_spool_by_printer") or {}).get(str(printer_id)))
+
+
+def set_external(printer_id: int, on: bool) -> dict:
+    cfg = load_config()
+    ex = cfg.setdefault("external_spool_by_printer", {})
+    if on:
+        ex[str(printer_id)] = True
+    else:
+        ex.pop(str(printer_id), None)
+    save_config(cfg)
+    return {"printer_id": printer_id, "external": bool(on)}
+
+
+def spools(s: dict, cmap: dict, external: bool = True) -> list[dict]:
     """Filament loaded in a printer, from Bambuddy's live status: AMS slots + external spool(s). `color` is
-    Bambuddy's colour name (else the nearest SnapSTL colour); `tray` is the slot's global tray id."""
+    Bambuddy's colour name (else the nearest SnapSTL colour); `tray` is the slot's global tray id.
+    A printer with an AMS leaves out its external spool unless `external` (Printers → External spool, 0.28)."""
     out = []
     trays = [(u, t) for u in (s.get("ams") or []) for t in (u.get("tray") or [])]
-    trays += [(None, t) for t in (s.get("vt_tray") or [])]
+    if external or not s.get("ams"):
+        trays += [(None, t) for t in (s.get("vt_tray") or [])]
     for unit, t in trays:
         h = _hex(t.get("tray_color"))
         if t.get("exists") is False or t.get("state") == 9 or not (h or t.get("tray_type")):
@@ -382,7 +403,7 @@ def printers(cfg: dict | None = None, with_status: bool = True) -> list[dict]:
         if with_status:
             s = printer_status(pid, cfg)
             temps = s.get("temperatures") or {}
-            item["spools"] = spools(s, cmap)
+            item["spools"] = spools(s, cmap, external_on(pid, cfg))
             item["colors"] = sorted({x["color"] for x in item["spools"] if x["color"]})
             item["status"] = {
                 "connected": bool(s.get("connected")), "state": s.get("state") or "",
@@ -474,7 +495,8 @@ def summarize(p: dict, s: dict, queue, cmap: dict) -> dict:
                   "bed_target": t.get("bed_target"), "chamber": t.get("chamber")},
         "fans": {"part": s.get("cooling_fan_speed"), "aux": s.get("left_aux_fan_speed") or s.get("big_fan1_speed"),
                  "heatbreak": s.get("heatbreak_fan_speed")},
-        "spools": spools(s, cmap), "ams_units": units,
+        "spools": spools(s, cmap, external_on(int(p.get("id") or 0))), "ams_units": units,
+        "has_ams": bool(s.get("ams")), "external": external_on(int(p.get("id") or 0)),
         "nozzles": [f"{n.get('nozzle_diameter') or '?'} mm {str(n.get('nozzle_type') or '').replace('_', ' ')}".strip()
                     for n in s.get("nozzles") or []],
         "errors": [{"code": e.get("code"), "severity": SEVERITY.get(e.get("severity"), "Message"),

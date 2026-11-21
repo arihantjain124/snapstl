@@ -379,6 +379,20 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   before its bases are printed).
 - **Merge** (Letters): tick letter plates of one colour (fix plates too), not started, up to 3 names, then
   **Merge onto one plate**; **Split back** returns exactly those plates while it isn't started.
+- **Spare pieces** (0.28, Orders → **Spare pieces**): name pieces printed by mistake (a duplicate, an extra) kept in
+  stock — name exactly as printed, colour, and complete / letters only / base only. A new order with exactly that
+  name and colour shows **In stock** (Orders → To make → **Piece in stock**, a notice on Orders, a tag on Print). A
+  complete piece is sent with **Use spare piece** (the order goes to Ready to pack; **Undo spare piece** puts it
+  back); batches leave such orders out. Letters-only / base-only pieces are shown, not used by themselves. Print →
+  Removed → **Add to spare pieces** for a copy that was printed anyway. Shared with every computer.
+- **Merging** (0.28): one merge at a time — a second press is refused, so the same names are never on two plates.
+  **Available to merge** (under Letters) suggests only plates whose bases are printed. **Remove** works on every
+  plate (merged plates and split parts too); a copy left by an older double press is flagged in red.
+- **Completed → Reprint / problem…** (0.28): reprint base, letters (whole name), some letters (tap them), both,
+  or wrong colour — until the order is shipped.
+- **Printers → External spool feeding** (0.28): a printer with an AMS offers its external spool only when this is on.
+- **Packing / customer help pages** (0.28): **Also pack:** the other products ordered in the same parcel (same
+  Clubbed Order ID in the report), e.g. a 3D decor piece with the name organizer.
 - **Slicing → Letters** (0.27): per printer, a Letters process profile and speed. Letter plates slice and print with
   them; bases use the printer's own profiles. Once any printer has a Letters profile, letters go only to those
   printers (e.g. the P1S with colours in the AMS) — Print and Print next pick it by themselves.

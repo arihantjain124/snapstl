@@ -529,3 +529,27 @@ English hard — the language help was skipped by the owner).
   * SnapSTL Bases 0.20mm P1S / A1: same layer height, walls and 15% infill; infill combination on; seam back +
     scarf seam. Expected saving is small (about 5-10%); bigger savings need 0.24-0.28 mm layers or a 0.6 mm
     nozzle, which the owner declined for now (look first).
+
+
+### 2026-11-21: 0.28.0 No double merges, Remove everywhere, spare pieces, Also pack
+- **Found:** a printed merged plate "… (2)" still listed under Letters, so its names showed as not complete. The same
+  names were merged twice a few seconds apart (three times so far, two of them printed twice): writing a merged
+  plate takes seconds and a second press passed the "already merged" check. Now merge / split back / split / join
+  run one at a time (`extras._EDIT`), a merge is refused when any of its names (from the same source plate) is on
+  another active merged / split plate, and the page keeps every Merge button off until it reloads.
+  `extras.duplicates()` flags a copy (Print → Letters, red) and Start print refuses it. One-time repair at startup
+  (`extras.repair_028`): the copy not started is set Removed; copies printed twice put their letters into Spare
+  pieces (letters only).
+- **Remove** on every plate, merged plates and split parts too (Put back in Removed).
+- **Available to merge** moved under the Letters list and offers only plates whose bases are printed (owner: staff
+  merged letters before bases, then the letters waited); ticking such a plate asks first.
+- **Printers → External spool feeding** per printer (`farm.external_spool_by_printer`): a printer with an AMS leaves
+  its external spool out of the filament choices unless on; a printer without an AMS keeps it.
+- **Completed → Reprint / problem…**: reprint base, letters (whole name), some letters (tap them), both, wrong
+  colour; the order goes back to Printing (only until shipped, as before).
+- **Also pack** (packing page and customer help): other products of the same Clubbed Order ID, read from the report
+  rows kept on this computer (`shop_lines`); the product name comes from the report's Product Code.
+- **Spare pieces** (`spares.py`, shared table `snapstl.spares`, newest `changed` wins, never deleted): exact name +
+  colour match like returned pieces; an order sent with one gets `reuse_of = "spare:<uid>"` (the returned-piece
+  field, so tabs, batches and the shared records already treat it as made). Complete pieces can be used; letters /
+  base only are shown. Make next batch and Create batch leave out orders with a complete piece in stock.

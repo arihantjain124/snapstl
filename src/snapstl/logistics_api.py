@@ -19,7 +19,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from . import db, sync, tabs
-from .ingest import reset_to_ready, set_name
+from .ingest import SKU, reset_to_ready, set_name
 
 BY = "logistics"
 MAKING = ("to_make", "check_name", "ready_to_print", "printing")
@@ -255,8 +255,9 @@ def order_detail(order_id: str):
         notes = db.rows(con, "SELECT uid, at, text, author FROM order_notes WHERE order_id=? ORDER BY at DESC", order_id)
         returned = returned_pieces(con, o) if o["state"] in ("ready", "needs_review") else []
         pc = pace(con)
+        also = also_pack(con, [o.get("clubbed_id")]).get(o.get("clubbed_id") or "", [])
     v = view_of(o, rep.get(order_id, {}), pc)
-    return {**v, "notes": notes, "returned": returned,
+    return {**v, "notes": notes, "returned": returned, "also": also,
             "group": [view_of(g, rep.get(g["order_id"], {}), pc) for g in group],
             "other_orders": [view_of(s, rep.get(s["order_id"], {}), pc) for s in same]}
 
@@ -447,6 +448,34 @@ def usage(days: int = 30):
 
 
 # ---------------- packing page (port 8002, 0.26) ----------------
+def product_name(code: str) -> str:
+    """'Shopdeck-3D-Decor-Radium-Boo-Ghosts-Peace-Boo' → '3D Decor Radium Boo Ghosts Peace Boo'."""
+    s = re.sub(r"^shopdeck-", "", (code or "").strip(), flags=re.I)
+    return re.sub(r"\s+", " ", s.replace("-", " ")).strip()
+
+
+def also_pack(con, clubbed_ids) -> dict[str, list[dict]]:
+    """0.28: other products ordered in the same parcel (same Clubbed Order ID in the report, not the name
+    organizer, not cancelled): clubbed id → [{product, quantity}]. From the report rows kept on this computer."""
+    ids = sorted({c for c in clubbed_ids if c})
+    if not ids:
+        return {}
+    out: dict[str, dict[str, int]] = {}
+    for (data,) in con.execute(f"SELECT data FROM shop_lines WHERE json_extract(data, '$.\"Clubbed Order ID\"') "
+                               f"IN ({','.join('?' * len(ids))})", ids):
+        d = json.loads(data or "{}")
+        if (d.get("SKU Code") or "").lower() == SKU or "CANCEL" in (d.get("Order Status") or "").upper():
+            continue
+        name = product_name(d.get("Product Code") or "") or d.get("SKU Code") or "Other product"
+        try:
+            q = int(float(d.get("Quantity") or 1))
+        except ValueError:
+            q = 1
+        box = out.setdefault(d["Clubbed Order ID"], {})
+        box[name] = box.get(name, 0) + q
+    return {k: [{"product": p, "quantity": q} for p, q in sorted(v.items())] for k, v in out.items()}
+
+
 def _groups(con, rows: list[dict]) -> list[dict]:
     """Orders shipped together (same clubbed order ID) as one group, oldest first."""
     by: dict[str, list[dict]] = {}
@@ -460,6 +489,9 @@ def _groups(con, rows: list[dict]) -> list[dict]:
                     "label_at": max((o.get("label_at") or 0) for o in os_) or None, "label_note": os_[0].get("label_note") or "",
                     "orders": [{"order_id": o["order_id"], "name": o.get("name") or "", "color": o.get("color") or "",
                                 "quantity": o.get("quantity") or 1} for o in os_]})
+    also = also_pack(con, [g["clubbed_id"] for g in out])
+    for g in out:
+        g["also"] = also.get(g["clubbed_id"], [])
     out.sort(key=lambda g: (g["express_by"] is None, g["express_by"] or "", g["order_date"], g["key"]))
     return out
 

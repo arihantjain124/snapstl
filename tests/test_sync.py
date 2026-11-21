@@ -250,7 +250,7 @@ def test_only_snapstl_reaches_the_records(two):
                                  "'snapstl'::regnamespace AND relkind = 'r'").fetchall())
             assert rls == {"order_records": True, "batch_records": True, "meta": True, "report_rows": True,
                            "report_uploads": True, "order_notes": True, "usage_counts": True, "staff": True,
-                           "print_checks": True}
+                           "print_checks": True, "spares": True}
             c.execute("SET ROLE anon")
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 c.execute("SELECT * FROM snapstl.order_records")
@@ -831,3 +831,32 @@ def test_a_leftover_connection_never_hangs_the_sync(two, monkeypatch):
         ok(sync.sync_now())  # and works again once the old connection is gone
         with sync._remote() as rc:
             assert rc.execute("SHOW idle_in_transaction_session_timeout").fetchone()["idle_in_transaction_session_timeout"] == "2min"
+
+
+def test_spare_pieces_reach_every_computer(two):
+    """0.28: the spare stock is shared; using a piece on one computer shows it used on the others."""
+    from snapstl import spares
+
+    pc = two
+    data = report([("SP1", "PRINT", "Kiara", "")])
+    for name in ("A", "B"):
+        with pc(name):
+            ingest.ingest(data, "r.csv")
+            ok(sync.sync_now())
+    with pc("A"):
+        uid = spares.add("Kiara", "pink", "both", "shelf 2", "Meena")[0]["uid"]
+        ok(sync.sync_now())
+    with pc("B"):
+        ok(sync.sync_now())
+        st = spares.listing()["stock"]
+        assert [(s["uid"], s["name"], s["note"], s["fits"]) for s in st] == [(uid, "Kiara", "shelf 2", ["SP1"])]
+        spares.use("SP1", uid)
+        ok(sync.sync_now())
+        assert order("SP1")["reuse_of"] == "spare:" + uid
+    with pc("A"):
+        ok(sync.sync_now())
+        assert spares.listing()["used"][0]["used_by"] == "SP1" and order("SP1")["reuse_of"] == "spare:" + uid
+    with sync._remote() as rc:  # never deleted
+        import psycopg
+        with pytest.raises(psycopg.Error):
+            rc.execute("DELETE FROM snapstl.spares")
