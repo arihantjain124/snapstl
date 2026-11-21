@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 from contextlib import asynccontextmanager
 import io
+import threading
 import time
 import json
 import os
@@ -1303,9 +1304,27 @@ def farm_info(request: Request):
 
 
 # ---------------- Make It (Bases / Names / Completed) ----------------
+_BOARD_LOCK = threading.Lock()
+_BOARD: tuple[float, dict] | None = None
+
+
 @app.get("/api/makeit")
 def makeit_board():
-    """Make It tab: plates to print by Bases and Names (with pre-selected printers) and Completed."""
+    """Make It tab: plates to print by Bases and Names (with pre-selected printers) and Completed.
+    0.28.1: one at a time — requests that arrive while it is being worked out get that same answer, so pages
+    asking together (several tabs, the 5 s refresh) never pile up and keep the computer busy."""
+    global _BOARD
+    asked = time.time()
+    with _BOARD_LOCK:
+        if _BOARD is not None and _BOARD[0] >= asked:
+            return _BOARD[1]
+        started = time.time()
+        out = _makeit_board()
+        _BOARD = (started, out)
+        return out
+
+
+def _makeit_board() -> dict:
     cfg = farm.load_config()
     st = farm.status(cfg)
     prs: list[dict] = []

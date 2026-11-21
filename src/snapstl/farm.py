@@ -949,11 +949,33 @@ def jobs(batch_id: int | None = None, limit: int = 200) -> list[dict]:
         return db.rows(con, "SELECT * FROM print_jobs WHERE batch_id=? AND computer_id=? ORDER BY id", batch_id, computer.ID)
 
 
+def replaces(cur: dict | None, new: dict) -> bool:
+    """Does `new` (a newer job of the same plate) become the plate's job instead of `cur`? (0.28.1)
+    A plate's job is its newest one — except that a cancelled / failed copy never hides one still on its way
+    (Start print pressed twice: the copy cancelled in Bambuddy while the first prints), and a copy on its way
+    never hides the one printing."""
+    if cur is None or cur.get("state") not in ACTIVE:
+        return True
+    if new.get("state") in ("cancelled", "failed"):
+        return False
+    return not (cur.get("state") == "printing" and new.get("state") in ACTIVE)
+
+
+def current_job(rows: list[dict]) -> dict | None:
+    """The plate's job from its jobs, oldest first (see `replaces`)."""
+    cur = None
+    for j in rows:
+        if replaces(cur, j):
+            cur = j
+    return cur
+
+
 def latest_jobs(batch_id: int) -> dict[str, dict]:
-    """Plate file → its newest job."""
+    """Plate file → its job (`replaces`)."""
     out: dict[str, dict] = {}
     for j in jobs(batch_id):
-        out[j["plate"]] = j
+        if replaces(out.get(j["plate"]), j):
+            out[j["plate"]] = j
     return out
 
 
@@ -1185,6 +1207,15 @@ class Worker:
         return True
 
     def _send(self, j: dict, b: dict | None) -> None:
+        # 0.28.1: never a second copy of a plate already on its way (a double click before 0.28.1)
+        with db.tx() as con:
+            twin = con.execute(f"SELECT printer_name, state FROM print_jobs WHERE batch_id=? AND plate=? AND id<? "
+                               f"AND computer_id=? AND state IN ({','.join('?' * len(ACTIVE))}) ORDER BY id DESC LIMIT 1",
+                               (j["batch_id"], j["plate"], j["id"], computer.ID, *ACTIVE)).fetchone()
+        if twin:
+            _set(j["id"], state="cancelled", error=f"Not sent: this plate is already on its way ({twin[1]}) on "
+                                                     f"{twin[0]} — Start print was pressed twice")
+            return
         if not b or not b["out_dir"]:
             raise FarmError("The batch folder is unknown")
         out = Path(b["out_dir"])
@@ -1215,20 +1246,22 @@ class Worker:
                                                          "manual_start": True, **opts,
                                                          **({"ams_mapping": [int(tray)]} if tray is not None else {})})
         qid = int((item or {})["id"])
-        _set(j["id"], state="sent", file_id=file_id, queue_item_id=qid, held=1, error=None)
-        self._log(f"{Path(j['plate']).name} → in {j['printer_name']}'s queue, waiting for Start")
         busy = str((printer_status(j["printer_id"], cfg, max_age=0) or {}).get("state", "")).upper() in BUSY_STATES
+        go = bool(j.get("autostart")) and not busy
+        # 0.28.1: not "held" while it is being started, so Print never shows Start print again in between
+        _set(j["id"], state="sent", file_id=file_id, queue_item_id=qid, held=0 if go else 1, error=None)
+        self._log(f"{Path(j['plate']).name} → in {j['printer_name']}'s queue" + ("" if go else ", waiting for Start"))
         if j.get("autostart") and busy:  # it would start right after the current print, on a full bed
             _set(j["id"], error="Held: the printer started another print — press Start print once it's done "
                                 "and the bed is empty")
-        elif j.get("autostart"):  # a person pressed Start print (Make It): release it now that it's queued
+        elif go:  # a person pressed Start print (Make It): release it now that it's queued
             try:
                 start_job(j["id"])
                 self._log(f"{Path(j['plate']).name} → started on {j['printer_name']}")
             except StartBlocked as e:
-                _set(j["id"], error=f"{e} — press Start print again to start anyway")
-            except FarmError as e:
-                _set(j["id"], error=f"Queued, but not started: {e}")
+                _set(j["id"], held=1, error=f"{e} — press Start print again to start anyway")
+            except Exception as e:  # noqa: BLE001 — it is in Bambuddy's queue: held, Start print again
+                _set(j["id"], held=1, error=f"Queued, but not started: {e}")
 
     # ---- slicing with Bambuddy (one plate at a time) ----
     def slice_next(self) -> None:

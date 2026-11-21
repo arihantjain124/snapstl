@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-from . import computer, db, verify
+from . import computer, db, farm, verify
 from .export import _unique, check_written, clean_part, preview
 from .grouping import Plate
 from .packing import make_part, pack, placed_part_meshes
@@ -85,32 +85,12 @@ def duplicates(con) -> list[dict]:
     return out
 
 
-def printed_twice(con) -> list[dict]:
-    """Merged / split-part plates printed although another active one printed the same names (a double press):
-    their letters / bases are spares. [{part, items}] — the newer plate of each pair."""
-    xs = [x for x in con.execute("SELECT id, batch_id, file, items, part FROM extra_plates WHERE state='active' "
-                                 "AND kind IN ('merged','divided') ORDER BY id")]
-    keys = {x[0]: _src_keys(json.loads(x[3] or "[]")) for x in xs}
-    out, seen = [], set()
-    for a in xs:
-        for b in xs:
-            if b[0] <= a[0] or b[0] in seen or not keys[a[0]] or keys[a[0]] != keys[b[0]]:
-                continue
-            if _latest_state(con, a[1], a[2]) == "done" and _latest_state(con, b[1], b[2]) == "done":
-                seen.add(b[0])
-                out.append({"part": b[4], "items": json.loads(b[3] or "[]")})
-    return out
-
-
 def repair_028() -> int:
     """One time at startup: take the copies made by a double press off Letters (state `removed`, Put back undoes);
-    the letters of copies already printed twice go to Spare pieces (letters only)."""
-    from . import spares
-
+    copies printed twice are left as they are (letters aren't kept as spares — owner, 0.28.1)."""
     with db.tx() as con:
         if con.execute("SELECT 1 FROM sync_state WHERE key='repair_028'").fetchone():
             return 0
-        extra = printed_twice(con)
         n = 0
         for d in duplicates(con):
             now = db.now()
@@ -123,12 +103,6 @@ def repair_028() -> int:
                                           f"{Path(d['of']['file']).name} (pressed twice)")
             n += 1
         con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('repair_028', ?)", (str(n),))
-    for x in extra:
-        for it in x["items"]:
-            if it.get("name"):
-                spares.add(it["name"], it.get("color") or "", "names" if x["part"] == "names" else "bases",
-                           "Printed twice (merge pressed twice) — found by the 0.28 update")
-                n += 1
     return n
 
 
@@ -338,9 +312,10 @@ def _write_fix(fb: dict, cfg: PlateSettings, part: str, color: str, chunk) -> tu
 
 # ---------------- merge ----------------
 def _latest_state(con, batch_id: int, file: str) -> str | None:
-    r = con.execute("SELECT state FROM print_jobs WHERE batch_id=? AND plate=? AND computer_id=? ORDER BY id DESC LIMIT 1",
-                    (batch_id, file, computer.ID)).fetchone()
-    return r[0] if r else None
+    rows = db.rows(con, "SELECT state FROM print_jobs WHERE batch_id=? AND plate=? AND computer_id=? ORDER BY id",
+                   batch_id, file, computer.ID)
+    j = farm.current_job(rows)
+    return j["state"] if j else None
 
 
 MERGEABLE = (None, "reprint", "unmerged")  # not started (or back in the list after a failed print)

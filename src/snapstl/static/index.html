@@ -60,6 +60,8 @@ input[type=checkbox]{width:auto}
 .grow{flex:1}
 .status{color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
 .bar{height:4px;background:var(--chip);border-radius:2px;overflow:hidden;width:120px}.bar i{display:block;height:100%;background:var(--accent);width:0}
+.bar.mkgobar{display:block;width:170px;height:6px;margin:4px 0}.mkgobar i{transition:width .8s;background:repeating-linear-gradient(45deg,var(--accent) 0 8px,color-mix(in srgb,var(--accent) 70%,#fff) 8px 16px);background-size:23px 100%;animation:mkgo 1s linear infinite}
+@keyframes mkgo{to{background-position:23px 0}}@media (prefers-reduced-motion:reduce){.mkgobar i{animation:none}}
 main{padding:14px 16px;max-width:1300px;margin:0 auto}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px}
 .card h2{font-size:14px;margin:0 0 8px;font-weight:600}
@@ -267,12 +269,12 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="msgs" id="stockmsg"></div>
     <div id="sparebox" hidden style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">
       <h3 style="margin:0 0 4px">Spare pieces in stock</h3>
-      <p class="hint" style="margin:0 0 8px">Name pieces printed by mistake (a duplicate, an extra) that are kept to send instead of making the same name again. Type the name <b>exactly as printed</b> (capital letters too). A new order with that name and colour shows <b>In stock</b> (Orders → To make → <b>Piece in stock</b>, and on Print). A <b>complete</b> piece can be sent with <b>Use spare piece</b>; a letters-only or base-only piece is shown so nobody prints it again by mistake.</p>
+      <p class="hint" style="margin:0 0 8px">Bases kept in stock (made by mistake, extras, bases made before SnapSTL) and complete pieces. Letters aren't kept. Type the name <b>exactly as on the base</b> (capital letters too). A new order with that name shows <b>In stock</b> (Orders → To make → <b>Piece in stock</b>, and on Print) — a base fits whatever the letters' colour, so only the letters need printing. A <b>complete</b> piece (same letters' colour) can be sent with <b>Use spare piece</b>.</p>
       <form id="spareform" class="adhoc" autocomplete="off" style="display:block">
         <div class="adhocrow">
           <label>Name as printed<input id="spname" required maxlength="60" placeholder="e.g. Aarav"></label>
-          <label>Colour (letters)<input id="spcolor" list="ahcolors" maxlength="30" placeholder="e.g. pink"></label>
-          <label>What is it<select id="sppart"><option value="both">Complete (base + letters)</option><option value="names">Letters only</option><option value="bases">Base only</option></select></label>
+          <label>What is it<select id="sppart"><option value="bases">Base only</option><option value="both">Complete (base + letters)</option></select></label>
+          <label id="spcolorl" hidden>Colour (letters)<input id="spcolor" list="ahcolors" maxlength="30" placeholder="e.g. pink"></label>
           <label style="max-width:80px">How many<input id="spcount" type="number" min="1" max="20" value="1"></label>
           <label class="grow">Note (optional)<input id="spnote" maxlength="200" placeholder="where it is kept, why it was extra…"></label>
           <button class="primary" type="submit">Add to stock</button>
@@ -404,6 +406,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <p class="hint">Base plates of your built batches, printed in white. A printer is pre-selected — the next <b>available</b> one whose loaded filament is closest to white, with the most left — and under it the <b>filament slot</b> it prints from (✓ same colour, ≈ close). You can pick any printer and any loaded slot. <b>Slice</b> shows if the plate is sliced for that printer's model. <b>Options</b> start from the printer's print defaults (Slicing); change them for one plate here. Nothing prints until you press <b>Start print</b>.</p>
       <div class="toolbar" style="margin:0 0 6px"><div class="chips" id="mkbsub" style="margin:0"></div><span class="grow"></span><input type="search" id="mkbq" placeholder="Search name, order or batch" autocomplete="off" style="max-width:240px"></div>
       <div id="mkb-todo"><div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mkbases"></tbody></table></div></div>
+      <div id="mkb-run" hidden><p class="hint">Base plates on their way to a printer or printing now. When the print is done the plate moves to <b>Printed</b>.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Status</th></tr></thead><tbody id="mkbrun"></tbody></table></div></div>
       <div id="mkb-done" hidden><p class="hint">Base plates already printed whose names are still being made, newest first. <b>Letters</b> says how many of their letters are printed.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Printed</th><th>Letters</th><th></th></tr></thead><tbody id="mkbdone"></tbody></table></div></div>
     </div>
     <div id="mk-names" class="mkpane" hidden>
@@ -416,6 +419,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mknames"></tbody></table></div>
       <div id="mkmergewrap" hidden style="margin-top:14px"><h3 style="margin:0 0 4px">Available to merge</h3><p class="hint" style="margin:0 0 6px">Letter plates of one colour <b>whose bases are already printed</b>, that fit on one plate (up to 3 names). Check the names before you merge — the single plates leave the list. Press once and wait for “Merged”.</p><div id="mkmerge"></div></div>
       </div>
+      <div id="mkl-run" hidden><p class="hint">Letter plates on their way to a printer or printing now. When the print is done the plate moves to <b>Printed</b>.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Status</th></tr></thead><tbody id="mklrun"></tbody></table></div></div>
       <div id="mkl-done" hidden><p class="hint">Letter plates already printed whose names are still being made, newest first. <b>Base</b> says how many of their bases are printed — a name comes to Verify once both are. A whole plate that came out wrong: <b>Whole plate failed…</b> sends it back to print.</p>
         <div class="tw"><table><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Printed</th><th>Base</th><th></th></tr></thead><tbody id="mkldone"></tbody></table></div></div>
     </div>
@@ -1377,6 +1381,7 @@ function spRender(){const d=SPD,L=d[SPV]||[],when=t=>t?new Date(t*1000).toLocale
     const note=prompt('Note (optional):',s.note||'');if(note==null)return;
     try{await putJSON(`/api/spares/${s.uid}`,{name,color,part:s.part,note})}catch(e){alert(e.message)}spLoad();refreshAll()})}
 $('sparego').onclick=()=>{$('sparebox').hidden=!$('sparebox').hidden;if(!$('sparebox').hidden){spLoad();$('spname').focus()}};
+$('sppart').onchange=()=>{$('spcolorl').hidden=$('sppart').value!=='both'};
 $('spareform').onsubmit=async e=>{e.preventDefault();const name=$('spname').value.trim();
   try{const r=await post('/api/spares',{name,color:$('spcolor').value,part:$('sppart').value,note:$('spnote').value,count:+$('spcount').value||1});
     $('spmsg').innerHTML=`<div class="o">Added ${r.added.length} × ${esc(name)} to stock</div>`;$('spname').value='';$('spnote').value='';$('spcount').value=1;await spLoad();refreshAll();
@@ -1385,9 +1390,9 @@ $('spareform').onsubmit=async e=>{e.preventDefault();const name=$('spname').valu
     else if(SPD.near&&SPD.near[name])$('spmsg').innerHTML+=`<div class="w">Careful: a waiting order has <b>${esc(SPD.near[name])}</b> — same letters, different capitals. It is not matched.</div>`}
   catch(e){$('spmsg').innerHTML=`<div class="e">${esc(e.message)}</div>`}};
 // a spare piece straight from Print → Removed / Printed (a copy that was printed anyway)
-async function spFromPlate(r){const part=r.kind==='bases'?'bases':'names',names=(r.names||[]).map(n=>n.replace(/\s*\([^)]*\)\s*$/,''));
-  if(!confirm(`Add to Spare pieces (${part==='names'?'letters only':'base only'}${r.kind==='names'?', '+(r.colors[0]||''):''}):\n\n${names.join('\n')}\n\nOnly if this plate was really printed and the pieces are kept.`))return;
-  try{for(const n of names)await post('/api/spares',{name:n,color:r.kind==='names'?(r.colors[0]||''):'',part,note:'From '+r.file.split('/').pop()});alert(`Added ${names.length} to Spare pieces (Orders → Spare pieces)`)}catch(e){alert(e.message)}}
+async function spFromPlate(r){const names=(r.names||[]).map(n=>n.replace(/\s*\([^)]*\)\s*$/,''));
+  if(!confirm(`Add these bases to Spare pieces:\n\n${names.join('\n')}\n\nOnly if this plate was really printed and the bases are kept.`))return;
+  try{for(const n of names)await post('/api/spares',{name:n,color:'',part:'bases',note:'From '+r.file.split('/').pop()});alert(`Added ${names.length} to Spare pieces (Orders → Spare pieces)`)}catch(e){alert(e.message)}}
 
 // ---------- print job status ----------
 const JST={queued:['Waiting to send','info'],slicing:['Slicing','info'],uploading:['Sending','info'],sent:['In Bambuddy queue','info'],printing:['Printing','info'],done:['Printed','ok'],failed:['Failed','err'],cancelled:['Cancelled','']};
@@ -1401,7 +1406,7 @@ const cap=s=>s?s[0].toUpperCase()+s.slice(1):s;
 const setVal=v=>v!==''&&v!=null;
 
 // ---------- Print: Bases / Names / Completed / Removed ----------
-let MK=null,MKTAB='bases';const MKSEL={};const OPTLBL={bed_levelling:'Bed levelling',flow_cali:'Flow calibration',timelapse:'Timelapse'};
+let MK=null,MKTAB='bases',MKFAST=null;const MKGOING=new Set();  // plates whose Start print is being sentconst MKSEL={};const OPTLBL={bed_levelling:'Bed levelling',flow_cali:'Flow calibration',timelapse:'Timelapse'};
 const MKPANES=['bases','names','verify','completed','removed'];
 try{MKTAB=localStorage.getItem('mktab')||'bases'}catch{}if(!MKPANES.includes(MKTAB))MKTAB='bases';
 const mkPrinter=id=>(MK&&MK.printers.find(p=>String(p.id)===String(id)))||{};
@@ -1451,7 +1456,16 @@ function sliceCell(r,sel){const k=esc(mkKey(r)),c=sel&&sel.printer?r.choices.fin
   const btn=`<button class="small" data-mkslice="${k}" title="Queue this plate for slicing with ${esc(c.name)}'s profiles">Slice</button>`;
   if(sl&&sl.state==='failed')return `<span class="pill err">Slicing failed</span> ${btn}<div class="reason">${esc(sl.error||'')}</div>${who}`;
   return `<span class="pill">Not sliced</span> ${btn}${who}`}
+// 0.28.1: Start print takes minutes (slice → send → printer warms up): a progress bar, no button meanwhile
+const MKSTEP={queued:[1,'Getting the plate ready'],slicing:[1,'Slicing'],uploading:[2,'Sending to the printer'],sent:[3,'Started — printer warming up / levelling']};
+// Printing tab (0.28.1): sent by Start print and not waiting for a person (held plates stay in To print)
+const mkOnWay=r=>!!(r.job_active&&r.job&&!(r.job.state==='sent'&&r.job.held));
+const mkRunRow=(r,withColour)=>`<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td>${withColour?`<td style="white-space:nowrap">${sw(r.colors[0]||'')}</td>`:''}<td><div class="fn">${r.extra==='fix'?'<span class="pill err">Fix</span> ':r.extra==='merged'?'<span class="pill info">Merged</span> ':r.extra==='divided'?'<span class="pill info">Part</span> ':''}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>${r.express_by?'<div>'+expressBadge(r.express_by)+'</div>':''}</td><td>${esc((r.job&&r.job.printer_name)||'—')}</td><td>${mkStatus(r)}</td></tr>`;
+const mkStarting=r=>{const j=r.job;return !!(r.job_active&&j&&MKSTEP[j.state]&&!(j.state==='sent'&&j.held))};
 function mkStatus(r){const j=r.job;if(!j||j.state==='reprint')return `<span class="hint">${j?'reprint — choose a printer':'not started'}</span>`;
+  if(mkStarting(r)){const [n,l]=MKSTEP[j.state],sl=r.slice,sp=j.state==='slicing'&&sl&&sl.progress!=null?Math.round(sl.progress):null;
+    const pct=j.state==='queued'?5:j.state==='slicing'?10+Math.round((sp||0)*.6):j.state==='uploading'?75:90;
+    return `<div><b>Starting print…</b> <span class="hint">step ${n} of 3 · ${esc(l)}${sp!=null?' '+sp+'%':''}</span></div><div class="bar mkgobar" title="${pct}%"><i style="width:${pct}%"></i></div><div class="hint">${esc(j.printer_name||'')} · takes a few minutes — no need to press again</div>${j.error?`<div class="reason">${esc(j.error)}</div>`:''}`}
   const st=j.state==='printing'?((mkPrinter(j.printer_id)||{}).status||{}):{};
   return jobPill(j)+(st.remaining_time?`<div><b>Ready at ${finishAt(st.remaining_time)}</b></div>`:'')}
 const trayLbl=t=>`${t.slot} — ${t.name||t.color||t.hex||'?'}${t.material?' '+t.material:''}${t.remain!=null?' · '+t.remain+'%':''}${t.match===2?' ✓':t.match===1?' ≈':''}`;
@@ -1466,7 +1480,7 @@ function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={pri
   const speedSel=`<label style="margin:4px 0 2px">Print speed</label><select data-mkspeed="${esc(k)}">${dflt(d.speed?cap(d.speed):'')}${(MK.speeds||[]).map(v=>`<option value="${v}" ${sel.speed===v?'selected':''}>${cap(v)}</option>`).join('')}</select>`;
   const optSel=(kk,vals)=>`<label style="margin:4px 0 2px">${OPTLBL[kk]}</label><select data-mkopt="${esc(k)}" data-k="${kk}">${dflt(setVal(d[kk])?optVal(d[kk]):'')}${vals.map(v=>`<option value="${v}" ${setVal(sel.options[kk])&&String(sel.options[kk])===String(v)?'selected':''}>${optVal(v)}</option>`).join('')}</select>`;
   const held=j&&j.state==='sent'&&j.held;
-  const btn=busy?'':`<button class="small primary" data-mkstart="${esc(k)}" title="Send to this printer and start printing (once its bed is cleared)">${held?'Start print':(j&&['failed','cancelled'].includes(j.state)?'Start print again':'Start print')}</button>`;
+  const btn=busy?'':MKGOING.has(k)?'<button class="small primary" disabled>Starting…</button>':`<button class="small primary" data-mkstart="${esc(k)}" title="Send to this printer and start printing (once its bed is cleared)">${held?'Start print':(j&&['failed','cancelled'].includes(j.state)?'Start print again':'Start print')}</button>`;
   const tag=r.extra==='fix'?'<span class="pill err" title="Printed again: only what was spoiled">Fix</span> ':r.extra==='merged'?'<span class="pill info" title="Several plates merged onto this one">Merged</span> ':r.extra==='divided'?'<span class="pill info" title="Part of a plate split into smaller ones">Part</span> ':'';
   const nOpen=(r.open_items||[]).length,divOpts=n=>{const o=[Array(n).fill(1)];if(n===3)o.push([2,1]);if(n===4)o.push([2,2]);if(n>4)o.push([...Array(Math.floor(n/2)).fill(2),...(n%2?[1]:[])]);return o};
   const divSel=!busy&&!r.extra&&nOpen>=2&&(!j||['reprint','unmerged','failed','cancelled'].includes(j.state))?` <select class="small" data-mkdiv="${esc(k)}" title="Split this plate into smaller plates (same size), e.g. to print on different printers for a night run" style="max-width:110px"><option value="">Split…</option>${divOpts(nOpen).map(s=>`<option value="${s.join(',')}">${s.join(' + ')}</option>`).join('')}</select>`:'';
@@ -1481,22 +1495,24 @@ function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={pri
 const plateCell=r=>`<div>${r.kind==='bases'?'<b>Bases</b>':`<b>Letters</b> ${sw(r.colors[0]||'')}`}</div><div class="fn" style="font-size:12px">${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>`;
 function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(id).contains(document.activeElement)||$(id).querySelector('details[open]'));
   if(!editing){
-    const bq=$('mkbq').value,bl=MK.bases.filter(r=>mkHit(r,bq)),pb=(MK.printed_bases||[]).filter(r=>mkHit(r,bq));
-    $('mkbsub').innerHTML=[['todo','To print',bl.length],['done','Printed',pb.length]].map(([k,l,n])=>`<button data-mkbs="${k}" class="${MKBSUB===k?'on':''}">${l} · ${n}</button>`).join('');
-    $('mkb-todo').hidden=MKBSUB!=='todo';$('mkb-done').hidden=MKBSUB!=='done';
+    const bq=$('mkbq').value,ba=MK.bases.filter(r=>mkHit(r,bq)),bl=ba.filter(r=>!mkOnWay(r)),br=ba.filter(mkOnWay),pb=(MK.printed_bases||[]).filter(r=>mkHit(r,bq));
+    $('mkbsub').innerHTML=[['todo','To print',bl.length],['run','Printing',br.length],['done','Printed',pb.length]].map(([k,l,n])=>`<button data-mkbs="${k}" class="${MKBSUB===k?'on':''}">${l} · ${n}</button>`).join('');
+    $('mkb-todo').hidden=MKBSUB!=='todo';$('mkb-run').hidden=MKBSUB!=='run';$('mkb-done').hidden=MKBSUB!=='done';
+    $('mkbrun').innerHTML=br.length?br.map(r=>mkRunRow(r,false)).join(''):`<tr><td colspan="4" class="empty">${bq?'Nothing matches the search':'No base plates printing right now'}</td></tr>`;
     $('mkbases').innerHTML=bl.length?bl.map(r=>mkRow(r,false)).join(''):`<tr><td colspan="7" class="empty">${bq?'Nothing matches the search':'No base plates waiting — build a batch first (Batches → Queue build)'}</td></tr>`;
     $('mkbdone').innerHTML=pb.length?pb.map(r=>`<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td><td><div class="fn">${r.extra==='fix'?'<span class="pill err">Fix</span> ':''}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div></td><td>${esc(r.printer||'—')}</td><td class="hint" style="white-space:nowrap">${r.done_at?new Date(r.done_at*1000).toLocaleString([], {day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}):''}</td><td>${mkOther(r)||'—'}</td><td><button class="small" data-vplate="${esc(r.batch_id+'|'+r.file)}" title="The bases on this plate came out wrong: print the plate again (bases already checked stay checked)">Whole plate failed…</button></td></tr>`).join(''):`<tr><td colspan="6" class="empty">${bq?'Nothing matches the search':'No printed base plates waiting for their letters'}</td></tr>`;
     document.querySelectorAll('#mkbdone [data-vplate]').forEach(x=>x.onclick=()=>vPlateFailed(x.dataset.vplate));
     document.querySelectorAll('[data-mkbs]').forEach(x=>x.onclick=()=>{MKBSUB=x.dataset.mkbs;try{localStorage.setItem('mkbsub',MKBSUB)}catch{}mkRender(true)});
     const byColor=$('mkbycolor').checked,fix=r=>r.extra==='fix'?0:1,nq=$('mknq').value;
-    const pl=(MK.printed_letters||[]).filter(r=>mkHit(r,nq)),nl=MK.names.filter(r=>mkHit(r,nq)).length;
-    $('mklsub').innerHTML=[['todo','To print',nl],['done','Printed',pl.length]].map(([k,l,n])=>`<button data-mkls="${k}" class="${MKLSUB===k?'on':''}">${l} · ${n}</button>`).join('');
-    $('mkl-todo').hidden=MKLSUB!=='todo';$('mkl-done').hidden=MKLSUB!=='done';
+    const pl=(MK.printed_letters||[]).filter(r=>mkHit(r,nq)),la=MK.names.filter(r=>mkHit(r,nq)),lr=la.filter(mkOnWay),nl=la.length-lr.length;
+    $('mklsub').innerHTML=[['todo','To print',nl],['run','Printing',lr.length],['done','Printed',pl.length]].map(([k,l,n])=>`<button data-mkls="${k}" class="${MKLSUB===k?'on':''}">${l} · ${n}</button>`).join('');
+    $('mkl-todo').hidden=MKLSUB!=='todo';$('mkl-run').hidden=MKLSUB!=='run';$('mkl-done').hidden=MKLSUB!=='done';
+    $('mklrun').innerHTML=lr.length?lr.map(r=>mkRunRow(r,true)).join(''):`<tr><td colspan="5" class="empty">${nq?'Nothing matches the search':'No letter plates printing right now'}</td></tr>`;
     $('mkldone').innerHTML=pl.length?pl.map(r=>`<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td><td style="white-space:nowrap">${sw(r.colors[0]||'')}</td><td><div class="fn">${r.extra==='fix'?'<span class="pill err">Fix</span> ':r.extra==='merged'?'<span class="pill info">Merged</span> ':''}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div></td><td>${esc(r.printer||'—')}</td><td class="hint" style="white-space:nowrap">${mkWhen(r.done_at)}</td><td>${mkOther(r)||'—'}</td><td><button class="small" data-vplate="${esc(r.batch_id+'|'+r.file)}" title="The letters on this plate came out wrong: print the plate again (names already checked stay checked)">Whole plate failed…</button></td></tr>`).join('')
       :`<tr><td colspan="7" class="empty">${nq?'Nothing matches the search':'No printed letter plates waiting for their bases or a check'}</td></tr>`;
     document.querySelectorAll('#mkldone [data-vplate]').forEach(x=>x.onclick=()=>vPlateFailed(x.dataset.vplate));
     document.querySelectorAll('[data-mkls]').forEach(x=>x.onclick=()=>{MKLSUB=x.dataset.mkls;try{localStorage.setItem('mklsub',MKLSUB)}catch{}mkRender(true)});
-    const names=[...MK.names].filter(r=>mkHit(r,nq)).sort((a,b)=>(byColor?(a.colors[0]||'').localeCompare(b.colors[0]||''):0)||fix(a)-fix(b)||(!a.express_by-!b.express_by)||(a.express_by||'').localeCompare(b.express_by||'')||(a.colors[0]||'').localeCompare(b.colors[0]||'')||a.batch_id-b.batch_id);  // fixes, then Express first
+    const names=MK.names.filter(r=>mkHit(r,nq)&&!mkOnWay(r)).sort((a,b)=>(byColor?(a.colors[0]||'').localeCompare(b.colors[0]||''):0)||fix(a)-fix(b)||(!a.express_by-!b.express_by)||(a.express_by||'').localeCompare(b.express_by||'')||(a.colors[0]||'').localeCompare(b.colors[0]||'')||a.batch_id-b.batch_id);  // fixes, then Express first
     const ready=r=>r.other_ready>=(r.open_items||[]).length;
     const grp=(title,hint,list)=>{if(!list.length)return '';let last=null;
       return `<tr><td colspan="8" class="mkgrp"><b>${title}</b> <span class="hint">· ${list.length} plate${list.length===1?'':'s'} — ${hint}</span></td></tr>`+list.map(r=>{const c=r.colors[0]||'';let head='';
@@ -1511,7 +1527,7 @@ function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(
   const dp=MK.duplicates||[];$('mkdupes').innerHTML=dp.length?`<div class="msgs"><div class="e"><b>Same names on two plates</b> (merge pressed twice): ${dp.map(d=>`<b>${esc(d.file.split('/').pop())}</b> is a copy of ${esc(d.of.file.split('/').pop())} — press <b>Remove</b> on it`).join('; ')}. Don't print it.</div></div>`:'';
   $('mkmerge').innerHTML=(MK.merge||[]).map((s,i)=>`<div class="msgs"><div class="w" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>${sw(s.color)} · ${s.plates.length} plates with room — ${s.plates.map(p=>`<b>${esc(p.names.join(', '))}</b> <span class="hint">(${esc(p.batch||'')})</span>`).join(' + ')}</span><span class="grow"></span><button class="small primary" data-merge="${i}" ${MERGING?'disabled':''} title="Put these ${s.names} names on one ${esc(s.color)} plate (same size, no scaling)">Merge onto one plate</button></div></div>`).join('');
   vRender(force);cRender();
-  $('mkremoved').innerHTML=MK.removed.length?MK.removed.map(r=>`<tr><td class="hint">${esc(r.batch)}</td><td>${plateCell(r)}</td><td class="hint">${r.removed_at?new Date(r.removed_at*1000).toLocaleString():''}</td><td style="white-space:nowrap"><button class="small" data-mkback="${esc(mkKey(r))}">Put back</button> <button class="small" data-mkhand="${esc(mkKey(r))}" title="Printed outside SnapSTL: check it on Verify">Printed by hand</button> <button class="small" data-mkspare="${esc(mkKey(r))}" title="This copy was printed anyway: keep its pieces in stock (Orders → Spare pieces)">Add to spare pieces</button></td></tr>`).join(''):'<tr><td colspan="4" class="empty">Nothing removed</td></tr>';
+  $('mkremoved').innerHTML=MK.removed.length?MK.removed.map(r=>`<tr><td class="hint">${esc(r.batch)}</td><td>${plateCell(r)}</td><td class="hint">${r.removed_at?new Date(r.removed_at*1000).toLocaleString():''}</td><td style="white-space:nowrap"><button class="small" data-mkback="${esc(mkKey(r))}">Put back</button> <button class="small" data-mkhand="${esc(mkKey(r))}" title="Printed outside SnapSTL: check it on Verify">Printed by hand</button>${r.kind==='bases'?` <button class="small" data-mkspare="${esc(mkKey(r))}" title="This bases plate was printed anyway: keep the bases in stock (Orders → Spare pieces)">Add to spare pieces</button>`:''}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">Nothing removed</td></tr>';
   const all=[...MK.bases,...MK.names,...MK.removed],find=k=>all.find(r=>mkKey(r)===k);
   document.querySelectorAll('[data-merge]').forEach(x=>x.onclick=async()=>{const s=MK.merge[+x.dataset.merge];
     if(!confirm(`Merge ${s.plates.length} ${s.color} plates onto one plate?\n\n${s.plates.map(p=>p.names.join(', ')).join('\n')}\n\nThe single plates leave the list; Split back undoes it before printing.`))return;
@@ -1548,12 +1564,13 @@ function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(
     if(!sel.printer){alert('Choose a printer');return}
     const pr=r.choices.find(c=>String(c.id)===sel.printer),tr=mkTrays(r,sel).find(t=>String(t.tray)===sel.tray);
     if(!confirm(`Start printing ${r.kind==='bases'?'this base plate':'this '+(r.colors[0]||'')+' name plate'} on ${pr?pr.name:'that printer'}?\n\nFilament: ${tr?trayLbl(tr):'Bambuddy picks the slot'}\n${optSummary(sel.options,sel.speed,mkDefaults(r,sel.printer))}\n\nIt prints as soon as the printer is free and its bed has been cleared.`))return;
-    x.disabled=true;const body={batch_id:r.batch_id,file:r.file,printer_id:+sel.printer,tray:sel.tray===''?null:+sel.tray,options:sel.options,speed:sel.speed||''};
-    const send=async b=>{const res=await post('/api/makeit/start',b);if(res&&res.held)alert(`${pr?pr.name:'The printer'} is printing something else. The plate waits (held) in its queue and does not start by itself — press Start print again once that print is done and the bed is empty.`)};
-    try{await send(body)}catch(e){
-      if(/finished print on its bed/i.test(e.message)){if(confirm(e.message+'\n\nIs the bed empty and the plate clean now?')){try{await send({...body,bed_clear:true})}catch(e2){if(/anyway|filament|warn/i.test(e2.message)&&confirm(e2.message+'\n\nStart anyway?')){try{await send({...body,bed_clear:true,force:true})}catch(e3){alert(e3.message)}}else alert(e2.message)}}}
-      else if(/anyway|filament|warn/i.test(e.message)&&confirm(e.message+'\n\nStart anyway?')){try{await send({...body,force:true})}catch(e2){alert(e2.message)}}else alert(e.message)}
-    document.activeElement&&document.activeElement.blur();loadMakeIt()})}
+    if(MKGOING.has(x.dataset.mkstart))return;MKGOING.add(x.dataset.mkstart);x.disabled=true;x.textContent='Starting…';const body={batch_id:r.batch_id,file:r.file,printer_id:+sel.printer,tray:sel.tray===''?null:+sel.tray,options:sel.options,speed:sel.speed||''};
+    const send=async b=>{const res=await post('/api/makeit/start',b);if(res&&res.held)alert(`${pr?pr.name:'The printer'} is printing something else. The plate waits (held) in its queue and does not start by itself — press Start print again once that print is done and the bed is empty.`);return res};
+    const sentOk=async b=>{const res=await send(b);if(!(res&&res.held))$('mknote').innerHTML=`<div class="ok">Sent ${esc(r.file.split('/').pop())} to ${esc(pr?pr.name:'the printer')} — follow it in <b>Printing</b>.</div>`};
+    try{await sentOk(body)}catch(e){
+      if(/finished print on its bed/i.test(e.message)){if(confirm(e.message+'\n\nIs the bed empty and the plate clean now?')){try{await sentOk({...body,bed_clear:true})}catch(e2){if(/anyway|filament|warn/i.test(e2.message)&&confirm(e2.message+'\n\nStart anyway?')){try{await sentOk({...body,bed_clear:true,force:true})}catch(e3){alert(e3.message)}}else alert(e2.message)}}}
+      else if(/anyway|filament|warn/i.test(e.message)&&confirm(e.message+'\n\nStart anyway?')){try{await sentOk({...body,force:true})}catch(e2){alert(e2.message)}}else alert(e.message)}
+    document.activeElement&&document.activeElement.blur();await loadMakeIt();MKGOING.delete(x.dataset.mkstart);mkRender(true)})}
 // ---------- Print next (0.26): the best plate for a free printer, started like Start print ----------
 // fix plates first, then Express, then letters whose base is printed in a loaded colour (✓), then base plates
 // (oldest first), then letters whose base isn't printed yet; only plates that fit this printer's filament
@@ -1714,7 +1731,9 @@ async function loadMakeIt(){let r;try{r=await api('/api/makeit')}catch(e){$('mkm
     +((nw.printing||[]).length?`<div class="mknow"><b>Printing:</b> ${nw.printing.map(p=>`<span class="nchip" style="flex-direction:column;align-items:flex-start;border-radius:8px;padding:3px 8px"><span>${esc(p.name)} · ${Math.round(p.progress||0)}%</span>${p.remaining?`<b style="font-size:12px">ready at ${finishAt(p.remaining)}</b>`:''}</span>`).join('')}</div>`:''):'';
   document.querySelectorAll('[data-pnext]').forEach(x=>x.onclick=()=>printNext(+x.dataset.pnext));
   $('mkinfo').innerHTML=`${r.printers.length} printer${r.printers.length===1?'':'s'} · ${busy} printing${clear?` · <a href="#" data-go="printers">${clear} waiting for the bed to be cleared</a>`:''}`;
-  mkShow(MKTAB);mkRender()}
+  mkShow(MKTAB);mkRender();
+  // a plate on its way to a printer: refresh every 5 s so the progress bar moves (else once a minute)
+  clearTimeout(MKFAST);if(rows.some(mkStarting))MKFAST=setTimeout(()=>{if(tab==='makeit'&&!document.hidden&&!VBUSY)loadMakeIt()},5000)}
 $('mkrefresh').onclick=()=>loadMakeIt();
 $('pralertson').checked=alertsOn();$('pralertson').onchange=()=>{try{localStorage.setItem('pralerts',$('pralertson').checked?'1':'0')}catch{}
   if($('pralertson').checked){beep();try{if(window.Notification&&Notification.permission==='default')Notification.requestPermission()}catch{}}};$('mkbbrefresh').onclick=()=>refreshFromBambuddy($('mkbbrefresh'),loadMakeIt);

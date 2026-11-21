@@ -1,12 +1,13 @@
 """Spare pieces (0.28): name pieces printed by mistake (a duplicate, an extra) kept in stock to send instead of
 making the same name again — like a returned (RTO) piece.
 
-* A spare is a name exactly as printed (same letter case, as on the piece) and colour, and what it is:
-  `both` (base + letters, a complete piece), `names` (letters only) or `bases` (base only).
+* A spare is a name exactly as printed (same letter case, as on the piece) and what it is: `bases` (base only —
+  the usual one: letters are thrown away, bases are kept) or `both` (base + letters, a complete piece, with the
+  letters' colour). A base fits an order of that name whatever its letters' colour (0.28.1).
 * A new order with exactly that name and colour is highlighted (Orders → To make → Piece in stock, the Print
   page). A complete piece can be **used**: the order goes to Ready to pack (`reuse_of = "spare:<uid>"`, the same
   field a returned piece uses, so tabs, batches and the shared records already treat it as made) and the piece
-  is marked used. Letters-only / base-only pieces are only highlighted (0.28).
+  is marked used. A base-only piece is highlighted (print the letters only).
 * Batches leave out an order that has a complete piece in stock, so it isn't printed by mistake.
 * Rows are shared with every computer (`snapstl.spares`); the newest `changed` wins. Never deleted: a piece
   taken out of stock gets `removed_at`.
@@ -17,13 +18,15 @@ import uuid
 
 from . import db
 
-PARTS = {"both": "Complete (base + letters)", "names": "Letters only", "bases": "Base only"}
+PARTS = {"bases": "Base only", "both": "Complete (base + letters)"}  # letters aren't kept (owner, 0.28.1)
 PREFIX = "spare:"
 COLS = ("uid", "name", "color", "part", "note", "staff", "added_at", "used_by", "used_at", "removed_at", "changed",
         "computer")
 
-# a piece in stock for this order (same name, same letter case, same colour; not used, not taken out)
-_FREE = ("s.name = {t}.name AND COALESCE(s.color,'') = COALESCE({t}.color,'') AND s.used_by IS NULL "
+# a piece in stock for this order (same name, same letter case; a complete piece also the same colour; not used,
+# not taken out)
+_FREE = ("s.name = {t}.name AND (s.part = 'bases' OR COALESCE(s.color,'') = COALESCE({t}.color,'')) "
+         "AND s.used_by IS NULL "
          "AND s.removed_at IS NULL AND COALESCE({t}.name,'') <> ''")
 
 
@@ -42,8 +45,8 @@ def _clean(name: str, color: str, part: str) -> tuple[str, str, str]:
     if not name:
         raise SpareError("Type the name exactly as it is printed on the piece")
     if part not in PARTS:
-        raise SpareError("Choose what the piece is: complete, letters only or base only")
-    return name[:60], color[:30], part
+        raise SpareError("Choose what the piece is: base only or complete (base + letters)")
+    return name[:60], ("" if part == "bases" else color[:30]), part
 
 
 def _touch(con, uid: str, **values) -> None:
@@ -105,8 +108,12 @@ def listing(con=None) -> dict:
             fits.setdefault((o["name"], (o["color"] or "").lower()), []).append(o["order_id"])
         lower = {o["name"].lower(): o["name"] for o in waiting}
         near = {}
+        by_name: dict[str, list[str]] = {}
+        for o in waiting:
+            by_name.setdefault(o["name"], []).append(o["order_id"])
         for r in rows:
-            r["fits"] = fits.get((r["name"], (r["color"] or "").lower()), []) if not (r["used_by"] or r["removed_at"]) else []
+            hit = by_name.get(r["name"], []) if r["part"] == "bases" else fits.get((r["name"], (r["color"] or "").lower()), [])
+            r["fits"] = hit if not (r["used_by"] or r["removed_at"]) else []
             if not r["fits"] and lower.get(r["name"].lower(), r["name"]) != r["name"]:
                 near[r["name"]] = lower[r["name"].lower()]  # same letters, other capitals: not matched
         return {"stock": [r for r in rows if not r["used_by"] and not r["removed_at"]],
@@ -123,7 +130,8 @@ def for_order(con, o: dict) -> list[dict]:
     """Pieces in stock that fit this order (complete ones first)."""
     if not o.get("name") or o.get("reuse_of"):
         return []
-    rs = db.rows(con, "SELECT uid, name, color, part, note FROM spares s WHERE s.name=? AND COALESCE(s.color,'')=? "
+    rs = db.rows(con, "SELECT uid, name, color, part, note FROM spares s WHERE s.name=? "
+                      "AND (s.part='bases' OR COALESCE(s.color,'')=?) "
                       "AND s.used_by IS NULL AND s.removed_at IS NULL", o["name"], o.get("color") or "")
     for r in rs:
         r["complete"] = r["part"] == "both"
@@ -159,7 +167,8 @@ def use(order_id: str, uid: str) -> None:
             raise SpareError("Only an order waiting to be made (not in a batch yet) can use a spare piece")
         hit = next((s for s in for_order(con, o) if s["uid"] == uid), None)
         if hit is None:
-            raise SpareError("That piece doesn't match this order (same name and colour) or is already used")
+            raise SpareError("That piece doesn't match this order (same name, and colour for a complete piece) "
+                             "or is already used")
         if not hit["complete"]:
             raise SpareError("Only a complete piece (base + letters) can be sent instead of making the order")
         db.set_group(con, order_id, "reuse", reuse_of=PREFIX + uid)

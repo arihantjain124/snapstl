@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import os
 import time
 import uuid
 from contextlib import contextmanager
@@ -301,6 +302,19 @@ def _add_columns(con, migrations) -> None:
                     raise
 
 
+# 0.28.1: tables and columns are made once per database file per run, not on every connection (the Print page
+# opened hundreds of connections per load, each re-checking every column: seconds of CPU)
+_SCHEMA_DONE: set[tuple] = set()
+
+
+def _file_key(p: Path) -> tuple | None:
+    try:
+        st = os.stat(p)
+    except OSError:
+        return None
+    return (str(Path(p).resolve()), st.st_ino, st.st_ctime_ns)
+
+
 def connect(path: Path | None = None) -> sqlite3.Connection:
     p = path or DB_PATH
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -308,10 +322,16 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA foreign_keys=ON")
-    con.executescript(SCHEMA)
-    _add_columns(con, MIGRATIONS)
-    con.executescript(POST_SCHEMA)
-    _add_columns(con, LATE_MIGRATIONS)
+    key = _file_key(p)
+    if key is None or key not in _SCHEMA_DONE:
+        con.executescript(SCHEMA)
+        _add_columns(con, MIGRATIONS)
+        con.executescript(POST_SCHEMA)
+        _add_columns(con, LATE_MIGRATIONS)
+        con.commit()
+        key = _file_key(p)
+        if key is not None:
+            _SCHEMA_DONE.add(key)
     # older rows: everything here is this computer's, and every batch gets a unique id
     con.execute("UPDATE batches SET computer_id=?, computer_name=? WHERE computer_id IS NULL", (computer.ID, computer.NAME))
     con.execute("UPDATE downloads SET computer_id=? WHERE computer_id IS NULL", (computer.ID,))

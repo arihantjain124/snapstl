@@ -27,6 +27,7 @@ yet marked printed / ready), plus any plate with a print on its way.
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 from . import computer, db, extras, farm, spares, verify
@@ -186,7 +187,8 @@ def board(prs: list[dict] | None = None) -> dict:
         batches = _batches(con)
         latest: dict[tuple[int, str], dict] = {}
         for j in db.rows(con, "SELECT * FROM print_jobs WHERE computer_id=? ORDER BY id", computer.ID):
-            latest[(j["batch_id"], j["plate"])] = j
+            if farm.replaces(latest.get((j["batch_id"], j["plate"])), j):
+                latest[(j["batch_id"], j["plate"])] = j
         mine = {b["id"]: b for b in batches}
         extra_rows = [x for x in verify.extra_plates(con) if x["batch_id"] in mine]
         open_ids = {r[0] for r in con.execute(f"SELECT order_id FROM orders WHERE state='bundled' AND NOT {SHIPPED_SQL}")}
@@ -256,11 +258,12 @@ def board(prs: list[dict] | None = None) -> dict:
     pending = sorted(rows, key=lambda r: (r["extra"] != "fix", r["express_by"] is None, r["express_by"] or ""))
     active_jobs = farm.active_counts()
     fcfg = farm.load_config()
+    beds = {p["id"]: bed_state(p) for p in prs}  # 0.28.1: once per printer, not per plate × printer
     for r in pending:  # letters only on printers with a Letters profile, once any has one (0.27)
         r["choices"] = [{"id": p["id"], "name": p["name"], "why_not": "", "note": farm.match_note(r, p),
                          "available": available(p, active_jobs.get(p["id"], 0)), "left": spool_left(p, r["need"]),
                          "online": bool((p.get("status") or {}).get("connected")),
-                         "state": (p.get("status") or {}).get("state", ""), "bed": bed_state(p),
+                         "state": (p.get("status") or {}).get("state", ""), "bed": beds[p["id"]],
                          "trays": farm.tray_choices(r["need"], p), "best_tray": farm.best_tray(r["need"], p)}
                         for p in prs if farm.may_print(p["id"], r["kind"], fcfg)]
     pick = {}
@@ -334,10 +337,14 @@ def _plate(batch_id: int, file: str) -> tuple[dict, dict]:
 
 
 def _latest(batch_id: int, file: str) -> dict | None:
+    """The plate's job (its newest, unless a cancelled copy would hide one still on its way — farm.replaces)."""
     with db.tx() as con:
-        j = con.execute("SELECT * FROM print_jobs WHERE batch_id=? AND plate=? AND computer_id=? ORDER BY id DESC LIMIT 1",
-                        (batch_id, file, computer.ID)).fetchone()
-    return dict(j) if j else None
+        rows = db.rows(con, "SELECT * FROM print_jobs WHERE batch_id=? AND plate=? AND computer_id=? ORDER BY id",
+                       batch_id, file, computer.ID)
+    return farm.current_job(rows)
+
+
+_START = threading.Lock()  # 0.28.1: one Start print at a time, so a double click can't send a plate twice
 
 
 class BedNotClear(farm.FarmError):
@@ -372,6 +379,12 @@ def confirm_bed_clear(printer_id: int, awaiting: bool = False) -> None:
 
 def start_print(batch_id: int, file: str, printer_id: int, options: dict | None, prs: list[dict],
                 force: bool = False, speed: str = "", tray: int | None = None, bed_clear: bool = False) -> dict:
+    with _START:
+        return _start_print(batch_id, file, printer_id, options, prs, force, speed, tray, bed_clear)
+
+
+def _start_print(batch_id: int, file: str, printer_id: int, options: dict | None, prs: list[dict],
+                 force: bool = False, speed: str = "", tray: int | None = None, bed_clear: bool = False) -> dict:
     """Start print (a person's click): the only way a Make It plate gets printed.
     Not sent yet / failed / cancelled / reprint → sent to that printer and started once queued.
     Waiting held in Bambuddy → moved to that printer if changed, then started.

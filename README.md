@@ -379,12 +379,16 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   before its bases are printed).
 - **Merge** (Letters): tick letter plates of one colour (fix plates too), not started, up to 3 names, then
   **Merge onto one plate**; **Split back** returns exactly those plates while it isn't started.
-- **Spare pieces** (0.28, Orders → **Spare pieces**): name pieces printed by mistake (a duplicate, an extra) kept in
-  stock — name exactly as printed, colour, and complete / letters only / base only. A new order with exactly that
-  name and colour shows **In stock** (Orders → To make → **Piece in stock**, a notice on Orders, a tag on Print). A
-  complete piece is sent with **Use spare piece** (the order goes to Ready to pack; **Undo spare piece** puts it
-  back); batches leave such orders out. Letters-only / base-only pieces are shown, not used by themselves. Print →
-  Removed → **Add to spare pieces** for a copy that was printed anyway. Shared with every computer.
+- **Spare pieces** (0.28, Orders → **Spare pieces**): bases kept in stock (extras, mistakes, bases made before
+  SnapSTL) and complete pieces; letters aren't kept (0.28.1). Name exactly as on the base. A new order with that
+  name shows **In stock** (Orders → To make → **Piece in stock**, a notice on Orders, a tag on Print) — a base fits
+  whatever the letters' colour; a complete piece needs the same colour and is sent with **Use spare piece** (the
+  order goes to Ready to pack; **Undo spare piece** puts it back; batches leave such orders out). Print → Removed →
+  **Add to spare pieces** on a bases plate that was printed anyway. Shared with every computer.
+- **Start print** (0.28.1): the plate moves to **Printing** (Bases and Letters each have To print / **Printing** /
+  Printed — a plate is in one of them) with **Starting print…** and a progress bar (slicing → sending → printer
+  warming up), then the print's %. It takes a few minutes; no need to press again. A plate held because the
+  printer was busy stays in To print with Start print.
 - **Merging** (0.28): one merge at a time — a second press is refused, so the same names are never on two plates.
   **Available to merge** (under Letters) suggests only plates whose bases are printed. **Remove** works on every
   plate (merged plates and split parts too); a copy left by an older double press is flagged in red.

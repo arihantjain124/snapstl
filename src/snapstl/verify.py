@@ -22,7 +22,7 @@ import json
 import threading
 import uuid
 
-from . import computer, db
+from . import computer, db, farm
 
 BEFORE = "Before 0.24"
 RESULTS = {
@@ -99,7 +99,8 @@ def extra_plates(con, batch_ids=None, active_only: bool = True) -> list[dict]:
 def latest_jobs(con) -> dict[tuple[int, str], dict]:
     out: dict[tuple[int, str], dict] = {}
     for j in db.rows(con, "SELECT * FROM print_jobs WHERE COALESCE(computer_id, ?)=? ORDER BY id", computer.ID, computer.ID):
-        out[(j["batch_id"], j["plate"])] = j
+        if farm.replaces(out.get((j["batch_id"], j["plate"])), j):
+            out[(j["batch_id"], j["plate"])] = j
     return out
 
 
@@ -332,8 +333,16 @@ def staff_list() -> list[str]:
         return staff_names(con)
 
 
+_LABELS: dict[tuple, str] = {}
+
+
 def _label(b: dict) -> str:
-    return json.loads(b.get("summary") or "{}").get("label") or f"Batch #{b['id']}"
+    """The batch's name (its summary is large: read once per batch and summary, 0.28.1)."""
+    s = b.get("summary") or "{}"
+    k = (b["id"], len(s), hash(s[:200]))
+    if k not in _LABELS:
+        _LABELS[k] = json.loads(s).get("label") or f"Batch #{b['id']}"
+    return _LABELS[k]
 
 
 def _plate_preview(b: dict, file: str, extras_list: list[dict]) -> dict | None:

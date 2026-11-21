@@ -553,3 +553,33 @@ English hard — the language help was skipped by the owner).
   colour match like returned pieces; an order sent with one gets `reuse_of = "spare:<uid>"` (the returned-piece
   field, so tabs, batches and the shared records already treat it as made). Complete pieces can be used; letters /
   base only are shown. Make next batch and Create batch leave out orders with a complete piece in stock.
+
+### 2026-11-22: 0.28.1 Spare pieces: bases only, no letters from the update
+- Owner: letters printed twice are thrown away; only bases are kept (including bases made before SnapSTL). The
+  0.28 repair no longer adds the letters of copies printed twice to Spare pieces (it would also have added them
+  once per computer, since the repair is remembered per computer but spares are shared). "Letters only" is gone:
+  a spare is a base or a complete piece. A base matches an order by name alone (any letters' colour), so the
+  order only needs its letters printed; a complete piece still needs the same colour.
+- **Start print** felt like nothing happened: the button greyed for a few seconds, came back, and the print
+  started minutes later (slicing in Bambuddy, sending, printer warming up). The worker stored the job as "held"
+  for a moment before releasing it, so Print could show Start print again in between; now it is stored held only
+  when it really waits for a person. The row shows **Starting print…** (step 1–3 with a bar, slice % when Bambuddy
+  reports it), the button reads "Starting…" while the click is sent, and Print refreshes every 5 s while a plate is
+  on its way (else once a minute).
+- **Printing** tab in Bases and Letters (owner): To print / Printing / Printed, a plate in exactly one. Printing =
+  an active job not held for a person (queued, slicing, sending, started, printing); a held plate stays in To print
+  with Start print. Done → Printed as before. After Start print a note says where it went.
+- **A base sent twice** (found on the farm, 0.28.0): two Start print clicks reached the app in the same second
+  (the page re-drew the row while the first click was still being sent, so the button was there again); both
+  passed the "already on its way" check and Bambuddy got the plate twice. The copy was cancelled in Bambuddy, and
+  as the newest job it made the plate look not started while the first one printed. Now: Start print runs one at
+  a time (`makeit._START`) and refuses a plate with any job on its way; the worker never sends a second copy of a
+  plate already on its way (cancelled, "pressed twice"); a plate's job is its newest except that a cancelled /
+  failed copy never hides one on its way, and a copy never hides the one printing (`farm.replaces`, used by Print,
+  Verify, merge checks); the button stays "Starting…" while the click is being sent, even if the page re-draws.
+- **Print page blank / app "stuck"** (farm, 0.26.1): `/api/makeit` took 6–12 s of CPU; every open page asks for it
+  every minute (and Start print / Print next again), so the requests piled up and the server stayed at 2+ cores
+  without answering — Restart then hung too. Causes: `bed_state` ran once per plate × printer (884 times), and each
+  `db.tx()` re-ran the whole schema + column checks. Now: bed state once per printer; tables / columns made once
+  per database file per run (`db._SCHEMA_DONE`); batch labels read once (`verify._label`); `/api/makeit` works
+  one request at a time and requests that arrived meanwhile share its answer. On the farm's data: 9 s → ~1 s.

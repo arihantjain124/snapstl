@@ -70,7 +70,7 @@ def test_a_copy_is_shown_refused_and_removed_once(client, bb):
     assert copy in [r["file"] for r in m["removed"]]
 
 
-def test_both_copies_printed_become_spare_letters(client, bb):
+def test_copies_printed_twice_add_no_spare_letters(client, bb):
     b1, _ = built_batch(client, "ME")
     b2, _ = built_batch(client, "MF")
     plates = [{"batch_id": b1, "file": PINK}, {"batch_id": b2, "file": PINK}]
@@ -80,9 +80,8 @@ def test_both_copies_printed_become_spare_letters(client, bb):
         con.execute("DELETE FROM sync_state WHERE key='repair_028'")
     for f in (merged, copy):
         client.post("/api/makeit/by-hand", json={"batch_id": b2, "file": f})
-    assert extras.repair_028() == 2
-    stock = client.get("/api/spares").json()["stock"]
-    assert sorted((s["name"], s["color"], s["part"]) for s in stock) == [("Ayra", "pink", "names")] * 2
+    assert extras.repair_028() == 0  # letters aren't kept: nothing goes to Spare pieces (0.28.1)
+    assert client.get("/api/spares").json()["stock"] == []
 
 
 def test_remove_works_on_a_merged_plate(client, bb):
@@ -95,6 +94,77 @@ def test_remove_works_on_a_merged_plate(client, bb):
     assert merged not in [r["file"] for r in m["names"]] and merged in [r["file"] for r in m["removed"]]
     assert client.post("/api/makeit/remove", json={"batch_id": b2, "file": merged, "put_back": True}).status_code == 200
     assert merged in [r["file"] for r in client.get("/api/makeit").json()["names"]]
+
+
+# ---------------- Start print (0.28.1) ----------------
+def test_start_print_is_never_shown_held_while_it_is_being_started(client, bb, monkeypatch):
+    from .test_farm import wait_for
+
+    client.get("/api/farm")
+    bid, _ = built_batch(client, "SP")
+    bb.slicer = "ok"
+    seen, real = [], farm.start_job
+
+    def start(job_id, force=False):  # what Print would show at that moment
+        with db.tx() as con:
+            seen.append(con.execute("SELECT held FROM print_jobs WHERE id=?", (job_id,)).fetchone()[0])
+        return real(job_id, force)
+
+    monkeypatch.setattr(farm, "start_job", start)
+    assert client.post("/api/makeit/start", json={"batch_id": bid, "file": BASE, "printer_id": 1}).status_code == 200
+    wait_for(lambda: seen)
+    assert seen == [0]
+    row = next(r for r in client.get("/api/makeit").json()["bases"] if r["file"] == BASE)
+    assert row["job_active"] and not row["job"]["held"]
+
+
+def test_start_print_twice_at_once_sends_the_plate_once(client, bb):
+    import threading
+
+    from .test_farm import wait_for
+
+    client.get("/api/farm")
+    bid, _ = built_batch(client, "SQ")
+    bb.slicer = "ok"
+    codes = []
+    go = lambda: codes.append(client.post("/api/makeit/start",  # noqa: E731
+                                          json={"batch_id": bid, "file": BASE, "printer_id": 1}).status_code)
+    ts = [threading.Thread(target=go) for _ in range(2)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert sorted(codes) == [200, 400]  # the second: "Already on its way"
+    wait_for(lambda: bb.queue)
+    with db.tx() as con:
+        assert con.execute("SELECT COUNT(*) FROM print_jobs WHERE plate=?", (BASE,)).fetchone()[0] == 1
+
+
+def test_a_cancelled_copy_never_hides_the_plate_printing(client, bb):
+    from .test_farm import wait_for
+
+    client.get("/api/farm")
+    bid, _ = built_batch(client, "SR")
+    bb.slicer = "ok"
+    assert client.post("/api/makeit/start", json={"batch_id": bid, "file": BASE, "printer_id": 1}).status_code == 200
+    wait_for(lambda: bb.queue)
+    bb.queue[1]["status"] = "printing"
+    farm.WORKER.refresh()
+    with db.tx() as con:  # what a double click before 0.28.1 left: a second job, cancelled in Bambuddy
+        con.execute("INSERT INTO print_jobs(batch_id,plate,kind,printer_id,printer_name,state,created_at,updated_at,"
+                    "computer_id) SELECT batch_id,plate,kind,printer_id,printer_name,'cancelled',created_at,updated_at,"
+                    "computer_id FROM print_jobs WHERE id=1")
+    row = next(r for r in client.get("/api/makeit").json()["bases"] if r["file"] == BASE)
+    assert row["job_active"] and row["job"]["state"] == "printing"
+    r = client.post("/api/makeit/start", json={"batch_id": bid, "file": BASE, "printer_id": 1})
+    assert r.status_code == 400 and "on its way" in r.text
+    # a copy queued behind it is never sent to Bambuddy
+    with db.tx() as con:
+        con.execute("INSERT INTO print_jobs(batch_id,plate,kind,printer_id,printer_name,state,autostart,created_at,"
+                    "updated_at,computer_id) SELECT batch_id,plate,kind,printer_id,printer_name,'queued',1,created_at,"
+                    "updated_at,computer_id FROM print_jobs WHERE id=1")
+    farm.WORKER.kick()
+    j = wait_for(lambda: (lambda x: x if x["state"] != "queued" else None)(
+        db.rows(db.connect(), "SELECT state, error FROM print_jobs ORDER BY id DESC LIMIT 1")[0]))
+    assert j["state"] == "cancelled" and "pressed twice" in j["error"] and len(bb.queue) == 1
 
 
 # ---------------- external spool ----------------
@@ -140,7 +210,8 @@ def test_a_spare_piece_is_matched_used_and_undone(client):
         ("S3", "PRINT", "Magicians_35", "Mehr", "Pink", 1)]), "text/csv")}).status_code == 200
     r = client.post("/api/spares", json={"name": "Kiara", "color": "Pink", "part": "both", "note": "shelf 2"})
     uid = r.json()["added"][0]["uid"]
-    client.post("/api/spares", json={"name": "Mehr", "color": "pink", "part": "names"})  # letters only
+    assert client.post("/api/spares", json={"name": "Mehr", "color": "pink", "part": "names"}).status_code == 400
+    client.post("/api/spares", json={"name": "Mehr", "color": "green", "part": "bases"})  # a base fits any colour
     client.post("/api/spares", json={"name": "kiara", "color": "blue", "part": "both"})  # other capitals: no match
     o = _orders(client, "to_make_returned")
     assert set(o) == {"S1", "S3"} and o["S1"]["spares"][0]["complete"] and not o["S3"]["spares"][0]["complete"]
@@ -171,3 +242,14 @@ def test_spares_table_is_in_the_shared_records_schema():
     sql = sync.schema_sql()
     assert "CREATE TABLE IF NOT EXISTS snapstl.spares" in sql and "'spares'] LOOP" in sql
     assert spares.match_sql(complete=True).count("part = 'both'") == 1
+
+
+def test_a_base_fits_an_order_of_any_letter_colour(client):
+    assert client.post("/api/ingest", files={"file": ("r.csv", report([
+        ("B1", "PRINT", "Magicians_35", "Riya", "Blue", 1), ("B2", "PRINT", "Magicians_35", "Riya", "Pink", 1)]),
+        "text/csv")}).status_code == 200
+    s = client.post("/api/spares", json={"name": "Riya", "color": "red", "part": "bases"}).json()["added"][0]
+    assert s["color"] == ""  # a base has no letters' colour
+    assert set(_orders(client, "to_make_returned")) == {"B1", "B2"}
+    assert sorted(client.get("/api/spares").json()["stock"][0]["fits"]) == ["B1", "B2"]
+    assert client.post("/api/orders/B1/use-spare", json={"uid": s["uid"]}).status_code == 409  # base only: print letters
