@@ -862,19 +862,29 @@ def test_spare_pieces_reach_every_computer(two):
             rc.execute("DELETE FROM snapstl.spares")
 
 
-def test_name_stand_orders_stay_on_this_computer(two):
-    """0.29: stand orders are not sent to the shared records yet (a computer before 0.29 would take them for
-    organizers); the organizer's still are."""
+def test_name_stand_orders_are_shared_once_batched(two):
+    """A ready stand order stays on this computer (a computer before 0.29 would take it for an organizer);
+    taken into a batch (0.30) it is claimed in the shared records, so no other computer makes it too."""
+    from snapstl import batches as B
+
     from .test_029 import ROWS, report as report_029
 
     pc = two
+    data = report_029(ROWS)
+    for name in ("A", "B"):
+        with pc(name):
+            ingest.ingest(data, "r.csv")
+            ok(sync.sync_now())
     with pc("A"):
-        ingest.ingest(report_029(ROWS), "r.csv")
-        ok(sync.sync_now())
         assert remote("O1") is not None
         assert remote("G1") is None and remote("H1") is None
         with db.tx() as con:
             assert con.execute("SELECT COUNT(*) FROM sync_outbox").fetchone()[0] == 0
+        assert B.create_batch(["G1"], Settings())["orders"] == 1
+        assert remote("G1")["state"] == "in_batch" and remote("G1")["sku"] == "Magicians_174"
     with pc("B"):
         ok(sync.sync_now())
-        assert order("O1") is not None and order("G1") is None
+        assert order("G1")["state"] == "in_batch" and order("G1")["batch_computer"] == "PC A"
+        with pytest.raises(ValueError):
+            B.create_batch(["G1"], Settings())  # already taken on A
+        assert remote("G2") is None

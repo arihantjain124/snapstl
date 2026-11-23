@@ -770,12 +770,15 @@ async def next_batch(req: Request):
     downloaded and its plates built by themselves (when a model fails, Batches waits for a person)."""
     body = await req.json()
     n = max(1, min(int(body.get("count") or 50), 500))
+    prod = str(body.get("product") or products.ORGANIZER.key)  # 0.30: the product chosen on Orders
+    if prod not in products.BY_KEY:
+        raise HTTPException(400, f"Unknown product {prod!r}")
     errs = SETTINGS.validate()
     if errs:
         raise HTTPException(400, "; ".join(errs))
     with db.tx() as con:
         ids = [r[0] for r in con.execute(f"SELECT order_id FROM orders WHERE {_T}='to_make' "  # not those with a
-                                         f"AND {products.in_sql(products.MAKEABLE)} "
+                                         f"AND {products.in_sql([prod])} "
                                          f"AND NOT {spares.match_sql(complete=True)} {_ORDER} LIMIT ?", (n,))]  # spare
     if not ids:
         raise HTTPException(400, "Nothing to make: To make is empty")
@@ -783,8 +786,8 @@ async def next_batch(req: Request):
         out = B.create_batch(ids, SETTINGS)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    with db.tx() as con:
-        con.execute("UPDATE batches SET auto_build=1 WHERE id=?", (out["batch_id"],))
+    with db.tx() as con:  # builds by itself once downloaded — not name stands yet (their plates: next update)
+        con.execute("UPDATE batches SET auto_build=? WHERE id=?", (int(prod in products.BUILDABLE), out["batch_id"]))
     try:
         return out | {"download": B.start_download(out["batch_id"]), "download_error": ""}
     except ValueError as e:  # the batch is made; the download waits for what's missing (e.g. the license password)
@@ -848,7 +851,11 @@ def helper_config():
     """Which MakerWorld page the helper must be on (Settings → MakerWorld model page link)."""
     from .settings import design_id
 
-    return {"model_url": SETTINGS.makerworld_url, "design_id": design_id(SETTINGS.makerworld_url),
+    org = design_id(SETTINGS.makerworld_url)
+    # 0.30: every product's page the helper may work on (designId → page); the organizer's from Settings
+    pages = {org: SETTINGS.makerworld_url} if org else {}
+    pages.update({p.design_id: p.url for p in products.STANDS})
+    return {"model_url": SETTINGS.makerworld_url, "design_id": org, "pages": pages,
             "helper_version": _helper_version()}  # the helper reloads itself when its files were updated
 
 
@@ -860,11 +867,16 @@ def _helper_version() -> str:
 
 
 @app.get("/api/helper/next")
-def helper_next(status: str = "", on_page: int = 1):
+def helper_next(status: str = "", on_page: int = 1, design: str = ""):
+    """`design` (helper 2.4+): the designId of the page the working tab is on — it gets that page's work, or
+    `go` = the page to open for the next queued download. Without it (older helpers): organizer work only."""
     DOWNLOADER.seen(status, bool(on_page))
-    if not on_page:  # never hand out work to a tab that isn't on the model page
+    if not on_page:  # never hand out work to a tab that isn't on a model page
         return {"job": None, "paused": DOWNLOADER.paused}
-    return {"job": B.helper_next(), "paused": DOWNLOADER.paused}
+    d = design.strip() or None
+    job = B.helper_next(d)
+    go = None if job else B.helper_go(d)
+    return {"job": job, "paused": DOWNLOADER.paused, **({"go": go} if go else {})}
 
 
 @app.post("/api/helper/ping")
@@ -877,10 +889,24 @@ async def helper_ping(req: Request):
 
 
 @app.post("/api/helper/jobs/{job_id}/result")
-async def helper_result(job_id: int, plate_1: UploadFile = File(...), plate_2: UploadFile = File(...),
-                        check: str = Form("")):
-    """`check` (JSON from helper 2.2.0+): did the License password box hold the password at Generate?"""
+async def helper_result(job_id: int, plate_1: UploadFile | None = File(None), plate_2: UploadFile | None = File(None),
+                        model: UploadFile | None = File(None), check: str = Form("")):
+    """An organizer: plate_1 + plate_2, `check` (JSON from helper 2.2.0+): did the License password box hold the
+    password at Generate? A name stand (helper 2.4): `model` = MakerWorld's one OBJ with both colours."""
     DOWNLOADER.seen("Uploading")
+    if model is not None:
+        m = await model.read(MAX_UPLOAD + 1)
+        if len(m) > MAX_UPLOAD:
+            raise HTTPException(413, "Model too large")
+        try:
+            return B.store_stand_result(job_id, m.decode("utf-8", errors="replace"))
+        except KeyError as e:
+            raise HTTPException(404, "No such job") from e
+        except ValueError as e:
+            B.store_failure(job_id, str(e))
+            raise HTTPException(400, str(e)) from e
+    if plate_1 is None or plate_2 is None:
+        raise HTTPException(400, "Send plate_1 and plate_2 (organizer) or model (name stand)")
     try:
         chk = json.loads(check) if check else None
     except json.JSONDecodeError:

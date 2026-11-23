@@ -1,8 +1,8 @@
 // SnapSTL Helper service worker: relays between the working MakerWorld tab and the SnapSTL app
 // on this Mac (http://127.0.0.1:8317). No tokens: the app accepts these calls only from this computer.
 //
-// The helper works in ONE tab ("working tab") and only while that tab is on the exact model page
-// set in SnapSTL → Settings → MakerWorld model page link (matched by its designId).
+// The helper works in ONE tab ("working tab") and only while that tab is on one of SnapSTL's model pages
+// (the organizer's from Settings → MakerWorld model page link, and each name stand's, 2.4), matched by designId.
 const APP = "http://127.0.0.1:8317";
 const session = chrome.storage.session;
 
@@ -43,8 +43,10 @@ async function reloadIfUpdated(want) {
 function onModelPage(url, cfg) {
   try {
     const u = new URL(url);
+    const d = u.searchParams.get("designId");
+    const known = Object.keys(cfg.pages || {}).concat(cfg.design_id ? [String(cfg.design_id)] : []);
     return u.hostname.endsWith("makerworld.com") && u.pathname.includes("/makerlab/parametricModelMaker") &&
-      !!cfg.design_id && u.searchParams.get("designId") === String(cfg.design_id);
+      !!d && known.includes(d);
   } catch { return false; }
 }
 
@@ -92,10 +94,14 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         return {};
       case "next":
         return await app("/api/helper/next?" + new URLSearchParams({
-          status: (msg.status || "").slice(0, 150), on_page: msg.onPage ? "1" : "0",
+          status: (msg.status || "").slice(0, 150), on_page: msg.onPage ? "1" : "0", design: msg.design || "",
         }));
       case "result": {
         const fd = new FormData();
+        if (msg.model) {  // a name stand (2.4): one OBJ with both colours
+          fd.append("model", new Blob([msg.model], { type: "text/plain" }), "model.obj");
+          return await app(`/api/helper/jobs/${msg.job_id}/result`, { method: "POST", body: fd });
+        }
         fd.append("plate_1", new Blob([msg.plate_1], { type: "text/plain" }), "plate_1.obj");
         fd.append("plate_2", new Blob([msg.plate_2], { type: "text/plain" }), "plate_2.obj");
         if (msg.check) fd.append("check", msg.check);  // license password confirmation (no password inside)
@@ -123,7 +129,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         const cfg = await config();
         const [cur] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!cur || !onModelPage(cur.url || "", cfg)) {
-          return { error: "This tab isn't the model page set in SnapSTL. Click 'Open model page' first." };
+          return { error: "This tab isn't one of SnapSTL's model pages. Click 'Open model page' first." };
         }
         await session.set({ activeTab: cur.id });
         return { ok: true };

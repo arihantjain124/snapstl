@@ -1,6 +1,6 @@
 // Runs inside the MakerWorld page. It only *watches* — it never changes or blocks a request.
-//  1. Model files the page downloads after Generate (plate_1.obj = base, plate_2.obj = name) are
-//     copied to the helper.
+//  1. Model files the page downloads after Generate (plate_1.obj = base, plate_2.obj = name; a name
+//     stand's one OpenSCAD .obj with both colours, 2.4) are copied to the helper.
 //  2. While the helper is pressing Generate ("armed"), the bodies of the page's own outgoing
 //     requests are handed to the helper (content.js), which checks they carried the license
 //     password. Nothing is sent anywhere else; bodies are dropped once checked.
@@ -8,10 +8,13 @@
   if (window.__snapstlHooked) return;
   window.__snapstlHooked = true;
   const PLATE = /\/(plate_\d+|plate_single)\.obj(\?|$)/;
+  const MODEL = /\/openscadObj\/[^?]*\.obj(\?|$)/;  // a name stand (2.4)
+  const isModel = (url) => PLATE.test(url) || MODEL.test(url);
   const post = (msg) => window.postMessage({ __snapstl: true, ...msg }, location.origin);
   const send = (url, text) => {
     const m = PLATE.exec(url);
     if (m) post({ kind: "obj", plate: m[1], text });
+    else if (MODEL.test(url)) post({ kind: "obj", plate: "model", text });
   };
   let armedUntil = 0;
   window.addEventListener("message", (e) => {
@@ -42,7 +45,7 @@
     const res = await origFetch.apply(this, arguments);
     try {
       const url = typeof input === "string" ? input : input && input.url;
-      if (url && PLATE.test(url) && res.ok) res.clone().text().then((t) => send(url, t)).catch(() => {});
+      if (url && isModel(url) && res.ok) res.clone().text().then((t) => send(url, t)).catch(() => {});
     } catch (e) { /* ignore */ }
     return res;
   };
@@ -56,7 +59,7 @@
   };
   XMLHttpRequest.prototype.send = function (body) {
     try { watchBody(this.__snapstlUrl, this.__snapstlMethod, body); } catch (e) { /* ignore */ }
-    if (this.__snapstlUrl && PLATE.test(this.__snapstlUrl)) {
+    if (this.__snapstlUrl && isModel(this.__snapstlUrl)) {
       this.addEventListener("load", () => {
         try {
           if (this.status < 200 || this.status >= 300) return;

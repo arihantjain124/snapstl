@@ -1,5 +1,5 @@
 """0.29: products — name stands (GTA, Harry Potter, Barbie) are read from the report and listed under their
-product, but not made yet: batches, spare pieces, Stats and the shared records stay the organizer's."""
+product; spare pieces and Stats stay the organizer's. (0.30: they can be batched, one product per batch.)"""
 import csv
 import io
 
@@ -83,28 +83,31 @@ def test_orders_page_product_chips(client):  # noqa: F811
     assert client.get("/api/orders/facets?tab=to_make&product=gta").json()["tabs"]["to_make"] == 1
     assert client.get("/api/orders?tab=all&product=nope").status_code == 400
     assert client.get("/api/products").json()["products"][1] == {
-        "key": "gta", "label": "GTA", "kind": "stand", "skus": ["Magicians_174"], "makeable": False}
+        "key": "gta", "label": "GTA", "kind": "stand", "skus": ["Magicians_174"], "makeable": True,
+        "buildable": False}
     # Check name: a stand is approved without a colour
     assert client.post("/api/orders/G2/name", json={"name": "WIN", "color": ""}).status_code == 200
     assert _orders(client)["G2"]["tab"] == "to_make"
 
 
-def test_stands_are_not_batched_yet(client):  # noqa: F811
+def test_one_product_per_batch(client):  # noqa: F811
     _ingest(client)
-    r = client.post("/api/batches", json={"order_ids": ["G1"]})
-    assert r.status_code == 400 and "can't be made in SnapSTL yet" in r.text
-    b = client.post("/api/batches", json={"order_ids": ["G1", "H1", "O1"]}).json()
-    assert b["orders"] == 1  # the organizer only
+    r = client.post("/api/batches", json={"order_ids": ["G1", "H1", "O1"]})
+    assert r.status_code == 400 and "One product per batch" in r.text
+    assert client.post("/api/batches", json={"order_ids": ["G1"]}).json()["orders"] == 1
     with db.tx() as con:
-        assert con.execute("SELECT state FROM orders WHERE order_id='G1'").fetchone()[0] == "ready"
+        assert con.execute("SELECT state FROM orders WHERE order_id='G1'").fetchone()[0] == "in_batch"
 
 
-def test_make_next_batch_takes_organizers_only(client):  # noqa: F811
+def test_make_next_batch_takes_the_chosen_product(client):  # noqa: F811
     _ingest(client)
     with db.tx() as con:
         con.execute("UPDATE orders SET state='bundled' WHERE order_id='O1'")
-    r = client.post("/api/batches/next", json={"count": 10})
+    r = client.post("/api/batches/next", json={"count": 10})  # no product: the organizer, as before 0.30
     assert r.status_code == 400 and "Nothing to make" in r.text
+    r = client.post("/api/batches/next", json={"count": 10, "product": "harry_potter"})
+    assert r.status_code == 200, r.text
+    assert r.json()["orders"] == 1 and r.json()["download_error"] == ""  # no license password needed
 
 
 def test_spare_pieces_and_returned_pieces_stay_within_the_product(client):  # noqa: F811
@@ -119,10 +122,10 @@ def test_spare_pieces_and_returned_pieces_stay_within_the_product(client):  # no
     assert client.get("/api/spares").json()["stock"][0]["fits"] == []
 
 
-def test_stand_orders_stay_out_of_the_shared_records():
+def test_unknown_products_stay_out_of_the_shared_records():
     with db.tx() as con:
         before = con.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
-        assert sync.merge(con, {"order_id": "Z9", "sku": "Magicians_174", "state": "ready", "state_at": 1}) is None
+        assert sync.merge(con, {"order_id": "Z9", "sku": "Magicians_999", "state": "ready", "state_at": 1}) is None
         assert con.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == before
 
 

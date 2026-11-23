@@ -579,8 +579,8 @@ def merge(con, r: dict, force: bool = False) -> str | None:
     """Bring one shared record into the local database. Returns the order_id if this computer must
     release a stale claim of its own (its batch no longer exists here)."""
     oid = r["order_id"]
-    if products.of_order(r).key not in products.SHARED:
-        return None  # 0.29: a product this version doesn't share yet (e.g. a name stand) stays out
+    if r.get("sku") and products.by_sku(r["sku"]) is None:
+        return None  # a product this version doesn't know stays out
     r = {**r, "status_at": db.upgrade_stamp(r.get("status_at"))}  # written by a SnapSTL before 0.22.21
     cur = con.execute("SELECT * FROM orders WHERE order_id=?", (oid,)).fetchone()
     L = dict(cur) if cur else None
@@ -744,10 +744,11 @@ def _push(rc) -> int:
             con.execute("DELETE FROM sync_state WHERE key='pulled_until'")
             con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES (?, '1')", (VIEW_SENT,))
         con.execute("INSERT OR IGNORE INTO sync_outbox(order_id, queued_at) SELECT order_id, ? FROM orders "
-                    f"WHERE COALESCE(in_remote,0)=0 AND {products.in_sql(products.SHARED)}", (db.now(),))
-        # 0.29: name stand orders stay on this computer for now (a computer before 0.29 would take them for organizers)
+                    f"WHERE COALESCE(in_remote,0)=0 AND {products.shared_sql()}", (db.now(),))
+        # a name stand reaches the shared records only once it's in a batch (a computer before 0.29 would take a
+        # ready one for an organizer)
         con.execute("DELETE FROM sync_outbox WHERE order_id IN (SELECT order_id FROM orders "
-                    f"WHERE NOT {products.in_sql(products.SHARED)})")
+                    f"WHERE NOT {products.shared_sql()})")
         queued = db.rows(con, "SELECT o.*, q.queued_at FROM sync_outbox q JOIN orders o USING(order_id) "
                               f"ORDER BY q.queued_at LIMIT {PUSH_BATCH}")
         orphans = [r[0] for r in con.execute("SELECT order_id FROM sync_outbox WHERE order_id NOT IN "

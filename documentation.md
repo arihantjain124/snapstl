@@ -605,3 +605,17 @@ English hard — the language help was skipped by the owner).
   letter spacing, back thickness, letter protrusion, brim offset, flat bottom cut, preview colours, place in
   printing position, units per em; GTA also "Use Font Features"); Generate gives one OBJ + MTL, two materials:
   the block (Z −15…15 at the default 30 mm) and the letters on top (3 mm).
+
+### 2026-11-24: 0.30.0 Name stands: batches and downloads (step 2 of 4), helper 2.4.0
+- Batches: one product per batch; Make next batch takes the product chosen on Orders (no product = organizer, as
+  before). A stand batch downloads and stops at Ready to build ("Plates: next update"); the builder never builds
+  it with the organizer's plates.
+- Helper 2.4.0: works on every product's MakerWorld page (`/api/helper/config` → `pages`), tells the app which
+  page it's on (`design`), opens the page of the next download by itself (`go`); fills the stand form (text,
+  font size, letter spacing, back thickness 37 = 40 − 3, letter protrusion 3, brim offset 6, flat bottom cut 0.5,
+  place in printing position, GTA's Use Font Features) and sends MakerWorld's one OBJ back. An older helper
+  (≤ 2.3) is only given organizer downloads.
+- Saved: `<Name> - GTA - <key>/{model.obj, base.stl, letters.stl, info.json}`; checked: two colours, block =
+  back thickness sent, letters = protrusion sent and on top of the block (±0.3 mm), else refused and tried again.
+- Shared records: a stand order goes there once batched (claimed, so no stand is made twice); a ready one stays
+  local (a computer before 0.29 would take it for an organizer). Every computer must be on 0.29+ first.

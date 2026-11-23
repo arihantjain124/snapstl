@@ -707,15 +707,28 @@ snapstl.server:app --port 8320`.
   through the same checks as an organizer's. `report_rows` stays organizer-only.
 * Orders page: **Product** chips (`?product=` on `/api/orders`, `/api/orders/facets`; facets returns orders to
   make per product); Organizer is the default; stand rows show the product, both colours and their size.
-* **Not made yet (0.29):** `products.MAKEABLE` = organizer — Create batch / Make next batch take organizer
-  orders only. `products.SHARED` = organizer — stand orders are not sent to (nor taken from) the shared
-  records, since a computer before 0.29 would take them for organizers. Spare pieces, returned pieces and Stats
-  stay within the organizer / the same product.
-* Name stands (planned, next steps): the helper fills text, font size, letter spacing, back thickness
-  (= thickness − letter protrusion), letter protrusion, brim offset (6); MakerWorld gives one OBJ with two
-  materials — the block at the bottom, the letters on top. Plates: up to 3 of one product, each stand one
-  object with two parts (Base → filament 1, Letters → filament 2, Bambu `model_settings.config`), sliced with
-  two filament profiles and printed with a two-slot AMS mapping on a P1S whose AMS holds both colours.
+* **Batches (0.30):** one product per batch (Create batch refuses a mix; Make next batch takes `product`,
+  default organizer). Spare pieces, returned pieces and Stats stay within the organizer / the same product.
+* **Shared records:** a stand order is sent only once it's in a batch (`products.shared_sql`): a computer
+  before 0.29 would take a *ready* one for an organizer; batched ones are claimed like any order. Records of a
+  SKU this version doesn't know are ignored (`sync.merge`). All computers must run 0.29+ before stands are
+  batched.
+* **Downloads (0.30):** a stand download's `model_json` = `{_kind: "stand", _design, _product, _url, _fields}`
+  (`products.stand_job`: text input, font size, letter spacing, back thickness = thickness − letter
+  protrusion, letter protrusion, brim offset, flat bottom cut 0.5, place in printing position, GTA's Use Font
+  Features). Key: `cache.stand_key` (name + product + designId + every value sent); no license password, no
+  watermark scan. Helper 2.4 sends `design` (the page it is on) to `/api/helper/next`: it gets that page's
+  work, or `go` = the page of the oldest queued download, which it opens in the working tab. Without `design`
+  (helper ≤ 2.3) only organizer downloads are handed out. `/api/helper/config` adds `pages` {designId: url}.
+* **Result:** `model` = MakerWorld's one OBJ (`openscadObj/…obj`, captured by inject.js); `obj_by_material`
+  splits it; the lower material is the block, the upper the letters; refused unless the block is the back
+  thickness sent, the letters the protrusion sent, and they touch (±0.3 mm). Saved as
+  `<Name> - GTA - <key>/{model.obj, base.stl, letters.stl, info.json}`; `cache.load` gives (block, letters).
+* **Not built yet:** `products.BUILDABLE` = organizer — Queue build refuses a stand batch, the builder never
+  builds one (Make next batch sets no auto-build for stands).
+* Next: plates of up to 3 of one product, each stand one object with two parts (Base → filament 1, Letters →
+  filament 2, Bambu `model_settings.config`), sliced with two filament profiles and printed with a two-slot AMS
+  mapping on a P1S whose AMS holds both colours.
 
 ## 18. How to extend safely
 

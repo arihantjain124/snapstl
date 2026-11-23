@@ -18,7 +18,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import cache, computer, db, platform_os
+from . import cache, computer, db, platform_os, products
 from .tabs import TAB_SQL
 
 BATCH_DAYS = 10
@@ -34,7 +34,7 @@ STATUS_WORD = {"created": "Not started", "waiting": "Downloading", "models_ready
 def _orders(con) -> dict[str, list[dict]]:
     """Batch uid → its orders (name, colour, tab, …), from the orders' own batch link."""
     out: dict[str, list[dict]] = {}
-    for o in db.rows(con, f"SELECT order_id, name, color, quantity, batch_uid, batch_id, made_at, print_done_at, "
+    for o in db.rows(con, f"SELECT order_id, name, color, quantity, sku, batch_uid, batch_id, made_at, print_done_at, "
                           f"print_started_at, {TAB_SQL} AS tab FROM orders WHERE batch_uid IS NOT NULL"):
         out.setdefault(o["batch_uid"], []).append(o)
     return out
@@ -126,6 +126,10 @@ def batch_rows(limit: int = 1000) -> dict:
                        "quantity": o["quantity"], "base": parts.get(o["order_id"], {}).get("bases"),
                        "letters": parts.get(o["order_id"], {}).get("names")} for o in sorted(os_, key=lambda o: (o["color"] or "", o["name"] or ""))],
             "count": n, "word": status_word(r, n), "archived_at": r.get("archived_at"),
+            # 0.30: one product per batch (older batches: the organizer)
+            "product": products.of_order(os_[0] if os_ else {}).key,
+            "product_label": products.of_order(os_[0] if os_ else {}).label,
+            "buildable": products.of_order(os_[0] if os_ else {}).key in products.BUILDABLE,
             "files_cleaned_at": r.get("files_cleaned_at"),
             "clean_on": (r["archived_at"] + BATCH_DAYS * 86400) if r.get("archived_at") and not r.get("files_cleaned_at") else None,
         }
