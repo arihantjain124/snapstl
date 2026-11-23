@@ -147,6 +147,7 @@ Snapstl/
 │   ├── reportwatch.py        imports a new report saved in Downloads by itself (0.26)
 │   ├── spares.py             spare name pieces in stock, matched to new orders, shared (0.28)
 │   ├── products.py           which SKU is which product (organizer, name stands), what can be made / shared (0.29)
+│   ├── stands.py             name stand plates: size table, 3 per plate, two-part two-filament .3mf (0.31)
 │   └── static/
 │       ├── index.html        the whole UI: side navigation (Orders, Batches, Downloads, Settings, Help)
 │       └── login.html        used only if a portal password is set
@@ -724,11 +725,18 @@ snapstl.server:app --port 8320`.
   splits it; the lower material is the block, the upper the letters; refused unless the block is the back
   thickness sent, the letters the protrusion sent, and they touch (±0.3 mm). Saved as
   `<Name> - GTA - <key>/{model.obj, base.stl, letters.stl, info.json}`; `cache.load` gives (block, letters).
-* **Not built yet:** `products.BUILDABLE` = organizer — Queue build refuses a stand batch, the builder never
-  builds one (Make next batch sets no auto-build for stands).
-* Next: plates of up to 3 of one product, each stand one object with two parts (Base → filament 1, Letters →
-  filament 2, Bambu `model_settings.config`), sliced with two filament profiles and printed with a two-slot AMS
-  mapping on a P1S whose AMS holds both colours.
+* **Plates (0.31, `stands.py`):** length (X) and letter height (Y) from Settings → Name stands by letter count;
+  Z (block + letters = 40) is never scaled; block and letters get the same factors in the same frame. Up to 3
+  stands of one product per plate (`packing.pack`), the back `PRIME_TOWER_MM` (45 mm) of the bed kept free for
+  the prime tower. `Stands/<Product>/<Product> - A + B + C.3mf`: each stand one object of two parts (core 3MF
+  components) — "Base" → filament 1, "Letters" → filament 2 in `Metadata/model_settings.config`
+  (`threemf.write_3mf_assemblies`; Bambu Studio's own fields, read by Bambuddy). Read back: part count,
+  triangles, on the bed, off the tower strip, letters on and inside the block, size ±0.5 mm, filaments 1/2.
+  `report.csv` has stand columns. The batch summary keeps them in `stand_plates` (`plates` stays the
+  organizer's, read by Print / Verify / merge); `BuildResult.complete` counts a stand done when its plate passed.
+* **Not on the Print page yet:** `products.PRINTABLE` = organizer — a built stand batch has no Print button;
+  its orders are bundled (Orders → In production). Next: Print → Name stands, sliced with two filament
+  profiles, printed with a two-slot AMS mapping on a P1S whose AMS holds both colours.
 
 ## 18. How to extend safely
 

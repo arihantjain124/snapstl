@@ -812,6 +812,9 @@ class Manager:
                 rows = db.rows(con, f"SELECT * FROM orders WHERE order_id IN ({','.join('?' * len(ids))}) "
                                     "ORDER BY order_date, order_id", *ids)
             orders = _expand(rows, settings)
+            if orders and orders[0].product != products.ORGANIZER.key:  # name stands (0.31): their own plates
+                self._build_stands(b, settings, orders)
+                return
             meshes = {}
             marked: dict[str, bool] = {}  # cache key → watermark found
             for o in orders:
@@ -865,5 +868,39 @@ class Manager:
                 _cancel_unneeded_downloads(con)  # failed / missing models of a finished batch
 
 
+def _build_stands(self, b: dict, settings: Settings, orders: list[Order]) -> None:
+    """A name stand batch (0.31, stands.py): scale, up to 3 per plate, two-colour .3mf files. Its plates go in
+    summary["stand_plates"] (Print / Verify read "plates": stands join them in the next update)."""
+    from . import stands
+
+    batch_id = b["id"]
+    meshes = {}
+    for o in orders:
+        got = cache.load(model_key(o, settings))
+        if got:
+            meshes[o.idx] = got
+    missing = sorted({o.name for o in orders if o.idx not in meshes})
+    if not meshes:
+        raise RuntimeError("None of this batch's models are in the Downloads folder")
+    out = new_batch_dir(settings.output_dir, batch_id)
+    with db.tx() as con:
+        con.execute("UPDATE batches SET out_dir=? WHERE id=?", (str(out), batch_id))
+    usable = [o for o in orders if o.idx in meshes]
+    self._log(f"Building batch #{batch_id} ({len(usable)} name stands)")
+    res = stands.build(usable, meshes, settings, out, self._log)
+    done_ids = sorted({o.order_id for o in usable} - {o.order_id for o in orders if not res.complete(o.idx)})
+    errors = res.errors + [f"{n}: model not in the Downloads folder — left out of these plates" for n in missing]
+    summary = {"ok": res.ok and not missing, "errors": errors, "warnings": res.warnings, "plates": [],
+               "stand_plates": [asdict(p) for p in res.plates], "orders": len(done_ids), "stands": len(usable),
+               "product": usable[0].product, "folder": str(out), "label": out.name}
+    old = json.loads(b.get("summary") or "{}")
+    summary["previous_folders"] = old.get("previous_folders", []) + ([old["folder"]] if old.get("folder") else [])
+    with db.tx() as con:
+        db.finish_batch(con, batch_id, "done" if summary["ok"] else "done_with_problems", summary, done_ids)
+    self._log(f"Batch #{batch_id} done: {len(res.plates)} name stand plates")
+    _kick_sync()
+
+
+Manager._build_stands = _build_stands
 MANAGER = Manager()
 PREVIEW_DIR = Path(cache.APP_DIR) / "previews"  # rendered plate / object pictures (safe to delete)

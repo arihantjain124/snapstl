@@ -391,8 +391,9 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <div class="tw"><table class="objs"><thead><tr><th>Name</th><th>Comp.</th><th>Copies</th><th>Back of base</th><th>Watermark</th><th>Download</th><th></th></tr></thead><tbody id="bobjs"></tbody></table></div>
       <div id="bzoom"></div>
     </details>
-    <h3>Bases</h3><div class="plates" id="bbases"></div>
-    <h3>Names</h3><div class="plates" id="bnames"></div>
+    <div id="bstandwrap" hidden><h3>Name stands <span class="hint" id="bstandhint"></span></h3><div class="plates" id="bstands"></div></div>
+    <div id="borgwrap"><h3>Bases</h3><div class="plates" id="bbases"></div>
+    <h3>Names</h3><div class="plates" id="bnames"></div></div>
     <p class="hint">Bases are shown from the top as they'll sit on the plate (any watermark found is painted red); names as outlines. Click a plate to get its .3mf. Review in Bambu Studio before printing.</p>
   </div>
 </section>
@@ -870,7 +871,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 <section id="t-help" class="help" hidden>
   <div class="card">
     <h2>Help</h2>
-    <p><b>Products (0.29):</b> the Orders page has <b>Product</b> chips — Organizer (the default), GTA, Harry Potter, Barbie, All. The name stands can be batched (one product per batch) and the helper downloads them from their own MakerWorld page — it opens the right page by itself. Plates and printing for stands come in the next update. Their settings are in Settings → <b>Name stands</b>.</p>
+    <p><b>Products (0.29):</b> the Orders page has <b>Product</b> chips — Organizer (the default), GTA, Harry Potter, Barbie, All. The name stands can be batched (one product per batch) and the helper downloads them from their own MakerWorld page — it opens the right page by itself. <b>Queue build</b> makes their two-colour plates (3 per plate) in the batch folder, under <b>Stands/</b>; the Print page for stands comes in the next update. Their settings are in Settings → <b>Name stands</b>.</p>
     <p>SnapSTL turns webstore orders for the <b>Custom Name Desk Organizer</b> (SKU <code>Magicians_35</code>) into print-ready plates: each name is generated on MakerWorld, scaled to the agreed rules, grouped 3 per plate and saved as <b>.3mf</b> files.</p>
     <p>Testing a SnapSTL branch? Open <b>Settings → Maintenance → Updates</b>, choose a published <b>Update branch</b> and click <b>Switch branch</b>. Select <b>main (production)</b> when testing is done. Check shared-records compatibility before switching.</p>
     <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-printers">Print</a><a href="#h-pstatus">Printers</a><a href="#h-slicing">Slicing</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-portal">Other computers</a><a href="#h-data">Your data</a></div>
@@ -1190,7 +1191,7 @@ function selUI(){$('selcount').textContent=SEL.size?`${SEL.size} order${SEL.size
 $('pagecheck').onchange=()=>{for(const id of PAGE)$('pagecheck').checked?SEL.add(id):SEL.delete(id);loadOrders()};
 $('mknext').onclick=async()=>{const n=Math.max(1,Math.min(500,+$('seln').value||50));
   const prod=PRODUCTS.find(p=>p.key===filter.product)||PRODUCTS.find(p=>p.key==='organizer')||{key:'organizer',label:'Organizer',buildable:true};
-  if(!confirm(`Make a batch of the ${n} oldest ${prod.label} orders in To make (Express first)?\n\n${prod.buildable?'Their models download and the plates build by themselves. If a model fails, Batches waits for you.':'Their models download by themselves; plates for name stands come in the next update.'}`))return;
+  if(!confirm(`Make a batch of the ${n} oldest ${prod.label} orders in To make (Express first)?\n\nTheir models download and the plates build by themselves. If a model fails, Batches waits for you.`))return;
   $('mknext').disabled=true;try{const r=await post('/api/batches/next',{count:n,product:prod.key});SEL.clear();
     $('ingestres').innerHTML=r.download_error?`<div class="w">Batch #${r.batch_id} made with ${r.orders} order(s), but the download didn't start: ${esc(r.download_error)} Then press <b>Queue download</b> on Batches.</div>`
       :`<div class="o">Batch #${r.batch_id} made with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped)`:''}: downloading the models, then the plates build by themselves. Follow it on <b>Batches</b>.</div>`;refreshAll()}
@@ -1226,7 +1227,7 @@ function renderProducts(){if(!PRODUCTS.length||LOGISTICS){$('prodchips').hidden=
   document.querySelectorAll('[data-prod]').forEach(b=>b.onclick=()=>{filter.product=b.dataset.prod;filter.offset=0;SEL.clear();try{localStorage.setItem('oproduct',filter.product)}catch{}loadFacets();loadOrders()});
   const cur=PRODUCTS.find(p=>p.key===filter.product);
   $('prodmsg').innerHTML=cur&&!cur.makeable?`<div class="o"><b>${esc(cur.label)}</b> orders are listed here so none is missed; they can't go into a batch yet.</div>`
-    :cur&&!cur.buildable?`<div class="o"><b>${esc(cur.label)}</b> name stands: tick them and <b>Create batch</b> (one product per batch) — the helper downloads them from their MakerWorld page. Plates and printing come in the next update.</div>`:'';}
+    :cur&&!cur.printable?`<div class="o"><b>${esc(cur.label)}</b> name stands: tick them and <b>Create batch</b> (one product per batch) — the helper downloads them from their MakerWorld page, then <b>Queue build</b> makes two-colour plates (3 per plate). The Print page for stands comes in the next update.</div>`:'';}
 (async()=>{try{PRODUCTS=(await api('/api/products')).products;if(!PRODUCTS.some(p=>p.key===filter.product))filter.product=LOGISTICS?'':'organizer';if(FACETS)renderProducts();if(S)fillStands()}catch{}})();
 function renderChips(counts){
   const top=filter.tab.startsWith('to_make')||filter.tab==='express'?'to_make':filter.tab;
@@ -1328,10 +1329,10 @@ function bRow(b,showPc){const st=BST[b.status]||[b.status,''];const p=b.progress
     if(finished&&!b.files_cleaned_at)acts.push(`<a class="btn small" href="/api/batches/${b.id}/zip">ZIP</a>`);
     const built=['done','done_with_problems','failed'].includes(b.status)&&!b.files_cleaned_at&&!b.archived_at;
     if(b.status==='created')acts.push(`<button class="small primary" data-dl="${b.id}">Queue download</button>`);
-    if(b.status==='models_ready'&&b.buildable===false)acts.push(`<span class="hint" title="The models are in the Downloads folder">Plates: next update</span>`);
-    else if(b.status==='models_ready')acts.push(`<button class="small primary" data-build="${b.id}">Queue build</button>`);
-    if(b.status==='waiting'&&b.buildable!==false)acts.push(`<button class="small" data-build="${b.id}" data-partial="1" title="Build with the models that are ready; orders still missing a model are left out">Build now with what's ready</button>`);
-    if(finished&&!b.archived_at)acts.push(`<button class="small primary" data-make="${b.id}" title="Send these plates to your printers: Print → Bases / Names">Print</button>`);
+    if(b.status==='models_ready')acts.push(`<button class="small primary" data-build="${b.id}">Queue build</button>`);
+    if(b.status==='waiting')acts.push(`<button class="small" data-build="${b.id}" data-partial="1" title="Build with the models that are ready; orders still missing a model are left out">Build now with what's ready</button>`);
+    if(finished&&!b.archived_at&&b.printable!==false)acts.push(`<button class="small primary" data-make="${b.id}" title="Send these plates to your printers: Print → Bases / Names">Print</button>`);
+    else if(finished&&!b.archived_at)acts.push(`<span class="hint" title="The two-colour plates are in the batch folder">Print page: next update</span>`);
     if(built)acts.push(`<button class="small" data-redl="${b.id}" title="Fetch every model of this batch again from MakerWorld (replaces the saved ones)">Re-download</button>`,`<button class="small" data-rebuild="${b.id}" title="Make the plates again from the downloaded models — writes a new Batch folder; the old one stays">Rebuild plates</button>`);
     if(['created','waiting','models_ready'].includes(b.status))acts.push(`<button class="small" data-cancel="${b.id}">${b.label?'Stop':'Cancel'}</button>`);
     return `<tr>${head}<td>${names}</td><td>${bProgress(b)}</td><td>${status}</td>${pc}<td><div class="bacts">${acts.join(' ')}</div></td></tr>`}
@@ -1373,7 +1374,9 @@ async function openBatchDetail(id,quiet){const changed=openBatch!==id;openBatch=
   const W=s.watermark;const wmMsg=W&&W.checked?(W.found?`<div class="e">Watermark check: found on ${W.found} of ${W.checked} downloaded bases — those orders were held back.</div>`:`<div class="o">Watermark check: none of the ${W.checked} downloaded bases has MakerWorld's watermark.</div>`):'';
   const F=s.fit;const fitMsg=F&&F.checked?(F.ok===F.checked?`<div class="o">Fit check: ${F.ok}/${F.checked} name/base pairs keep their MakerWorld proportions — they'll fit after printing.</div>`:`<div class="e">Fit check: only ${F.ok}/${F.checked} pairs passed — the others were not printed (see below).</div>`):'';
   $('bmsgs').innerHTML=(s.folder?`<div class="o">Saved to ${esc(s.folder)}</div>`:'')+fitMsg+wmMsg+(s.errors||[]).map(e=>`<div class="e">${esc(e)}</div>`).join('')+(s.warnings||[]).map(w=>`<div class="w">${esc(w)}</div>`).join('')+(s.ok&&!(s.warnings||[]).length?'<div class="o">All plates passed the checks.</div>':'');
-  for(const k of ['bases','names']){const ps=(s.plates||[]).filter(p=>p.kind===k);
+  const SP=s.stand_plates||[];$('bstandwrap').hidden=!SP.length;$('borgwrap').hidden=!!SP.length;
+  if(SP.length)$('bstandhint').textContent=`· ${SP.length} plate${SP.length>1?'s':''} · two colours: ${(SP[0].colors||[]).join(' block + ')} letters · print them from the batch folder (Print page: next update)`;
+  for(const k of ['bases','names','stands']){const ps=k==='stands'?SP:(s.plates||[]).filter(p=>p.kind===k);
     $('b'+k).innerHTML=ps.length?ps.map(p=>`<a class="plate" data-file="${esc(p.file)}" href="/api/batches/${id}/file?path=${encodeURIComponent(p.file)}">${p.image&&b.mine?`<img loading="lazy" src="/api/batches/${id}/plate-image?f=${encodeURIComponent(p.image)}" alt="top view of the plate">`:plateSVG(p)}<div class="fn">${esc(p.file.split('/').pop())}</div>${p.warnings.map(w=>`<div class="hint" style="color:var(--warn)">${esc(w)}</div>`).join('')}</a>`).join(''):'<div class="empty">None</div>'}
   $('bfinder').hidden=!(META.local&&b.mine&&b.status.startsWith('done'));
   $('bfinder').onclick=()=>post(`/api/batches/${id}/reveal`,{});

@@ -84,7 +84,7 @@ def test_orders_page_product_chips(client):  # noqa: F811
     assert client.get("/api/orders?tab=all&product=nope").status_code == 400
     assert client.get("/api/products").json()["products"][1] == {
         "key": "gta", "label": "GTA", "kind": "stand", "skus": ["Magicians_174"], "makeable": True,
-        "buildable": False}
+        "buildable": True, "printable": False}
     # Check name: a stand is approved without a colour
     assert client.post("/api/orders/G2/name", json={"name": "WIN", "color": ""}).status_code == 200
     assert _orders(client)["G2"]["tab"] == "to_make"

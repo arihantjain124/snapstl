@@ -619,3 +619,14 @@ English hard — the language help was skipped by the owner).
   back thickness sent, letters = protrusion sent and on top of the block (±0.3 mm), else refused and tried again.
 - Shared records: a stand order goes there once batched (claimed, so no stand is made twice); a ready one stays
   local (a computer before 0.29 would take it for an organizer). Every computer must be on 0.29+ first.
+
+### 2026-11-24: 0.31.0 Name stands: plates (step 3 of 4)
+- `stands.py`: length and letter height from the size table, thickness as made (37 + 3); block and letters
+  scaled together; a warning when letters are stretched / squeezed (X/Y ratio outside 0.6–1.6).
+- Up to 3 of one product per plate, oldest first; the back 45 mm of the bed kept free for the prime tower.
+- `Stands/<Product>/<Product> - A + B + C.3mf`: each stand one object of two parts — Base → filament 1, Letters →
+  filament 2 (`threemf.write_3mf_assemblies`, Bambu's model_settings.config fields, as Bambuddy reads them).
+  Every file read back and checked. `report.csv` per stand.
+- The batch keeps stand plates in `summary.stand_plates` until the Print page handles them (next update); a built
+  stand batch shows "Print page: next update" instead of Print. Make next batch of stands builds by itself.
+- `threemf.read_3mf` skips objects made of parts (their parts are read); organizer files are unchanged.

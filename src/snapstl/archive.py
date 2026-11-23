@@ -119,7 +119,8 @@ def batch_rows(limit: int = 1000) -> dict:
         n = progress(os_)
         item = {
             "id": r["id"], "created_at": r["created_at"], "finished_at": r.get("finished_at"), "status": r["status"],
-            "orders": len(json.loads(r["order_ids"] or "[]")), "plates": len(summ.get("plates", [])),
+            "orders": len(json.loads(r["order_ids"] or "[]")),
+            "plates": len(summ.get("plates", [])) + len(summ.get("stand_plates", [])),
             "errors": len(summ.get("errors", [])), "label": summ.get("label", ""),
             "computer": r.get("computer_name") or "", "mine": (r.get("computer_id") or computer.ID) == computer.ID,
             "names": [{"name": o["name"], "color": o["color"], "tab": o["tab"], "order_id": o["order_id"],
@@ -130,6 +131,7 @@ def batch_rows(limit: int = 1000) -> dict:
             "product": products.of_order(os_[0] if os_ else {}).key,
             "product_label": products.of_order(os_[0] if os_ else {}).label,
             "buildable": products.of_order(os_[0] if os_ else {}).key in products.BUILDABLE,
+            "printable": products.of_order(os_[0] if os_ else {}).key in products.PRINTABLE,
             "files_cleaned_at": r.get("files_cleaned_at"),
             "clean_on": (r["archived_at"] + BATCH_DAYS * 86400) if r.get("archived_at") and not r.get("files_cleaned_at") else None,
         }

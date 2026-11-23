@@ -49,7 +49,10 @@ class BuildResult:
     fit: dict[int, str] = field(default_factory=dict)  # order idx → "ok" or why the pair won't fit
 
     def complete(self, idx: int) -> bool:
-        """True when this order copy has its base and its name in the output AND they fit each other."""
+        """True when this order copy has its base and its name in the output AND they fit each other
+        (a name stand, 0.31: its one piece is on a plate and passed the checks)."""
+        if ("stands", idx) in self.files:
+            return self.fit.get(idx) == "ok"
         return ("bases", idx) in self.files and ("names", idx) in self.files and self.fit.get(idx) == "ok"
 
 

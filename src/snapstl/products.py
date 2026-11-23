@@ -54,7 +54,8 @@ STANDS = tuple(p for p in PRODUCTS if p.kind == "stand")
 # what can be batched (0.30: every product) and what the shared records take in (0.29 computers ignore stands)
 MAKEABLE = tuple(p.key for p in PRODUCTS)
 SHARED = tuple(p.key for p in PRODUCTS)
-BUILDABLE = (ORGANIZER.key,)  # plates (0.30: the organizer; name stands in the next update)
+BUILDABLE = tuple(p.key for p in PRODUCTS)  # plates (0.31: name stands too, stands.py)
+PRINTABLE = (ORGANIZER.key,)  # Print page (name stands: next update — their plates are in the batch folder)
 
 # the report's customisation line holding the name, per kind
 NAME_FIELDS = {"organizer": ("enter your first name",), "stand": ("write your name here.", "write your name here")}
@@ -125,5 +126,5 @@ def _num(v):
 def public() -> list[dict]:
     """For the page: every product with its kind."""
     return [{"key": p.key, "label": p.label, "kind": p.kind, "skus": list(p.skus), "makeable": p.key in MAKEABLE,
-             "buildable": p.key in BUILDABLE}
+             "buildable": p.key in BUILDABLE, "printable": p.key in PRINTABLE}
             for p in PRODUCTS]
