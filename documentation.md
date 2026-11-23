@@ -588,3 +588,20 @@ English hard — the language help was skipped by the owner).
 - 0.28.1 put a `// comment` in the middle of a line of the page script, which commented out the rest of the line
   (`MKSEL`, `OPTLBL`): Print → Bases / Letters showed the counts but no plates. Fixed; `tests/test_page_script.py`
   now checks the Print page's globals are declared and that no code is glued after a `//` comment.
+
+### 2026-11-24: 0.29.0 Products — name stands listed (step 1 of 4)
+- `products.py`: Organizer (`Magicians_35`, `Adhoc`) and the name stands GTA (`Magicians_174`), Harry Potter
+  (`Magicians_156`), Barbie (`Magicians_117`). Read from the report ("Write your NAME here.: …", no colour), with
+  the same name checks. Orders page **Product** chips (Organizer default, remembered per computer); stand rows show
+  the product, both colours and their size; Check name approves a stand without a colour; customer help shows it.
+- Settings → **Name stands** (`settings.StandSettings`): size by letter count (starting values: the organizer's
+  lengths, 40 mm letter height — to be checked on the first prints), thickness 40 (block 37 + letters 3), font
+  size 40, brim offset 6 (owner), per product block / letter colour (GTA black/white, Harry Potter yellow/black,
+  Barbie hot pink/white) and letter spacing (25 / 0 / 0, MakerWorld's).
+- Not made yet: batches take the organizer only (`products.MAKEABLE`); stand orders are not sent to the shared
+  records (`products.SHARED`; a computer before 0.29 would batch them as organizers); spare / returned pieces and
+  Stats stay the organizer's.
+- MakerWorld (checked in the owner's browser, 2026-11-24): the three models share one form (text, font size,
+  letter spacing, back thickness, letter protrusion, brim offset, flat bottom cut, preview colours, place in
+  printing position, units per em; GTA also "Use Font Features"); Generate gives one OBJ + MTL, two materials:
+  the block (Z −15…15 at the default 30 mm) and the letters on top (3 mm).

@@ -379,6 +379,11 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   before its bases are printed).
 - **Merge** (Letters): tick letter plates of one colour (fix plates too), not started, up to 3 names, then
   **Merge onto one plate**; **Split back** returns exactly those plates while it isn't started.
+- **Products** (0.29): the name stands — GTA (`Magicians_174`), Harry Potter (`Magicians_156`), Barbie
+  (`Magicians_117`) — are read from the report and listed on Orders under **Product** chips (Organizer is the
+  default). They can't be batched yet (next updates: download, plates, printing). Settings → **Name stands**:
+  size by letter count, thickness 40 mm (37 block + 3 letters), font size, brim offset 6, and per product the
+  block / letter colours and letter spacing.
 - **Spare pieces** (0.28, Orders → **Spare pieces**): bases kept in stock (extras, mistakes, bases made before
   SnapSTL) and complete pieces; letters aren't kept (0.28.1). Name exactly as on the base. A new order with that
   name shows **In stock** (Orders → To make → **Piece in stock**, a notice on Orders, a tag on Print) — a base fits

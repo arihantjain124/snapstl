@@ -10,7 +10,7 @@ import json
 import time
 from datetime import date, datetime, timedelta
 
-from . import db, tabs
+from . import products, db, tabs
 from .verify import BEFORE, FIX_RESULTS
 
 _T = tabs.TAB_SQL
@@ -24,6 +24,9 @@ def _day(ts: float | None) -> str:
 def _days(n: int) -> list[str]:
     today = date.today()
     return [(today - timedelta(days=i)).isoformat() for i in range(n - 1, -1, -1)]
+
+
+ORG = products.organizer_sql()  # 0.29: Stats are the organizer's until name stands are made in SnapSTL
 
 
 def _pace(con, days: int = 7) -> float:
@@ -42,13 +45,13 @@ def stats(days: int = 30, target: int = 0) -> dict:
         made = {r[0]: r[1] for r in con.execute(
             "SELECT date(made_at,'unixepoch','localtime'), COUNT(*) FROM orders WHERE made_at >= ? GROUP BY 1", (since,))}
         new = {r[0]: r[1] for r in con.execute(
-            "SELECT order_date, COUNT(*) FROM orders WHERE order_date >= ? AND COALESCE(sku,'')<>'Adhoc' GROUP BY 1",
+            f"SELECT order_date, COUNT(*) FROM orders WHERE order_date >= ? AND COALESCE(sku,'')<>'Adhoc' AND {ORG} GROUP BY 1",
             (first_day,))}
         plates = {r[0]: r[1] for r in con.execute(
             "SELECT date(updated_at,'unixepoch','localtime'), COUNT(*) FROM print_jobs WHERE state='done' "
             "AND updated_at >= ? AND printer_id<>0 GROUP BY 1", (since,))}
-        tab_n = dict(con.execute(f"SELECT {_T}, COUNT(*) FROM orders GROUP BY 1").fetchall())
-        oldest = con.execute(f"SELECT MIN(order_date) FROM orders WHERE {_T} IN ({','.join('?' * len(WAITING))})",
+        tab_n = dict(con.execute(f"SELECT {_T}, COUNT(*) FROM orders WHERE {ORG} GROUP BY 1").fetchall())
+        oldest = con.execute(f"SELECT MIN(order_date) FROM orders WHERE {ORG} AND {_T} IN ({','.join('?' * len(WAITING))})",
                              WAITING).fetchone()[0]
         pace7, pace30 = _pace(con, 7), _pace(con, 30)
         printers = db.rows(con, "SELECT printer_name AS name, SUM(state='done') AS done, SUM(state='failed') AS failed, "
@@ -66,7 +69,7 @@ def stats(days: int = 30, target: int = 0) -> dict:
             "SELECT r.order_id, r.data FROM report_rows r JOIN orders o USING(order_id) WHERE o.order_date >= ?",
             (first_day,))}
         period = db.rows(con, f"SELECT order_id, order_date, {_T} AS tab FROM orders WHERE order_date >= ? "
-                              "AND COALESCE(sku,'')<>'Adhoc'", first_day)
+                              f"AND COALESCE(sku,'')<>'Adhoc' AND {ORG}", first_day)
     # waiting times
     wait_made = [(made_at - datetime.fromisoformat(d[:10]).timestamp()) / 86400 for d, made_at in to_made if d]
     ship = []

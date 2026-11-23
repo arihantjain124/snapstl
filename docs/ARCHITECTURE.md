@@ -146,6 +146,7 @@ Snapstl/
 │   ├── stats.py              Stats page: made per day, backlog, printers, checkers (0.26)
 │   ├── reportwatch.py        imports a new report saved in Downloads by itself (0.26)
 │   ├── spares.py             spare name pieces in stock, matched to new orders, shared (0.28)
+│   ├── products.py           which SKU is which product (organizer, name stands), what can be made / shared (0.29)
 │   └── static/
 │       ├── index.html        the whole UI: side navigation (Orders, Batches, Downloads, Settings, Help)
 │       └── login.html        used only if a portal password is set
@@ -691,6 +692,30 @@ snapstl.server:app --port 8320`.
   while offline and are sent later.
 
 ---
+
+## Products (0.29, `products.py`)
+
+| Product | SKU | Kind | MakerWorld designId |
+|---|---|---|---|
+| Organizer | `Magicians_35` (+ `Adhoc`, typed in by hand) | organizer: base + name, printed apart | 2600234 |
+| GTA | `Magicians_174` | stand: one piece, two colours | 2737384 |
+| Harry Potter | `Magicians_156` | stand | 2737377 |
+| Barbie | `Magicians_117` | stand | 3135510 |
+
+* Ingest keeps every product's rows (customisation "Write your NAME here.: …" for stands); a stand has no
+  colour from the customer (its colours are the product's: Settings → **Name stands**), and its name goes
+  through the same checks as an organizer's. `report_rows` stays organizer-only.
+* Orders page: **Product** chips (`?product=` on `/api/orders`, `/api/orders/facets`; facets returns orders to
+  make per product); Organizer is the default; stand rows show the product, both colours and their size.
+* **Not made yet (0.29):** `products.MAKEABLE` = organizer — Create batch / Make next batch take organizer
+  orders only. `products.SHARED` = organizer — stand orders are not sent to (nor taken from) the shared
+  records, since a computer before 0.29 would take them for organizers. Spare pieces, returned pieces and Stats
+  stay within the organizer / the same product.
+* Name stands (planned, next steps): the helper fills text, font size, letter spacing, back thickness
+  (= thickness − letter protrusion), letter protrusion, brim offset (6); MakerWorld gives one OBJ with two
+  materials — the block at the bottom, the letters on top. Plates: up to 3 of one product, each stand one
+  object with two parts (Base → filament 1, Letters → filament 2, Bambu `model_settings.config`), sliced with
+  two filament profiles and printed with a two-slot AMS mapping on a P1S whose AMS holds both colours.
 
 ## 18. How to extend safely
 

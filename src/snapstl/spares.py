@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import uuid
 
-from . import db
+from . import db, products
 
 PARTS = {"bases": "Base only", "both": "Complete (base + letters)"}  # letters aren't kept (owner, 0.28.1)
 PREFIX = "spare:"
@@ -26,6 +26,7 @@ COLS = ("uid", "name", "color", "part", "note", "staff", "added_at", "used_by", 
 # a piece in stock for this order (same name, same letter case; a complete piece also the same colour; not used,
 # not taken out)
 _FREE = ("s.name = {t}.name AND (s.part = 'bases' OR COALESCE(s.color,'') = COALESCE({t}.color,'')) "
+         "AND " + products.organizer_sql("{t}.sku").replace("{", "{{").replace("}", "}}").replace("{{t}}", "{t}") + " "
          "AND s.used_by IS NULL "
          "AND s.removed_at IS NULL AND COALESCE({t}.name,'') <> ''")
 
@@ -102,6 +103,7 @@ def listing(con=None) -> dict:
     def run(con):
         rows = db.rows(con, "SELECT * FROM spares ORDER BY COALESCE(removed_at, used_at, added_at) DESC")
         waiting = db.rows(con, f"SELECT order_id, name, color FROM orders WHERE {TAB_SQL} IN ('to_make','check_name') "
+                               f"AND {products.organizer_sql()} "
                                f"AND COALESCE(name,'')<>''")
         fits: dict[tuple, list[str]] = {}
         for o in waiting:
@@ -128,7 +130,7 @@ def listing(con=None) -> dict:
 
 def for_order(con, o: dict) -> list[dict]:
     """Pieces in stock that fit this order (complete ones first)."""
-    if not o.get("name") or o.get("reuse_of"):
+    if not o.get("name") or o.get("reuse_of") or products.of_order(o) is not products.ORGANIZER:
         return []
     rs = db.rows(con, "SELECT uid, name, color, part, note FROM spares s WHERE s.name=? "
                       "AND (s.part='bases' OR COALESCE(s.color,'')=?) "

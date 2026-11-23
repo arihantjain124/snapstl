@@ -22,7 +22,7 @@ import time
 import traceback
 from dataclasses import asdict
 
-from . import cache, computer, db, spares, watermark
+from . import cache, computer, db, products, spares, watermark
 from .meshes import dims, obj_to_mesh
 from .orders import Order
 from .pipeline import build, new_batch_dir
@@ -97,6 +97,11 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
         # 0.28: an order with a complete spare piece in stock is sent with it, not printed again
         in_stock = {r[0] for r in con.execute(f"SELECT order_id FROM orders WHERE order_id IN ({q}) "
                                               f"AND {spares.match_sql(complete=True)}", order_ids)}
+    later = [r for r in rows if products.of_order(r).key not in products.MAKEABLE]  # 0.29: name stands come later
+    rows = [r for r in rows if products.of_order(r).key in products.MAKEABLE]
+    if later and not rows:
+        raise ValueError(f"{products.of_order(later[0]).label} orders can't be made in SnapSTL yet (a later update) — "
+                         "they are listed so none is missed")
     rows = [r for r in rows if r["order_id"] not in in_stock]
     if in_stock and not rows:
         raise ValueError(f"{len(in_stock)} selected order{'s have' if len(in_stock) > 1 else ' has'} a spare piece in "

@@ -860,3 +860,21 @@ def test_spare_pieces_reach_every_computer(two):
         import psycopg
         with pytest.raises(psycopg.Error):
             rc.execute("DELETE FROM snapstl.spares")
+
+
+def test_name_stand_orders_stay_on_this_computer(two):
+    """0.29: stand orders are not sent to the shared records yet (a computer before 0.29 would take them for
+    organizers); the organizer's still are."""
+    from .test_029 import ROWS, report as report_029
+
+    pc = two
+    with pc("A"):
+        ingest.ingest(report_029(ROWS), "r.csv")
+        ok(sync.sync_now())
+        assert remote("O1") is not None
+        assert remote("G1") is None and remote("H1") is None
+        with db.tx() as con:
+            assert con.execute("SELECT COUNT(*) FROM sync_outbox").fetchone()[0] == 0
+    with pc("B"):
+        ok(sync.sync_now())
+        assert order("O1") is not None and order("G1") is None

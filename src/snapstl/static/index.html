@@ -287,6 +287,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="msgs" id="ingestres"></div>
   </div>
   <div class="card">
+    <div class="chips" id="prodchips" hidden></div>
+    <div class="msgs" id="prodmsg"></div>
     <div class="chips" id="chips"></div>
     <div class="chips" id="subchips"></div>
     <form id="adhocform" class="adhoc" hidden autocomplete="off">
@@ -588,6 +590,36 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     </div>
   </div>
 
+  <div class="sec" data-sec="stands" hidden>
+    <p class="intro">Name stands — GTA, Harry Potter and Barbie style: one piece in two colours (the block at the bottom, the raised letters on top), made on MakerWorld and printed in one go on a printer with an AMS. These settings are for all of them. Making stands in SnapSTL comes in the next updates; their orders already show on the Orders page (Product chips).</p>
+    <div class="grid2">
+      <div class="card">
+        <h2>Size by letter count</h2>
+        <p class="hint under">Each stand is sized to the length and letter height for its number of letters. Starting values — check them on the first prints.</p>
+        <table><thead><tr><th>Letters</th><th>Length (mm)</th><th>Height (mm)</th></tr></thead><tbody id="stbands"></tbody></table>
+        <div class="row2">
+          <div><label>Thickness (mm) <span class="hint">all stands</span></label><input id="st_thickness" type="number" step="0.5" min="10" max="80"></div>
+          <div><label>Raised letters (mm)</label><input id="st_protrusion" type="number" step="0.5" min="0.5" max="10"></div>
+        </div>
+        <p class="hint under">Block = thickness − raised letters (e.g. 37 + 3 = 40 mm).</p>
+      </div>
+      <div class="card">
+        <h2>MakerWorld settings</h2>
+        <p class="hint under">Sent with every name. Everything else stays at the model's default (place in printing position, flat bottom cut, units per em). No license password is needed for these models.</p>
+        <div class="row2">
+          <div><label>Font size</label><input id="st_font" type="number" step="1" min="10" max="200"></div>
+          <div><label>Brim offset (mm)</label><input id="st_brim" type="number" step="0.5" min="0" max="10"></div>
+        </div>
+        <p class="hint under">Brim offset = how far the coloured block grows around the letters.</p>
+      </div>
+      <div class="card">
+        <h2>Products</h2>
+        <table><thead><tr><th>Product</th><th>Block colour</th><th>Letter colour</th><th>Letter spacing</th></tr></thead><tbody id="stprods"></tbody></table>
+        <p class="hint under">Colours are the filaments the printer's AMS must hold. Letter spacing is MakerWorld's (GTA 25, others 0).</p>
+      </div>
+    </div>
+  </div>
+
   <div class="sec" data-sec="plates" hidden>
     <p class="intro">How plates are filled. The bed is 256 × 256 × 256 mm on both the A1 and the P1S, so one plate layout fits every printer.</p>
     <div class="grid2">
@@ -838,6 +870,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 <section id="t-help" class="help" hidden>
   <div class="card">
     <h2>Help</h2>
+    <p><b>Products (0.29):</b> the Orders page has <b>Product</b> chips — Organizer (the default), GTA, Harry Potter, Barbie, All. The name stands are listed so none is missed; making them in SnapSTL comes in the next updates. Their settings are in Settings → <b>Name stands</b>.</p>
     <p>SnapSTL turns webstore orders for the <b>Custom Name Desk Organizer</b> (SKU <code>Magicians_35</code>) into print-ready plates: each name is generated on MakerWorld, scaled to the agreed rules, grouped 3 per plate and saved as <b>.3mf</b> files.</p>
     <p>Testing a SnapSTL branch? Open <b>Settings → Maintenance → Updates</b>, choose a published <b>Update branch</b> and click <b>Switch branch</b>. Select <b>main (production)</b> when testing is done. Check shared-records compatibility before switching.</p>
     <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-printers">Print</a><a href="#h-pstatus">Printers</a><a href="#h-slicing">Slicing</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-portal">Other computers</a><a href="#h-data">Your data</a></div>
@@ -1055,7 +1088,7 @@ function expressBadge(d,note){if(!d)return '';const days=Math.ceil((new Date(d+'
   const when=new Date(d+'T12:00:00').toLocaleDateString([], {day:'numeric',month:'short'});
   const lim=(S&&S.logistics&&Number.isInteger(S.logistics.express_red_days))?S.logistics.express_red_days:3;
   return `<span class="pill ${days<=lim?'err':'warn'}" title="${esc(note||'Express: the customer needs it by this date')}">EXPRESS · needed by ${esc(when)}${days<0?' (late)':''}</span>`}
-let S=null,META=null,filter={tab:'to_make',f:{},offset:0},LIMIT=100,openBatch=null,tab='orders',FACETS=null;
+let S=null,META=null,filter={tab:'to_make',f:{},offset:0,product:'organizer'},PRODUCTS=[],LIMIT=100,openBatch=null,tab='orders',FACETS=null;
 const SEL=new Set();
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(path,opts={}){const r=await fetch(path,opts);if(r.status===401){location.href='/login';throw new Error('Signed out')}const t=await r.text();let j;try{j=JSON.parse(t)}catch{j={detail:t}}if(!r.ok)throw new Error(j.detail||r.statusText);return j}
@@ -1081,7 +1114,7 @@ const OLD_PAGES={downloads:'activity',pstatus:'printers'};  // pages merged in 0
 // ---------- orders ----------
 // Only orders waiting to be made can be ticked (→ Create batch).
 const SELKIND='ready';
-const canTick=o=>o.tab==='to_make';
+const canTick=o=>o.tab==='to_make'&&(!o.product||!PRODUCTS.length||(PRODUCTS.find(p=>p.key===o.product)||{makeable:true}).makeable);
 async function loadOrders(){
   const p=filterParams({limit:LIMIT,offset:filter.offset});
   showFilterState();
@@ -1101,7 +1134,7 @@ async function loadOrders(){
   $('orders').innerHTML=r.orders.map(o=>{
     const st=TABWORD[o.tab]||[o.tab,o.tab,''];
     const nameCell=!LOGISTICS&&o.state==='needs_review'&&o.tab==='check_name'
-      ?`<div class="edit"><input value="${esc(o.name)}" data-n="${esc(o.order_id)}" placeholder="Name to print"><input value="${esc(o.color)}" data-c="${esc(o.order_id)}" style="max-width:90px" placeholder="colour"><button class="small primary" data-ok="${esc(o.order_id)}">Approve</button></div><div class="hint">Customer typed: ${esc(o.raw_name)||'—'}</div><div class="reason">${esc(o.review_reason)}</div>`
+      ?`<div class="edit"><input value="${esc(o.name)}" data-n="${esc(o.order_id)}" placeholder="Name to print">${o.product_kind==='stand'?'':`<input value="${esc(o.color)}" data-c="${esc(o.order_id)}" style="max-width:90px" placeholder="colour">`}<button class="small primary" data-ok="${esc(o.order_id)}">Approve</button></div><div class="hint">Customer typed: ${esc(o.raw_name)||'—'}</div><div class="reason">${esc(o.review_reason)}</div>`
       :`${esc(o.name)}${o.name_edited?' <span class="hint">(edited)</span>':''}${o.raw_name&&o.raw_name.trim()!==o.name?`<div class="hint">typed: ${esc(o.raw_name)}</div>`:''}${o.last_error?`<div class="reason">${esc(o.last_error)}</div>`:''}`;
     // what happened to it, in words
     const notes=[
@@ -1129,10 +1162,10 @@ async function loadOrders(){
     const club=o.clubbed_id?`<div class="club" title="Clubbed order ID">${o.clubbed?'clubbed · ':''}${esc(o.clubbed_id)}</div>`
       :o.adhoc?`<div class="club" title="Typed in by hand">ad-hoc${o.added_at?' · added '+day(o.added_at):''}${o.special_request?' · '+esc(o.special_request):''}</div>`:'';
     const exp=['to_make','check_name','ready_to_print','printing','pack_it'].includes(o.tab)?expressBadge(o.express_by,o.express_note):'';
-    return `<tr><td>${cb}</td><td>${esc(o.order_id)}${club}${exp?'<div>'+exp+'</div>':''}</td><td style="white-space:nowrap">${esc(o.order_date)}${waitDays(o)}</td><td>${esc(o.customer_name)}</td><td style="white-space:nowrap">${esc(o.phone)}</td><td class="addr">${esc(o.address)}</td><td>${esc(o.source_status)}</td><td>${nameCell}${notes}</td><td>${!LOGISTICS&&o.tab==='check_name'?'':sw(o.color)}</td><td>${o.quantity}</td><td>${o.target?`${o.target[0]}×${o.target[1]} · ${o.compartments}`:'—'}</td><td><span class="pill ${st[2]}">${esc(st[1])}</span>${o.tab==='printing'&&o.print_done_at&&!o.checked_at?'<div class="pill warn" title="Printed — a person checks it on Print → Verify before packing">Printed – waiting for check</div>':''}${o.checked_by&&o.tab==='pack_it'?`<div class="hint">checked by ${esc(o.checked_by)}</div>`:''}</td><td>${payCell(o.payment)}</td><td>${act}</td></tr>`}).join('');
+    return `<tr><td>${cb}</td><td>${esc(o.order_id)}${club}${exp?'<div>'+exp+'</div>':''}</td><td style="white-space:nowrap">${esc(o.order_date)}${waitDays(o)}</td><td>${esc(o.customer_name)}</td><td style="white-space:nowrap">${esc(o.phone)}</td><td class="addr">${esc(o.address)}</td><td>${esc(o.source_status)}</td><td>${nameCell}${notes}</td><td>${o.product_kind==='stand'?`<span class="pill info" title="Name stand (two colours: block + letters)">${esc(o.product_label)}</span><div style="white-space:nowrap">${(o.stand_colors||[]).map(c=>sw(c)).join(' ')}</div>`:(!LOGISTICS&&o.tab==='check_name'?'':sw(o.color))}</td><td>${o.quantity}</td><td>${o.stand_size?`${o.stand_size[0]}×${o.stand_size[1]}×${o.stand_size[2]}`:o.target?`${o.target[0]}×${o.target[1]} · ${o.compartments}`:'—'}</td><td><span class="pill ${st[2]}">${esc(st[1])}</span>${o.tab==='printing'&&o.print_done_at&&!o.checked_at?'<div class="pill warn" title="Printed — a person checks it on Print → Verify before packing">Printed – waiting for check</div>':''}${o.checked_by&&o.tab==='pack_it'?`<div class="hint">checked by ${esc(o.checked_by)}</div>`:''}</td><td>${payCell(o.payment)}</td><td>${act}</td></tr>`}).join('');
   applyColumns();
   document.querySelectorAll('[data-ok]').forEach(b=>b.onclick=async()=>{const id=b.dataset.ok;
-    const n=document.querySelector(`[data-n="${CSS.escape(id)}"]`).value, c=document.querySelector(`[data-c="${CSS.escape(id)}"]`).value;
+    const n=document.querySelector(`[data-n="${CSS.escape(id)}"]`).value, ci=document.querySelector(`[data-c="${CSS.escape(id)}"]`), c=ci?ci.value:'';
     try{await post(`/api/orders/${encodeURIComponent(id)}/name`,{name:n,color:c});refreshAll()}catch(e){alert(e.message)}});
   document.querySelectorAll('[data-skip]').forEach(b=>b.onclick=async()=>{await post(`/api/orders/${encodeURIComponent(b.dataset.skip)}/skip`);refreshAll()});
   document.querySelectorAll('[data-reset]').forEach(b=>b.onclick=async()=>{if(!confirm('Make this order again? It goes back to To make.'))return;await post(`/api/orders/${encodeURIComponent(b.dataset.reset)}/reset`);refreshAll()});
@@ -1168,14 +1201,14 @@ async function reportAge(){try{const m=await api('/api/logistics/meta'),ri=await
 $('seloldest').onclick=async()=>{const n=Math.max(1,Math.min(500,+$('seln').value||50));
   const ids=await api('/api/orders/ids?'+filterParams({state:SELKIND}));SEL.clear();ids.slice(0,n).forEach(i=>SEL.add(i));loadOrders()};
 $('selall').onclick=async()=>{const ids=await api('/api/orders/ids?'+filterParams({state:SELKIND}));ids.forEach(i=>SEL.add(i));loadOrders()};
-function filterParams(extra){const p=new URLSearchParams({tab:filter.tab,...extra});for(const [k,v] of Object.entries(filter.f))if(v)p.set('f_'+k,v);return p}
+function filterParams(extra){const p=new URLSearchParams({tab:filter.tab,...extra});if(filter.product)p.set('product',filter.product);for(const [k,v] of Object.entries(filter.f))if(v)p.set('f_'+k,v);return p}
 let ft;document.querySelectorAll('.frow [data-f]').forEach(el=>{const go=()=>{filter.f[el.dataset.f]=el.value.trim();filter.offset=0;loadOrders()};
   if(el.tagName==='SELECT')el.onchange=go;else el.oninput=()=>{clearTimeout(ft);ft=setTimeout(go,250)}});
 $('fclear').onclick=()=>{filter.f={};filter.tab='all';document.querySelectorAll('.frow [data-f]').forEach(el=>el.value='');filter.offset=0;loadFacets();loadOrders()};
 function showFilterState(){const n=Object.values(filter.f).filter(Boolean).length;
   $('fclear').classList.toggle('primary',n>0);$('fclear').textContent=n?`Clear all filters (${n})`:'Clear all filters';
   $('fstate').innerHTML=n?`<b>Filtered</b> by ${n} column${n>1?'s':''} — press <b>Clear all filters</b> to see every order again.`:'Type in the boxes under the column names to filter; filters combine.'}
-async function loadFacets(){FACETS=await api('/api/orders/facets?tab='+filter.tab);renderChips(FACETS.tabs);
+async function loadFacets(){FACETS=await api('/api/orders/facets?tab='+filter.tab+(filter.product?'&product='+encodeURIComponent(filter.product):''));renderProducts();renderChips(FACETS.tabs);
   for(const [k,vals] of [['status',FACETS.statuses],['color',FACETS.colors]]){const el=document.querySelector(`.frow [data-f="${k}"]`);const cur=el.value;
     el.innerHTML='<option value="">all</option>'+vals.map(v=>`<option ${v===cur?'selected':''}>${esc(v)}</option>`).join('')}}
 $('selclear').onclick=()=>{SEL.clear();loadOrders()};
@@ -1183,6 +1216,16 @@ $('mkbatch').onclick=async()=>{if(!SEL.size)return;
   try{const r=await post('/api/batches',{order_ids:[...SEL]});SEL.clear();
     $('ingestres').innerHTML=`<div class="o">Batch #${r.batch_id} created with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped — not ready${r.taken_elsewhere?`; ${r.taken_elsewhere} already taken on another computer`:''})`:''}. Go to <b>Batches</b> and press <b>Queue download</b>.</div>`;
     refreshAll()}catch(e){alert(e.message)}};
+// ---------- Orders → Product chips (0.29): Organizer is the default; name stands are listed, made in a later update
+try{const p=localStorage.getItem('oproduct');if(p!==null)filter.product=p}catch{}
+function renderProducts(){if(!PRODUCTS.length||LOGISTICS){$('prodchips').hidden=true;return}
+  const n=(FACETS&&FACETS.products)||{},all=Object.values(n).reduce((a,b)=>a+b,0);
+  $('prodchips').hidden=false;
+  $('prodchips').innerHTML=`<div class="chipgroup"><span class="chiphead">Product</span>${PRODUCTS.map(p=>`<button data-prod="${p.key}" class="${filter.product===p.key?'on':''}" title="${esc(p.skus.join(', '))} · orders to make">${esc(p.label)} · ${n[p.key]||0}</button>`).join('')}<button data-prod="" class="${filter.product===''?'on':''}" title="Every product">All · ${all}</button></div>`;
+  document.querySelectorAll('[data-prod]').forEach(b=>b.onclick=()=>{filter.product=b.dataset.prod;filter.offset=0;SEL.clear();try{localStorage.setItem('oproduct',filter.product)}catch{}loadFacets();loadOrders()});
+  const cur=PRODUCTS.find(p=>p.key===filter.product);
+  $('prodmsg').innerHTML=cur&&!cur.makeable?`<div class="o"><b>${esc(cur.label)}</b> name stands are listed here so none is missed. Making them in SnapSTL (download, plates, printing) comes in the next updates — until then they can't go into a batch.</div>`:'';}
+(async()=>{try{PRODUCTS=(await api('/api/products')).products;if(!PRODUCTS.some(p=>p.key===filter.product))filter.product=LOGISTICS?'':'organizer';if(FACETS)renderProducts();if(S)fillStands()}catch{}})();
 function renderChips(counts){
   const top=filter.tab.startsWith('to_make')||filter.tab==='express'?'to_make':filter.tab;
   $('chips').innerHTML=TABGROUPS.map(([g,ts])=>`<div class="chipgroup"><span class="chiphead">${esc(g)}</span>${ts.map(([k,l])=>`<button data-s="${k}" class="${top===k?'on':''}">${esc(l)} · ${counts[k]||0}</button>`).join('')}</div>`).join('');
@@ -1984,8 +2027,20 @@ function fillSettings(){const m=S.model;
   $('bands').innerHTML=S.scaling.bands.map((b,i)=>`<tr><td>${b.min_letters}${b.max_letters>=999?'+':b.max_letters!==b.min_letters?'–'+b.max_letters:''}</td><td><input data-b="${i}" data-k="length" type="number" step="0.5" value="${b.length}"></td><td><input data-b="${i}" data-k="height" type="number" step="0.5" value="${b.height}"></td><td><input data-b="${i}" data-k="compartments" type="number" step="1" min="1" max="10" value="${b.compartments}"></td></tr>`).join('');
   $('s_name_z').value=Math.round(S.scaling.name_z_scale*100);$('s_max_length').value=S.scaling.max_length;$('o_delay').value=S.delay_between_downloads_s;$('o_dir').value=S.output_dir;$('o_dir').disabled=!META.local;$('o_dl').value=S.downloads_dir;$('o_dl').disabled=!META.local;
   $('mw_url').value=S.makerworld_url;mwHint();$('lic').value=(S.license_passwords||{})[designOf(S.makerworld_url)]||'';
+  fillStands();
   const L=S.logistics||{};$('lg_track').value=L.tracking_url||'';$('lg_late').value=L.late_days;$('lg_exp').value=L.express_red_days;$('lg_stuck').value=L.stuck_days;
   lgMsgs(Object.entries(L.messages||{}))}
+function fillStands(){const st=S.stands;if(!st)return;
+  $('stbands').innerHTML=st.bands.map((b,i)=>`<tr><td>${b.min_letters}${b.max_letters>=999?'+':b.max_letters!==b.min_letters?'–'+b.max_letters:''}</td><td><input data-sb="${i}" data-k="length" type="number" step="0.5" value="${b.length}"></td><td><input data-sb="${i}" data-k="height" type="number" step="0.5" value="${b.height}"></td></tr>`).join('');
+  $('st_thickness').value=st.thickness;$('st_protrusion').value=st.letter_protrusion;$('st_font').value=st.font_size;$('st_brim').value=st.brim_offset;
+  const opts=v=>[...new Set([...Object.keys(COLORS),v].filter(Boolean))].map(c=>`<option ${c===v?'selected':''}>${esc(c)}</option>`).join('');
+  $('stprods').innerHTML=PRODUCTS.filter(p=>p.kind==='stand').map(p=>{const x=st.products[p.key]||{};
+    return `<tr><td><b>${esc(p.label)}</b><div class="hint">${esc(p.skus.join(', '))}</div></td><td><select data-sp="${p.key}" data-k="base_color">${opts(x.base_color)}</select></td><td><select data-sp="${p.key}" data-k="letter_color">${opts(x.letter_color)}</select></td><td><input data-sp="${p.key}" data-k="letter_spacing" type="number" step="1" value="${x.letter_spacing??0}" style="max-width:80px"></td></tr>`}).join('')}
+function readStands(s){if(!s.stands)return;const st=s.stands;
+  document.querySelectorAll('#stbands input').forEach(i=>{st.bands[+i.dataset.sb][i.dataset.k]=parseFloat(i.value)});
+  st.thickness=parseFloat($('st_thickness').value);st.letter_protrusion=parseFloat($('st_protrusion').value);
+  st.font_size=parseFloat($('st_font').value);st.brim_offset=parseFloat($('st_brim').value);
+  document.querySelectorAll('#stprods [data-sp]').forEach(i=>{const p=st.products[i.dataset.sp]=st.products[i.dataset.sp]||{};p[i.dataset.k]=i.dataset.k==='letter_spacing'?parseFloat(i.value):i.value})}
 function lgMsgs(list){$('lg_msgs').innerHTML=list.map(([k,v],i)=>`<div class="lgmsg" style="display:grid;grid-template-columns:180px minmax(0,1fr) auto;gap:8px;align-items:start;margin:8px 0">
     <input data-mk="${i}" value="${esc(k)}" maxlength="40" aria-label="Message name"><textarea data-mv="${i}" rows="2" maxlength="1000" aria-label="Message text" style="font:inherit">${esc(v)}</textarea>
     <button class="small" data-mdel="${i}" title="Remove this message">Remove</button></div>`).join('')||'<p class="hint">No messages yet.</p>';
@@ -2001,6 +2056,7 @@ function readSettings(){const s=structuredClone(S);
   s.scaling.name_z_scale=parseFloat($('s_name_z').value)/100;s.scaling.max_length=parseFloat($('s_max_length').value);
   s.delay_between_downloads_s=parseFloat($('o_delay').value)||0;s.output_dir=$('o_dir').value.trim();s.downloads_dir=$('o_dl').value.trim();
   s.makerworld_url=$('mw_url').value.trim();const d=designOf(s.makerworld_url);s.license_passwords={...(S.license_passwords||{})};if(d){s.license_passwords[d]=$('lic').value}
+  readStands(s);
   s.logistics={...(S.logistics||{}),tracking_url:$('lg_track').value.trim(),late_days:parseInt($('lg_late').value,10),
     express_red_days:parseInt($('lg_exp').value,10),stuck_days:parseInt($('lg_stuck').value,10),
     messages:Object.fromEntries(lgRead().filter(([k,v])=>k&&v.trim()))};return s}
@@ -2029,11 +2085,11 @@ $('helpsave').onclick=async()=>{const b=$('helpsave');b.disabled=true;try{await 
 $('portalsave').onclick=async()=>{const b=$('portalsave');b.disabled=true;try{await post('/api/portal',{enabled:$('lan').checked,password:$('portalpw').value});$('portalpw').value='';await loadPortal()}catch(e){$('portalinfo').textContent=e.message;$('portalinfo').style.color='var(--err)'}finally{b.disabled=false}};
 
 // ---------- settings sections ----------
-const SETSECS=[['setup','Setup'],['product','Product'],['plates','Plates'],['folders','Folders'],['connections','Connections'],['maintenance','Maintenance'],['logistics','Logistics'],['staff','Staff'],['usage','Usage']];
+const SETSECS=[['setup','Setup'],['product','Product'],['stands','Name stands'],['plates','Plates'],['folders','Folders'],['connections','Connections'],['maintenance','Maintenance'],['logistics','Logistics'],['staff','Staff'],['usage','Usage']];
 let SETSEC='setup';try{SETSEC=localStorage.getItem('setsec')||'setup'}catch{}
 function setSec(sec){if(!SETSECS.some(x=>x[0]===sec))sec='setup';SETSEC=sec;try{localStorage.setItem('setsec',sec)}catch{}
   document.querySelectorAll('#t-settings [data-sec]').forEach(d=>d.hidden=d.dataset.sec!==sec);
-  $('savebar').hidden=!['product','plates','folders','logistics'].includes(sec);if(sec==='usage')loadUsage();if(sec==='folders')loadReportImport();if(sec==='staff')loadStaff();
+  $('savebar').hidden=!['product','stands','plates','folders','logistics'].includes(sec);if(sec==='usage')loadUsage();if(sec==='folders')loadReportImport();if(sec==='staff')loadStaff();
   $('setchips').innerHTML=SETSECS.map(([k,l])=>`<button data-ss="${k}" class="${k===sec?'on':''}">${l}</button>`).join('');
   document.querySelectorAll('[data-ss]').forEach(b=>b.onclick=()=>setSec(b.dataset.ss))}
 // ---------- Settings → Folders: reports from Downloads (0.26) ----------
@@ -2426,7 +2482,7 @@ async function dOpen(id){D.open=id;use('open_order');let o;try{o=await api('/api
     <div class="sect"><dl>
       ${row('Customer',esc(o.customer_name))}${row('Phone',esc(o.phone))}${row('Address',esc(o.address))}
       ${row('Name to print',`<b>${esc(o.name)}</b>${o.raw_name&&o.raw_name!==o.name?` <span class="hint">(typed: ${esc(o.raw_name)})</span>`:''}`)}
-      ${row('Colour',sw(o.color))}${row('Quantity',String(o.quantity))}${row('Special request',esc(o.special_request))}
+      ${o.product_kind==='stand'?row('Product',`<span class="pill info">${esc(o.product_label)}</span> name stand · ${(o.stand_colors||[]).map(c=>sw(c)).join(' + ')}`):''}${o.product_kind==='stand'?'':row('Colour',sw(o.color))}${row('Quantity',String(o.quantity))}${row('Special request',esc(o.special_request))}
       ${row('Check',esc(o.review_reason))}${row('Name changed',esc(o.name_change_reason))}
       ${row('Ordered',esc(dDate(o.order_date))+(o.days!=null?` (${o.days} days ago)`:''))}${row('Payment',esc(o.payment))}
       ${row('Courier',esc(o.courier))}${row('AWB',esc(o.awb))}${row('Picked up',esc(dDate(o.pickup_date)))}${row('Delivered',esc(dDate(o.delivered_date)))}

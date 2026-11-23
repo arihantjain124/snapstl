@@ -106,6 +106,63 @@ class PlateSettings:
     rotations: list[int] = field(default_factory=lambda: [0, 180])  # degrees about Z only
 
 
+@dataclass
+class StandBand:
+    """Name stands (0.29): size by letter count (Settings → Name stands)."""
+    min_letters: int
+    max_letters: int  # inclusive; 999 = "and up"
+    length: float  # X, mm
+    height: float  # letter height when it stands (Y on the bed), mm
+
+
+def default_stand_bands() -> list[StandBand]:
+    # starting values (lengths as the organizer's): the owner checks them on the first prints
+    return [StandBand(1, 3, 195, 40), StandBand(4, 4, 200, 40), StandBand(5, 5, 210, 40),
+            StandBand(6, 7, 222, 40), StandBand(8, 10, 232, 40), StandBand(11, 999, 240, 40)]
+
+
+def default_stand_products() -> dict:
+    """Per product: letter spacing (MakerWorld's default) and the two filament colours (owner, 0.29)."""
+    return {"gta": {"letter_spacing": 25, "base_color": "black", "letter_color": "white"},
+            "harry_potter": {"letter_spacing": 0, "base_color": "yellow", "letter_color": "black"},
+            "barbie": {"letter_spacing": 0, "base_color": "hot pink", "letter_color": "white"}}
+
+
+@dataclass
+class StandSettings:
+    """Name stands (GTA, Harry Potter, Barbie): one block of settings for all of them (owner, 0.29).
+    MakerWorld settings not here stay at the model's default (place in printing position on, flat bottom
+    cut 0.5, units per em, preview colours)."""
+    bands: list[StandBand] = field(default_factory=default_stand_bands)
+    thickness: float = 40.0        # total, mm: back thickness = thickness − letter protrusion
+    letter_protrusion: float = 3.0  # raised letters, mm (the top colour)
+    font_size: float = 40.0
+    brim_offset: float = 6.0        # how far the coloured block grows around the letters, mm
+    products: dict = field(default_factory=default_stand_products)
+
+    def validate(self) -> list[str]:
+        errs = []
+        if not (10 <= self.thickness <= 80):
+            errs.append("Name stands: thickness must be 10–80 mm")
+        if not (0.5 <= self.letter_protrusion <= 10) or self.letter_protrusion >= self.thickness:
+            errs.append("Name stands: letter protrusion must be 0.5–10 mm and less than the thickness")
+        if not (10 <= self.font_size <= 200):
+            errs.append("Name stands: font size must be 10–200")
+        if not (0 <= self.brim_offset <= 10):
+            errs.append("Name stands: brim offset must be 0–10 mm")
+        if not self.bands:
+            errs.append("Name stands: the size table is empty")
+        for b in self.bands:
+            if not (20 <= b.length <= 246 and 10 <= b.height <= 120):
+                errs.append(f"Name stands: {b.min_letters}+ letters — length 20–246 mm, height 10–120 mm")
+                break
+        for k, v in (self.products or {}).items():
+            if not isinstance(v, dict) or not (-200 <= float(v.get("letter_spacing", 0)) <= 200) \
+                    or not str(v.get("base_color", "")).strip() or not str(v.get("letter_color", "")).strip():
+                errs.append(f"Name stands: {k} needs a letter spacing (−200–200) and both colours")
+        return errs
+
+
 def default_messages() -> dict:
     """Ready-made replies on the logistics page (0.25). {customer} {order_id} {name} {colour} {tracking} {address}
     {needed_by} {courier} {delivered} are filled in from the order. The page offers each one only for the
@@ -163,6 +220,7 @@ class Settings:
     scaling: ScalingSettings = field(default_factory=ScalingSettings)
     plate: PlateSettings = field(default_factory=PlateSettings)
     logistics: LogisticsSettings = field(default_factory=LogisticsSettings)
+    stands: StandSettings = field(default_factory=StandSettings)
     output_dir: str = str(DEFAULT_OUTPUT_DIR)
     downloads_dir: str = str(DEFAULT_DOWNLOADS_DIR)  # downloaded models, kept until deleted in Finder
     makerworld_url: str = MAKERWORLD_URL  # the model-maker page the helper must be on (its designId is checked)
@@ -202,6 +260,14 @@ class Settings:
             if not isinstance(s.logistics.messages, dict) or not s.logistics.messages \
                     or s.logistics.messages == old_default_messages():
                 s.logistics.messages = default_messages()
+        if isinstance(d.get("stands"), dict):
+            st = d["stands"]
+            bands = [StandBand(**_known(StandBand, b)) for b in st.get("bands") or []] or default_stand_bands()
+            prods = {**default_stand_products(), **{k: {**default_stand_products().get(k, {}), **v}
+                                                     for k, v in (st.get("products") or {}).items()
+                                                     if isinstance(v, dict)}}
+            s.stands = StandSettings(bands=bands, products=prods, **{k: v for k, v in _known(StandSettings, st).items()
+                                                                      if k != "products"})
         for k in ("output_dir", "downloads_dir", "makerworld_url", "lan_access", "delay_between_downloads_s",
                   "license_passwords", "daily_target", "report_import", "help_access"):
             if k in d:
@@ -209,7 +275,7 @@ class Settings:
         return s
 
     def validate(self) -> list[str]:
-        errs = self.model.validate()
+        errs = self.model.validate() + self.stands.validate()
         if design_id(self.makerworld_url) is None:
             errs.append("MakerWorld model page link must be a makerworld.com …/makerlab/parametricModelMaker?designId=… link")
         p = self.plate

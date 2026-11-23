@@ -1,6 +1,7 @@
 """Ingest the webstore 'Order Reconciliation Report' (XLSX or CSV).
 
-* Keeps only SKU `Magicians_35` rows.
+* Keeps the rows of the products SnapSTL makes (`products.py`: `Magicians_35`, and since 0.29 the name
+  stands); every row of every product also goes to the shop records (shop.py).
 * Upserts by Order ID, so the same order in later reports is never duplicated.
 * Only orders whose report status is PRINT need making; delivered / in transit /
   packed / cancelled / returned orders are recorded but skipped.
@@ -19,7 +20,7 @@ from pathlib import Path
 
 from datetime import datetime, timezone
 
-from . import db, report, shop, tabs
+from . import db, products, report, shop, tabs
 
 SKU = "magicians_35"
 PRINT_STATUSES = {"PRINT"}
@@ -35,6 +36,7 @@ class IngestSummary:
     already_seen_file: bool = False
     rows_total: int = 0
     sku_rows: int = 0
+    by_product: dict = field(default_factory=dict)  # 0.29: rows per product key
     new: int = 0
     updated: int = 0
     unchanged: int = 0
@@ -254,16 +256,20 @@ def ingest(data: bytes, filename: str, db_path: Path | None = None) -> IngestSum
                 shop.store_line(con, any_id, {h: (r[i] if i < len(r) else "") for h, i in ix.items()},
                                 status_stamp(max((_date(get(r, c)) for c in EVENT_COLUMNS), default=""),
                                              s.as_of, uploaded), filename)
-            if get(r, "SKU Code").lower() != SKU:
+            prod = products.by_sku(get(r, "SKU Code"))
+            if prod is None or get(r, "SKU Code").lower() == ADHOC_SKU.lower():  # Adhoc: typed in by hand only
                 continue
             s.sku_rows += 1
+            s.by_product[prod.key] = s.by_product.get(prod.key, 0) + 1
             oid = get(r, "Order ID")
             if not oid:
-                s.warnings.append("A Magicians_35 row has no Order ID — skipped")
+                s.warnings.append(f"A {get(r, 'SKU Code')} row has no Order ID — skipped")
                 continue
             stamp = status_stamp(max((_date(get(r, c)) for c in EVENT_COLUMNS), default=""), s.as_of, uploaded)
-            report.store(con, oid, report.parse(lambda hdr, r=r: get(r, hdr)), stamp, filename)
+            if prod is products.ORGANIZER:  # report_rows = the organizer's report columns (shared records)
+                report.store(con, oid, report.parse(lambda hdr, r=r: get(r, hdr)), stamp, filename)
             _upsert(con, s, filename, {
+                "sku": products.canonical_sku(get(r, "SKU Code")), "product": prod,
                 "order_id": oid,
                 "clubbed_id": get(r, "Clubbed Order ID"),
                 "order_date": _iso_date(get(r, "Order Creation Date")),
@@ -302,18 +308,20 @@ def _qty(v: str) -> int:
         return 1
 
 
-def _evaluate(name: str, color: str, review: str | None, source_status: str) -> tuple[str, str | None]:
+def _evaluate(name: str, color: str, review: str | None, source_status: str,
+              needs_color: bool = True) -> tuple[str, str | None]:
     if source_status not in PRINT_STATUSES:
         return "not_needed", review
-    if not color:
+    if needs_color and not color:  # a name stand's colours come with the product (0.29)
         review = "; ".join(x for x in [review, "No colour in the order"] if x)
     return ("needs_review" if review else "ready"), review
 
 
 def _upsert(con, s: IngestSummary, filename: str, o: dict) -> None:
     cust = o["cust"]
-    raw_name = cust.get("enter your first name", "")
-    raw_color = cust.get("color", "") or cust.get("colour", "")
+    prod = o.get("product") or products.ORGANIZER
+    raw_name = next((cust[k] for k in products.NAME_FIELDS[prod.kind] if cust.get(k)), "")
+    raw_color = (cust.get("color", "") or cust.get("colour", "")) if prod.kind == "organizer" else ""
     special = cust.get("special requests", "")
     t = db.now()
     cur = con.execute("SELECT * FROM orders WHERE order_id=?", (o["order_id"],)).fetchone()
@@ -323,13 +331,13 @@ def _upsert(con, s: IngestSummary, filename: str, o: dict) -> None:
         color = normalise_color(raw_color)
         if special:
             review = "; ".join(x for x in [review, f"Special request: {special}"] if x)
-        state, review = _evaluate(name, color, review, o["source_status"])
+        state, review = _evaluate(name, color, review, o["source_status"], prod.kind == "organizer")
         con.execute(
             """INSERT INTO orders(order_id,clubbed_id,sku,order_date,source_status,quantity,raw_name,raw_color,
                special_request,name,color,review_reason,state,first_file,last_file,first_seen,updated_at,
                customer_name,phone,address,status_at,state_at,first_status)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (o["order_id"], o["clubbed_id"], "Magicians_35", o["order_date"], o["source_status"], o["quantity"],
+            (o["order_id"], o["clubbed_id"], o.get("sku") or "Magicians_35", o["order_date"], o["source_status"], o["quantity"],
              raw_name, raw_color, special, name, color, review, state, filename, filename, t, t,
              o["customer_name"], o["phone"], o["address"], o["status_at"], t, o["source_status"]),
         )
@@ -467,8 +475,9 @@ def set_name(order_id: str, name: str, color: str | None = None, db_path: Path |
         cur = con.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
         if cur is None:
             raise KeyError(order_id)
-        color = normalise_color(color) if color is not None else cur["color"]
-        if not color:
+        stand = products.of_order(dict(cur)).kind == "stand"  # 0.29: a name stand's colours come with the product
+        color = "" if stand else (normalise_color(color) if color is not None else cur["color"])
+        if not color and not stand:
             raise ValueError("Colour is required")
         state = cur["state"]
         if state == "needs_review":

@@ -22,8 +22,8 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import (archive, auth, bambuddy_host, cache, computer, config, db, extras, farm, makeit, platform_os, sync, tabs,
-               spares, updater, verify)
+from . import (archive, auth, bambuddy_host, cache, computer, config, db, extras, farm, makeit, platform_os, products,
+               sync, tabs, spares, updater, verify)
 from .ingest import add_adhoc, ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
 from . import staff as staff_pins
@@ -391,9 +391,18 @@ async def upload_report(file: UploadFile = File(...)):
     return out
 
 
+def _stand_size(letters: int) -> list | None:
+    """Name stand (0.29): [length, height, thickness] from Settings → Name stands."""
+    st = SETTINGS.stands
+    b = next((b for b in sorted(st.bands, key=lambda b: b.min_letters) if b.min_letters <= letters <= b.max_letters), None)
+    return [b.length, b.height, st.thickness] if b else None
+
+
 def _order_view(r: dict) -> dict:
     letters = sum(c.isalpha() for c in (r.get("name") or ""))
-    band = pick_band(letters, SETTINGS.scaling.bands) if letters else None
+    prod = products.of_order(r)
+    stand = prod.kind == "stand"
+    band = pick_band(letters, SETTINGS.scaling.bands) if letters and not stand else None
     return {
         "order_id": r["order_id"], "clubbed_id": r["clubbed_id"], "order_date": r["order_date"],
         "customer_name": r.get("customer_name") or "", "phone": r.get("phone") or "", "address": r.get("address") or "",
@@ -403,10 +412,14 @@ def _order_view(r: dict) -> dict:
         "state": r["state"], "batch_id": r["batch_id"], "last_error": r["last_error"], "letters": letters,
         "batch_computer": r.get("batch_computer") or "", "batch_label": r.get("batch_label") or "",
         "batch_here": bool(r.get("batch_id")), "printed_at": r.get("printed_at"), "bundled_at": r.get("bundled_at"),
-        "made_at": r.get("made_at"), "adhoc": r.get("sku") == "Adhoc", "added_at": r.get("first_seen"),
+        "made_at": r.get("made_at"), "adhoc": r.get("sku") == "Adhoc",
+        "product": prod.key, "product_label": prod.label, "product_kind": prod.kind, "added_at": r.get("first_seen"),
+        "stand_size": _stand_size(letters) if stand and letters else None,
+        "stand_colors": [SETTINGS.stands.products.get(prod.key, {}).get(k, "") for k in ("base_color", "letter_color")]
+        if stand else None,
         "clubbed": bool(r.get("club_size", 1) > 1),
         "target": [min(band.length, SETTINGS.scaling.max_length), band.height] if band else None,
-        "compartments": compartments_for(letters, SETTINGS) if letters else None,
+        "compartments": compartments_for(letters, SETTINGS) if letters and not stand else None,
         # 0.23 order flow
         "tab": tabs.tab_of(r), "first_status": r.get("first_status"), "print_started_at": r.get("print_started_at"),
         **{c: r.get(c) for g, cs in db.FIELD_GROUPS.items() for c in cs},
@@ -424,6 +437,7 @@ _T = tabs.TAB_SQL
 # a returned (RTO) piece with exactly the same name (same letter case) and colour, not used yet
 _RTO = "REPLACE(UPPER(COALESCE({t}.source_status,'')),'_','-') LIKE 'RTO-%'"
 _RETURNED = (f"EXISTS (SELECT 1 FROM orders rt WHERE rt.order_id<>orders.order_id AND rt.name=orders.name "
+             f"AND {products.key_sql('rt.sku')}={products.key_sql('orders.sku')} "  # 0.29: the same product
              f"AND COALESCE(rt.color,'')=COALESCE(orders.color,'') AND {_RTO.format(t='rt')} AND rt.reused_by IS NULL "
              "AND COALESCE(orders.name,'')<>'')")
 _RETURNED = f"({_RETURNED} OR {spares.match_sql()})"  # 0.28: or a spare piece in stock
@@ -459,10 +473,27 @@ FILTERS = {
 }
 
 
+def _product_param(request: Request) -> str:
+    """Orders page Product chips (0.29): '' = every product."""
+    p = (request.query_params.get("product") or "").strip()
+    if p and p not in products.BY_KEY:
+        raise HTTPException(400, f"Unknown product {p!r}")
+    return p
+
+
+@app.get("/api/products")
+def product_list():
+    """The products SnapSTL knows (Orders page chips, Settings → Name stands)."""
+    return {"products": products.public()}
+
+
 def _where(request: Request, tab: str) -> tuple[str, list]:
     if tab not in TABS:
         raise HTTPException(400, f"Unknown tab {tab!r}")
     where, args = [TABS[tab]], []
+    prod = _product_param(request)
+    if prod:
+        where.append(products.in_sql([prod]))
     for key, (expr, exact) in FILTERS.items():
         v = (request.query_params.get("f_" + key) or "").strip()
         if not v:
@@ -502,8 +533,9 @@ def returned_pieces(con, o: dict) -> list[dict]:
     if not o.get("name") or o.get("reuse_of"):
         return []
     rs = db.rows(con, f"SELECT order_id, source_status FROM orders rt WHERE rt.order_id<>? AND rt.name=? "
-                      f"AND COALESCE(rt.color,'')=? AND {_RTO.format(t='rt')} AND rt.reused_by IS NULL",
-                 o["order_id"], o["name"], o.get("color") or "")
+                      f"AND COALESCE(rt.color,'')=? AND {_RTO.format(t='rt')} AND rt.reused_by IS NULL "
+                      f"AND {products.key_sql('rt.sku')}=?",
+                 o["order_id"], o["name"], o.get("color") or "", products.of_order(o).key)
     out = [{"order_id": r["order_id"], "status": r["source_status"],
             "back": tabs.norm_status(r["source_status"]) == "RTO-DELIVERED"} for r in rs]
     return sorted(out, key=lambda x: (not x["back"], x["order_id"]))
@@ -524,15 +556,21 @@ def order_ids(request: Request, tab: str = "to_make", state: str = "ready"):
 @app.get("/api/orders/facets")
 def order_facets(request: Request, tab: str = "to_make"):
     """Tab counts plus the values offered in the status / colour filter dropdowns."""
+    prod = _product_param(request)
+    pw = products.in_sql([prod]) if prod else "1=1"  # 0.29: tab counts of the chosen product
     with db.tx() as con:
         counts = {k: 0 for k in TABS}
-        counts.update({r[0]: r[1] for r in con.execute(f"SELECT {_T}, COUNT(*) FROM orders GROUP BY 1")})
+        counts.update({r[0]: r[1] for r in con.execute(f"SELECT {_T}, COUNT(*) FROM orders WHERE {pw} GROUP BY 1")})
         for k in ("to_make_single", "to_make_clubbed", "to_make_adhoc", "to_make_returned", "express", "production", "all"):
-            counts[k] = con.execute(f"SELECT COUNT(*) FROM orders WHERE {TABS[k]}").fetchone()[0]
-        w = TABS.get(tab, "1=1")
+            counts[k] = con.execute(f"SELECT COUNT(*) FROM orders WHERE {TABS[k]} AND {pw}").fetchone()[0]
+        # Product chips: orders to make (To make + Check name) per product
+        per = {r[0]: r[1] for r in con.execute(f"SELECT {products.key_sql()}, COUNT(*) FROM orders "
+                                               f"WHERE {_T} IN ('to_make','check_name') GROUP BY 1")}
+        w = TABS.get(tab, "1=1") + f" AND {pw}"
         statuses = [r["v"] for r in db.rows(con, f"SELECT DISTINCT source_status v FROM orders WHERE {w} ORDER BY v")]
         colors = [r["v"] for r in db.rows(con, f"SELECT DISTINCT COALESCE(color,'') v FROM orders WHERE {w} ORDER BY v")]
-    return {"tabs": counts, "statuses": statuses, "colors": colors}
+    return {"tabs": counts, "statuses": statuses, "colors": colors,
+            "products": {p.key: per.get(p.key, 0) for p in products.PRODUCTS}}
 
 
 @app.get("/api/orders.csv")
@@ -737,6 +775,7 @@ async def next_batch(req: Request):
         raise HTTPException(400, "; ".join(errs))
     with db.tx() as con:
         ids = [r[0] for r in con.execute(f"SELECT order_id FROM orders WHERE {_T}='to_make' "  # not those with a
+                                         f"AND {products.in_sql(products.MAKEABLE)} "
                                          f"AND NOT {spares.match_sql(complete=True)} {_ORDER} LIMIT ?", (n,))]  # spare
     if not ids:
         raise HTTPException(400, "Nothing to make: To make is empty")
