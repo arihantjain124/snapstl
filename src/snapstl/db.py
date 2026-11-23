@@ -158,6 +158,7 @@ MIGRATIONS = [
     ("slices", "sliced_path", "TEXT"),      # OrcaSlicer's sliced file (batch folder / Sliced/<model>/…)
     ("files", "sent", "INTEGER"),           # 1 = in the shared records' report_uploads
     ("print_jobs", "ams_tray", "INTEGER"),  # filament slot it prints from (Bambu global tray id: AMS n·4+slot, 254 external)
+    ("print_jobs", "ams_tray2", "INTEGER"),  # name stands (0.32): the letters' slot (ams_tray = the block's)
     # 0.23: order flow + logistics (docs/build-plan-order-flow-and-logistics.md)
     ("orders", "first_status", "TEXT"),      # webstore status when first seen (orders first seen past PRINT are history)
     ("orders", "print_started_at", "REAL"),  # a plate holding it was first started → Printing

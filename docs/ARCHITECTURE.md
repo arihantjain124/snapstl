@@ -732,11 +732,19 @@ snapstl.server:app --port 8320`.
   components) — "Base" → filament 1, "Letters" → filament 2 in `Metadata/model_settings.config`
   (`threemf.write_3mf_assemblies`; Bambu Studio's own fields, read by Bambuddy). Read back: part count,
   triangles, on the bed, off the tower strip, letters on and inside the block, size ±0.5 mm, filaments 1/2.
-  `report.csv` has stand columns. The batch summary keeps them in `stand_plates` (`plates` stays the
-  organizer's, read by Print / Verify / merge); `BuildResult.complete` counts a stand done when its plate passed.
-* **Not on the Print page yet:** `products.PRINTABLE` = organizer — a built stand batch has no Print button;
-  its orders are bundled (Orders → In production). Next: Print → Name stands, sliced with two filament
-  profiles, printed with a two-slot AMS mapping on a P1S whose AMS holds both colours.
+  `report.csv` has stand columns. Since 0.32 they are the batch's `plates` with kind `stands` (0.31 kept them in
+  `stand_plates`; `stands.repair_031` moves them once at startup); `BuildResult.complete` counts a stand done
+  when its plate passed.
+* **Print → Name stands (0.32):** To print / Printing / Printed like Bases. Only printers with an AMS
+  (`farm.has_ams`) are offered; pre-selection fits both colours (`makeit._stand_fit`). Two slot lists: block
+  (`ams_tray`, filament 1) and letters (`print_jobs.ams_tray2`, filament 2; `farm.pick_tray2`, never the block's
+  slot). A job's colour is "block+letters" (`farm.plate_color` / `job_plate`); slicing sends the printer's filament
+  profile twice with both colours (`farm.slice_request`); Bambuddy gets `ams_mapping` [block, letters]
+  (`farm.ams_mapping`). Merge / Split are organizer-only.
+* **Verify / Completed:** one item per stand (part `stands`; an order is complete with parts {stands} —
+  `verify.COMPLETE`). Results: Good / Stand spoiled (`stand` → `extras._stand_fixes`: the stand as printed, block +
+  letters, on `Fixes/Fix - Stand - … .3mf`, `stands.write_fix`) / Whole plate failed. Completed → "Reprint the
+  stand".
 
 ## 18. How to extend safely
 

@@ -385,7 +385,10 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   helper (2.4) downloads them from their own MakerWorld page — it opens the right page by itself; no license
   password. Since 0.31 **Queue build** makes their plates: sized by Settings → Name stands, up to 3 of one
   product per plate, two-colour files `Stands/<Product>/<Product> - A + B + C.3mf` (each stand: Base → filament
-  1, Letters → filament 2; the back 45 mm of the bed left for the prime tower). Print page for stands: next. Settings → **Name stands**:
+  1, Letters → filament 2; the back 45 mm of the bed left for the prime tower). Since 0.32 **Print → Name stands**:
+  only printers with an AMS, a block slot and a letters slot (picked by colour), sliced with two filaments and
+  sent with both slots; Verify has one check per stand (Good / Stand spoiled → fix plate / Whole plate failed);
+  Completed → Reprint the stand. Settings → **Name stands**:
   size by letter count, thickness 40 mm (37 block + 3 letters), font size, brim offset 6, and per product the
   block / letter colours and letter spacing.
 - **Spare pieces** (0.28, Orders → **Spare pieces**): bases kept in stock (extras, mistakes, bases made before

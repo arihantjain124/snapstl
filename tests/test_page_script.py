@@ -24,5 +24,5 @@ def test_print_page_globals_are_declared():
         line = script[script.rfind("\n", 0, hit.start()) + 1:hit.start()]
         assert not re.search(_COMMENT, line), f"{name} is declared after a // comment on its line"
     # code glued to the end of a // comment (no line break in between)
-    glued = re.findall(_COMMENT + r"[^\n]*?[a-z.)](?:const|let) [A-Za-z_$]+\s*=", script)
+    glued = re.findall(_COMMENT + r"[^\n]*?\b(?:const|let)\s+[A-Za-z_$][\w$]*\s*=", script)
     assert not glued, glued

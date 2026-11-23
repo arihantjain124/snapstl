@@ -31,9 +31,11 @@ RESULTS = {
     "name": "Whole name spoiled",
     "colour": "Wrong colour",
     "base": "Base broken or warped",
+    "stand": "Stand spoiled",  # a name stand (0.32): printed again whole
     "plate_failed": "Whole plate failed",
 }
-FIX_RESULTS = ("letters", "name", "colour", "base")  # a small fix plate is made for these
+FIX_RESULTS = ("letters", "name", "colour", "base", "stand")  # a small fix plate is made for these
+COMPLETE = ({"bases", "names"}, {"stands"})  # the parts that make one order: an organizer, a name stand (0.32)
 NOT_STARTED = ("removed", "merged", "unmerged", "divided")      # print job states that don't mean "a print started"
 MAX_FIXES_WARN = 2                                   # a third fix of one item: check the model
 
@@ -234,7 +236,7 @@ def _update_one(con, batch_id: int) -> None:
             continue
         if o["started"] and cur["print_started_at"] is None:
             con.execute("UPDATE orders SET print_started_at=?, updated_at=? WHERE order_id=?", (now, now, oid))
-        both = o["parts"] == {"bases", "names"}
+        both = o["parts"] in COMPLETE
         good = both and all(s == "good" for s in o["st"])
         printed = both and all(s in ("good", "waiting") for s in o["st"])
         if good:
@@ -392,7 +394,7 @@ def name_cards() -> dict:
         sts = [i["status"] for i in o["items"]]
         if "waiting" not in sts:
             continue
-        if {i["part"] for i in o["items"]} != {"bases", "names"} or any(s not in ("waiting", "good") for s in sts):
+        if {i["part"] for i in o["items"]} not in COMPLETE or any(s not in ("waiting", "good") for s in sts):
             other += 1  # one part printed, the other not yet: it comes here once both are
             continue
         r = info.get(oid) or {}
@@ -447,7 +449,7 @@ def completed(limit: int = 500) -> list[dict]:
                 e = extra.setdefault(c["order_id"], {"fixes": 0, "printer": "", "items": {}})
                 if c["result"] in FIX_RESULTS or c["result"] == "plate_failed":
                     e["fixes"] += 1
-                if c["result"] == "good" and c["part"] == "names" and c["printer"]:
+                if c["result"] == "good" and c["part"] in ("names", "stands") and c["printer"]:
                     e["printer"] = c["printer"]
                 if c["batch_id"] is not None:
                     e["items"][(c["batch_id"], c["plate"], c["idx"])] = {
@@ -468,7 +470,8 @@ def _items_of(con, batch_id: int) -> tuple[dict[tuple, dict], dict[str, str]]:
     return {key(i): i for i in items}, state_of
 
 
-ALLOWED = {"bases": ("good", "base", "plate_failed"), "names": ("good", "letters", "name", "colour", "plate_failed")}
+ALLOWED = {"bases": ("good", "base", "plate_failed"), "names": ("good", "letters", "name", "colour", "plate_failed"),
+           "stands": ("good", "stand", "plate_failed")}
 _SUBMIT = threading.Lock()  # one check at a time: a second press waits, then finds the plate already checked
 
 

@@ -216,6 +216,73 @@ def check(path: Path, orders: list[Order], assemblies: list, info: dict, setting
     return problems
 
 
+def repair_031() -> int:
+    """Once: batches built by 0.31 kept their stand plates in summary["stand_plates"]; since 0.32 they are the
+    batch's "plates" (kind "stands"), so Print / Verify see them. Returns how many batches changed."""
+    from . import db
+
+    n = 0
+    with db.tx() as con:
+        for b in db.rows(con, "SELECT id, summary FROM batches WHERE summary LIKE '%stand_plates%'"):
+            s = json.loads(b["summary"] or "{}")
+            sp = s.pop("stand_plates", None)
+            if not sp:
+                continue
+            have = {p["file"] for p in s.get("plates") or []}
+            s["plates"] = (s.get("plates") or []) + [p for p in sp if p["file"] not in have]
+            con.execute("UPDATE batches SET summary=? WHERE id=?", (json.dumps(s), b["id"]))
+            n += 1
+    return n
+
+
+# ---------------- Verify: a spoiled stand is printed again on a fix plate (0.32) ----------------
+def stand_meshes(plate_path: Path, idx: int) -> tuple[trimesh.Trimesh, trimesh.Trimesh]:
+    """The block and letters of the `idx`-th stand on a written plate (parts are written in stand order)."""
+    objs = read_3mf(plate_path)
+    if len(objs) < 2 * (idx + 1):
+        raise ValueError(f"Stand {idx + 1} isn't on {plate_path.name}")
+    blk, let = objs[2 * idx], objs[2 * idx + 1]
+    return (trimesh.Trimesh(np.asarray(blk.vertices), np.asarray(blk.faces), process=True),
+            trimesh.Trimesh(np.asarray(let.vertices), np.asarray(let.faces), process=True))
+
+
+def write_fix(folder: Path, stem: str, stands_: list[tuple[str, trimesh.Trimesh, trimesh.Trimesh]],
+              settings: Settings) -> tuple[str, dict]:
+    """A fix plate of whole stands (as printed, same size): [(object name, block, letters)]. Returns (file, preview)."""
+    cfg = settings.plate
+    pack_cfg = replace(cfg, bed_y=cfg.bed_y - PRIME_TOWER_MM)
+    parts, pieces = [], {}
+    for name, blk, let in stands_:
+        blk, let = blk.copy(), let.copy()
+        whole = trimesh.util.concatenate([blk, let])
+        lo, hi = whole.bounds
+        c = [-(lo[0] + hi[0]) / 2, -(lo[1] + hi[1]) / 2, -lo[2]]
+        for m in (blk, let, whole):
+            m.apply_translation(c)
+        p = make_part(name, whole)
+        parts.append(p)
+        pieces[name] = (blk, let)
+    res = pack(parts, pack_cfg, try_orders=len(parts) <= 4)
+    if not res.ok:
+        raise ValueError(f"Doesn't fit on one plate: {res.reason}")
+    folder.mkdir(parents=True, exist_ok=True)
+    path = export._unique(folder / f"{export._clean(stem)[:180]}.3mf", set())
+    by_key = {pl.key: pl for pl in res.placements}
+    assemblies = []
+    for p in parts:
+        t = transform_matrix(by_key[p.key])
+        blk, let = (m.copy() for m in pieces[p.key])
+        blk.apply_transform(t)
+        let.apply_transform(t)
+        assemblies.append((p.key, [("Base", blk.vertices, blk.faces, 1), ("Letters", let.vertices, let.faces, 2)]))
+    write_3mf_assemblies(path, assemblies, title=path.stem)
+    objs = read_3mf(path)
+    if len(objs) != 2 * len(parts) or abs(np.vstack([o.vertices for o in objs]).min(axis=0)[2]) > Z_TOL:
+        path.unlink(missing_ok=True)
+        raise ValueError(f"{path.name}: didn't read back right")
+    return path.name, export.preview(Plate("stands", [], parts, res), cfg)
+
+
 REPORT = ["row", "name", "product", "letters", "target_length", "target_height", "thickness", "orig_x", "orig_y",
           "scale_x_%", "scale_y_%", "file", "status", "warnings"]
 

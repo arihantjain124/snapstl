@@ -635,3 +635,14 @@ English hard — the language help was skipped by the owner).
   (letters), one AMS change at Z 37.2, prime tower at X 17–34 / Y 220–236 (inside the free back strip; profile
   wipe_tower 15, 220). Bambuddy's pre-slice "filament requirements" of the unsliced file lists no filaments (it
   reads them after slicing) — SnapSTL sends both filament profiles itself.
+
+### 2026-11-24: 0.32.0 Name stands on the Print page (step 4 of 4)
+- Print → **Name stands** (shown when there are stand plates): To print / Printing / Printed. Only printers with an
+  AMS; the pre-selection fits both colours; a block slot and a letters slot (never the same). Start print slices
+  with the printer's filament profile twice (block colour, letter colour) and sends `ams_mapping` [block, letters];
+  the letters slot is kept in `print_jobs.ams_tray2`.
+- Verify: one check per stand — Good / Stand spoiled (a fix plate with the whole stand, both colours) / Whole plate
+  failed. Completed → Reprint the stand. Merge / Split stay organizer-only.
+- Stand plates are the batch's `plates` (kind `stands`); batches built by 0.31 are moved once at startup.
+- Found in the preview before release: a `// comment` mid-line again hid code (stand rows broke the Print table);
+  fixed, and `tests/test_page_script.py` now catches a `const` / `let` after a `//` comment even with a space.

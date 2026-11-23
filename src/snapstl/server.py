@@ -60,6 +60,12 @@ async def _lifespan(_app):
     except Exception as e:  # noqa: BLE001
         print(f"SnapSTL: 0.26 repair skipped: {e}")
     try:
+        from . import stands as _stands
+
+        _stands.repair_031()  # 0.32: name stand plates join the batch's plates (Print / Verify)
+    except Exception as e:  # noqa: BLE001
+        print(f"SnapSTL: 0.31 stand plates repair skipped: {e}")
+    try:
         from .extras import repair_028
         print("SnapSTL: 0.28 repair:", repair_028())  # one-time: merged plates made twice by a double press
     except Exception as e:  # noqa: BLE001
@@ -1419,7 +1425,8 @@ async def makeit_start(req: Request):
         prs = await run_in_threadpool(farm.printers)
         return await run_in_threadpool(makeit.start_print, int(b["batch_id"]), str(b.get("file", "")),
                                        int(b["printer_id"]), b.get("options") or {}, prs, bool(b.get("force")),
-                                       str(b.get("speed") or ""), b.get("tray"), bool(b.get("bed_clear")))
+                                       str(b.get("speed") or ""), b.get("tray"), bool(b.get("bed_clear")),
+                                       b.get("tray2"))  # tray2: a name stand's letters slot (0.32)
     except makeit.BedNotClear as e:
         raise HTTPException(428, str(e)) from e
     except farm.StartBlocked as e:
@@ -1541,7 +1548,7 @@ async def makeit_slice(req: Request):
             raise _farm_err(e) from e
         if not p.get("printer_id"):
             raise HTTPException(400, "Choose the printer to slice for — a plate is sliced with its printer's profiles")
-        todo.append((bid, file, plate["kind"], (plate.get("colors") or [""])[0]))
+        todo.append((bid, file, plate["kind"], farm.plate_color(plate)))  # a name stand: "block+letters"
         pids.append(int(p["printer_id"]))
     if not todo:
         raise HTTPException(400, "Choose the plates to slice")

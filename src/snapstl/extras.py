@@ -266,6 +266,9 @@ def make_fixes(con, folder_batch: int, wanted: list[dict], staff: str, at: float
         groups.setdefault((it["part"], (it.get("color") or "").lower() if it["part"] == "names" else ""), []).append(w)
     files = []
     for (part, color), ws in groups.items():
+        if part == "stands":  # a name stand (0.32): the whole stand again, as printed, both colours
+            files += _stand_fixes(con, fb, folder_batch, ws, staff, at)
+            continue
         built = []  # (wanted, parts)
         for w in ws:
             it = w["item"]
@@ -296,6 +299,36 @@ def make_fixes(con, folder_batch: int, wanted: list[dict], staff: str, at: float
                     prev, names, staff, at)
             files.append(file)
     return files
+
+
+def _stand_fixes(con, fb: dict, folder_batch: int, ws: list[dict], staff: str, at: float) -> list[str]:
+    """Spoiled name stands: printed again whole (block + letters) on fix plates, up to 3 per plate."""
+    from . import stands
+
+    st = Settings.from_dict(json.loads(fb.get("settings") or "{}"))
+    out = []
+    for i in range(0, len(ws), stands.PER_PLATE):
+        chunk = ws[i:i + stands.PER_PLATE]
+        got, colors = [], ""
+        for w in chunk:
+            it = w["item"]
+            ib = _own(con, int(it["batch_id"]))
+            path = Path(ib.get("out_dir") or "") / it["plate"]
+            if not path.is_file():
+                raise ExtraError(f"The plate file is gone ({it['plate']}) — make a new batch for this order")
+            blk, let = stands.stand_meshes(path, int(it["idx"]))
+            got.append((f"{it.get('name')} - Stand · {it.get('order_id') or ''}", blk, let))
+            pl = next((p for p in _plates(ib) if p["file"] == it["plate"]), {})
+            colors = colors or "+".join((pl.get("colors") or [])[:2])
+        names = " + ".join(w["item"].get("name") or "?" for w in chunk)
+        try:
+            file, prev = stands.write_fix(Path(fb["out_dir"]) / "Fixes", f"Fix - Stand - {names}", got, st)
+        except ValueError as e:
+            raise ExtraError(str(e)) from e
+        _record(con, folder_batch, f"Fixes/{file}", "fix", "stands", colors, [dict(w["item"]) for w in chunk],
+                prev, names, staff, at)
+        out.append(f"Fixes/{file}")
+    return out
 
 
 def _write_fix(fb: dict, cfg: PlateSettings, part: str, color: str, chunk) -> tuple[str, dict, str]:
@@ -433,6 +466,8 @@ def divide(batch_id: int, file: str, sizes: list[int], staff: str = "") -> dict:
         pl = next((x for x in _plates(b) if x["file"] == file), None)
         if pl is None:
             raise ExtraError("Only a batch's own plate can be split (use Split back for a merged plate)")
+        if pl["kind"] not in ("bases", "names"):
+            raise ExtraError("Only base and letter plates can be split")
         if _latest_state(con, b["id"], file) not in MERGEABLE + ("failed", "cancelled"):  # a failed print may be split too
             raise ExtraError(f"{Path(file).name} is already started, printed, removed, merged or split")
         orders = _batch_orders(con, b)

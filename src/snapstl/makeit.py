@@ -55,7 +55,7 @@ def plate_order_ids(plates: list[dict], orders: list[dict]) -> dict[str, list[st
     """Plate file → order ids on it. New builds record them; older ones are matched by name (and colour
     for name plates), one copy at a time."""
     out: dict[str, list[str]] = {}
-    for kind in ("bases", "names"):
+    for kind in ("bases", "names", "stands"):  # stands (0.32) always record their order ids
         pool = [(o["order_id"], (o["name"] or "").lower(), (o["color"] or "").lower())
                 for o in orders for _ in range(max(1, int(o.get("quantity") or 1)))]
         for p in [p for p in plates if p["kind"] == kind]:
@@ -110,7 +110,9 @@ def choose(plates: list[dict], prs: list[dict], active: dict[int, int]) -> dict[
             out[pl["file"]] = None
             continue
 
-        def fit(p, need=need):  # how well its best slot fits the colour
+        def fit(p, need=need, pl=pl):  # how well its best slot fits the colour (a name stand: both colours)
+            if pl.get("kind") == farm.STANDS:
+                return _stand_fit(pl, p)
             t = farm.best_tray(need, p)
             sp = next((x for x in p.get("spools") or [] if x["tray"] == t), None)
             return farm.tray_score(need, sp) if sp else (-1, -10 ** 7)
@@ -119,6 +121,17 @@ def choose(plates: list[dict], prs: list[dict], active: dict[int, int]) -> dict[
         out[pl["file"]] = best["id"]
         load[best["id"]] += 1
     return out
+
+
+def _stand_fit(pl: dict, p: dict) -> tuple:
+    """How well a printer's AMS fits a name stand: both colours (block, letters) — the worse of the two."""
+    need, need2 = farm.needed_color(pl), farm.needed_color2(pl) or ""
+    t = farm.best_tray(need, p)
+    sp = next((x for x in p.get("spools") or [] if x["tray"] == t), None)
+    a = farm.tray_score(need, sp) if sp else (-1, -10 ** 7)
+    rest = [x for x in p.get("spools") or [] if x["tray"] != t]
+    b = max((farm.tray_score(need2, x) for x in rest), default=(-1, -10 ** 7))
+    return min(a, b)
 
 
 def _verify() -> dict:
@@ -234,7 +247,9 @@ def board(prs: list[dict] | None = None) -> dict:
                 add(b, summ, p, on.get(p["file"], []))
         for x in extra_rows:
             b = mine[x["batch_id"]]
-            p = {"kind": x["part"], "file": x["file"], "colors": [x["color"]] if x["part"] == "names" else [],
+            p = {"kind": x["part"], "file": x["file"],
+                 "colors": [x["color"]] if x["part"] == "names" else ((x["color"] or "").split("+")
+                                                                        if x["part"] == farm.STANDS else []),
                  "names": [i.get("name") + (f" ({i['letters']})" if i.get("letters") else "") for i in x["items"]]}
             add(b, json.loads(b.get("summary") or "{}"), p, [i.get("order_id") for i in x["items"]], x["kind"])
         parts = verify.part_status(con, batches)
@@ -245,7 +260,8 @@ def board(prs: list[dict] | None = None) -> dict:
     for r in rows:
         r["in_stock"] = [o for o in r["open_items"] if o in stock]
     for r in rows + printed:
-        other = "bases" if r["kind"] == "names" else "names"
+        # the order's other part (a name stand is one piece: its own status)
+        other = r["kind"] if r["kind"] == farm.STANDS else ("bases" if r["kind"] == "names" else "names")
         r["other"] = {o: parts.get(o, {}).get(other, "todo") for o in r["open_items"]}
         r["other_ready"] = sum(s in ("waiting", "good") for s in r["other"].values())
     # a printed plate stays listed while something on it isn't checked yet or its other part isn't printed
@@ -264,13 +280,16 @@ def board(prs: list[dict] | None = None) -> dict:
                          "available": available(p, active_jobs.get(p["id"], 0)), "left": spool_left(p, r["need"]),
                          "online": bool((p.get("status") or {}).get("connected")),
                          "state": (p.get("status") or {}).get("state", ""), "bed": beds[p["id"]],
-                         "trays": farm.tray_choices(r["need"], p), "best_tray": farm.best_tray(r["need"], p)}
-                        for p in prs if farm.may_print(p["id"], r["kind"], fcfg)]
+                         "trays": farm.tray_choices(r["need"], p), "best_tray": farm.best_tray(r["need"], p),
+                         **(_stand_trays(r, p) if r["kind"] == farm.STANDS else {})}
+                        for p in prs if farm.may_print(p["id"], r["kind"], fcfg)
+                        and (r["kind"] != farm.STANDS or farm.has_ams(p))]
     pick = {}
     if prs:
-        for kind in ("bases", "names"):  # each kind only onto the printers that may print it
+        for kind in ("bases", "names", farm.STANDS):  # each kind only onto the printers that may print it
             rows_k = [r for r in pending if r["kind"] == kind]
-            pick |= choose(rows_k, [p for p in prs if farm.may_print(p["id"], kind, fcfg)], active_jobs)
+            pick |= choose(rows_k, [p for p in prs if farm.may_print(p["id"], kind, fcfg)
+                                    and (kind != farm.STANDS or farm.has_ams(p))], active_jobs)
     keys: dict = {}
 
     def slice_state(r: dict, pid) -> dict | None:
@@ -298,6 +317,9 @@ def board(prs: list[dict] | None = None) -> dict:
     names = [r for r in pending if r["kind"] == "names"]
     return {"bases": [r for r in pending if r["kind"] == "bases"], "names": names, "printed_bases": [r for r in printed if r["kind"] == "bases"],
             "printed_letters": [r for r in printed if r["kind"] == "names"],
+            # name stands (0.32): one plate kind, two colours
+            "stands": [r for r in pending if r["kind"] == farm.STANDS],
+            "printed_stands": [r for r in printed if r["kind"] == farm.STANDS],
             "now": printers_now(prs, active_jobs),
             "merge": extras.suggestions(names), "duplicates": dupes, **_verify(), "completed": verify.completed(),
             "removed": removed, "staff": verify.staff_list()}
@@ -310,10 +332,18 @@ def _job(j: dict | None) -> dict | None:
             "held": bool(j.get("held")), "progress": j.get("progress"), "error": j.get("error"),
             "updated_at": j.get("updated_at"), "options": json.loads(j.get("options") or "{}"),
             "speed": {v: k for k, v in farm.SPEEDS_SET.items()}.get(j.get("speed") or 0, ""),
-            "ams_tray": j.get("ams_tray")}
+            "ams_tray": j.get("ams_tray"), "ams_tray2": j.get("ams_tray2")}
 
 
 # ---------------- actions (each one a person's click) ----------------
+def _stand_trays(r: dict, p: dict) -> dict:
+    """A name stand's letters slot list on a printer (the block's is "trays")."""
+    need2 = farm.needed_color2(r) or ""
+    best = farm.best_tray(r["need"], p)
+    rest = {**p, "spools": [x for x in p.get("spools") or [] if x["tray"] != best]}
+    return {"trays2": farm.tray_choices(need2, p), "best_tray2": farm.best_tray(need2, rest), "need2": need2}
+
+
 def _plate(batch_id: int, file: str) -> tuple[dict, dict]:
     with db.tx() as con:
         b = con.execute("SELECT * FROM batches WHERE id=? AND COALESCE(computer_id, ?) = ?",
@@ -331,8 +361,9 @@ def _plate(batch_id: int, file: str) -> tuple[dict, dict]:
         x = dict(x)
         items = json.loads(x["items"])
         plate = {"kind": x["part"], "file": x["file"], "names": [i.get("name") for i in items],
-                 "colors": [x["color"]] if x["part"] == "names" else [], "order_ids": [i.get("order_id") for i in items],
-                 "extra": x["kind"]}
+                 "colors": ([x["color"]] if x["part"] == "names" else
+                            (x["color"] or "").split("+") if x["part"] == farm.STANDS else []),
+                 "order_ids": [i.get("order_id") for i in items], "extra": x["kind"]}
     return b, plate
 
 
@@ -378,13 +409,15 @@ def confirm_bed_clear(printer_id: int, awaiting: bool = False) -> None:
 
 
 def start_print(batch_id: int, file: str, printer_id: int, options: dict | None, prs: list[dict],
-                force: bool = False, speed: str = "", tray: int | None = None, bed_clear: bool = False) -> dict:
+                force: bool = False, speed: str = "", tray: int | None = None, bed_clear: bool = False,
+                tray2: int | None = None) -> dict:
     with _START:
-        return _start_print(batch_id, file, printer_id, options, prs, force, speed, tray, bed_clear)
+        return _start_print(batch_id, file, printer_id, options, prs, force, speed, tray, bed_clear, tray2)
 
 
 def _start_print(batch_id: int, file: str, printer_id: int, options: dict | None, prs: list[dict],
-                 force: bool = False, speed: str = "", tray: int | None = None, bed_clear: bool = False) -> dict:
+                 force: bool = False, speed: str = "", tray: int | None = None, bed_clear: bool = False,
+                 tray2: int | None = None) -> dict:
     """Start print (a person's click): the only way a Make It plate gets printed.
     Not sent yet / failed / cancelled / reprint → sent to that printer and started once queued.
     Waiting held in Bambuddy → moved to that printer if changed, then started.
@@ -403,6 +436,7 @@ def _start_print(batch_id: int, file: str, printer_id: int, options: dict | None
     if printer is None:
         raise farm.FarmError("Choose a printer")
     tray = farm.pick_tray(plate, printer, tray)  # the filament slot it prints from (any loaded one)
+    tray2 = farm.pick_tray2(plate, printer, tray2, tray)  # a name stand: the letters' slot (else None)
     if not farm.may_print(printer["id"], plate["kind"]):
         raise farm.FarmError(f"{printer['name']} has no Letters profile — letters print on the printers that have one "
                              "(Slicing → Letters)")
@@ -431,8 +465,8 @@ def _start_print(batch_id: int, file: str, printer_id: int, options: dict | None
         if bed == "busy":
             raise farm.FarmError(f"{printer['name']} is still printing — press Start print once it's done and the "
                                  "bed is empty")
-        if j["printer_id"] != printer["id"] or opts or tray != j.get("ams_tray"):
-            farm.print_job(j["id"], printer["id"], opts, prs, tray=tray)  # move / options / slot while still held
+        if j["printer_id"] != printer["id"] or opts or tray != j.get("ams_tray") or tray2 != j.get("ams_tray2"):
+            farm.print_job(j["id"], printer["id"], opts, prs, tray=tray, tray2=tray2)  # move / options / slot while held
         if spd:
             farm._set(j["id"], speed=spd, speed_set=0, speed_tries=0)
         farm.start_job(j["id"], force=force)
@@ -446,9 +480,9 @@ def _start_print(batch_id: int, file: str, printer_id: int, options: dict | None
     with db.tx() as con:
         cur = con.execute(
             "INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,options,autostart,speed,"
-            "ams_tray,created_at,updated_at,computer_id) VALUES (?,?,?,?,?,?,'queued',?,?,?,?,?,?,?)",
-            (batch_id, file, plate["kind"], (plate.get("colors") or [""])[0], printer["id"], printer["name"],
-             json.dumps(opts), 0 if bed == "busy" else 1, spd, tray, now, now, computer.ID))
+            "ams_tray,ams_tray2,created_at,updated_at,computer_id) VALUES (?,?,?,?,?,?,'queued',?,?,?,?,?,?,?,?)",
+            (batch_id, file, plate["kind"], farm.plate_color(plate), printer["id"], printer["name"],
+             json.dumps(opts), 0 if bed == "busy" else 1, spd, tray, tray2, now, now, computer.ID))
         db.add_activity(con, "print", f"Start print: {Path(file).name} on {printer['name']}"
                         + (" (held: the printer is busy)" if bed == "busy" else ""))
     update_made(batch_id)  # its orders → Printing

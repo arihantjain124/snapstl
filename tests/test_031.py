@@ -81,21 +81,24 @@ def test_a_stand_batch_is_built_end_to_end(client):  # noqa: F811
     with db.tx() as con:
         b = dict(con.execute("SELECT * FROM batches WHERE id=?", (bid,)).fetchone())
         st = con.execute("SELECT state FROM orders WHERE order_id='G1'").fetchone()[0]
-    summ = json.loads(b["summary"])
-    assert b["status"] == "done", summ["errors"]
-    assert summ["plates"] == [] and [p["file"] for p in summ["stand_plates"]] == ["Stands/GTA/GTA - SIDHARTH.3mf"]
-    assert summ["stand_plates"][0]["order_ids"] == ["G1"] and st == "bundled"
-    row = next(r for r in client.get("/api/batches").json()["batches"] if r["id"] == bid)
-    assert row["plates"] == 1 and row["printable"] is False
-    m = client.get("/api/makeit").json()  # Print page: stands aren't on it yet, nothing breaks
-    assert all(r["batch_id"] != bid for r in m["bases"] + m["names"])
     import shutil
 
     from snapstl import cache
 
-    for x in client.get(f"/api/batches/{bid}/models").json()["items"]:  # other tests download it again
-        shutil.rmtree(cache.find(x["key"]), ignore_errors=True)
-    shutil.rmtree(b["out_dir"], ignore_errors=True)  # other tests expect today's first folder to be "Batch 1"
+    try:
+        summ = json.loads(b["summary"])
+        assert b["status"] == "done", summ["errors"]
+        assert [(p["kind"], p["file"]) for p in summ["plates"]] == [("stands", "Stands/GTA/GTA - SIDHARTH.3mf")]
+        assert summ["plates"][0]["order_ids"] == ["G1"] and st == "bundled" and "stand_plates" not in summ
+        row = next(r for r in client.get("/api/batches").json()["batches"] if r["id"] == bid)
+        assert row["plates"] == 1 and row["printable"] is True
+        m = client.get("/api/makeit").json()  # 0.32: on Print → Name stands, not on Bases / Letters
+        assert [r["file"] for r in m["stands"]] == ["Stands/GTA/GTA - SIDHARTH.3mf"]
+        assert all(r["batch_id"] != bid for r in m["bases"] + m["names"])
+    finally:
+        for x in client.get(f"/api/batches/{bid}/models").json()["items"]:  # other tests download it again
+            shutil.rmtree(cache.find(x["key"]) or "", ignore_errors=True)
+        shutil.rmtree(b["out_dir"], ignore_errors=True)  # other tests expect today's first folder to be "Batch 1"
 
 
 def _status(bid):

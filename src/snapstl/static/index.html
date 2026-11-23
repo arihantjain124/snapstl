@@ -426,6 +426,13 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <div id="mkl-done" hidden><p class="hint">Letter plates already printed whose names are still being made, newest first. <b>Base</b> says how many of their bases are printed — a name comes to Verify once both are. A whole plate that came out wrong: <b>Whole plate failed…</b> sends it back to print.</p>
         <div class="tw"><table><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Printed</th><th>Base</th><th></th></tr></thead><tbody id="mkldone"></tbody></table></div></div>
     </div>
+    <div id="mk-stands" class="mkpane" hidden>
+      <p class="hint">Name stand plates (GTA, Harry Potter, Barbie…): up to 3 stands of one product, printed in one go in <b>two colours</b> — the block first, then one switch to the letter colour for the raised letters. Only printers with an <b>AMS</b> are offered; under the printer pick the <b>block slot</b> and the <b>letters slot</b> (✓ same colour, ≈ close). Load both colours in the AMS first.</p>
+      <div class="toolbar" style="margin:0 0 6px"><div class="chips" id="mkssub" style="margin:0"></div><span class="grow"></span><input type="search" id="mksq" placeholder="Search name, order or batch" autocomplete="off" style="max-width:240px"></div>
+      <div id="mks-todo"><div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Colours</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mkstands"></tbody></table></div></div>
+      <div id="mks-run" hidden><p class="hint">Name stand plates on their way to a printer or printing now. When the print is done the plate moves to <b>Printed</b> and its stands come to <b>Verify</b>.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Colours</th><th>Plate</th><th>Printer</th><th>Status</th></tr></thead><tbody id="mksrun"></tbody></table></div></div>
+      <div id="mks-done" hidden><p class="hint">Name stand plates printed and not all checked yet, newest first. A whole plate that came out wrong: <b>Whole plate failed…</b> sends it back to print.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Colours</th><th>Plate</th><th>Printer</th><th>Printed</th><th></th></tr></thead><tbody id="mksdone"></tbody></table></div></div>
+    </div>
     <div id="mk-verify" class="mkpane" hidden>
       <p class="hint">One card per name, once its <b>letters and its base are both printed</b>: put them together, look at both, and mark each <b>Good</b> or what is wrong. <b>Confirm – ready to pack</b> sends the order to Completed. Spoiled letters, a spoiled name, a wrong colour or a broken base get a small <b>Fix</b> plate (same size, only what is spoiled) at the top of Bases / Letters. <b>Whole plate failed…</b> sends a whole printed plate back to print. Every check is saved under the person who typed their PIN.</p>
       <div class="toolbar" style="margin:0 0 8px" id="vwho"></div>
@@ -871,7 +878,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 <section id="t-help" class="help" hidden>
   <div class="card">
     <h2>Help</h2>
-    <p><b>Products (0.29):</b> the Orders page has <b>Product</b> chips — Organizer (the default), GTA, Harry Potter, Barbie, All. The name stands can be batched (one product per batch) and the helper downloads them from their own MakerWorld page — it opens the right page by itself. <b>Queue build</b> makes their two-colour plates (3 per plate) in the batch folder, under <b>Stands/</b>; the Print page for stands comes in the next update. Their settings are in Settings → <b>Name stands</b>.</p>
+    <p><b>Products (0.29):</b> the Orders page has <b>Product</b> chips — Organizer (the default), GTA, Harry Potter, Barbie, All. The name stands can be batched (one product per batch) and the helper downloads them from their own MakerWorld page — it opens the right page by itself. <b>Queue build</b> makes their two-colour plates (3 per plate); print them on <b>Print → Name stands</b> (printers with an AMS: pick the block slot and the letters slot) and check each stand on <b>Verify</b>. Their settings are in Settings → <b>Name stands</b>.</p>
     <p>SnapSTL turns webstore orders for the <b>Custom Name Desk Organizer</b> (SKU <code>Magicians_35</code>) into print-ready plates: each name is generated on MakerWorld, scaled to the agreed rules, grouped 3 per plate and saved as <b>.3mf</b> files.</p>
     <p>Testing a SnapSTL branch? Open <b>Settings → Maintenance → Updates</b>, choose a published <b>Update branch</b> and click <b>Switch branch</b>. Select <b>main (production)</b> when testing is done. Check shared-records compatibility before switching.</p>
     <div class="toc"><a href="#h-start">Daily workflow</a><a href="#h-tabs">Order tabs</a><a href="#h-batches">Batches</a><a href="#h-helper">The helper</a><a href="#h-downloads">Downloads</a><a href="#h-printers">Print</a><a href="#h-pstatus">Printers</a><a href="#h-slicing">Slicing</a><a href="#h-output">Output files</a><a href="#h-fit">Fit &amp; scaling</a><a href="#h-settings">Settings</a><a href="#h-trouble">Troubleshooting</a><a href="#h-portal">Other computers</a><a href="#h-data">Your data</a></div>
@@ -1374,8 +1381,8 @@ async function openBatchDetail(id,quiet){const changed=openBatch!==id;openBatch=
   const W=s.watermark;const wmMsg=W&&W.checked?(W.found?`<div class="e">Watermark check: found on ${W.found} of ${W.checked} downloaded bases — those orders were held back.</div>`:`<div class="o">Watermark check: none of the ${W.checked} downloaded bases has MakerWorld's watermark.</div>`):'';
   const F=s.fit;const fitMsg=F&&F.checked?(F.ok===F.checked?`<div class="o">Fit check: ${F.ok}/${F.checked} name/base pairs keep their MakerWorld proportions — they'll fit after printing.</div>`:`<div class="e">Fit check: only ${F.ok}/${F.checked} pairs passed — the others were not printed (see below).</div>`):'';
   $('bmsgs').innerHTML=(s.folder?`<div class="o">Saved to ${esc(s.folder)}</div>`:'')+fitMsg+wmMsg+(s.errors||[]).map(e=>`<div class="e">${esc(e)}</div>`).join('')+(s.warnings||[]).map(w=>`<div class="w">${esc(w)}</div>`).join('')+(s.ok&&!(s.warnings||[]).length?'<div class="o">All plates passed the checks.</div>':'');
-  const SP=s.stand_plates||[];$('bstandwrap').hidden=!SP.length;$('borgwrap').hidden=!!SP.length;
-  if(SP.length)$('bstandhint').textContent=`· ${SP.length} plate${SP.length>1?'s':''} · two colours: ${(SP[0].colors||[]).join(' block + ')} letters · print them from the batch folder (Print page: next update)`;
+  const SP=s.stand_plates||(s.plates||[]).filter(p=>p.kind==='stands');$('bstandwrap').hidden=!SP.length;$('borgwrap').hidden=!!SP.length;
+  if(SP.length)$('bstandhint').textContent=`· ${SP.length} plate${SP.length>1?'s':''} · two colours: ${(SP[0].colors||[]).join(' block + ')} letters · print them on Print → Name stands`;
   for(const k of ['bases','names','stands']){const ps=k==='stands'?SP:(s.plates||[]).filter(p=>p.kind===k);
     $('b'+k).innerHTML=ps.length?ps.map(p=>`<a class="plate" data-file="${esc(p.file)}" href="/api/batches/${id}/file?path=${encodeURIComponent(p.file)}">${p.image&&b.mine?`<img loading="lazy" src="/api/batches/${id}/plate-image?f=${encodeURIComponent(p.image)}" alt="top view of the plate">`:plateSVG(p)}<div class="fn">${esc(p.file.split('/').pop())}</div>${p.warnings.map(w=>`<div class="hint" style="color:var(--warn)">${esc(w)}</div>`).join('')}</a>`).join(''):'<div class="empty">None</div>'}
   $('bfinder').hidden=!(META.local&&b.mine&&b.status.startsWith('done'));
@@ -1456,7 +1463,7 @@ const setVal=v=>v!==''&&v!=null;
 
 // ---------- Print: Bases / Names / Completed / Removed ----------
 let MK=null,MKTAB='bases',MKFAST=null;const MKGOING=new Set();/* plates whose Start print is being sent */const MKSEL={};const OPTLBL={bed_levelling:'Bed levelling',flow_cali:'Flow calibration',timelapse:'Timelapse'};
-const MKPANES=['bases','names','verify','completed','removed'];
+const MKPANES=['bases','names','stands','verify','completed','removed'];
 try{MKTAB=localStorage.getItem('mktab')||'bases'}catch{}if(!MKPANES.includes(MKTAB))MKTAB='bases';
 const mkPrinter=id=>(MK&&MK.printers.find(p=>String(p.id)===String(id)))||{};
 // a plate's print defaults on a printer: letter plates use the printer's Letters speed (Slicing → Letters, 0.27)
@@ -1469,8 +1476,9 @@ function optSummary(o,speed,dflt){dflt=dflt||{};const eff={};
   const own=!!speed||Object.values(o||{}).some(setVal);
   return (on.length?on.join(' · '):'Bambuddy defaults')+(own?' · changed for this plate':'')}
 function mkShow(t){MKTAB=t;try{localStorage.setItem('mktab',t)}catch{}for(const k of MKPANES)$('mk-'+k).hidden=k!==t;mkChips()}
-function mkChips(){if(!MK)return;const n={bases:MK.bases.length,names:MK.names.length,verify:MK.verify.length,completed:MK.completed.length,removed:MK.removed.length};
-  $('mktabs').innerHTML=[['bases','Bases'],['names','Letters'],['verify','Verify'],['completed','Completed'],['removed','Removed']].map(([k,l])=>`<button data-mk="${k}" class="${MKTAB===k?'on':''}"${k==='verify'&&n.verify?' style="border-color:var(--warn);color:var(--warn)"':''}>${l} · ${n[k]}</button>`).join('');
+function mkChips(){if(!MK)return;const n={bases:MK.bases.length,names:MK.names.length,stands:(MK.stands||[]).length,verify:MK.verify.length,completed:MK.completed.length,removed:MK.removed.length};
+  const withStands=n.stands||(MK.printed_stands||[]).length||MKTAB==='stands';
+  $('mktabs').innerHTML=[['bases','Bases'],['names','Letters'],...(withStands?[['stands','Name stands']]:[]),['verify','Verify'],['completed','Completed'],['removed','Removed']].map(([k,l])=>`<button data-mk="${k}" class="${MKTAB===k?'on':''}"${k==='verify'&&n.verify?' style="border-color:var(--warn);color:var(--warn)"':''}>${l} · ${n[k]}</button>`).join('');
   document.querySelectorAll('[data-mk]').forEach(b=>b.onclick=()=>mkShow(b.dataset.mk))}
 const mkKey=r=>r.batch_id+'|'+r.file;
 // Letters → Merge (0.25.1): tick letter plates of one colour (fix plates too), not started, up to 3 names in all
@@ -1488,13 +1496,13 @@ function mkMergeBar(){const sel=[...MERGESEL.values()],n=sel.reduce((a,r)=>a+(r.
     MERGING=true;$('mkmergego').disabled=true;$('mknote').innerHTML='<div class="w"><span class="spin" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle"></span> Merging…</div>';
     try{const r=await post('/api/makeit/merge',{plates:sel.map(p=>({batch_id:p.batch_id,file:p.file})),token:VTOK,staff:VNAME||($('vstaff')?$('vstaff').value:'')});
       MERGESEL.clear();$('mknote').innerHTML=`<div class="ok">Merged: ${esc(r.names)} — ${esc(r.file.split('/').pop())}</div>`}catch(e){$('mknote').innerHTML='';alert(e.message)}await loadMakeIt();MERGING=false;mkRender(true)}}
-let MKBSUB='todo',MKLSUB='todo';try{MKBSUB=localStorage.getItem('mkbsub')||'todo';MKLSUB=localStorage.getItem('mklsub')||'todo'}catch{}
+let MKBSUB='todo',MKLSUB='todo',MKSSUB='todo';try{MKBSUB=localStorage.getItem('mkbsub')||'todo';MKLSUB=localStorage.getItem('mklsub')||'todo';MKSSUB=localStorage.getItem('mkssub')||'todo'}catch{}
 const mkWhen=t=>t?new Date(t*1000).toLocaleString([], {day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}):'';
 // search: every word must appear in the batch, plate, a name or an order ID
 const mkHit=(r,q)=>{const w=(q||'').toLowerCase().split(/\s+/).filter(Boolean);if(!w.length)return true;
   const hay=[r.batch,r.file,...(r.names||[]),...(r.order_ids||[])].join(' ').toLowerCase();return w.every(x=>hay.includes(x))};
 // how far the other part of these names is (Letters: their bases; Bases: their letters)
-function mkOther(r){const n=(r.open_items||[]).length;if(!r.other||!n)return '';const k=r.kind==='names'?'Base':'Letters',d=r.other_ready;
+function mkOther(r){const n=(r.open_items||[]).length;if(!r.other||!n||r.kind==='stands')return '';/* a name stand is one piece */const k=r.kind==='names'?'Base':'Letters',d=r.other_ready;
   return `<div class="hint"><span class="pm ${d>=n?'ok':''}">${d>=n?'✓':'○'}</span> ${k} printed: ${n===1?(d?'yes':'not yet'):`${d} of ${n}`}</div>`}
 function sliceCell(r,sel){const k=esc(mkKey(r)),c=sel&&sel.printer?r.choices.find(x=>String(x.id)===sel.printer):null;
   if(!c)return `<span class="pill">Not sliced</span><div class="hint">Choose a printer — a plate is sliced with its printer's profiles</div>`;
@@ -1509,7 +1517,7 @@ function sliceCell(r,sel){const k=esc(mkKey(r)),c=sel&&sel.printer?r.choices.fin
 const MKSTEP={queued:[1,'Getting the plate ready'],slicing:[1,'Slicing'],uploading:[2,'Sending to the printer'],sent:[3,'Started — printer warming up / levelling']};
 // Printing tab (0.28.1): sent by Start print and not waiting for a person (held plates stay in To print)
 const mkOnWay=r=>!!(r.job_active&&r.job&&!(r.job.state==='sent'&&r.job.held));
-const mkRunRow=(r,withColour)=>`<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td>${withColour?`<td style="white-space:nowrap">${sw(r.colors[0]||'')}</td>`:''}<td><div class="fn">${r.extra==='fix'?'<span class="pill err">Fix</span> ':r.extra==='merged'?'<span class="pill info">Merged</span> ':r.extra==='divided'?'<span class="pill info">Part</span> ':''}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>${r.express_by?'<div>'+expressBadge(r.express_by)+'</div>':''}</td><td>${esc((r.job&&r.job.printer_name)||'—')}</td><td>${mkStatus(r)}</td></tr>`;
+const mkRunRow=(r,withColour)=>`<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td>${withColour?`<td style="white-space:nowrap">${r.kind==='stands'?(r.colors||[]).slice(0,2).map(c=>sw(c)).join('<br>'):sw(r.colors[0]||'')}</td>`:''}<td><div class="fn">${r.extra==='fix'?'<span class="pill err">Fix</span> ':r.extra==='merged'?'<span class="pill info">Merged</span> ':r.extra==='divided'?'<span class="pill info">Part</span> ':''}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>${r.express_by?'<div>'+expressBadge(r.express_by)+'</div>':''}</td><td>${esc((r.job&&r.job.printer_name)||'—')}</td><td>${mkStatus(r)}</td></tr>`;
 const mkStarting=r=>{const j=r.job;return !!(r.job_active&&j&&MKSTEP[j.state]&&!(j.state==='sent'&&j.held))};
 function mkStatus(r){const j=r.job;if(!j||j.state==='reprint')return `<span class="hint">${j?'reprint — choose a printer':'not started'}</span>`;
   if(mkStarting(r)){const [n,l]=MKSTEP[j.state],sl=r.slice,sp=j.state==='slicing'&&sl&&sl.progress!=null?Math.round(sl.progress):null;
@@ -1519,12 +1527,15 @@ function mkStatus(r){const j=r.job;if(!j||j.state==='reprint')return `<span clas
   return jobPill(j)+(st.remaining_time?`<div><b>Ready at ${finishAt(st.remaining_time)}</b></div>`:'')}
 const trayLbl=t=>`${t.slot} — ${t.name||t.color||t.hex||'?'}${t.material?' '+t.material:''}${t.remain!=null?' · '+t.remain+'%':''}${t.match===2?' ✓':t.match===1?' ≈':''}`;
 function mkTrays(r,sel){const c=r.choices.find(x=>String(x.id)===sel.printer);return c?(c.trays||[]):[]}
-function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={printer:String(r.suggested??(r.job&&r.job.printer_id?r.job.printer_id:'')),options:{...((r.job&&r.job.options)||{})},speed:(r.job&&r.job.speed)||'',tray:(r.job&&r.job.ams_tray!=null)?String(r.job.ams_tray):''});
-  const ch=r.choices.find(x=>String(x.id)===sel.printer),trays=mkTrays(r,sel);
+function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={printer:String(r.suggested??(r.job&&r.job.printer_id?r.job.printer_id:'')),options:{...((r.job&&r.job.options)||{})},speed:(r.job&&r.job.speed)||'',tray:(r.job&&r.job.ams_tray!=null)?String(r.job.ams_tray):'',tray2:(r.job&&r.job.ams_tray2!=null)?String(r.job.ams_tray2):''});
+  const ch=r.choices.find(x=>String(x.id)===sel.printer),trays=mkTrays(r,sel),stand=r.kind==='stands';
   if(ch&&!trays.some(t=>String(t.tray)===sel.tray))sel.tray=ch.best_tray!=null?String(ch.best_tray):'';
+  const trays2=stand&&ch?(ch.trays2||[]):[];
+  if(stand&&ch&&(!trays2.some(t=>String(t.tray)===sel.tray2)||sel.tray2===sel.tray))sel.tray2=ch.best_tray2!=null?String(ch.best_tray2):'';
   const j=r.job,busy=r.job_active&&!(j&&j.state==='sent'&&j.held),d=mkDefaults(r,sel.printer)||{};
   const opts='<option value="">— choose a printer —</option>'+r.choices.map(c=>`<option value="${c.id}" ${String(c.id)===sel.printer?'selected':''}>${esc(c.name)} · ${[!c.online?'offline':c.available?'available':(c.state?c.state.toLowerCase():'busy'),c.note].filter(Boolean).map(esc).join(' · ')}</option>`).join('');
   const traySel=sel.printer?(trays.length?`<select data-mktray="${esc(k)}" ${busy?'disabled':''} title="The filament slot this plate prints from (✓ same colour, ≈ close) — any loaded slot can be chosen" style="margin-top:4px">${trays.map(t=>`<option value="${t.tray}" ${String(t.tray)===sel.tray?'selected':''}>${esc(trayLbl(t))}</option>`).join('')}</select>${(()=>{const t=trays.find(x=>String(x.tray)===sel.tray);return t&&t.hex?` <span class="dot" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;background:${esc(t.hex)}"></span>`:''})()}`:'<div class="hint">No filament reported — Bambuddy picks the slot</div>'):'';
+  const tray2Sel=stand&&sel.printer&&trays2.length?`<div class="hint" style="margin:4px 0 0">Letters slot (${esc(r.colors[1]||'')}):</div><select data-mktray2="${esc(k)}" ${busy?'disabled':''} title="The filament slot the raised letters print from (filament 2)">${trays2.map(t=>`<option value="${t.tray}" ${String(t.tray)===sel.tray2?'selected':''} ${String(t.tray)===sel.tray?'disabled':''}>${esc(trayLbl(t))}</option>`).join('')}</select>`:'';
   const dflt=v=>`<option value="">Printer default${setVal(v)?' ('+esc(v)+')':''}</option>`;
   const speedSel=`<label style="margin:4px 0 2px">Print speed</label><select data-mkspeed="${esc(k)}">${dflt(d.speed?cap(d.speed):'')}${(MK.speeds||[]).map(v=>`<option value="${v}" ${sel.speed===v?'selected':''}>${cap(v)}</option>`).join('')}</select>`;
   const optSel=(kk,vals)=>`<label style="margin:4px 0 2px">${OPTLBL[kk]}</label><select data-mkopt="${esc(k)}" data-k="${kk}">${dflt(setVal(d[kk])?optVal(d[kk]):'')}${vals.map(v=>`<option value="${v}" ${setVal(sel.options[kk])&&String(sel.options[kk])===String(v)?'selected':''}>${optVal(v)}</option>`).join('')}</select>`;
@@ -1532,17 +1543,17 @@ function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={pri
   const btn=busy?'':MKGOING.has(k)?'<button class="small primary" disabled>Starting…</button>':`<button class="small primary" data-mkstart="${esc(k)}" title="Send to this printer and start printing (once its bed is cleared)">${held?'Start print':(j&&['failed','cancelled'].includes(j.state)?'Start print again':'Start print')}</button>`;
   const tag=r.extra==='fix'?'<span class="pill err" title="Printed again: only what was spoiled">Fix</span> ':r.extra==='merged'?'<span class="pill info" title="Several plates merged onto this one">Merged</span> ':r.extra==='divided'?'<span class="pill info" title="Part of a plate split into smaller ones">Part</span> ':'';
   const nOpen=(r.open_items||[]).length,divOpts=n=>{const o=[Array(n).fill(1)];if(n===3)o.push([2,1]);if(n===4)o.push([2,2]);if(n>4)o.push([...Array(Math.floor(n/2)).fill(2),...(n%2?[1]:[])]);return o};
-  const divSel=!busy&&!r.extra&&nOpen>=2&&(!j||['reprint','unmerged','failed','cancelled'].includes(j.state))?` <select class="small" data-mkdiv="${esc(k)}" title="Split this plate into smaller plates (same size), e.g. to print on different printers for a night run" style="max-width:110px"><option value="">Split…</option>${divOpts(nOpen).map(s=>`<option value="${s.join(',')}">${s.join(' + ')}</option>`).join('')}</select>`:'';
+  const divSel=!busy&&!r.extra&&r.kind!=='stands'&&nOpen>=2&&(!j||['reprint','unmerged','failed','cancelled'].includes(j.state))?` <select class="small" data-mkdiv="${esc(k)}" title="Split this plate into smaller plates (same size), e.g. to print on different printers for a night run" style="max-width:110px"><option value="">Split…</option>${divOpts(nOpen).map(s=>`<option value="${s.join(',')}">${s.join(' + ')}</option>`).join('')}</select>`:'';
   const plate=`<div class="fn">${tag}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>${(r.in_stock||[]).length?`<div><span class="pill ok" title="A spare piece with this name and colour is in stock (Orders → Spare pieces) — send it instead and Remove this plate, or print anyway">In stock: ${r.in_stock.length} of ${(r.open_items||[]).length}</span></div>`:''}${mkOther(r)}${r.express_by?'<div>'+expressBadge(r.express_by)+'</div>':''}`;
   const mt=withColour&&canMerge(r)?(()=>{const c0=MERGESEL.size?(([...MERGESEL.values()][0].colors[0]||'').toLowerCase()):null,other=c0!==null&&c0!==(r.colors[0]||'').toLowerCase();
     return `<input type="checkbox" data-mkmsel="${esc(k)}" ${MERGESEL.has(k)?'checked':''} ${other?'disabled title="Only plates of the same colour can be merged"':'title="Tick to merge with other plates of this colour"'} style="margin-right:6px;vertical-align:middle">`})():'';
-  return `<tr><td class="hint" style="white-space:nowrap">${mt}${esc(r.batch)}</td>${withColour?`<td style="white-space:nowrap">${sw(r.colors[0]||'')}</td>`:''}<td>${plate}</td>
-    <td><select data-mkpr="${esc(k)}" ${busy?'disabled':''}>${opts}</select>${traySel}</td>
+  return `<tr><td class="hint" style="white-space:nowrap">${mt}${esc(r.batch)}</td>${withColour?`<td style="white-space:nowrap">${r.kind==='stands'?(r.colors||[]).slice(0,2).map(c=>sw(c)).join('<br>'):sw(r.colors[0]||'')}</td>`:''}<td>${plate}</td>
+    <td><select data-mkpr="${esc(k)}" ${busy?'disabled':''}>${opts}</select>${traySel}${tray2Sel}</td>
     <td>${sliceCell(r,sel)}</td>
     <td>${busy?`<span class="hint">${esc(optSummary(j&&j.options,j&&j.speed))}</span>`:`<details><summary class="hint" style="cursor:pointer">${esc(optSummary(sel.options,sel.speed,d))}</summary>${speedSel}${Object.entries(MK.options).map(([kk,v])=>optSel(kk,v)).join('')}<div class="hint" style="margin-top:4px">For this plate only. Each printer's defaults: <a href="#" data-go="slicing">Slicing</a>.</div></details>`}</td>
     <td>${mkStatus(r)}</td><td style="white-space:nowrap">${btn}${busy?'':(r.extra==='merged'?` <button class="small" data-mksplit="${esc(k)}" title="Back to the single plates (only before printing)">Split back</button>`:r.extra==='divided'?` <button class="small" data-mkjoin="${esc(k)}" title="Put the parts back on one plate (only while no part is started)">Join back</button>`:'')+` <button class="small" data-mkrm="${esc(k)}" title="Take it off this list (e.g. a copy, or printed by hand) — Put back in Removed">Remove</button>`}${divSel}</td></tr>`}
 const plateCell=r=>`<div>${r.kind==='bases'?'<b>Bases</b>':`<b>Letters</b> ${sw(r.colors[0]||'')}`}</div><div class="fn" style="font-size:12px">${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>`;
-function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(id).contains(document.activeElement)||$(id).querySelector('details[open]'));
+function mkRender(force){const editing=!force&&['mkbases','mknames','mkstands'].some(id=>$(id).contains(document.activeElement)||$(id).querySelector('details[open]'));
   if(!editing){
     const bq=$('mkbq').value,ba=MK.bases.filter(r=>mkHit(r,bq)),bl=ba.filter(r=>!mkOnWay(r)),br=ba.filter(mkOnWay),pb=(MK.printed_bases||[]).filter(r=>mkHit(r,bq));
     $('mkbsub').innerHTML=[['todo','To print',bl.length],['run','Printing',br.length],['done','Printed',pb.length]].map(([k,l,n])=>`<button data-mkbs="${k}" class="${MKBSUB===k?'on':''}">${l} · ${n}</button>`).join('');
@@ -1552,6 +1563,17 @@ function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(
     $('mkbdone').innerHTML=pb.length?pb.map(r=>`<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td><td><div class="fn">${r.extra==='fix'?'<span class="pill err">Fix</span> ':''}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div></td><td>${esc(r.printer||'—')}</td><td class="hint" style="white-space:nowrap">${r.done_at?new Date(r.done_at*1000).toLocaleString([], {day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}):''}</td><td>${mkOther(r)||'—'}</td><td><button class="small" data-vplate="${esc(r.batch_id+'|'+r.file)}" title="The bases on this plate came out wrong: print the plate again (bases already checked stay checked)">Whole plate failed…</button></td></tr>`).join(''):`<tr><td colspan="6" class="empty">${bq?'Nothing matches the search':'No printed base plates waiting for their letters'}</td></tr>`;
     document.querySelectorAll('#mkbdone [data-vplate]').forEach(x=>x.onclick=()=>vPlateFailed(x.dataset.vplate));
     document.querySelectorAll('[data-mkbs]').forEach(x=>x.onclick=()=>{MKBSUB=x.dataset.mkbs;try{localStorage.setItem('mkbsub',MKBSUB)}catch{}mkRender(true)});
+    // name stands (0.32): To print / Printing / Printed, like Bases
+    const sq=$('mksq').value,sa=(MK.stands||[]).filter(r=>mkHit(r,sq)),sl=sa.filter(r=>!mkOnWay(r)),sr=sa.filter(mkOnWay),ps=(MK.printed_stands||[]).filter(r=>mkHit(r,sq));
+    const pair=r=>`<td style="white-space:nowrap">${(r.colors||[]).slice(0,2).map(c=>sw(c)).join('<br>')}</td>`;
+    $('mkssub').innerHTML=[['todo','To print',sl.length],['run','Printing',sr.length],['done','Printed',ps.length]].map(([k,l,n])=>`<button data-mkss="${k}" class="${MKSSUB===k?'on':''}">${l} · ${n}</button>`).join('');
+    $('mks-todo').hidden=MKSSUB!=='todo';$('mks-run').hidden=MKSSUB!=='run';$('mks-done').hidden=MKSSUB!=='done';
+    $('mkstands').innerHTML=sl.length?sl.map(r=>mkRow(r,true)).join(''):`<tr><td colspan="8" class="empty">${sq?'Nothing matches the search':'No name stand plates waiting — build a stand batch first (Batches → Queue build)'}</td></tr>`;
+    $('mksrun').innerHTML=sr.length?sr.map(r=>mkRunRow(r,true)).join(''):`<tr><td colspan="5" class="empty">${sq?'Nothing matches the search':'No name stand plates printing right now'}</td></tr>`;
+    $('mksdone').innerHTML=ps.length?ps.map(r=>`<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td>${pair(r)}<td><div class="fn">${r.extra==='fix'?'<span class="pill err">Fix</span> ':''}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div></td><td>${esc(r.printer||'—')}</td><td class="hint" style="white-space:nowrap">${mkWhen(r.done_at)}</td><td><button class="small" data-vplate="${esc(r.batch_id+'|'+r.file)}" title="The stands on this plate came out wrong: print the plate again">Whole plate failed…</button></td></tr>`).join('')
+      :`<tr><td colspan="6" class="empty">${sq?'Nothing matches the search':'No printed name stand plates waiting for a check'}</td></tr>`;
+    document.querySelectorAll('#mksdone [data-vplate]').forEach(x=>x.onclick=()=>vPlateFailed(x.dataset.vplate));
+    document.querySelectorAll('[data-mkss]').forEach(x=>x.onclick=()=>{MKSSUB=x.dataset.mkss;try{localStorage.setItem('mkssub',MKSSUB)}catch{}mkRender(true)});
     const byColor=$('mkbycolor').checked,fix=r=>r.extra==='fix'?0:1,nq=$('mknq').value;
     const pl=(MK.printed_letters||[]).filter(r=>mkHit(r,nq)),la=MK.names.filter(r=>mkHit(r,nq)),lr=la.filter(mkOnWay),nl=la.length-lr.length;
     $('mklsub').innerHTML=[['todo','To print',nl],['run','Printing',lr.length],['done','Printed',pl.length]].map(([k,l,n])=>`<button data-mkls="${k}" class="${MKLSUB===k?'on':''}">${l} · ${n}</button>`).join('');
@@ -1577,7 +1599,7 @@ function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(
   $('mkmerge').innerHTML=(MK.merge||[]).map((s,i)=>`<div class="msgs"><div class="w" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>${sw(s.color)} · ${s.plates.length} plates with room — ${s.plates.map(p=>`<b>${esc(p.names.join(', '))}</b> <span class="hint">(${esc(p.batch||'')})</span>`).join(' + ')}</span><span class="grow"></span><button class="small primary" data-merge="${i}" ${MERGING?'disabled':''} title="Put these ${s.names} names on one ${esc(s.color)} plate (same size, no scaling)">Merge onto one plate</button></div></div>`).join('');
   vRender(force);cRender();
   $('mkremoved').innerHTML=MK.removed.length?MK.removed.map(r=>`<tr><td class="hint">${esc(r.batch)}</td><td>${plateCell(r)}</td><td class="hint">${r.removed_at?new Date(r.removed_at*1000).toLocaleString():''}</td><td style="white-space:nowrap"><button class="small" data-mkback="${esc(mkKey(r))}">Put back</button> <button class="small" data-mkhand="${esc(mkKey(r))}" title="Printed outside SnapSTL: check it on Verify">Printed by hand</button>${r.kind==='bases'?` <button class="small" data-mkspare="${esc(mkKey(r))}" title="This bases plate was printed anyway: keep the bases in stock (Orders → Spare pieces)">Add to spare pieces</button>`:''}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">Nothing removed</td></tr>';
-  const all=[...MK.bases,...MK.names,...MK.removed],find=k=>all.find(r=>mkKey(r)===k);
+  const all=[...MK.bases,...MK.names,...(MK.stands||[]),...MK.removed],find=k=>all.find(r=>mkKey(r)===k);
   document.querySelectorAll('[data-merge]').forEach(x=>x.onclick=async()=>{const s=MK.merge[+x.dataset.merge];
     if(!confirm(`Merge ${s.plates.length} ${s.color} plates onto one plate?\n\n${s.plates.map(p=>p.names.join(', ')).join('\n')}\n\nThe single plates leave the list; Split back undoes it before printing.`))return;
     if(MERGING)return;MERGING=true;document.querySelectorAll('[data-merge]').forEach(b=>b.disabled=true);
@@ -1606,6 +1628,7 @@ function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(
     try{await post('/api/makeit/remove',{batch_id:r.batch_id,file:r.file,put_back:true})}catch(e){alert(e.message)}loadMakeIt()});
   document.querySelectorAll('[data-mkpr]').forEach(x=>x.onchange=()=>{const m=MKSEL[x.dataset.mkpr];m.printer=x.value;m.tray='';x.blur();mkRender(true)});
   document.querySelectorAll('[data-mktray]').forEach(x=>x.onchange=()=>{MKSEL[x.dataset.mktray].tray=x.value;x.blur();mkRender(true)});
+  document.querySelectorAll('[data-mktray2]').forEach(x=>x.onchange=()=>{MKSEL[x.dataset.mktray2].tray2=x.value;x.blur();mkRender(true)});
   document.querySelectorAll('[data-mkspeed]').forEach(x=>x.onchange=()=>{MKSEL[x.dataset.mkspeed].speed=x.value});
   document.querySelectorAll('[data-mkopt]').forEach(x=>x.onchange=()=>{const v=x.value;MKSEL[x.dataset.mkopt].options[x.dataset.k]=v===''?'':v==='true'?true:v==='false'?false:v});
   document.querySelectorAll('.mktable details').forEach(d=>d.ontoggle=()=>{if(!d.open){const s=d.querySelector('[data-mkopt]');if(s){const k=s.dataset.mkopt,m=MKSEL[k];d.querySelector('summary').textContent=optSummary(m.options,m.speed,mkDefaults(find(k),m.printer))}}});
@@ -1613,7 +1636,7 @@ function mkRender(force){const editing=!force&&['mkbases','mknames'].some(id=>$(
     if(!sel.printer){alert('Choose a printer');return}
     const pr=r.choices.find(c=>String(c.id)===sel.printer),tr=mkTrays(r,sel).find(t=>String(t.tray)===sel.tray);
     if(!confirm(`Start printing ${r.kind==='bases'?'this base plate':'this '+(r.colors[0]||'')+' name plate'} on ${pr?pr.name:'that printer'}?\n\nFilament: ${tr?trayLbl(tr):'Bambuddy picks the slot'}\n${optSummary(sel.options,sel.speed,mkDefaults(r,sel.printer))}\n\nIt prints as soon as the printer is free and its bed has been cleared.`))return;
-    if(MKGOING.has(x.dataset.mkstart))return;MKGOING.add(x.dataset.mkstart);x.disabled=true;x.textContent='Starting…';const body={batch_id:r.batch_id,file:r.file,printer_id:+sel.printer,tray:sel.tray===''?null:+sel.tray,options:sel.options,speed:sel.speed||''};
+    if(MKGOING.has(x.dataset.mkstart))return;MKGOING.add(x.dataset.mkstart);x.disabled=true;x.textContent='Starting…';const body={batch_id:r.batch_id,file:r.file,printer_id:+sel.printer,tray:sel.tray===''?null:+sel.tray,options:sel.options,speed:sel.speed||'',...(r.kind==='stands'?{tray2:sel.tray2===''||sel.tray2==null?null:+sel.tray2}:{})};
     const send=async b=>{const res=await post('/api/makeit/start',b);if(res&&res.held)alert(`${pr?pr.name:'The printer'} is printing something else. The plate waits (held) in its queue and does not start by itself — press Start print again once that print is done and the bed is empty.`);return res};
     const sentOk=async b=>{const res=await send(b);if(!(res&&res.held))$('mknote').innerHTML=`<div class="ok">Sent ${esc(r.file.split('/').pop())} to ${esc(pr?pr.name:'the printer')} — follow it in <b>Printing</b>.</div>`};
     try{await sentOk(body)}catch(e){
@@ -1652,7 +1675,7 @@ async function watchPrinters(){if(document.hidden&&PRSTATE)return;let r;try{r=aw
       if(tab==='makeit')loadMakeIt()}}
   PRSTATE=now}
 // ---------- Print → Verify (0.25.1: one card per name, saved under the person whose PIN was typed) ----------
-const VSEL={};const VRES={names:[['good','Good'],['letters','Letter(s) spoiled'],['name','Whole name spoiled'],['colour','Wrong colour']],bases:[['good','Good'],['base','Base broken or warped']]};
+const VSEL={};const VRES={names:[['good','Good'],['letters','Letter(s) spoiled'],['name','Whole name spoiled'],['colour','Wrong colour']],bases:[['good','Good'],['base','Base broken or warped']],stands:[['good','Good'],['stand','Stand spoiled — print it again']]};
 const vKey=i=>i.batch_id+'|'+i.plate+'|'+i.idx;
 let VTOK='',VNAME='';try{VTOK=localStorage.getItem('vtok')||'';VNAME=localStorage.getItem('vname')||''}catch{}
 const vKeep=()=>{try{localStorage.setItem('vtok',VTOK);localStorage.setItem('vname',VNAME)}catch{}};
@@ -1675,7 +1698,7 @@ function vWho(){const box=$('vwho');
 function letterSVG(pcs,picked){if(!pcs.length)return '';let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;for(const p of pcs)for(const r of p.rings)for(const [x,y] of r){x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y)}
   return `<svg viewBox="${x0-3} ${-y1-3} ${x1-x0+6} ${y1-y0+6}" style="width:100%;max-width:420px;height:90px;cursor:pointer">${pcs.map(p=>`<path data-vpiece="${p.n}" d="${p.rings.map(r=>'M'+r.map(([x,y])=>`${x},${-y}`).join('L')+'Z').join('')}" fill="${picked.has(p.n)?'var(--err)':'var(--chip)'}" fill-rule="evenodd" stroke="var(--text)" stroke-width="0.6"><title>${esc(p.label)}</title></path>`).join('')}</svg>`}
 function vItem(card,i){const k=vKey(i);
-  const head=`<div style="min-width:210px"><b>${i.part==='names'?'Letters':'Base'}</b>${i.part==='names'?' '+sw(i.color||card.color):''}${i.letters?` <span class="hint">(letters ${esc(i.letters)})</span>`:''}${i.extra==='fix'?' <span class="pill err">Fix</span>':i.extra==='merged'?' <span class="pill info">Merged</span>':''}
+  const head=`<div style="min-width:210px"><b>${i.part==='names'?'Letters':i.part==='stands'?'Name stand':'Base'}</b>${i.part==='names'?' '+sw(i.color||card.color):''}${i.letters?` <span class="hint">(letters ${esc(i.letters)})</span>`:''}${i.extra==='fix'?' <span class="pill err">Fix</span>':i.extra==='merged'?' <span class="pill info">Merged</span>':''}
     <div class="fn hint" style="font-size:12px">${esc(i.carrier.file.split('/').pop())}</div><div class="hint">${i.printer?'printed on '+esc(i.printer):''}${i.done_at?' · '+new Date(i.done_at*1000).toLocaleString([], {day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}):''}</div>
     ${i.fixes?`<div class="pill ${i.warn_model?'err':'warn'}">${i.fixes} fix${i.fixes>1?'es':''} before${i.warn_model?' — check the model':''}</div>`:''}</div>`;
   const row=body=>`<div class="vitem" style="display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--line)">${head}<div style="flex:1">${body}</div></div>`;
@@ -1731,7 +1754,7 @@ function cRender(){const L=cRows();
   $('mkdone').innerHTML=L.length?L.map(r=>`<tr><td><input type="checkbox" data-csel="${esc(r.order_id)}" ${CSEL.has(r.order_id)?'checked':''}></td><td><b>${esc(r.name)}</b> ${sw(r.color)}${r.quantity>1?` <span class="pill">×${r.quantity}</span>`:''}${r.had_fix?' <span class="pill warn" title="A part was printed again before it was good">had a fix</span>':''}</td>
     <td class="fn" style="font-size:12px">${esc(r.order_id)}${r.tab==='ship_it'?' <span class="pill ok">label done</span>':''}</td><td class="hint">${esc(r.batch_label||'')}</td><td class="hint">${esc(r.printer||'')}</td><td>${esc(r.checked_by||'')}</td>
     <td class="hint">${r.checked_at?new Date(r.checked_at*1000).toLocaleString():''}</td>
-    <td><select data-cprob="${esc(r.order_id)}" style="max-width:170px" title="Until it is shipped: make a fix plate and take the order back to Printing"><option value="">Reprint / problem…</option>${Object.entries(CPROB).map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></td></tr>`
+    <td><select data-cprob="${esc(r.order_id)}" style="max-width:170px" title="Until it is shipped: make a fix plate and take the order back to Printing"><option value="">Reprint / problem…</option>${Object.entries((r.items||[]).some(i=>i.part==='stands')?{stand:'Reprint the stand'}:CPROB).map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></td></tr>`
     +(CPICK&&CPICK.order_id===r.order_id?`<tr><td></td><td colspan="7"><div class="hint" style="margin:4px 0">${esc(r.name)}: tap the spoiled letters (red = print again):</div><div id="cpcs">${CPICK.pcs?letterSVG(CPICK.pcs,CPICK.picked):'<span class="hint">Loading letters…</span>'}</div><div class="toolbar" style="margin:6px 0"><button class="primary small" id="cpickgo">Make the fix plate</button><button class="small" id="cpickno">Cancel</button></div></td></tr>`:'')).join(''):'<tr><td colspan="8" class="empty">Nothing checked yet in this period</td></tr>';
   $('call').checked=L.length>0&&L.every(r=>CSEL.has(r.order_id));
   document.querySelectorAll('[data-csel]').forEach(x=>x.onchange=()=>{x.checked?CSEL.add(x.dataset.csel):CSEL.delete(x.dataset.csel)});
@@ -1742,6 +1765,8 @@ function cRender(){const L=cRows();
       $('mknote').innerHTML=`<div class="w">Fix plate made: ${res.fixes.map(f=>esc(f.split('/').pop())).join(', ')}</div>`}catch(e){$('mknote').innerHTML='';alert(e.message)}loadMakeIt();return true};
   document.querySelectorAll('[data-cprob]').forEach(x=>x.onchange=async()=>{const v=x.value;if(!v)return;const r=MK.completed.find(o=>o.order_id===x.dataset.cprob);
     const of=p=>(r.items||[]).filter(i=>i.part===p),b=of('bases'),n=of('names');
+    if(v==='stand'){const s=of('stands');if(!s.length){alert('No print record for this stand on this computer — use the computer it was printed on.');x.value='';return}
+      x.disabled=true;if(!await cFix(r,s.map(i=>({...i,result:'stand'})),'Reprint the stand')){x.value='';x.disabled=false}return}
     const need=v==='base'?[b]:v==='both'?[b,n]:[n];
     if(need.some(l=>!l.length)){alert('No print record for this part on this computer — use the computer it was printed on.');x.value='';return}
     if(v==='letters'){CPICK={order_id:r.order_id,item:n[0],pcs:null,picked:new Set()};cRender();

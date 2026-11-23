@@ -55,7 +55,7 @@ STANDS = tuple(p for p in PRODUCTS if p.kind == "stand")
 MAKEABLE = tuple(p.key for p in PRODUCTS)
 SHARED = tuple(p.key for p in PRODUCTS)
 BUILDABLE = tuple(p.key for p in PRODUCTS)  # plates (0.31: name stands too, stands.py)
-PRINTABLE = (ORGANIZER.key,)  # Print page (name stands: next update — their plates are in the batch folder)
+PRINTABLE = tuple(p.key for p in PRODUCTS)  # Print page (0.32: name stands too, Print → Name stands)
 
 # the report's customisation line holding the name, per kind
 NAME_FIELDS = {"organizer": ("enter your first name",), "stand": ("write your name here.", "write your name here")}

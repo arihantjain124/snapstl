@@ -736,13 +736,18 @@ def printer_models(prs: list[dict]) -> list[str]:
 
 
 def slice_request(presets: dict, color: str | None) -> dict:
+    """A name stand (color 'black+white', 0.32): two filaments, the printer's filament profile for both,
+    block colour = filament 1, letter colour = filament 2 (checked in the farm's Bambuddy 2026-11-24)."""
     missing = [s for s in ("printer", "process", "filament") if s not in presets]
     if missing:
         raise FarmError(f"Pick the {', '.join(missing)} profile for this printer in Slicing")
     ref = lambda s: {"source": presets[s]["source"], "id": presets[s]["id"]}  # noqa: E731
-    body = {"printer_preset": ref("printer"), "process_preset": ref("process"), "filament_presets": [ref("filament")],
-            "export_3mf": True, "plate": 1}
-    if color in COLOR_HEX:
+    colors = [_norm(c) for c in (color or "").split("+")] if color and "+" in color else None
+    body = {"printer_preset": ref("printer"), "process_preset": ref("process"),
+            "filament_presets": [ref("filament")] * (len(colors) if colors else 1), "export_3mf": True, "plate": 1}
+    if colors:
+        body["filament_colours"] = [COLOR_HEX.get(c, "") for c in colors]
+    elif color in COLOR_HEX:
         body["filament_colours"] = [COLOR_HEX[color]]
     if (presets.get("plate") or {}).get("name"):
         body["bed_type"] = presets["plate"]["name"]  # else the process profile's plate (usually Cool Plate)
@@ -833,8 +838,46 @@ def slicer_hint(err: str) -> str:
 
 
 # ---------------- plates of a batch → printers ----------------
+STANDS = "stands"  # name stand plates (0.32): two colours, block = filament 1, letters = filament 2
+
+
 def needed_color(plate: dict) -> str:
+    """The colour a plate prints in (a name stand: its block's)."""
     return BASE_COLOR if plate["kind"] == "bases" else _norm((plate.get("colors") or [""])[0])
+
+
+def needed_color2(plate: dict) -> str | None:
+    """A name stand's letter colour (filament 2); None for every other plate."""
+    if plate.get("kind") != STANDS:
+        return None
+    cs = plate.get("colors") or []
+    return _norm(cs[1]) if len(cs) > 1 else ""
+
+
+def plate_color(plate: dict) -> str:
+    """What a print job / slice keeps as its colour: a name stand 'black+white' (block + letters)."""
+    if plate.get("kind") == STANDS:
+        return "+".join((plate.get("colors") or [])[:2])
+    return (plate.get("colors") or [""])[0]
+
+
+def job_plate(j: dict) -> dict:
+    """A print job's plate as the tray / colour helpers want it."""
+    c = j.get("color") or ""
+    colors = c.split("+") if j.get("kind") == STANDS else ([c] if c else [])
+    return {"kind": j["kind"], "colors": colors, "file": j["plate"]}
+
+
+def has_ams(printer: dict) -> bool:
+    """A printer with an AMS (a name stand needs two filaments)."""
+    return any(str(sp.get("slot", "")).startswith("AMS") for sp in printer.get("spools") or [])
+
+
+def ams_mapping(tray, tray2) -> dict:
+    """Bambuddy's ams_mapping: [block slot] or, for a name stand, [block slot, letters slot]."""
+    if tray is None:
+        return {}
+    return {"ams_mapping": [int(tray)] + ([int(tray2)] if tray2 is not None else [])}
 
 
 def color_match(need: str, colors: list[str]) -> tuple[int, str]:
@@ -898,6 +941,26 @@ def pick_tray(plate: dict, printer: dict, tray) -> int | None:
     if printer.get("spools") and tray not in {sp["tray"] for sp in printer["spools"]}:
         raise FarmError(f"{printer['name']} has no filament in that slot any more — Refresh, then choose again")
     return tray
+
+
+def pick_tray2(plate: dict, printer: dict, tray2, tray) -> int | None:
+    """A name stand's letters slot (filament 2): the one chosen, else the best fit for the letter colour —
+    never the block's slot. None for every other plate."""
+    need2 = needed_color2(plate)
+    if need2 is None:
+        return None
+    if not has_ams(printer):
+        raise FarmError(f"{printer['name']} has no AMS — a name stand prints in two colours")
+    if tray2 in (None, ""):
+        sps = [sp for sp in printer.get("spools") or [] if sp["tray"] != tray]
+        if not sps:
+            return None
+        return max(sps, key=lambda sp: (*tray_score(need2, sp),
+                                        sp.get("remain") if isinstance(sp.get("remain"), int) else -1))["tray"]
+    t2 = pick_tray({"kind": "names", "colors": [need2]}, printer, tray2)
+    if t2 == tray:
+        raise FarmError("Choose two different filament slots: one for the block, one for the letters")
+    return t2
 
 
 def match_note(plate: dict, printer: dict) -> str:
@@ -1014,7 +1077,7 @@ def queue_jobs(batch: dict, picks: list[dict], prs: list[dict], again: bool = Fa
             con.execute(
                 "INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,created_at,updated_at,computer_id) "
                 "VALUES (?,?,?,?,?,?,'queued',?,?,?)",
-                (batch["id"], f, plate["kind"], (plate.get("colors") or [""])[0], printer["id"], printer["name"], now, now,
+                (batch["id"], f, plate["kind"], plate_color(plate), printer["id"], printer["name"], now, now,
                  computer.ID))
     WORKER.kick()
     return {"queued": len(made), "skipped": len(skipped)}
@@ -1038,7 +1101,7 @@ def clean_options(o: dict | None) -> dict:
     return out
 
 
-def print_job(job_id: int, printer_id: int, options: dict | None, prs: list[dict], tray=None) -> dict:
+def print_job(job_id: int, printer_id: int, options: dict | None, prs: list[dict], tray=None, tray2=None) -> dict:
     """Printers page → Print: send this job's plate to the chosen printer with these options.
     Waiting to send → just changed; waiting in Bambuddy's queue → moved there; failed / cancelled /
     printed → printed again as a new job. A plate that is printing can't be changed. Nothing here
@@ -1052,27 +1115,29 @@ def print_job(job_id: int, printer_id: int, options: dict | None, prs: list[dict
     printer = next((p for p in prs if p["id"] == int(printer_id)), None)
     if printer is None:
         raise FarmError(f"Printer {printer_id} isn't in Bambuddy")
-    plate = {"kind": j["kind"], "colors": [j["color"]] if j["color"] else [], "file": j["plate"]}
+    plate = job_plate(j)
     tray = pick_tray(plate, printer, tray)
+    tray2 = pick_tray2(plate, printer, tray2, tray)
     if j["state"] in ("slicing", "uploading", "printing"):
         raise FarmError(f"It's {j['state']} — wait until it's finished")
     if j["state"] == "queued":
-        _set(job_id, printer_id=printer["id"], printer_name=printer["name"], options=json.dumps(opts), ams_tray=tray)
+        _set(job_id, printer_id=printer["id"], printer_name=printer["name"], options=json.dumps(opts), ams_tray=tray,
+             ams_tray2=tray2)
         WORKER.kick()
         return {"job_id": job_id, "moved": True}
     if j["state"] == "sent":
         api("PATCH", f"/queue/{j['queue_item_id']}", json_body={"printer_id": printer["id"], **opts,
-                                                                **({"ams_mapping": [tray]} if tray is not None else {})})
+                                                                **ams_mapping(tray, tray2)})
         _set(job_id, printer_id=printer["id"], printer_name=printer["name"], options=json.dumps(opts), ams_tray=tray,
-             error=None)
+             ams_tray2=tray2, error=None)
         return {"job_id": job_id, "moved": True}
     now = db.now()
     with db.tx() as con:
         cur = con.execute(
-            "INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,options,ams_tray,created_at,"
-            "updated_at,computer_id) VALUES (?,?,?,?,?,?,'queued',?,?,?,?,?)",
-            (j["batch_id"], j["plate"], j["kind"], j["color"], printer["id"], printer["name"], json.dumps(opts), tray, now,
-             now, computer.ID))
+            "INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,options,ams_tray,ams_tray2,"
+            "created_at,updated_at,computer_id) VALUES (?,?,?,?,?,?,'queued',?,?,?,?,?,?)",
+            (j["batch_id"], j["plate"], j["kind"], j["color"], printer["id"], printer["name"], json.dumps(opts), tray,
+             tray2, now, now, computer.ID))
     WORKER.kick()
     return {"job_id": int(cur.lastrowid), "moved": False}
 
@@ -1244,7 +1309,7 @@ class Worker:
         tray = j.get("ams_tray")  # the filament slot chosen in Print (else Bambuddy matches by colour)
         item = api("POST", "/queue/", cfg=cfg, json_body={"library_file_id": file_id, "printer_id": j["printer_id"],
                                                          "manual_start": True, **opts,
-                                                         **({"ams_mapping": [int(tray)]} if tray is not None else {})})
+                                                         **ams_mapping(tray, j.get("ams_tray2"))})
         qid = int((item or {})["id"])
         busy = str((printer_status(j["printer_id"], cfg, max_age=0) or {}).get("state", "")).upper() in BUSY_STATES
         go = bool(j.get("autostart")) and not busy

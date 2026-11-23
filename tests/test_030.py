@@ -78,10 +78,13 @@ def test_a_stand_is_downloaded_on_its_own_page(client):  # noqa: F811
     assert info["kind"] == "stand" and info["block"] == [180.0, 34.0, 37.0]
     block, letters = cache.load(m[0]["key"])
     assert round(letters.bounds[0][2] - block.bounds[1][2], 3) == 0  # the letters sit on the block
-    # ready to build (0.31: plates — test_031); the Print page for stands comes later
+    import shutil
+
+    shutil.rmtree(d, ignore_errors=True)  # later tests download / build it themselves
+    # ready to build (0.31: plates — test_031; 0.32: Print → Name stands — test_032)
     row = wait_for(lambda: next((b for b in client.get("/api/batches").json()["batches"]
                                  if b["id"] == bid and b["status"] == "models_ready"), None))
-    assert (row["product"], row["product_label"], row["buildable"], row["printable"]) == ("gta", "GTA", True, False)
+    assert (row["product"], row["product_label"], row["buildable"], row["printable"]) == ("gta", "GTA", True, True)
 
 
 def test_letters_off_the_block_are_refused(client):  # noqa: F811
@@ -123,3 +126,4 @@ def test_make_next_batch_of_stands_builds_by_itself(client):  # noqa: F811
     r = client.post("/api/batches/next", json={"count": 5, "product": "gta"}).json()
     with db.tx() as con:
         assert con.execute("SELECT auto_build FROM batches WHERE id=?", (r["batch_id"],)).fetchone()[0] == 1
+    client.post(f"/api/batches/{r['batch_id']}/cancel")  # don't leave it downloading for the next tests
