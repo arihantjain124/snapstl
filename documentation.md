@@ -630,3 +630,8 @@ English hard — the language help was skipped by the owner).
 - The batch keeps stand plates in `summary.stand_plates` until the Print page handles them (next update); a built
   stand batch shows "Print page: next update" instead of Print. Make next batch of stands builds by itself.
 - `threemf.read_3mf` skips objects made of parts (their parts are read); organizer files are unchanged.
+- Checked with the farm's Bambuddy (2026-11-24, owner's OK; test files deleted after): a 3-stand plate sliced with
+  the P1S profiles and PLA Basic twice (black + white) → filament 1 black 250.6 g (blocks), filament 2 white 35.3 g
+  (letters), one AMS change at Z 37.2, prime tower at X 17–34 / Y 220–236 (inside the free back strip; profile
+  wipe_tower 15, 220). Bambuddy's pre-slice "filament requirements" of the unsliced file lists no filaments (it
+  reads them after slicing) — SnapSTL sends both filament profiles itself.
