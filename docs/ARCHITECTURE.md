@@ -716,11 +716,15 @@ the SnapSTL Helper only operates ShopDeck's Process Orders page in the person's 
   holding other products needs **all items ready** (a person confirms, saved as `items_ready_by`). Ad-hoc orders have
   no ShopDeck label. `one_at_a_time` (default on): one click = one parcel, nothing queued behind it.
 * **Job** (`label_jobs`, local table): find → (expired: regenerate → find again) → logistic → saving → wait → check →
-  label → pressing → pdf → done. The helper asks `/api/helper/shopdeck/next`, reports what it sees
+  label → pressing → pdf → done. Label opens the PDF in a new window: the helper (2.5.1, `contentSettings`
+  permission) allows pop-ups for `pro.shopdeck.com` only before pressing it, or stops. The helper asks `/api/helper/shopdeck/next`, reports what it sees
   (`…/{id}/seen`: where, tab, count, clubbed id, sub-orders, IDs, SKUs, AWB, courier) and what it did (`…/{id}/step`);
   SnapSTL answers the next action or stops the job (`_check_group`: exactly one result, the right tab, the same clubbed
   ID, sub-order count, order IDs and SKUs as the report, a readable AWB). Courier: the first of `labels.couriers`
-  offered (Show more opened first); after Save → Yes, Change the AWB must differ from the old one; then
+  offered (Show more opened first — the helper stops if it stays closed; 0.33.1: the helper sends every courier
+  listed and SnapSTL refuses a pick that isn't the first of Settings' order among them). The courier is changed
+  through Edit Logistics every time, also when the order already has the first choice (picked again for a fresh AWB;
+  not offered → the next in the list), and Label is never pressed on the AWB the order came with; after Save → Yes, Change the AWB must differ from the old one; then
   `wait_after_logistics_s` (default 60) and a fresh check that the AWB and courier are unchanged before Label.
   A page reload mid-Save is checked by the AWB; mid-Regenerate stops the job.
 * **Login**: the helper never signs in. A login page → job state `login`; the page shows "sign in, then Continue";

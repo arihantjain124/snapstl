@@ -171,8 +171,16 @@
     b[0].click();
     const d = await until(drawer, 10000);
     if (!d) throw new Error("The Edit Logistics panel didn't open");
-    const more = leaves(d).find((e) => /^show more$/i.test(txt(e)));
-    if (more) { more.click(); await sleep(1000); }
+    // 2.5.1: Show more is a button with an icon inside (not a leaf); Bluedart is often only behind it
+    await until(() => offered(d).length, 8000);
+    const more = () => [...d.querySelectorAll("button")].find((x) => shown(x) &&
+      (x.dataset.sdEvent === "showMoreShippingPartner" || /^show more$/i.test(txt(x))));
+    for (let i = 0; i < 3 && more(); i++) {
+      more().click();
+      await until(() => !more(), 5000);
+    }
+    if (more()) throw new Error("Show more didn't open in the Edit Logistics panel — couriers may be hidden");
+    await sleep(800);
     const cards = offered(d);
     let pick = null;
     for (const c of job.couriers) {
@@ -183,7 +191,7 @@
       throw new Error(`None of the couriers in Settings is offered (ShopDeck offers: ${cards.map(txt).join(", ") || "none"})`);
     }
     const courier = txt(pick);
-    const ok = await bg("sd_step", { job_id: job.id, step: "saving", data: { courier } });
+    const ok = await bg("sd_step", { job_id: job.id, step: "saving", data: { courier, offered: cards.map(txt), more_hidden: !!more() } });
     if (!ok || ok.do !== "go") return;
     pick.click();
     await sleep(600);
@@ -207,6 +215,9 @@
     if (b.length !== 1) throw new Error(`Expected one Label button, found ${b.length}`);
     const s = readResults("print", tab);  // nothing changed since SnapSTL's check?
     if (s.awb !== job.new_awb) throw new Error(`The AWB on the page is ${s.awb || "unreadable"}, expected ${job.new_awb}`);
+    // ShopDeck opens the label in a new window; Chrome blocks it as a pop-up when the helper clicks
+    const pop = await bg("sd_popups");
+    if (!pop || !pop.ok) throw new Error(`Pop-ups for ShopDeck are blocked in Chrome (${(pop && pop.error) || "can't allow them"}) — allow them, then try again`);
     const ok = await bg("sd_step", { job_id: job.id, step: "pressing" });
     if (!ok || ok.do !== "go") return;
     b[0].click();

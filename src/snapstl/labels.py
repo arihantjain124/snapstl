@@ -340,8 +340,18 @@ def helper_step(job_id: int, step: str, data: dict) -> dict:
             return {"do": "find"}
         if step == "saving":
             courier = str(data.get("courier") or "")
-            if courier_key(courier) not in {courier_key(c) for c in _settings().labels.couriers}:
+            couriers = _settings().labels.couriers
+            if courier_key(courier) not in {courier_key(c) for c in couriers}:
                 return _fail(con, j, f"{courier or 'No courier'} isn't one of the couriers in Settings")
+            # 0.33.1: the page lists every courier it offers (after Show more); the pick must be the first of
+            # Settings' order among them — a missed Show more once picked Bluedart Surface over Bluedart Air
+            offered = {courier_key(str(o)) for o in (data.get("offered") or [])}
+            if data.get("more_hidden"):
+                return _fail(con, j, "Show more is still closed in the Edit Logistics panel — couriers may be hidden")
+            best = next((c for c in couriers if courier_key(c) in offered), None)
+            if best is None or courier_key(best) != courier_key(courier):
+                return _fail(con, j, f"{courier} picked, but {best or 'nothing'} comes first of the couriers offered "
+                                     f"({', '.join(sorted(offered)) or 'none listed'})")
             _set(con, job_id, step="saving", courier=courier)
             return {"do": "go"}
         if step == "saved":

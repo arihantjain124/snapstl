@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
   "name": "SnapSTL Helper",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Generates SnapSTL models on the MakerWorld model maker and makes shipping labels on ShopDeck in your own Chrome, for the SnapSTL app on this computer.",
   "permissions": [
-    "storage"
+    "storage",
+    "contentSettings"
   ],
   "host_permissions": [
     "https://makerworld.com/*",

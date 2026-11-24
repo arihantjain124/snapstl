@@ -65,6 +65,17 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 // ----- ShopDeck shipping labels (2.5, SnapSTL 0.33): one ShopDeck tab works at a time -----
+// 2.5.1: Label opens the PDF in a new window, which Chrome blocks as a pop-up when the helper clicks.
+// Allow pop-ups for pro.shopdeck.com only (the same as "Always allow" in Chrome's address bar).
+async function allowShopdeckPopups() {
+  if (!chrome.contentSettings || !chrome.contentSettings.popups) return { ok: false, error: "no permission" };
+  const cur = await chrome.contentSettings.popups.get({ primaryUrl: "https://pro.shopdeck.com/" });
+  if (cur.setting !== "allow") {
+    await chrome.contentSettings.popups.set({ primaryPattern: "https://pro.shopdeck.com/*", setting: "allow" });
+  }
+  return { ok: true };
+}
+
 async function shopdeckTab(tabId) {
   const { sdTab } = await session.get("sdTab");
   if (sdTab === tabId) return true;
@@ -134,6 +145,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         return await postJSON(`/api/helper/shopdeck/${msg.job_id}/step`, { step: msg.step, ...(msg.data || {}) });
       case "sd_fail":
         return await postJSON(`/api/helper/shopdeck/${msg.job_id}/fail`, { error: msg.error });
+      case "sd_popups":
+        return await allowShopdeckPopups();
       case "sd_login":
         return await postJSON("/api/helper/shopdeck/login", { job_id: msg.job_id || null });
 

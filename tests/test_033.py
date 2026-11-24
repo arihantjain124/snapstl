@@ -96,7 +96,7 @@ def test_a_single_order_gets_a_new_awb_a_checked_label_and_is_printed(client, se
     assert j["couriers"][0] == "BLUEDART_AIR"
     a = seen(client, j["id"], ids=["Z1"], skus=["Magicians_35"], awb="111111111111102", partner="DELHIVERY SURFACE")
     assert a == {"do": "logistic"}
-    assert step(client, j["id"], "saving", courier="DELHIVERY_SURFACE") == {"do": "go"}
+    assert step(client, j["id"], "saving", courier="DELHIVERY_SURFACE", offered=["DELHIVERY_SURFACE"]) == {"do": "go"}
     a = step(client, j["id"], "saved", awb="111111111111135", courier="DELHIVERY SURFACE")
     assert a["do"] == "wait"
     a = seen(client, j["id"], ids=["Z1"], skus=["Magicians_35"], awb="111111111111135", partner="DELHIVERY SURFACE")
@@ -164,14 +164,14 @@ def test_an_unchanged_awb_or_a_wrong_label_prints_nothing(client, setup):  # noq
     j = nxt(client)["job"]
     g = dict(tab="clubbed", club="NCW1", sub="02", ids=["C1", "C2"], skus=["Magicians_35"] * 2)
     assert seen(client, j["id"], **g, awb="222222222222292")["do"] == "logistic"
-    step(client, j["id"], "saving", courier="BLUEDART_SURFACE")
+    step(client, j["id"], "saving", courier="BLUEDART_SURFACE", offered=["BLUEDART_SURFACE"])
     a = step(client, j["id"], "saved", awb="222222222222292")
     assert a["do"] == "stop" and "didn't change" in a["error"]
     # again: the label PDF names another person
     client.post("/api/labels", json={"order_ids": ["C1"]})
     j = nxt(client)["job"]
     seen(client, j["id"], **g, awb="222222222222292")
-    step(client, j["id"], "saving", courier="BLUEDART_SURFACE")
+    step(client, j["id"], "saving", courier="BLUEDART_SURFACE", offered=["BLUEDART_SURFACE"])
     step(client, j["id"], "saved", awb="33333333396", courier="BLUEDART SURFACE")
     assert seen(client, j["id"], **g, awb="33333333396", partner="BLUEDART SURFACE")["do"] == "label"
     step(client, j["id"], "pressing")
@@ -185,13 +185,45 @@ def test_an_unchanged_awb_or_a_wrong_label_prints_nothing(client, setup):  # noq
         assert con.execute("SELECT label_at FROM orders WHERE order_id='C2'").fetchone()[0] is None
 
 
+@pytest.mark.parametrize("courier,offered,more_hidden,why", [
+    ("BLUEDART_SURFACE", ["DELHIVERY_SURFACE", "BLUEDART_SURFACE", "BLUEDART_AIR"], False, "BLUEDART_AIR comes first"),
+    ("DELHIVERY_SURFACE", [], False, "nothing comes first"),
+    ("BLUEDART_SURFACE", ["BLUEDART_SURFACE"], True, "Show more is still closed"),
+])
+def test_the_courier_must_be_the_first_offered_in_settings_order(client, setup, courier, offered, more_hidden, why):  # noqa: F811
+    client.post("/api/ingest", files={"file": ("r.csv", report([("Q1", "", "PRINT", "Magicians_35", "Asha", 1)]), "text/csv")})
+    made("Q1")
+    client.post("/api/labels", json={"order_ids": ["Q1"]})
+    j = nxt(client)["job"]
+    assert seen(client, j["id"], ids=["Q1"], skus=["Magicians_35"], awb="111111")["do"] == "logistic"
+    a = step(client, j["id"], "saving", courier=courier, offered=offered, more_hidden=more_hidden)
+    assert a["do"] == "stop" and why in a["error"]
+    assert job_of(client, "Q1")["state"] == "failed"
+
+
+@pytest.mark.parametrize("offered,courier", [
+    (["DELHIVERY_SURFACE", "BLUEDART_SURFACE", "BLUEDART_AIR"], "BLUEDART_AIR"),  # same courier again → new AWB
+    (["DELHIVERY_SURFACE", "BLUEDART_SURFACE"], "BLUEDART_SURFACE"),  # Air not offered → next in the list
+])
+def test_already_on_bluedart_air_still_changes_the_courier_and_needs_a_new_awb(client, setup, offered, courier):  # noqa: F811
+    client.post("/api/ingest", files={"file": ("r.csv", report([("B1", "", "PRINT", "Magicians_35", "Asha", 1)]), "text/csv")})
+    made("B1")
+    client.post("/api/labels", json={"order_ids": ["B1"]})
+    j = nxt(client)["job"]
+    # already Bluedart Air: never straight to Label
+    assert seen(client, j["id"], ids=["B1"], skus=["Magicians_35"], awb="555555", partner="BLUEDART AIR")["do"] == "logistic"
+    assert step(client, j["id"], "saving", courier=courier, offered=offered) == {"do": "go"}
+    a = step(client, j["id"], "saved", awb="555555", courier=courier)  # same AWB as before: refused
+    assert a["do"] == "stop" and "didn't change" in a["error"]
+
+
 def test_an_old_label_file_is_refused(client, setup):  # noqa: F811
     client.post("/api/ingest", files={"file": ("r.csv", report([("Z2", "", "PRINT", "Magicians_35", "Zoya", 1)]), "text/csv")})
     made("Z2")
     client.post("/api/labels", json={"order_ids": ["Z2"]})
     j = nxt(client)["job"]
     seen(client, j["id"], ids=["Z2"], skus=["Magicians_35"], awb="111111")
-    step(client, j["id"], "saving", courier="XPRESSBEES")
+    step(client, j["id"], "saving", courier="XPRESSBEES", offered=["XPRESSBEES"])
     step(client, j["id"], "saved", awb="222222", courier="XPRESSBEES")
     seen(client, j["id"], ids=["Z2"], skus=["Magicians_35"], awb="222222", partner="XPRESSBEES")
     step(client, j["id"], "pressing")
@@ -248,7 +280,7 @@ def test_no_pdf_in_time_stops_and_label_pressed_cant_be_cancelled(client, setup)
     client.post("/api/labels", json={"order_ids": ["P1"]})
     j = nxt(client)["job"]
     seen(client, j["id"], ids=["P1"], skus=["Magicians_35"], awb="5555555")
-    step(client, j["id"], "saving", courier="BLUEDART_AIR")
+    step(client, j["id"], "saving", courier="BLUEDART_AIR", offered=["BLUEDART_AIR"])
     step(client, j["id"], "saved", awb="6666666", courier="BLUEDART AIR")
     a = seen(client, j["id"], ids=["P1"], skus=["Magicians_35"], awb="6666666", partner="BLUEDART AIR")
     assert a == {"do": "label"}, (a, job_of(client, "P1"))

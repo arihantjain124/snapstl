@@ -687,3 +687,16 @@ English hard — the language help was skipped by the owner).
 - Printing checked: a real label (A4 PDF) printed through SumatraPDF, fit to 4x6, on the H30C Pro; the owner confirmed it
   scans. Open: the Expired AWB Regenerate path is untested on a real order; no full run from the Print label button yet.
 
+### 2026-11-24: 0.33.1 Labels: Show more, courier order checked, ShopDeck pop-ups
+- Owner's first real run printed a correct label, with two faults: the helper didn't open Show more in Edit Logistics
+  and picked Bluedart Surface though Bluedart Air was behind it; Chrome blocked the label's pop-up window until the
+  owner allowed it by hand.
+- Cause: Show more is a button with an icon inside, and the helper only looked at elements with nothing inside them.
+- Fixed: the helper presses that button (found by ShopDeck's own `showMoreShippingPartner` marker or its text) and stops
+  if it stays closed; it sends every courier listed and SnapSTL refuses a pick that isn't first in Settings' order.
+  Checked on the live page without saving: Show more opened, Bluedart Air listed and picked. Helper 2.5.1 allows
+  pop-ups for pro.shopdeck.com only (new `contentSettings` permission) before pressing Label.
+- Owner: an order already on Bluedart Air still goes through Edit Logistics (Bluedart Air picked again for a fresh
+  AWB; not offered → next in the list), and the label is only taken after that change, never the existing one
+  (expired AWBs). Already how it worked (every job changes the courier; an unchanged AWB stops it); now covered by a test.
+
