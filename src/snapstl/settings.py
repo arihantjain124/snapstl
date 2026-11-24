@@ -214,6 +214,23 @@ class LogisticsSettings:
     messages: dict = field(default_factory=default_messages)
 
 
+COURIERS = ("BLUEDART_AIR", "BLUEDART_SURFACE", "DELHIVERY_SURFACE", "XPRESSBEES")  # owner's order, 2026-11-24
+
+
+@dataclass
+class LabelSettings:
+    """Shipping labels from ShopDeck (0.33, labels.py): the SnapSTL Helper changes the courier and presses
+    Label in the person's signed-in Chrome; SnapSTL checks the PDF and prints it."""
+    enabled: bool = False
+    printer: str = "iDPRT SP410BT"       # the label printer's name in Windows / macOS (4x6 labels)
+    wait_after_logistics_s: int = 60    # ShopDeck may hand out the old label right after a courier change
+    couriers: list = field(default_factory=lambda: list(COURIERS))  # first one offered wins
+    one_at_a_time: bool = True          # one Print label press = one order (False: a selection, one after another)
+    regenerate_timeout_s: int = 180     # Expired AWB → Regenerate: how long to wait for the order to come back
+    pdf_timeout_s: int = 120            # after Label: how long to wait for the PDF in Downloads
+    sumatra_path: str = ""              # SumatraPDF.exe (Windows); empty = look in the usual places
+
+
 @dataclass
 class Settings:
     model: ModelParams = field(default_factory=ModelParams)
@@ -221,6 +238,7 @@ class Settings:
     plate: PlateSettings = field(default_factory=PlateSettings)
     logistics: LogisticsSettings = field(default_factory=LogisticsSettings)
     stands: StandSettings = field(default_factory=StandSettings)
+    labels: LabelSettings = field(default_factory=LabelSettings)
     output_dir: str = str(DEFAULT_OUTPUT_DIR)
     downloads_dir: str = str(DEFAULT_DOWNLOADS_DIR)  # downloaded models, kept until deleted in Finder
     makerworld_url: str = MAKERWORLD_URL  # the model-maker page the helper must be on (its designId is checked)
@@ -268,6 +286,8 @@ class Settings:
                                                      if isinstance(v, dict)}}
             s.stands = StandSettings(bands=bands, products=prods, **{k: v for k, v in _known(StandSettings, st).items()
                                                                       if k != "products"})
+        if isinstance(d.get("labels"), dict):
+            s.labels = LabelSettings(**_known(LabelSettings, {**asdict(s.labels), **d["labels"]}))
         for k in ("output_dir", "downloads_dir", "makerworld_url", "lan_access", "delay_between_downloads_s",
                   "license_passwords", "daily_target", "report_import", "help_access"):
             if k in d:
@@ -300,6 +320,16 @@ class Settings:
                 isinstance(k, str) and isinstance(v, str) and 0 < len(k) <= 40 and len(v) <= 1000
                 for k, v in lg.messages.items()):
             errs.append("Messages: at most 20, each with a name (up to 40 letters) and text (up to 1000)")
+        lb = self.labels
+        if not isinstance(lb.printer, str) or len(lb.printer) > 200 or (lb.enabled and not lb.printer.strip()):
+            errs.append("Labels: choose the label printer")
+        for k, lo, hi in (("wait_after_logistics_s", 0, 600), ("regenerate_timeout_s", 30, 1800), ("pdf_timeout_s", 20, 600)):
+            v = getattr(lb, k)
+            if not isinstance(v, int) or isinstance(v, bool) or not (lo <= v <= hi):
+                errs.append(f"Labels: {k.replace('_', ' ')} must be a whole number {lo}–{hi}")
+        if not isinstance(lb.couriers, list) or not lb.couriers or not all(
+                isinstance(c, str) and 0 < len(c.strip()) <= 40 for c in lb.couriers):
+            errs.append("Labels: list at least one courier, as ShopDeck names it (e.g. BLUEDART_AIR)")
         bands = sorted(self.scaling.bands, key=lambda b: b.min_letters)
         if not bands:
             errs.append("Scaling table is empty")

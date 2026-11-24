@@ -234,6 +234,13 @@ CREATE INDEX IF NOT EXISTS extra_items_batch ON extra_items(batch_id);
 CREATE TABLE IF NOT EXISTS activity (id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL NOT NULL, kind TEXT NOT NULL,
     text TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS activity_at ON activity(at);
+-- shipping labels from ShopDeck (0.33, labels.py): one row per Print label press (this computer only)
+CREATE TABLE IF NOT EXISTS label_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL, search TEXT NOT NULL,
+    clubbed INTEGER NOT NULL DEFAULT 0, expected TEXT NOT NULL, state TEXT NOT NULL, step TEXT NOT NULL,
+    old_awb TEXT, new_awb TEXT, courier TEXT, wait_until REAL, pressed_at REAL, pdf TEXT, error TEXT,
+    items_ready_by TEXT, staff TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL, printed_at REAL,
+    prints INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS label_jobs_key ON label_jobs(key);
 -- a person confirmed a printer's bed is empty (Start print / Printers → Clear plate)
 CREATE TABLE IF NOT EXISTS bed_clears (printer_id INTEGER PRIMARY KEY, at REAL NOT NULL);
 -- when a downloaded model was last used by a batch (models unused for 15 days go to the Recycle Bin)
@@ -407,7 +414,7 @@ def add_note(con, order_id: str, text: str, author: str = "") -> dict:
 
 
 def add_activity(con, kind: str, text: str) -> None:
-    """One line on the Activities tab (kinds: download, build, print, check, merge, cleanup, sync, orders)."""
+    """One line on the Activities tab (kinds: download, build, print, check, merge, cleanup, sync, orders, label)."""
     con.execute("INSERT INTO activity(at, kind, text) VALUES (?,?,?)", (now(), kind, (text or "")[:500]))
 
 

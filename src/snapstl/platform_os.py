@@ -308,6 +308,47 @@ def run_quiet(cmd: list[str], timeout: float = 60, cwd: Path | None = None, env:
         return 127, str(e)
 
 
+def printers() -> list[str]:
+    """The printers installed on this computer (names as the system shows them)."""
+    if WINDOWS:
+        code, out = run_quiet(["powershell", "-NoProfile", "-Command",
+                               "Get-Printer | Select-Object -ExpandProperty Name"], timeout=30)
+    else:
+        code, out = run_quiet(["lpstat", "-e"], timeout=30)
+    return [x.strip() for x in out.splitlines() if x.strip()] if code == 0 else []
+
+
+SUMATRA_PLACES = [Path(os.environ.get("LOCALAPPDATA", "")) / "SumatraPDF" / "SumatraPDF.exe",
+                  Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "SumatraPDF" / "SumatraPDF.exe",
+                  Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "SumatraPDF" / "SumatraPDF.exe"]
+
+
+def pdf_printer_tool(configured: str = "") -> str | None:
+    """What prints a PDF without opening it: SumatraPDF on Windows (owner's OK, 0.33), lp on a Mac."""
+    if not WINDOWS:
+        return "lp"
+    for c in ([Path(configured)] if configured else []) + SUMATRA_PLACES:
+        if str(c) and c.is_file():
+            return str(c)
+    return None
+
+
+def print_pdf(path: Path, printer: str, configured_tool: str = "") -> None:
+    """Print a PDF on this printer, scaled to fit its paper (the label printer's 4x6 paper is set in its
+    driver, as for a print from Chrome). Raises RuntimeError with the reason when it didn't print."""
+    tool = pdf_printer_tool(configured_tool)
+    if tool is None:
+        raise RuntimeError("SumatraPDF isn't installed — it prints the labels (install it, or set its path in "
+                           "Settings → Logistics → Shipping labels)")
+    if WINDOWS:
+        cmd = [tool, "-print-to", printer, "-print-settings", "fit", "-silent", str(path)]
+    else:
+        cmd = [tool, "-d", printer, "-o", "fit-to-page", str(path)]
+    code, out = run_quiet(cmd, timeout=90)
+    if code != 0:
+        raise RuntimeError(f"The printer didn't take the label ({printer}): {out[:200] or f'exit {code}'}")
+
+
 def restart_service() -> None:
     """Restart the background service (it is started again by launchd / Task Scheduler)."""
     if WINDOWS:

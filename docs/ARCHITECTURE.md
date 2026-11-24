@@ -101,6 +101,7 @@ Snapstl/
 │   ├── background.js         service worker: relays tab ↔ app (/api/helper/*); working tab; page check
 │   ├── content.js            on makerworld.com: works only in the working tab on the configured model page
 │   ├── inject.js             page world: copies plate_1/plate_2 .obj responses (read-only)
+│   ├── shopdeck.js           on pro.shopdeck.com: shipping labels — finds the order, courier, Label (2.5, 0.33)
 │   └── popup.html, popup.js  app status, model designId, working tab on/off the page; "Open model page", "Use this tab"
 ├── src/snapstl/
 │   ├── __init__.py           entry points: main() (window), serve() (service); port, keep awake, folder picker
@@ -124,6 +125,7 @@ Snapstl/
 │   ├── watermark.py, render.py   watermark detection; plate / object pictures
 │   ├── logistics.py          optional Mac/Windows port-8002 listener: the logistics page (READS / WRITES)
 │   ├── logistics_api.py      logistics page: lists, search, order panel, its actions, usage (0.23)
+│   ├── labels.py             shipping labels: parcel checks, helper steps, label PDF check + print (0.33)
 │   ├── tabs.py               the Orders tab rule (Python + SQL), 0.23
 │   ├── server.py             FastAPI app: every HTTP endpoint (§11), access control (§13), tab/filter SQL
 │   ├── settings.py           dataclasses + defaults (§12); APP_DIR, CACHE_DIR, output path, MakerWorld URL
@@ -676,6 +678,7 @@ snapstl.server:app --port 8320`.
 | 80 | **Plate file names** (0.24): `Bases - A + B + C.3mf`, `Pink - A + B.3mf` (plain hyphen: safe on printers' SD cards); old plates keep their names. **Activities** tab (download queue and helper log moved from Batches, plus prints / checks / builds / merges / clean-ups from `activity`, print jobs, batches, downloads). Orders → **Refresh** syncs and reloads; long explanations sit behind a **?** per card | owner: easier for everyone to read, cleaner pages |
 | 81 | **No part made twice** (0.32.1): (a) `farm.replaces` — a cancelled / failed job never hides a *done* one; printing a done plate again always goes through a `reprint` job. Before, the cancelled copy of a double-pressed Start print (blocked since 0.28.1, but old pairs remain) became the plate's job once the first print finished, and the plate came back to Bases to print. (b) An order already made and checked Good in an earlier batch is never batched again unless Remake is pressed (`verify.made_before`, uses the shared `plate_checks`). (c) Orders leaving a batch are logged in Activities. Found on the owner's data 2026-11-24: one plate of bases printed twice (a), one order made twice in two batches after it returned to To make with its made time cleared (b; what released it isn't in the log, hence c) | Order ID is the de-duplication key; a made order is never re-made unless the user clicks Remake |
 | 82 | **Split follows, packed still checked** (0.32.2, owner): (a) `extras.divide` on a bases plate also divides every letter plate of the batch holding its names (not started), grouping the letters by the base part their order is on (`_follow_letters`; names from other base plates form their own part); the letter parts carry `follows` = the bases file and **Join back** on the bases joins them back while none is started. Best effort, never enforced. (b) Verify takes orders the website already packed (PACK / HANDOVER, `makeit.PACKED_SQL`, order state `packed` in `_batch_orders`, `verify.CHECKABLE`) while a printed item isn't checked; the card says so. In transit / delivered / RTO still leave Verify (0.26 rule, otherwise unchanged: packed counts as made everywhere else). Found on the owner's data: 6 printed orders labelled on the website before their check never reached Verify | owner: print letters only once their base is done; everything printed gets checked |
+| 83 | **Shipping labels from ShopDeck** (0.33, owner 2026-11-24): the helper (2.5) runs on `pro.shopdeck.com` too, only for SnapSTL's label jobs, and never signs in. It works through the page's own buttons (no ShopDeck API). SnapSTL holds every rule: parcel from the report lines, strict match of what the page shows, courier changed every time (owner: the fresh AWB doesn't expire), a wait after the change (ShopDeck may hand out the old label), the label PDF read and compared before printing (one wrong label = customised pieces to the wrong person). Printing through SumatraPDF (owner's OK; Windows has no silent PDF printing) and pypdfium2 for the label's text (new dependency, owner's OK). Tried on two real orders (single and clubbed) by hand-driving the page; the Expired AWB Regenerate path is built from a read of the page only, untested | the owner's team re-labels by hand every day; expired AWBs made parcels come back as cancelled at handover |
 | 20 | Base plate previews are top-view renders (`render.py`, PNG in `APP_DIR/previews`, not in the output folder); per-object back/top pictures | the owner checks the watermark visually; the output folder stays only .3mf + report.csv |
 
 ---
@@ -701,6 +704,34 @@ snapstl.server:app --port 8320`.
   while offline and are sent later.
 
 ---
+
+## Shipping labels from ShopDeck (0.33, `labels.py`, `helper/shopdeck.js`)
+
+Print → **Completed** → **Print label** (Settings → Logistics → **Shipping labels**, off by default). SnapSTL decides,
+the SnapSTL Helper only operates ShopDeck's Process Orders page in the person's own signed-in Chrome.
+
+* **Parcel** (`labels.parcel`): the report lines kept on this computer (`shop_lines`) — a single order, or every
+  line with its Clubbed Order ID (cancelled lines left out): sub-order IDs, SKUs, quantities, SnapSTL's names.
+  Refused (`problems`) unless every SnapSTL piece is made and checked and every line is PRINT / AWB EXPIRED; a parcel
+  holding other products needs **all items ready** (a person confirms, saved as `items_ready_by`). Ad-hoc orders have
+  no ShopDeck label. `one_at_a_time` (default on): one click = one parcel, nothing queued behind it.
+* **Job** (`label_jobs`, local table): find → (expired: regenerate → find again) → logistic → saving → wait → check →
+  label → pressing → pdf → done. The helper asks `/api/helper/shopdeck/next`, reports what it sees
+  (`…/{id}/seen`: where, tab, count, clubbed id, sub-orders, IDs, SKUs, AWB, courier) and what it did (`…/{id}/step`);
+  SnapSTL answers the next action or stops the job (`_check_group`: exactly one result, the right tab, the same clubbed
+  ID, sub-order count, order IDs and SKUs as the report, a readable AWB). Courier: the first of `labels.couriers`
+  offered (Show more opened first); after Save → Yes, Change the AWB must differ from the old one; then
+  `wait_after_logistics_s` (default 60) and a fresh check that the AWB and courier are unchanged before Label.
+  A page reload mid-Save is checked by the AWB; mid-Regenerate stops the job.
+* **Login**: the helper never signs in. A login page → job state `login`; the page shows "sign in, then Continue";
+  Continue (`/api/labels/{id}/continue`) lets the helper take over again.
+* **Label PDF** (`Watcher`): ShopDeck saves `SHP-<n>-<order or clubbed ID>-<AWB>.pdf` (A4) in Downloads. The file's AWB
+  must be the new one; its text (pypdfium2) must show exactly that AWB, that Order Id, the parcel's number of SKUs and
+  total quantity, and each SnapSTL name ("Enter Your First Name : <name>" then "Color"). Then it moves to
+  `<output>/Labels/<date>/<key> - <AWB>.pdf`, prints (`platform_os.print_pdf`: SumatraPDF `-print-to <printer>
+  -print-settings fit` on Windows, `lp -o fit-to-page` on a Mac) and the SnapSTL orders get `label_at` (Label done –
+  ship it, shared). No PDF within `pdf_timeout_s` → stopped. **Reprint** prints the kept file again.
+* Every check fails closed; a stopped job is never retried by itself. Stop works until Label is pressed.
 
 ## Products (0.29, `products.py`)
 

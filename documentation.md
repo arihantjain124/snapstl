@@ -671,3 +671,19 @@ English hard — the language help was skipped by the owner).
   and printed but not checked, marked "Packed on the website – check before it goes"; once in transit, delivered or
   returning they leave Verify as before.
 
+### 2026-11-24: 0.33.0 Shipping labels from ShopDeck
+- Owner: print the shipping label from SnapSTL for verified, completed pieces. Today staff search the order on ShopDeck's
+  Process Orders, change the courier every time (Logistic; the new AWB doesn't expire), then press Label (PDF) and print
+  it on a 4x6 thermal printer. Courier priority: Bluedart Air, Bluedart Surface, Delhivery Surface, Xpressbees (Bluedart
+  Air sometimes only after Show more). Clubbed orders (an organizer with any other product counts) are in the Clubbed
+  tab, one label for the group; with other products a person must confirm everything is ready. Expired AWBs: regenerate
+  that one order in the Expired AWB tab (no logistics change there), then the usual flow.
+- Tried by hand on two real orders (one single, one clubbed): courier changed, new AWB, a one-minute wait, Label → an A4
+  PDF in Downloads named SHP-<n>-<order or clubbed ID>-<AWB>.pdf, listing AWB, order ID, number of items and each name.
+- Built: Print → Completed → Print label; the helper (2.5) does the ShopDeck steps; SnapSTL checks the page against the
+  report and the PDF against the order before printing (SumatraPDF). Login is always done by a person.
+- Found while building: Windows Smart App Control started blocking the Python that runs SnapSTL (its database library);
+  the owner turned Smart App Control off.
+- Printing checked: a real label (A4 PDF) printed through SumatraPDF, fit to 4x6, on the H30C Pro; the owner confirmed it
+  scans. Open: the Expired AWB Regenerate path is untested on a real order; no full run from the Print label button yet.
+

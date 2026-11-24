@@ -59,7 +59,19 @@ async function tab(id) {
 chrome.runtime.onInstalled.addListener(async () => {
   const tabs = await chrome.tabs.query({ url: "https://makerworld.com/*" });
   for (const t of tabs) if ((t.url || "").includes("/makerlab/parametricModelMaker")) chrome.tabs.reload(t.id);
+  // 2.5: ShopDeck's Process Orders tabs get the shipping-label page script
+  const sd = await chrome.tabs.query({ url: "https://pro.shopdeck.com/orders/*" });
+  for (const t of sd) chrome.tabs.reload(t.id);
 });
+
+// ----- ShopDeck shipping labels (2.5, SnapSTL 0.33): one ShopDeck tab works at a time -----
+async function shopdeckTab(tabId) {
+  const { sdTab } = await session.get("sdTab");
+  if (sdTab === tabId) return true;
+  if (sdTab && (await tab(sdTab))) return false;
+  await session.set({ sdTab: tabId });
+  return true;
+}
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   const tabId = sender.tab && sender.tab.id;
@@ -111,6 +123,19 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         return await postJSON(`/api/helper/jobs/${msg.job_id}/fail`, { error: msg.error });
       case "release":
         return await postJSON(`/api/helper/jobs/${msg.job_id}/release`);
+
+      // ----- from a ShopDeck tab (shopdeck.js) -----
+      case "sd_next":
+        if (!(await shopdeckTab(tabId))) return { job: null, other_tab: true };
+        return await app("/api/helper/shopdeck/next");
+      case "sd_seen":
+        return await postJSON(`/api/helper/shopdeck/${msg.job_id}/seen`, msg.seen);
+      case "sd_step":
+        return await postJSON(`/api/helper/shopdeck/${msg.job_id}/step`, { step: msg.step, ...(msg.data || {}) });
+      case "sd_fail":
+        return await postJSON(`/api/helper/shopdeck/${msg.job_id}/fail`, { error: msg.error });
+      case "sd_login":
+        return await postJSON("/api/helper/shopdeck/login", { job_id: msg.job_id || null });
 
       // ----- from the popup -----
       case "popupState": {

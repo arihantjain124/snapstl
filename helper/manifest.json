@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "SnapSTL Helper",
-  "version": "2.4.0",
-  "description": "Generates SnapSTL models (name organizers and name stands) on the MakerWorld model maker in your own Chrome and hands them to the SnapSTL app on this computer.",
+  "version": "2.5.0",
+  "description": "Generates SnapSTL models on the MakerWorld model maker and makes shipping labels on ShopDeck in your own Chrome, for the SnapSTL app on this computer.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
     "https://makerworld.com/*",
+    "https://pro.shopdeck.com/*",
     "http://127.0.0.1:8317/*"
   ],
   "background": {
@@ -34,6 +35,15 @@
       ],
       "js": [
         "content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://pro.shopdeck.com/*"
+      ],
+      "js": [
+        "shopdeck.js"
       ],
       "run_at": "document_idle"
     }

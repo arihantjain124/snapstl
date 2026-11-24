@@ -530,6 +530,18 @@ shipped; **Activities** lists what happened on the computer.
 
 The **Help** page in the app explains every tab, status and setting.
 
+### Shipping labels (ShopDeck, 0.33)
+
+1. Install **SumatraPDF** (free, prints the labels without opening them) and check the label printer's paper is 4×6
+   (100 × 150 mm) in its Windows printer settings.
+2. Settings → Logistics → **Shipping labels**: tick *Shipping labels on*, pick the label printer, keep the courier
+   order and the 60-second wait. Save settings.
+3. In Chrome (with the SnapSTL Helper), sign in to ShopDeck and leave **Process Orders** open.
+4. Print → **Completed** → **Print label** on a checked order. A parcel with other products asks first whether every
+   item is ready. The helper changes the courier, waits a minute, presses Label; SnapSTL checks the label and prints
+   it, and the order goes to *Label done – ship it*. If ShopDeck asks you to sign in, do it, then press **Continue**.
+   Anything unexpected stops with the reason — finish that order by hand on ShopDeck.
+
 ## Several computers
 
 When the computers are connected to the shared order records:

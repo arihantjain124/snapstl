@@ -24,6 +24,7 @@ from starlette.concurrency import run_in_threadpool
 
 from . import (archive, auth, bambuddy_host, cache, computer, config, db, extras, farm, makeit, platform_os, products,
                sync, tabs, spares, updater, verify)
+from . import labels
 from .ingest import add_adhoc, ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
 from . import staff as staff_pins
@@ -54,6 +55,10 @@ async def _lifespan(_app):
             makeit.backfill_started()       # one-time (0.23): Printing for orders whose plates were started
     except Exception as e:  # noqa: BLE001  (never block starting the app)
         print(f"SnapSTL: Printing backfill skipped: {e}")
+    try:
+        labels.WATCHER.kick()  # 0.33: a label PDF still awaited when the app stopped
+    except Exception as e:  # noqa: BLE001
+        print(f"SnapSTL: label watcher skipped: {e}")
     try:
         from .ingest import repair_026
         print("SnapSTL: 0.26 repair:", repair_026())  # one-time: stuck PRINT orders, packed ≠ problem
@@ -869,6 +874,7 @@ def helper_config():
     pages = {org: SETTINGS.makerworld_url} if org else {}
     pages.update({p.design_id: p.url for p in products.STANDS})
     return {"model_url": SETTINGS.makerworld_url, "design_id": org, "pages": pages,
+            "shopdeck": bool(SETTINGS.labels.enabled),  # 0.33: shipping labels on ShopDeck (helper 2.5)
             "helper_version": _helper_version()}  # the helper reloads itself when its files were updated
 
 
@@ -899,6 +905,88 @@ async def helper_ping(req: Request):
         on_page = body.get("on_page")
         DOWNLOADER.seen(str(body.get("status", "")), None if on_page is None else bool(on_page))
     return {"paused": DOWNLOADER.paused}
+
+
+# ---------------- shipping labels (0.33, labels.py; the helper's ShopDeck page: helper/shopdeck.js) ----------------
+def _label_call(fn, *a):
+    try:
+        return fn(*a)
+    except labels.LabelError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.get("/api/helper/shopdeck/next")
+def shopdeck_next():
+    if not SETTINGS.labels.enabled:
+        return {"job": None, "off": True}
+    return labels.helper_next(SETTINGS)
+
+
+@app.post("/api/helper/shopdeck/{job_id}/seen")
+async def shopdeck_seen(job_id: int, req: Request):
+    return _label_call(labels.helper_seen, job_id, dict(await req.json()))
+
+
+@app.post("/api/helper/shopdeck/{job_id}/step")
+async def shopdeck_step(job_id: int, req: Request):
+    b = await req.json()
+    return _label_call(labels.helper_step, job_id, str(b.get("step") or ""), dict(b))
+
+
+@app.post("/api/helper/shopdeck/{job_id}/fail")
+async def shopdeck_fail(job_id: int, req: Request):
+    b = await req.json()
+    return _label_call(labels.helper_fail, job_id, str(b.get("error") or "")[:400])
+
+
+@app.post("/api/helper/shopdeck/login")
+async def shopdeck_login(req: Request):
+    b = await req.json()
+    return labels.helper_login(int(b["job_id"]) if b.get("job_id") else None)
+
+
+@app.get("/api/labels")
+def labels_state(ids: str = ""):
+    """Print → Completed: label jobs, and for these orders whether their parcel can get a label."""
+    out = labels.state([i for i in ids.split(",") if i][:300])
+    return {**out, "enabled": bool(SETTINGS.labels.enabled), "one_at_a_time": bool(SETTINGS.labels.one_at_a_time),
+            "printer": SETTINGS.labels.printer, "tool": bool(platform_os.pdf_printer_tool(SETTINGS.labels.sumatra_path))}
+
+
+@app.post("/api/labels")
+async def labels_request(req: Request):
+    """Print label ({order_ids, items_ready, staff/token}): one parcel per order (its clubbed order)."""
+    b = await req.json()
+    try:
+        who = staff_pins.checker(str(b.get("token") or ""), str(b.get("staff") or ""))
+    except ValueError:
+        who = str(b.get("staff") or "")
+    jobs = _label_call(labels.request, [str(x) for x in b.get("order_ids") or []][:50], who,
+                       bool(b.get("items_ready")), SETTINGS)
+    with db.tx() as con:
+        db.count_usage(con, "label_print")
+    return {"jobs": jobs}
+
+
+@app.post("/api/labels/{job_id}/cancel")
+def labels_cancel(job_id: int):
+    return _label_call(labels.cancel, job_id)
+
+
+@app.post("/api/labels/{job_id}/continue")
+def labels_continue(job_id: int):
+    """A person signed in to ShopDeck again: the helper takes over."""
+    return _label_call(labels.signed_in, job_id)
+
+
+@app.post("/api/labels/{job_id}/reprint")
+async def labels_reprint(job_id: int):
+    return await run_in_threadpool(_label_call, labels.reprint, job_id)
+
+
+@app.get("/api/labels/printers")
+def labels_printers():
+    return {"printers": platform_os.printers(), "tool": platform_os.pdf_printer_tool(SETTINGS.labels.sumatra_path)}
 
 
 @app.post("/api/helper/jobs/{job_id}/result")

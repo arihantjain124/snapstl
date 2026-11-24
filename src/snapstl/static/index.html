@@ -440,9 +440,10 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <div id="mkverify"></div>
     </div>
     <div id="mk-completed" class="mkpane" hidden>
-      <p class="hint">Names checked good and not shipped yet, with who checked them. Tick rows and press <b>Packing slip</b> to print a list for packing. <b>Found a problem</b> (e.g. noticed while packing) makes a fix plate and takes the order back to Printing.</p>
+      <p class="hint">Names checked good and not shipped yet, with who checked them. <b>Print label</b> (when shipping labels are on in Settings → Logistics) changes the courier on ShopDeck, gets the new label and prints it — keep ShopDeck's Process Orders open in Chrome. Tick rows and press <b>Packing slip</b> to print a list for packing. <b>Found a problem</b> (e.g. noticed while packing) makes a fix plate and takes the order back to Printing.</p>
       <div class="toolbar" style="margin:0 0 6px"><select id="cdays" style="max-width:160px"><option value="1">Today</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option><option value="0">All</option></select><input id="csearch" placeholder="Search name or order" style="max-width:220px"><span class="grow"></span><button class="small" id="cslip">Packing slip</button></div>
-      <div class="tw"><table><thead><tr><th><input type="checkbox" id="call" title="Tick all shown"></th><th>Name</th><th>Order</th><th>Batch</th><th>Printer</th><th>Checked by</th><th>When</th><th></th></tr></thead><tbody id="mkdone"></tbody></table></div>
+      <div class="msgs" id="lbmsg"></div>
+      <div class="tw"><table><thead><tr><th><input type="checkbox" id="call" title="Tick all shown"></th><th>Name</th><th>Order</th><th>Batch</th><th>Printer</th><th>Checked by</th><th>When</th><th>Label</th><th></th></tr></thead><tbody id="mkdone"></tbody></table></div>
     </div>
     <div id="mk-removed" class="mkpane" hidden>
       <p class="hint">Plates taken off Bases / Letters. Nothing was deleted — <b>Put back</b> returns a plate to its list; <b>Printed by hand</b> sends it to Verify. A plate leaves this list once its orders are packed, shipped or cancelled.</p>
@@ -815,6 +816,19 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <p class="hint">Copied or sent by WhatsApp from the logistics page. Filled in from the order: <code>{customer}</code> (first name) <code>{order_id}</code> <code>{name}</code> <code>{colour}</code> <code>{tracking}</code> <code>{address}</code> <code>{needed_by}</code>.</p>
       <div id="lg_msgs"></div>
     </div>
+    <div class="card">
+      <h2>Shipping labels (ShopDeck)</h2>
+      <p class="hint">Print → Completed → <b>Print label</b>: the SnapSTL Helper in Chrome finds the order on ShopDeck's Process Orders page (Expired AWB orders are regenerated first), changes the courier to the first one offered from the list below, waits, presses Label; SnapSTL checks the label (order, AWB, items, names) and prints it. Keep ShopDeck open and signed in in Chrome; the helper never signs in.</p>
+      <label class="check"><input type="checkbox" id="lb_on"> Shipping labels on</label>
+      <div class="grid2">
+        <label>Label printer<input id="lb_printer" list="lb_printers" placeholder="iDPRT SP410BT"><datalist id="lb_printers"></datalist></label>
+        <label>Wait after the courier change (seconds)<input id="lb_wait" type="number" min="0" max="600" step="1"></label>
+        <label>Courier order (first offered wins)<input id="lb_couriers" placeholder="BLUEDART_AIR, BLUEDART_SURFACE, DELHIVERY_SURFACE, XPRESSBEES"></label>
+        <label>SumatraPDF (empty = find it)<input id="lb_sumatra" placeholder="C:\Users\…\SumatraPDF.exe"></label>
+      </div>
+      <label class="check"><input type="checkbox" id="lb_one"> One label at a time (each needs its own click)</label>
+      <p class="hint" id="lb_hint"></p>
+    </div>
   </div>
 
   <div class="sec" data-sec="staff" hidden>
@@ -979,6 +993,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <p><b>Print</b> (sidebar) shows on top the printers <b>free for the next print</b> (with the colours loaded) and beds to clear, and has <b>Refresh from Bambuddy</b>. It has five lists. <b>Bases</b>: <i>To print</i> — every base plate still to print, with the next <b>available</b> printer and its best-matching filament slot already chosen; <i>Printed</i> — base plates printed whose letters aren't all printed yet. <b>Letters</b> (the names): every letter plate with its colour, first those whose <b>base is printed</b> (print these now), then those whose base is still to print; a printer and the slot closest to that colour are pre-selected. Both lists have a search (name, order ID or batch). Any printer and any loaded slot can be chosen — the slot is what the print uses. <b>Fix</b> plates (only what was spoiled) are listed first.</p>
     <ul>
       <li><b>Merge</b> (Letters): tick letter plates of one colour that aren't started — fix plates too — up to 3 names in all, and press <b>Merge onto one plate</b> (other colours can't be ticked; more than 3 names is refused). Under the list, <b>Available to merge</b> suggests plates whose bases are already printed; ticking a plate whose base isn’t printed asks first. Merge runs once per press (a second press is refused). <b>Remove</b> works on every plate, merged and split ones too. The names keep their size (no scaling) and go onto one new plate in the newest batch's <code>Merged/</code> folder; the single plates leave the list. <b>Split back</b> returns them while the merged plate isn't started. <b>Group by colour</b> lists every name plate by colour, so one spool can print them all.</li>
+      <li><b>Print label</b> (Completed; Settings → Logistics → Shipping labels): keep ShopDeck's Process Orders open and signed in in Chrome. The SnapSTL Helper finds the order (an expired AWB is regenerated first), changes the courier to the first one offered from the list, waits a minute and presses Label; SnapSTL prints the label only if it matches the order exactly (order, AWB, items, names). A parcel with other products asks whether all items are ready. Sign-in needed → sign in, then <b>Continue</b>. Anything unexpected stops with the reason.</li>
       <li><b>Split</b> (Bases or Letters, not started): choose how many go on each part (e.g. 2 + 1); same size, saved in <code>Split/</code>. Splitting a <b>bases</b> plate splits its letter plates the same way, so the letters of each base part are on their own plate and can be printed once that base is done (a letter plate already started, printed, merged or split is left as it is). <b>Join back</b> on the bases joins those letters back too while nothing is started.</li>
       <li><b>Verify</b>: one card per name, once its letters and its base are both printed (Bambu reports them printed) — nothing goes straight to packing. Type your <b>PIN</b> once (<b>Done / switch person</b> when you leave; signed out after 30 minutes without a check): every check is saved under you. The owner gives each person a PIN in <b>Settings → Staff</b>; until anyone has a PIN, choose the name instead. Put the letters with their base and mark each: <b>Good</b>, <b>Letter(s) spoiled</b> (tap the spoiled letters on the picture), <b>Whole name spoiled</b>, <b>Wrong colour</b> or <b>Base broken or warped</b>, then <b>Confirm – ready to pack</b> (or <b>Save – send problems for reprint</b>) — a <i>Saving…</i> screen covers the card until it's done (a second press saves nothing twice). Each problem gets a small <b>Fix</b> plate with only what was spoiled, at the same size, at the top of Bases / Letters; it's printed and checked like any plate. <b>Whole plate failed…</b> (on a card, or in Bases → Printed / Letters → Printed) sends a whole printed plate back to print. A name fixed twice before shows a warning to check the model. An order moves to <b>Orders → Printed – pack it</b> only when its base and its name are both checked good; until then Orders shows <i>Printed – waiting for check</i>. Everything printed before 0.24 counts as checked (<i>Before 0.24</i>).</li>
       <li><b>Completed</b>: names checked good and not shipped yet — colour, order, batch, printer, who checked it and when, and <i>had a fix</i>. Filter by date or search; tick rows and press <b>Packing slip</b> for a printable list. <b>Found a problem</b> (e.g. while packing) makes a fix plate and takes the order back to Printing.</li>
@@ -1404,7 +1419,7 @@ $('qpause').onclick=async()=>{await post('/api/downloader/'+($('qpause').dataset
 $('retry2').onclick=async()=>{await post('/api/downloads/retry');loadQueue()};
 // ---------- Activities (0.24) ----------
 let ACT=null,ACTKIND='';try{ACTKIND=localStorage.getItem('actkind')||''}catch{}
-const ACTKINDS=[['','All'],['print','Prints'],['check','Checks'],['build','Builds'],['download','Downloads'],['merge','Merges'],['cleanup','Clean-up'],['orders','Orders']];
+const ACTKINDS=[['','All'],['print','Prints'],['check','Checks'],['build','Builds'],['download','Downloads'],['merge','Merges'],['cleanup','Clean-up'],['orders','Orders'],['label','Labels']];
 const ACTWORD={spare:['Spare piece','ok'],print:['Print','info'],check:['Check','ok'],build:['Build',''],download:['Download',''],merge:['Merge','info'],cleanup:['Clean-up','warn']};
 async function loadActivity(){try{ACT=(await api('/api/activity?days='+$('actdays').value)).items}catch(e){$('actlist').innerHTML=`<tr><td colspan="3" class="reason">${esc(e.message)}</td></tr>`;return}actRender()}
 function actRender(){if(!ACT)return;const q=$('actsearch').value.trim().toLowerCase();
@@ -1749,6 +1764,43 @@ function vRender(force){if(VBUSY||(!force&&$('mkverify').contains(document.activ
   document.querySelectorAll('[data-vsave]').forEach(x=>x.onclick=()=>submit(+x.dataset.vsave))}
 $('vq').oninput=()=>MK&&vRender(true);
 // ---------- Print → Completed (checked good, not shipped) ----------
+// ---------- shipping labels (0.33): Print label on Completed (labels.py, helper/shopdeck.js) ----------
+let LB=null,LBTIMER=null,LBIDS=[];
+const lbOn=()=>!!(S&&S.labels&&S.labels.enabled);
+const LBWORD={queued:'waiting',working:'on ShopDeck',login:'sign in needed',printing:'printing',done:'printed',failed:'stopped',cancelled:'stopped'};
+function lbCell(r){if(!lbOn())return '<span class="hint">—</span>';if(!LB)return '<span class="hint">…</span>';
+  const j=LB.jobs[r.order_id],p=LB.parcels[r.order_id]||{};
+  const club=p.clubbed?`<div class="hint">clubbed ${esc(p.key)}: ${esc((p.names||[]).join(', '))}${(p.others||[]).length?' + '+p.others.map(x=>esc(x.product)).join(', '):''}</div>`:'';
+  if(j&&['queued','working','login','printing'].includes(j.state)){
+    const wait=j.step==='wait'&&j.wait_until?` (${Math.max(0,Math.round(j.wait_until-Date.now()/1000))} s)`:'';
+    return `<span class="pill warn">${esc(j.state==='login'?'Sign in to ShopDeck':j.doing)}${wait}</span>`+(j.state==='login'?` <button class="small primary" data-lbgo="${j.id}">Continue</button>`:'')
+      +(['pressing','pdf','print'].includes(j.step)?'':` <button class="small" data-lbstop="${j.id}">Stop</button>`)+club}
+  let out='';
+  if(j&&j.state==='done')out=`<span class="pill ${j.error?'warn':'ok'}" title="${esc(j.error||'')}">${j.error?'label made, not printed':'label printed'}</span> <span class="hint">AWB ${esc(j.awb||'')} · ${esc(j.courier||'')}</span> ${j.has_pdf?`<button class="small" data-lbre="${j.id}">Reprint</button>`:''}${j.error?`<div class="reason">${esc(j.error)}</div>`:''}`;
+  else if(j&&j.state==='failed')out=`<div class="reason">Label stopped: ${esc(j.error||'')}</div>`;
+  if(j&&j.state==='done')return out+club;
+  if(p.error)return out+`<span class="hint">${esc(p.error)}</span>`;
+  if((p.problems||[]).length)return out+`<span class="hint" title="${esc(p.problems.join('; '))}">not yet: ${esc(p.problems[0])}</span>`+club;
+  return out+`<button class="small primary" data-lbprint="${esc(r.order_id)}">Print label</button>`+club}
+async function lbLoad(ids){if(!lbOn()){$('lbmsg').innerHTML='';return}if(ids)LBIDS=ids;
+  try{LB=await api('/api/labels?ids='+encodeURIComponent(LBIDS.join(',')))}catch(e){$('lbmsg').innerHTML=`<div class="e">${esc(e.message)}</div>`;return}
+  const act=LB.active||[],msg=[];
+  if(!LB.tool)msg.push('<div class="e">SumatraPDF isn\'t installed on this computer — it prints the labels (Settings → Logistics → Shipping labels).</div>');
+  if(act.some(j=>j.state==='login'))msg.push('<div class="w"><b>ShopDeck needs a sign-in.</b> In Chrome, sign in to ShopDeck (OTP, then <b>Login</b> under SNAP MAGICIANS), open Process Orders, then press <b>Continue</b> on the order below.</div>');
+  else if(act.some(j=>['queued','working'].includes(j.state))&&!LB.tab_seen)msg.push('<div class="w">Open ShopDeck\'s <b>Process Orders</b> page in Chrome (signed in, with the SnapSTL Helper) — the label waits for it.</div>');
+  $('lbmsg').innerHTML=msg.join('');
+  document.querySelectorAll('[data-lbcell]').forEach(td=>{const r=(MK&&MK.completed||[]).find(o=>o.order_id===td.dataset.lbcell);if(r)td.innerHTML=lbCell(r)});lbWire();
+  clearTimeout(LBTIMER);if(act.length&&!$('mk-completed').hidden)LBTIMER=setTimeout(()=>lbLoad(),3000)}
+function lbWire(){
+  document.querySelectorAll('[data-lbprint]').forEach(b=>b.onclick=async()=>{const oid=b.dataset.lbprint,p=(LB&&LB.parcels[oid])||{};
+    const who=vAuth();if(!who)return;let ready=false;
+    const what=p.clubbed?`one label for clubbed order ${p.key} (${(p.names||[]).join(', ')})`:`the label for ${oid}`;
+    if((p.others||[]).length){if(!confirm(`This parcel also holds:\n\n${p.others.map(x=>`• ${x.quantity} × ${x.product}`).join('\n')}\n\nAre ALL of these ready and going into this parcel? Only then press OK — the label is made on ShopDeck.`))return;ready=true}
+    else if(!confirm(`Print ${what}?\n\nThe courier is changed on ShopDeck first (new AWB), then the label is printed on ${LB.printer}.`))return;
+    b.disabled=true;try{await post('/api/labels',{order_ids:[oid],items_ready:ready,...who})}catch(e){if(!vExpired(e))alert(e.message)}lbLoad()});
+  document.querySelectorAll('[data-lbgo]').forEach(b=>b.onclick=async()=>{try{await post(`/api/labels/${b.dataset.lbgo}/continue`)}catch(e){alert(e.message)}lbLoad()});
+  document.querySelectorAll('[data-lbstop]').forEach(b=>b.onclick=async()=>{if(!confirm('Stop this label? Nothing is undone on ShopDeck.'))return;try{await post(`/api/labels/${b.dataset.lbstop}/cancel`)}catch(e){alert(e.message)}lbLoad()});
+  document.querySelectorAll('[data-lbre]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await post(`/api/labels/${b.dataset.lbre}/reprint`)}catch(e){alert(e.message)}lbLoad()})}
 const CSEL=new Set();let CPICK=null;  // Completed → Some letters spoiled: {order_id, item, pcs, picked}
 const CPROB={base:'Reprint base',name:'Reprint letters (whole name)',letters:'Some letters spoiled',both:'Reprint both (base and letters)',colour:'Wrong colour (letters)'};
 function cRows(){const days=+$('cdays').value,q=$('csearch').value.trim().toLowerCase(),since=days?Date.now()/1000-days*86400:0;
@@ -1757,8 +1809,10 @@ function cRender(){const L=cRows();
   $('mkdone').innerHTML=L.length?L.map(r=>`<tr><td><input type="checkbox" data-csel="${esc(r.order_id)}" ${CSEL.has(r.order_id)?'checked':''}></td><td><b>${esc(r.name)}</b> ${sw(r.color)}${r.quantity>1?` <span class="pill">×${r.quantity}</span>`:''}${r.had_fix?' <span class="pill warn" title="A part was printed again before it was good">had a fix</span>':''}</td>
     <td class="fn" style="font-size:12px">${esc(r.order_id)}${r.tab==='ship_it'?' <span class="pill ok">label done</span>':''}</td><td class="hint">${esc(r.batch_label||'')}</td><td class="hint">${esc(r.printer||'')}</td><td>${esc(r.checked_by||'')}</td>
     <td class="hint">${r.checked_at?new Date(r.checked_at*1000).toLocaleString():''}</td>
+    <td data-lbcell="${esc(r.order_id)}">${lbCell(r)}</td>
     <td><select data-cprob="${esc(r.order_id)}" style="max-width:170px" title="Until it is shipped: make a fix plate and take the order back to Printing"><option value="">Reprint / problem…</option>${Object.entries((r.items||[]).some(i=>i.part==='stands')?{stand:'Reprint the stand'}:CPROB).map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></td></tr>`
-    +(CPICK&&CPICK.order_id===r.order_id?`<tr><td></td><td colspan="7"><div class="hint" style="margin:4px 0">${esc(r.name)}: tap the spoiled letters (red = print again):</div><div id="cpcs">${CPICK.pcs?letterSVG(CPICK.pcs,CPICK.picked):'<span class="hint">Loading letters…</span>'}</div><div class="toolbar" style="margin:6px 0"><button class="primary small" id="cpickgo">Make the fix plate</button><button class="small" id="cpickno">Cancel</button></div></td></tr>`:'')).join(''):'<tr><td colspan="8" class="empty">Nothing checked yet in this period</td></tr>';
+    +(CPICK&&CPICK.order_id===r.order_id?`<tr><td></td><td colspan="8"><div class="hint" style="margin:4px 0">${esc(r.name)}: tap the spoiled letters (red = print again):</div><div id="cpcs">${CPICK.pcs?letterSVG(CPICK.pcs,CPICK.picked):'<span class="hint">Loading letters…</span>'}</div><div class="toolbar" style="margin:6px 0"><button class="primary small" id="cpickgo">Make the fix plate</button><button class="small" id="cpickno">Cancel</button></div></td></tr>`:'')).join(''):'<tr><td colspan="9" class="empty">Nothing checked yet in this period</td></tr>';
+  lbWire();lbLoad(L.map(r=>r.order_id));
   $('call').checked=L.length>0&&L.every(r=>CSEL.has(r.order_id));
   document.querySelectorAll('[data-csel]').forEach(x=>x.onchange=()=>{x.checked?CSEL.add(x.dataset.csel):CSEL.delete(x.dataset.csel)});
   const cFix=async(r,results,what)=>{const who=vAuth();if(!who)return false;
@@ -2062,6 +2116,8 @@ function fillSettings(){const m=S.model;
   $('s_name_z').value=Math.round(S.scaling.name_z_scale*100);$('s_max_length').value=S.scaling.max_length;$('o_delay').value=S.delay_between_downloads_s;$('o_dir').value=S.output_dir;$('o_dir').disabled=!META.local;$('o_dl').value=S.downloads_dir;$('o_dl').disabled=!META.local;
   $('mw_url').value=S.makerworld_url;mwHint();$('lic').value=(S.license_passwords||{})[designOf(S.makerworld_url)]||'';
   fillStands();
+  const LBS=S.labels||{};$('lb_on').checked=!!LBS.enabled;$('lb_printer').value=LBS.printer||'';$('lb_wait').value=LBS.wait_after_logistics_s??60;$('lb_couriers').value=(LBS.couriers||[]).join(', ');$('lb_sumatra').value=LBS.sumatra_path||'';$('lb_one').checked=LBS.one_at_a_time!==false;
+  api('/api/labels/printers').then(r=>{$('lb_printers').innerHTML=r.printers.map(n=>`<option value="${esc(n)}">`).join('');$('lb_hint').textContent=(r.printers.length?'Printers here: '+r.printers.join(', ')+'. ':'')+(r.tool?'Prints with '+r.tool:'SumatraPDF not found — install it to print labels.')}).catch(()=>{});
   const L=S.logistics||{};$('lg_track').value=L.tracking_url||'';$('lg_late').value=L.late_days;$('lg_exp').value=L.express_red_days;$('lg_stuck').value=L.stuck_days;
   lgMsgs(Object.entries(L.messages||{}))}
 function fillStands(){const st=S.stands;if(!st)return;
@@ -2093,7 +2149,9 @@ function readSettings(){const s=structuredClone(S);
   readStands(s);
   s.logistics={...(S.logistics||{}),tracking_url:$('lg_track').value.trim(),late_days:parseInt($('lg_late').value,10),
     express_red_days:parseInt($('lg_exp').value,10),stuck_days:parseInt($('lg_stuck').value,10),
-    messages:Object.fromEntries(lgRead().filter(([k,v])=>k&&v.trim()))};return s}
+    messages:Object.fromEntries(lgRead().filter(([k,v])=>k&&v.trim()))};
+  s.labels={...(S.labels||{}),enabled:$('lb_on').checked,printer:$('lb_printer').value.trim(),wait_after_logistics_s:parseInt($('lb_wait').value,10),
+    couriers:$('lb_couriers').value.split(',').map(x=>x.trim().toUpperCase().replace(/\s+/g,'_')).filter(Boolean),sumatra_path:$('lb_sumatra').value.trim(),one_at_a_time:$('lb_one').checked};return s}
 $('lg_add').onclick=()=>{const l=lgRead();l.push(['New message','Hello {customer}, about your order {order_id}: ']);lgMsgs(l)};
 $('save').onclick=async()=>{try{S=await api('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(readSettings())});fillSettings();$('savehint').textContent='Saved';$('savehint').style.color='';loadOrders()}catch(e){$('savehint').textContent=e.message;$('savehint').style.color='var(--err)'}};
 $('reset').onclick=async()=>{if(!confirm('Restore default settings?'))return;S=await post('/api/settings/reset');fillSettings();$('savehint').textContent='Defaults restored'};
