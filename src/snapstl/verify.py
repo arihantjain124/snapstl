@@ -68,6 +68,39 @@ def latest_checks(con, batch_ids) -> dict[tuple, dict]:
     return out
 
 
+def made_before(con, order_ids) -> dict[str, str]:
+    """Orders already made in an earlier batch (0.32.1): every part (base + name, or the stand) checked Good
+    there — the newest check of each item counts — after the order's last Remake. Order ID → that batch's
+    name. Such an order must not go into a new batch unless a person presses Remake on it."""
+    ids = sorted({o for o in order_ids if o})
+    if not ids:
+        return {}
+    q = ",".join("?" * len(ids))
+    remake = {r[0]: r[1] or 0 for r in con.execute(f"SELECT order_id, remake_at FROM orders WHERE order_id IN ({q})",
+                                                   ids)}
+    current = {r[0]: r[1] for r in con.execute(f"SELECT order_id, batch_uid FROM orders WHERE order_id IN ({q})", ids)}
+    latest: dict[tuple, dict] = {}  # item → its newest check after the last Remake
+    for r in db.rows(con, f"SELECT order_id, batch_uid, batch_id, plate, idx, part, result, at FROM plate_checks "
+                          f"WHERE order_id IN ({q}) ORDER BY at, rowid", *ids):
+        if r["at"] <= remake.get(r["order_id"], 0):
+            continue
+        if r["batch_uid"] and r["batch_uid"] == current.get(r["order_id"]):
+            continue  # its own batch now: that's not "before"
+        latest[(r["order_id"], r["batch_uid"] or r["batch_id"], r["batch_id"], r["plate"], int(r["idx"]))] = r
+    parts: dict[tuple, dict[str, bool]] = {}  # (order, batch) → part → every item Good
+    for (oid, bkey, bid, _p, _i), r in latest.items():
+        d = parts.setdefault((oid, bkey, bid), {})
+        d[r["part"]] = d.get(r["part"], True) and r["result"] == "good"
+    out: dict[str, str] = {}
+    for (oid, bkey, bid), d in parts.items():
+        good = {p for p, ok in d.items() if ok}
+        if oid not in out and any(c <= good for c in COMPLETE):
+            b = (con.execute("SELECT id, summary FROM batches WHERE uid=?", (bkey,)).fetchone()
+                 or con.execute("SELECT id, summary FROM batches WHERE id=?", (bid,)).fetchone())
+            out[oid] = _label(dict(b)) if b else f"Batch #{bid}"
+    return out
+
+
 def fix_counts(con, batch_ids) -> dict[tuple, int]:
     ids = sorted({int(b) for b in batch_ids if b is not None})
     if not ids:
@@ -137,6 +170,8 @@ def item_status(it: dict, chk: dict | None, jobs: dict, extras_by_item: dict) ->
             "started": bool(j and j["state"] not in NOT_STARTED)}
 
 
+# order states Verify checks: being made, or packed on the website but not checked yet (0.32.2, makeit.PACKED_SQL)
+CHECKABLE = ("bundled", "packed")
 PART_RANK = {"todo": 0, "printing": 1, "waiting": 2, "good": 3}  # waiting = printed, not checked yet
 
 
@@ -228,7 +263,7 @@ def _update_one(con, batch_id: int) -> None:
         if chk:
             o["checks"].append(chk)
     for oid, o in per.items():
-        if state_of.get(oid) != "bundled":
+        if state_of.get(oid) not in CHECKABLE:
             continue
         cur = con.execute("SELECT made_at, print_started_at, print_done_at, checked_at, checked_by FROM orders "
                           "WHERE order_id=?", (oid,)).fetchone()
@@ -374,14 +409,15 @@ def name_cards() -> dict:
         for b in batches.values():
             items, state_of = batch_items(con, b)
             for it in items:
-                if state_of.get(it["order_id"]) != "bundled":
+                if state_of.get(it["order_id"]) not in CHECKABLE:
                     continue
                 chk = checks.get(key(it))
                 s = item_status(it, chk, jobs, by_item)
                 cb, cf = s["carrier"]
                 j, x = s["job"] or {}, s["extra"]
                 o = per.setdefault(it["order_id"], {"order_id": it["order_id"], "batch_id": b["id"],
-                                                    "batch": _label(b), "items": []})
+                                                    "batch": _label(b), "items": [],
+                                                    "packed": state_of.get(it["order_id"]) == "packed"})
                 o["items"].append({
                     **{k: it[k] for k in ("batch_id", "plate", "idx", "order_id", "part", "name", "color")},
                     "status": s["status"], "carrier": {"batch_id": cb, "file": cf}, "extra": x["kind"] if x else None,
@@ -420,7 +456,7 @@ def plate_failed(carrier: dict, staff: str) -> dict:
             items, state_of = batch_items(con, b)
             checks = latest_checks(con, [b["id"]])
             for it in items:
-                if state_of.get(it["order_id"]) != "bundled":
+                if state_of.get(it["order_id"]) not in CHECKABLE:
                     continue
                 s = item_status(it, checks.get(key(it)), jobs, by_item)
                 if s["status"] == "waiting" and s["carrier"] == (cb, cf):

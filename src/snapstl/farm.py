@@ -1016,7 +1016,12 @@ def replaces(cur: dict | None, new: dict) -> bool:
     """Does `new` (a newer job of the same plate) become the plate's job instead of `cur`? (0.28.1)
     A plate's job is its newest one — except that a cancelled / failed copy never hides one still on its way
     (Start print pressed twice: the copy cancelled in Bambuddy while the first prints), and a copy on its way
-    never hides the one printing."""
+    never hides the one printing.
+    0.32.1: nor a finished print — the copy of a double press cancelled while the first printed used to
+    become the plate's job once the first was done, and the plate came back to print a second time.
+    Printing a done plate again always goes through a Reprint (a 'reprint' job), never a cancelled copy."""
+    if cur is not None and cur.get("state") == "done" and new.get("state") in ("cancelled", "failed"):
+        return False
     if cur is None or cur.get("state") not in ACTIVE:
         return True
     if new.get("state") in ("cancelled", "failed"):

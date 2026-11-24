@@ -431,6 +431,7 @@ def _order_view(r: dict) -> dict:
         **{c: r.get(c) for g, cs in db.FIELD_GROUPS.items() for c in cs},
         "returned": r.get("_returned") or [],
         "spares": r.get("_spares") or [],  # 0.28: spare pieces in stock that fit
+        "made_before": r.get("_made_before"),  # 0.32.1: already made in this batch — Remake to make it again
         "reuse_words": spares.describe(r.get("reuse_of")),
         "payment": r.get("payment") or "",
     }
@@ -525,10 +526,12 @@ def list_orders(request: Request, tab: str = "to_make", limit: int = 200, offset
         total = con.execute(f"SELECT COUNT(*) FROM orders WHERE {w}", args).fetchone()[0]
         rs = db.rows(con, f"SELECT *, {_CLUB} AS club_size, {_PAY} AS payment FROM orders WHERE {w} {_ORDER} LIMIT ? OFFSET ?",
                      *args, limit, offset)
+        made = verify.made_before(con, [r["order_id"] for r in rs if r["state"] in ("ready", "needs_review")])
         for r in rs:
             if r["state"] in ("ready", "needs_review") and r.get("name"):
                 r["_returned"] = returned_pieces(con, r)
                 r["_spares"] = spares.for_order(con, r)
+            r["_made_before"] = made.get(r["order_id"])
         in_stock = spares.waiting_matches(con)
     return {"total": total, "orders": [_order_view(r) for r in rs], "in_stock": in_stock}
 
@@ -631,7 +634,9 @@ def reset_order(order_id: str):
         if o.get("reuse_of"):  # made again: no longer sent with a returned piece
             db.set_group(con, order_id, "reuse")
             o["reuse_of"] = None
-        if tabs.tab_of(o) not in ("to_make", "check_name") and o.get("flag") is None:
+        # 0.32.1: an order already made in an earlier batch is made again only after a recorded Remake
+        again = bool(verify.made_before(con, [order_id]))
+        if again or (tabs.tab_of(o) not in ("to_make", "check_name") and o.get("flag") is None):
             db.set_group(con, order_id, "remake", remake_at=db.now(), remake_reason="Made again (Remake)")
     sync.LOOP.kick()
     return {"ok": True}
@@ -785,7 +790,9 @@ async def next_batch(req: Request):
     with db.tx() as con:
         ids = [r[0] for r in con.execute(f"SELECT order_id FROM orders WHERE {_T}='to_make' "  # not those with a
                                          f"AND {products.in_sql([prod])} "
-                                         f"AND NOT {spares.match_sql(complete=True)} {_ORDER} LIMIT ?", (n,))]  # spare
+                                         f"AND NOT {spares.match_sql(complete=True)} {_ORDER}")]  # spare
+        made = verify.made_before(con, ids)  # 0.32.1: already made in an earlier batch → only after Remake
+        ids = [i for i in ids if i not in made][:n]
     if not ids:
         raise HTTPException(400, "Nothing to make: To make is empty")
     try:

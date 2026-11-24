@@ -414,7 +414,7 @@ async def remake(order_id: str, req: Request):
         o = _order(con, order_id)
         if tabs.tab_of(o) in MAKING:
             raise HTTPException(409, "It's being made already")
-    reset_to_ready(order_id)
+    reset_to_ready(order_id, why="Remake request from logistics")
     with db.tx() as con:
         db.set_group(con, order_id, "remake", remake_at=db.now(), remake_reason=reason)
         if o.get("reuse_of"):

@@ -40,14 +40,17 @@ AVAILABLE_STATES = {"IDLE", "FINISH", "FAILED", ""}
 # Print, Verify and the base / letters marks even if SnapSTL never printed it
 _ST = "REPLACE(REPLACE(UPPER(COALESCE(source_status,'')),'_','-'),' ','-')"
 SHIPPED_SQL = f"({_ST} IN ('PACK','HANDOVER','IN-TRANSIT','DELIVERED') OR {_ST} LIKE 'RTO%')"
+# 0.32.2 (owner): packed on the website (label made, parcel still here) but printed by SnapSTL and not checked
+# yet still gets its Verify check — state 'packed' (only Verify takes it; elsewhere it counts as shipped)
+PACKED_SQL = f"({_ST} IN ('PACK','HANDOVER'))"
 
 
 def _batch_orders(con, b: dict) -> list[dict]:
     ids = json.loads(b.get("order_ids") or "[]")
     if not ids:
         return []
-    return db.rows(con, f"SELECT order_id, name, color, CASE WHEN state='bundled' AND {SHIPPED_SQL} THEN 'shipped' "
-                        f"ELSE state END AS state, quantity, made_at, express_by FROM orders "
+    return db.rows(con, f"SELECT order_id, name, color, CASE WHEN state='bundled' AND {PACKED_SQL} THEN 'packed' "
+                        f"WHEN state='bundled' AND {SHIPPED_SQL} THEN 'shipped' ELSE state END AS state, quantity, made_at, express_by FROM orders "
                         f"WHERE order_id IN ({','.join('?' * len(ids))})", *ids)
 
 

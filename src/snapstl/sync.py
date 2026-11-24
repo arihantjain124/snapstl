@@ -650,6 +650,11 @@ def merge(con, r: dict, force: bool = False) -> str | None:
                 sets.update(state=_evaluate(L, status), batch_id=None, batch_uid=None, batch_label=None,
                             batch_computer=None, batch_computer_id=None, printed_at=None, made_at=None,
                             print_started_at=None, state_at=r["state_at"])
+                # 0.32.1: say so — an order leaving its batch could otherwise be made a second time unseen
+                db.add_activity(con, "orders", f"{L.get('name') or oid} ({oid}) left "
+                                f"{L.get('batch_label') or ('batch #' + str(L['batch_id']) if L.get('batch_id') else 'its batch')}"
+                                f" — released in the shared records by {r.get('updated_by') or 'another computer'}"
+                                + (" after it was made" if L.get("made_at") else ""))
             if making or sets.get("state", L["state"]) in ("ready", "needs_review", "not_needed", "skipped"):
                 # Skip / Make anyway / Approve pressed on another computer
                 v = _view({**L, **sets}, r, status)

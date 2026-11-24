@@ -22,7 +22,7 @@ import time
 import traceback
 from dataclasses import asdict
 
-from . import cache, computer, db, products, spares, watermark
+from . import cache, computer, db, products, spares, verify, watermark
 from .meshes import dims, obj_by_material, obj_to_mesh
 from .orders import Order
 from .pipeline import build, new_batch_dir
@@ -120,6 +120,9 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
         # 0.28: an order with a complete spare piece in stock is sent with it, not printed again
         in_stock = {r[0] for r in con.execute(f"SELECT order_id FROM orders WHERE order_id IN ({q}) "
                                               f"AND {spares.match_sql(complete=True)}", order_ids)}
+        # 0.32.1: an order already made and checked Good in an earlier batch is never made again by itself
+        # (only after Remake) — e.g. one that came back to To make after it was made
+        made = verify.made_before(con, [r["order_id"] for r in rows])
     kinds = {products.of_order(r).key for r in rows if products.of_order(r).key in products.MAKEABLE}
     if len(kinds) > 1:
         raise ValueError("One product per batch: " + ", ".join(sorted(products.BY_KEY[k].label for k in kinds))
@@ -133,6 +136,11 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
     if in_stock and not rows:
         raise ValueError(f"{len(in_stock)} selected order{'s have' if len(in_stock) > 1 else ' has'} a spare piece in "
                          "stock — use it (Orders → To make → Piece in stock) instead of making it again")
+    if made:
+        rows = [r for r in rows if r["order_id"] not in made]
+        if not rows:
+            raise ValueError(_made_words(made) + " — not made again. If it really must be made again, "
+                             "press Remake on it first")
     if not rows:
         raise ValueError("None of the selected orders are ready (they may need review or be in another batch)")
     uid = uuid.uuid4().hex
@@ -164,7 +172,15 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
         if state_at:  # already in the shared records exactly like this: nothing to push
             con.execute(f"DELETE FROM sync_outbox WHERE order_id IN ({','.join('?' * len(ids))})", ids)
     return {"batch_id": batch_id, "orders": len(ids), "skipped": len(order_ids) - len(ids),
-            "taken_elsewhere": taken, "models": len(_needed(orders, settings)), "in_stock": len(in_stock)}
+            "taken_elsewhere": taken, "models": len(_needed(orders, settings)), "in_stock": len(in_stock),
+            "already_made": len(made), "already_made_note": _made_words(made) if made else ""}
+
+
+def _made_words(made: dict[str, str]) -> str:
+    """'2 selected orders were already made and checked Good (Batch 10 - 2026-11-19)'."""
+    n = len(made)
+    where = ", ".join(sorted(set(made.values())))
+    return (f"{n} selected order{'s were' if n > 1 else ' was'} already made and checked Good ({where})")
 
 
 FINISHED = ("done", "done_with_problems", "failed")

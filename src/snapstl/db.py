@@ -407,7 +407,7 @@ def add_note(con, order_id: str, text: str, author: str = "") -> dict:
 
 
 def add_activity(con, kind: str, text: str) -> None:
-    """One line on the Activities tab (kinds: download, build, print, check, merge, cleanup, sync)."""
+    """One line on the Activities tab (kinds: download, build, print, check, merge, cleanup, sync, orders)."""
     con.execute("INSERT INTO activity(at, kind, text) VALUES (?,?,?)", (now(), kind, (text or "")[:500]))
 
 

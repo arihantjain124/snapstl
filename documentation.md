@@ -646,3 +646,28 @@ English hard — the language help was skipped by the owner).
 - Stand plates are the batch's `plates` (kind `stands`); batches built by 0.31 are moved once at startup.
 - Found in the preview before release: a `// comment` mid-line again hid code (stand rows broke the Print table);
   fixed, and `tests/test_page_script.py` now catches a `const` / `let` after a `//` comment even with a space.
+
+### 2026-11-24: 0.32.1 No part made twice
+- Owner asked why stand orders showed 0: the latest report was uploaded about an hour before 0.29 (stands) arrived, so
+  its stand rows were skipped; uploading the report again on 0.32 brought them in. No code change.
+- Owner saw bases made again for names already made. Found on the production computer's data (583 plates, 697 print
+  jobs): one bases plate printed twice: a double-pressed Start print (before 0.28.1) left a cancelled copy that,
+  once the first print finished, hid it, so the plate came back to Bases to print. One order made twice
+  (base and letters) in two batches: it had been made and checked Good, then came back to To make with its made time
+  cleared; the local log doesn't show what released it. Two other double prints were real Reprints; two on the first
+  setup day (16 Nov) look like testing.
+- Fixed: a cancelled / failed copy never hides a done print; an order made and checked Good in an earlier batch is
+  left out of new batches (Orders shows "Already made … Remake"); orders leaving a batch are written to Activities →
+  Orders, so the next case can be traced.
+- Open: what released the order from its batch (shared records "released" from another computer is the likely path).
+
+### 2026-11-24: 0.32.2 Split letters with their bases; packed orders still checked
+- Owner: when a bases plate is split, its letter plate should split the same way with the same names, so the letters
+  are printed only once their base is done (good to have, not enforced). Done: splitting a bases plate splits every
+  letter plate holding its names (not started yet) by base part; Join back on the bases joins the letters back.
+- Owner saw a name whose split base and letters were both printed but never appeared in Verify. Cause: the website
+  report already said PACK (label made on the website) before the check, and since 0.26 packed counts as made, so it
+  left Verify. On the production data 6 orders were in that state. Now Verify keeps orders that are PACK / HANDOVER
+  and printed but not checked, marked "Packed on the website – check before it goes"; once in transit, delivered or
+  returning they leave Verify as before.
+

@@ -503,13 +503,17 @@ def set_printed(order_ids: list[str], printed: bool = True, db_path: Path | None
                            f"WHERE state='printed' AND order_id IN ({q})", (db.now(), *order_ids)).rowcount
 
 
-def reset_to_ready(order_id: str, db_path: Path | None = None) -> None:
+def reset_to_ready(order_id: str, db_path: Path | None = None, why: str = "Remake") -> None:
     """Allow a bundled / printed / skipped order to be made again (e.g. reprint)."""
     with db.tx(db_path) as con:
         cur = con.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
         if cur is None:
             raise KeyError(order_id)
         state = "needs_review" if cur["review_reason"] else "ready"
+        if cur["batch_id"] or cur["batch_uid"] or cur["made_at"]:  # 0.32.1: an order leaving its batch is logged
+            where = cur["batch_label"] or (f"batch #{cur['batch_id']}" if cur["batch_id"] else "its batch")
+            db.add_activity(con, "orders", f"{cur['name'] or order_id} ({order_id}) left {where} — back to To make "
+                                           f"({why}{', after it was made' if cur['made_at'] else ''})")
         con.execute(
             "UPDATE orders SET state=?, batch_id=NULL, batch_uid=NULL, batch_label=NULL, batch_computer=NULL, "
             "batch_computer_id=NULL, printed_at=NULL, made_at=NULL, print_started_at=NULL, updated_at=? "
