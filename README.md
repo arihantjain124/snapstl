@@ -529,7 +529,14 @@ orders were all on the way 10 days ago, go to the Recycle Bin (Trash on a Mac).
 Since 0.24 a printed plate goes to **Print → Verify**: a staff member checks every base and name; spoiled
 letters, a spoiled name, a wrong colour or a broken base get a small fix plate, and an order is packed only
 after both its parts are checked good. Batches show their names and progress and move to **Archive** once
-shipped; **Activities** lists what happened on the computer.
+shipped.
+
+Since 0.35 **Print** is by product: **Custom Organizer** (Bases / Letters, each To print · Printing · Printed),
+**GTA**, **Harry Potter**, **Barbie**, **Verify** and **Completed** (product chips), and **Batches** (with the
+download queue; a batch still getting ready shows at the top of Print). Each plate shows ≈ how long it prints on
+the printer picked and when it would be ready, learned from the prints already done (Stats → Print time per
+letter). Base plates merge like letters (up to 3 bases, no scaling). There is no Activities page; the activity log
+is still kept.
 
 The **Help** page in the app explains every tab, status and setting.
 

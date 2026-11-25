@@ -730,3 +730,16 @@ English hard — the language help was skipped by the owner).
 - Pending Orders hides Phone, Address and Report status by default; views, columns, filters and CSV on one line.
 - Includes 0.33.2 (labels: ShopDeck tab in front, timeouts, search proof, trace).
 
+### 2026-11-26: 0.35.0 Print by product, print time estimates, base plates merge, Batches on Print
+- Owner: Print should follow the products (Custom Organizer, GTA, Harry Potter, Barbie); fewer sidebar entries
+  (Batches into Print, no Activities page); how long each plate takes and when it's done; merge base plates up to 3.
+- Print chips: Custom Organizer (Bases / Letters) · GTA · Harry Potter · Barbie · Verify · Completed (product
+  chips) · Batches (with the download queue). Batches still downloading / building show at the top as Getting
+  ready. Removed plates: a link under To print.
+- Estimates from 306 done prints (at 124 %): bases about 42 min + 30 min per letter on P1S (49 + 33 on A1), letters
+  about 9 + 3.2 min per letter; usually within ±30 min for a base plate, ±4 min for letters. Shown under the printer
+  picked with the ready time after its current print; Stats → Print time per letter per printer. Name stands: not
+  enough prints yet.
+- Base plates merge (up to 3 bases, no scaling, refused when they don't fit), with suggestions and ≈ time.
+- Plates holding a clubbed order whose other names are made come first (print this now).
+

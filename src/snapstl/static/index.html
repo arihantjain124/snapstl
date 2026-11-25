@@ -233,13 +233,11 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <nav id="tabs">
     <button data-t="orders" class="on"><span class="ic">▤</span>Pending Orders</button>
     <button data-t="history"><span class="ic">◷</span>Order History</button>
-    <button data-t="batches"><span class="ic">▦</span>Batches</button>
     <button data-t="makeit"><span class="ic">⚒</span>Print</button>
     <button data-t="printers"><span class="ic">◉</span>Printers</button>
     <button data-t="slicing"><span class="ic">▣</span>Slicing</button>
     <button data-t="settings"><span class="ic">⚙</span>Settings</button>
     <button data-t="stats"><span class="ic">▥</span>Stats</button>
-    <button data-t="activity"><span class="ic">☰</span>Activities</button>
     <button data-t="help"><span class="ic">?</span>Help</button>
   </nav>
   <div class="foot">
@@ -370,7 +368,66 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <aside class="dpanel" id="dpanel" hidden aria-label="Order"></aside>
 </section>
 
-<section id="t-batches" hidden>
+
+
+
+
+<section id="t-makeit" hidden>
+  <div class="card">
+    <div class="toolbar"><h2 style="margin:0">Print</h2><span class="grow hint" id="mkinfo"></span><button class="small" id="slp_all" title="Queue every waiting plate for slicing, each with the profiles of the printer chosen for it">Slice all waiting</button><button class="small" id="mkrefresh">Refresh</button><label class="hint" style="display:flex;gap:4px;align-items:center;margin:0" title="A sound and a notice when a printer finishes or fails"><input type="checkbox" id="pralertson"> Alerts</label><button class="small" id="mkbbrefresh" title="Ask every printer (through Bambuddy) to report its status and filament again — e.g. after changing a spool">Refresh from Bambuddy</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
+    <div id="mknow"></div><div class="msgs" id="mkmsgs"></div><div class="msgs" id="mknote"></div><div class="hint" id="slp_allmsg"></div>
+    <div id="mkready"></div>
+    <div class="chips" id="mktabs"></div>
+    <div class="chips" id="mktabs2" hidden></div>
+    <div id="mk-bases" class="mkpane">
+      <p class="hint">Base plates of your built batches, printed in white. A printer is pre-selected — the next <b>available</b> one whose loaded filament is closest to white, with the most left — and under it the <b>filament slot</b> it prints from (✓ same colour, ≈ close). You can pick any printer and any loaded slot. <b>Slice</b> shows if the plate is sliced for that printer's model. <b>Options</b> start from the printer's print defaults (Slicing); change them for one plate here. Nothing prints until you press <b>Start print</b>.</p>
+      <div class="toolbar" style="margin:0 0 6px"><div class="chips" id="mkbsub" style="margin:0"></div><span class="grow"></span><input type="search" id="mkbq" placeholder="Search name, order or batch" autocomplete="off" style="max-width:240px"></div>
+      <div id="mkb-todo"><div class="dlabelbar" id="mkbmergebar" hidden></div><div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mkbases"></tbody></table></div>
+        <div id="mkbmergewrap" hidden style="margin-top:14px"><h3 style="margin:0 0 4px">Available to merge</h3><p class="hint" style="margin:0 0 6px">Base plates not started with room for more, in sets of up to 3 bases that look like they fit on one plate (Merge checks it for real — no scaling). A 3-base plate takes about 10 hours: a good overnight plate.</p><div id="mkbmerge"></div></div>
+        <p class="hint"><a href="#" data-mkremoved>Removed plates</a></p></div>
+      <div id="mkb-run" hidden><p class="hint">Base plates on their way to a printer or printing now. When the print is done the plate moves to <b>Printed</b>.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Status</th></tr></thead><tbody id="mkbrun"></tbody></table></div></div>
+      <div id="mkb-done" hidden><p class="hint">Base plates already printed whose names are still being made, newest first. <b>Letters</b> says how many of their letters are printed.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Printed</th><th>Letters</th><th></th></tr></thead><tbody id="mkbdone"></tbody></table></div></div>
+    </div>
+    <div id="mk-names" class="mkpane" hidden>
+      <p class="hint">Letter plates (the names), one colour each, in two lists: first the letters whose <b>base is printed</b> — print these now — then the ones whose base is still to print. A printer is pre-selected (available, best colour match), and under it the <b>filament slot</b> it prints from, best match first (✓ same colour, ≈ close). You can pick any printer and any slot loaded in it; after a spool change use Printers → <b>Refresh from Bambuddy</b>. Nothing prints until you press <b>Start print</b>. <b>Merge</b> puts same-colour plates (up to 3 names, not started) on one plate — no rescaling; <b>Split back</b> undoes it before printing.</p>
+      <div class="toolbar" style="margin:0 0 6px"><div class="chips" id="mklsub" style="margin:0"></div><span class="grow"></span><input type="search" id="mknq" placeholder="Search name, order or batch" autocomplete="off" style="max-width:240px"></div>
+      <div id="mkl-todo">
+      <div id="mkdupes"></div>
+      <div class="dlabelbar" id="mkmergebar" hidden></div>
+      <div class="toolbar" style="margin:0 0 6px"><label class="hint" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="mkbycolor"> Group by colour (load one spool, print every plate of that colour)</label></div>
+      <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mknames"></tbody></table></div>
+      <div id="mkmergewrap" hidden style="margin-top:14px"><h3 style="margin:0 0 4px">Available to merge</h3><p class="hint" style="margin:0 0 6px">Letter plates of one colour <b>whose bases are already printed</b>, that fit on one plate (up to 3 names). Check the names before you merge — the single plates leave the list. Press once and wait for “Merged”.</p><div id="mkmerge"></div></div>
+      <p class="hint"><a href="#" data-mkremoved>Removed plates</a></p>
+      </div>
+      <div id="mkl-run" hidden><p class="hint">Letter plates on their way to a printer or printing now. When the print is done the plate moves to <b>Printed</b>.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Status</th></tr></thead><tbody id="mklrun"></tbody></table></div></div>
+      <div id="mkl-done" hidden><p class="hint">Letter plates already printed whose names are still being made, newest first. <b>Base</b> says how many of their bases are printed — a name comes to Verify once both are. A whole plate that came out wrong: <b>Whole plate failed…</b> sends it back to print.</p>
+        <div class="tw"><table><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Printed</th><th>Base</th><th></th></tr></thead><tbody id="mkldone"></tbody></table></div></div>
+    </div>
+    <div id="mk-stands" class="mkpane" hidden>
+      <p class="hint">Name stand plates (GTA, Harry Potter, Barbie…): up to 3 stands of one product, printed in one go in <b>two colours</b> — the block first, then one switch to the letter colour for the raised letters. Only printers with an <b>AMS</b> are offered; under the printer pick the <b>block slot</b> and the <b>letters slot</b> (✓ same colour, ≈ close). Load both colours in the AMS first.</p>
+      <div class="toolbar" style="margin:0 0 6px"><div class="chips" id="mkssub" style="margin:0"></div><span class="grow"></span><input type="search" id="mksq" placeholder="Search name, order or batch" autocomplete="off" style="max-width:240px"></div>
+      <div id="mks-todo"><div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Colours</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mkstands"></tbody></table></div><p class="hint"><a href="#" data-mkremoved>Removed plates</a></p></div>
+      <div id="mks-run" hidden><p class="hint">Name stand plates on their way to a printer or printing now. When the print is done the plate moves to <b>Printed</b> and its stands come to <b>Verify</b>.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Colours</th><th>Plate</th><th>Printer</th><th>Status</th></tr></thead><tbody id="mksrun"></tbody></table></div></div>
+      <div id="mks-done" hidden><p class="hint">Name stand plates printed and not all checked yet, newest first. A whole plate that came out wrong: <b>Whole plate failed…</b> sends it back to print.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Colours</th><th>Plate</th><th>Printer</th><th>Printed</th><th></th></tr></thead><tbody id="mksdone"></tbody></table></div></div>
+    </div>
+    <div id="mk-verify" class="mkpane" hidden>
+      <p class="hint">One card per name, once its <b>letters and its base are both printed</b>: put them together, look at both, and mark each <b>Good</b> or what is wrong. <b>Confirm – ready to pack</b> sends the order to Completed. Spoiled letters, a spoiled name, a wrong colour or a broken base get a small <b>Fix</b> plate (same size, only what is spoiled) at the top of Bases / Letters. <b>Whole plate failed…</b> sends a whole printed plate back to print. Every check is saved under the person who typed their PIN.</p>
+      <div class="toolbar" style="margin:0 0 8px" id="vwho"></div>
+      <div class="toolbar" style="margin:0 0 8px"><input type="search" id="vq" placeholder="Search name or order" autocomplete="off" style="max-width:240px"><span class="grow"></span><span class="hint" id="vinfo"></span></div>
+      <div id="mkverify"></div>
+    </div>
+    <div id="mk-completed" class="mkpane" hidden>
+      <p class="hint">Names checked good and not shipped yet, with who checked them. <b>Print label</b> (when shipping labels are on in Settings → Logistics) changes the courier on ShopDeck, gets the new label and prints it — keep ShopDeck's Process Orders open in Chrome. Tick rows and press <b>Packing slip</b> to print a list for packing. <b>Found a problem</b> (e.g. noticed while packing) makes a fix plate and takes the order back to Printing.</p>
+      <div class="toolbar" style="margin:0 0 6px"><select id="cdays" style="max-width:160px"><option value="1">Today</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option><option value="0">All</option></select><input id="csearch" placeholder="Search name or order" style="max-width:220px"><span class="grow"></span><button class="small" id="cslip">Packing slip</button></div>
+      <div class="msgs" id="lbmsg"></div>
+      <div class="tw"><table><thead><tr><th><input type="checkbox" id="call" title="Tick all shown"></th><th>Name</th><th>Order</th><th>Batch</th><th>Printer</th><th>Checked by</th><th>When</th><th>Label</th><th></th></tr></thead><tbody id="mkdone"></tbody></table></div>
+    </div>
+    <div id="mk-removed" class="mkpane" hidden>
+      <p class="hint" id="mkrmback"><a href="#" data-mkback2>← Back to To print</a></p><p class="hint">Plates taken off To print. Nothing was deleted — <b>Put back</b> returns a plate to its list; <b>Printed by hand</b> sends it to Verify. A plate leaves this list once its orders are packed, shipped or cancelled.</p>
+      <div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Removed</th><th></th></tr></thead><tbody id="mkremoved"></tbody></table></div>
+    </div>
+  </div>
+  <div id="mk-batches" class="mkpane" hidden>
   <div class="card">
     <div class="toolbar"><h2 style="margin:0">Batches</h2><span class="grow hint" id="queueinfo"></span></div>
     <p class="hint">A batch takes the orders you picked from MakerWorld models to print-ready plates: <b>Queue download</b> → the helper generates every name → <b>Queue build</b> → plates. Then <b>Print</b> sends them to your printers. Nothing starts by itself. A batch moves to <b>Archive</b> once all its orders are on the way (or cancelled); 10 days later its folder goes to the Recycle Bin.</p>
@@ -395,59 +452,15 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <h3>Names</h3><div class="plates" id="bnames"></div></div>
     <p class="hint">Bases are shown from the top as they'll sit on the plate (any watermark found is painted red); names as outlines. Click a plate to get its .3mf. Review in Bambu Studio before printing.</p>
   </div>
-</section>
-
-
-
-<section id="t-makeit" hidden>
   <div class="card">
-    <div class="toolbar"><h2 style="margin:0">Print</h2><span class="grow hint" id="mkinfo"></span><button class="small" id="slp_all" title="Queue every waiting plate for slicing, each with the profiles of the printer chosen for it">Slice all waiting</button><button class="small" id="mkrefresh">Refresh</button><label class="hint" style="display:flex;gap:4px;align-items:center;margin:0" title="A sound and a notice when a printer finishes or fails"><input type="checkbox" id="pralertson"> Alerts</label><button class="small" id="mkbbrefresh" title="Ask every printer (through Bambuddy) to report its status and filament again — e.g. after changing a spool">Refresh from Bambuddy</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
-    <div id="mknow"></div><div class="msgs" id="mkmsgs"></div><div class="msgs" id="mknote"></div><div class="hint" id="slp_allmsg"></div>
-    <div class="chips" id="mktabs"></div>
-    <div id="mk-bases" class="mkpane">
-      <p class="hint">Base plates of your built batches, printed in white. A printer is pre-selected — the next <b>available</b> one whose loaded filament is closest to white, with the most left — and under it the <b>filament slot</b> it prints from (✓ same colour, ≈ close). You can pick any printer and any loaded slot. <b>Slice</b> shows if the plate is sliced for that printer's model. <b>Options</b> start from the printer's print defaults (Slicing); change them for one plate here. Nothing prints until you press <b>Start print</b>.</p>
-      <div class="toolbar" style="margin:0 0 6px"><div class="chips" id="mkbsub" style="margin:0"></div><span class="grow"></span><input type="search" id="mkbq" placeholder="Search name, order or batch" autocomplete="off" style="max-width:240px"></div>
-      <div id="mkb-todo"><div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mkbases"></tbody></table></div></div>
-      <div id="mkb-run" hidden><p class="hint">Base plates on their way to a printer or printing now. When the print is done the plate moves to <b>Printed</b>.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Status</th></tr></thead><tbody id="mkbrun"></tbody></table></div></div>
-      <div id="mkb-done" hidden><p class="hint">Base plates already printed whose names are still being made, newest first. <b>Letters</b> says how many of their letters are printed.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Printed</th><th>Letters</th><th></th></tr></thead><tbody id="mkbdone"></tbody></table></div></div>
-    </div>
-    <div id="mk-names" class="mkpane" hidden>
-      <p class="hint">Letter plates (the names), one colour each, in two lists: first the letters whose <b>base is printed</b> — print these now — then the ones whose base is still to print. A printer is pre-selected (available, best colour match), and under it the <b>filament slot</b> it prints from, best match first (✓ same colour, ≈ close). You can pick any printer and any slot loaded in it; after a spool change use Printers → <b>Refresh from Bambuddy</b>. Nothing prints until you press <b>Start print</b>. <b>Merge</b> puts same-colour plates (up to 3 names, not started) on one plate — no rescaling; <b>Split back</b> undoes it before printing.</p>
-      <div class="toolbar" style="margin:0 0 6px"><div class="chips" id="mklsub" style="margin:0"></div><span class="grow"></span><input type="search" id="mknq" placeholder="Search name, order or batch" autocomplete="off" style="max-width:240px"></div>
-      <div id="mkl-todo">
-      <div id="mkdupes"></div>
-      <div class="dlabelbar" id="mkmergebar" hidden></div>
-      <div class="toolbar" style="margin:0 0 6px"><label class="hint" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="mkbycolor"> Group by colour (load one spool, print every plate of that colour)</label></div>
-      <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mknames"></tbody></table></div>
-      <div id="mkmergewrap" hidden style="margin-top:14px"><h3 style="margin:0 0 4px">Available to merge</h3><p class="hint" style="margin:0 0 6px">Letter plates of one colour <b>whose bases are already printed</b>, that fit on one plate (up to 3 names). Check the names before you merge — the single plates leave the list. Press once and wait for “Merged”.</p><div id="mkmerge"></div></div>
-      </div>
-      <div id="mkl-run" hidden><p class="hint">Letter plates on their way to a printer or printing now. When the print is done the plate moves to <b>Printed</b>.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Status</th></tr></thead><tbody id="mklrun"></tbody></table></div></div>
-      <div id="mkl-done" hidden><p class="hint">Letter plates already printed whose names are still being made, newest first. <b>Base</b> says how many of their bases are printed — a name comes to Verify once both are. A whole plate that came out wrong: <b>Whole plate failed…</b> sends it back to print.</p>
-        <div class="tw"><table><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Printed</th><th>Base</th><th></th></tr></thead><tbody id="mkldone"></tbody></table></div></div>
-    </div>
-    <div id="mk-stands" class="mkpane" hidden>
-      <p class="hint">Name stand plates (GTA, Harry Potter, Barbie…): up to 3 stands of one product, printed in one go in <b>two colours</b> — the block first, then one switch to the letter colour for the raised letters. Only printers with an <b>AMS</b> are offered; under the printer pick the <b>block slot</b> and the <b>letters slot</b> (✓ same colour, ≈ close). Load both colours in the AMS first.</p>
-      <div class="toolbar" style="margin:0 0 6px"><div class="chips" id="mkssub" style="margin:0"></div><span class="grow"></span><input type="search" id="mksq" placeholder="Search name, order or batch" autocomplete="off" style="max-width:240px"></div>
-      <div id="mks-todo"><div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Colours</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mkstands"></tbody></table></div></div>
-      <div id="mks-run" hidden><p class="hint">Name stand plates on their way to a printer or printing now. When the print is done the plate moves to <b>Printed</b> and its stands come to <b>Verify</b>.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Colours</th><th>Plate</th><th>Printer</th><th>Status</th></tr></thead><tbody id="mksrun"></tbody></table></div></div>
-      <div id="mks-done" hidden><p class="hint">Name stand plates printed and not all checked yet, newest first. A whole plate that came out wrong: <b>Whole plate failed…</b> sends it back to print.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Colours</th><th>Plate</th><th>Printer</th><th>Printed</th><th></th></tr></thead><tbody id="mksdone"></tbody></table></div></div>
-    </div>
-    <div id="mk-verify" class="mkpane" hidden>
-      <p class="hint">One card per name, once its <b>letters and its base are both printed</b>: put them together, look at both, and mark each <b>Good</b> or what is wrong. <b>Confirm – ready to pack</b> sends the order to Completed. Spoiled letters, a spoiled name, a wrong colour or a broken base get a small <b>Fix</b> plate (same size, only what is spoiled) at the top of Bases / Letters. <b>Whole plate failed…</b> sends a whole printed plate back to print. Every check is saved under the person who typed their PIN.</p>
-      <div class="toolbar" style="margin:0 0 8px" id="vwho"></div>
-      <div class="toolbar" style="margin:0 0 8px"><input type="search" id="vq" placeholder="Search name or order" autocomplete="off" style="max-width:240px"><span class="grow"></span><span class="hint" id="vinfo"></span></div>
-      <div id="mkverify"></div>
-    </div>
-    <div id="mk-completed" class="mkpane" hidden>
-      <p class="hint">Names checked good and not shipped yet, with who checked them. <b>Print label</b> (when shipping labels are on in Settings → Logistics) changes the courier on ShopDeck, gets the new label and prints it — keep ShopDeck's Process Orders open in Chrome. Tick rows and press <b>Packing slip</b> to print a list for packing. <b>Found a problem</b> (e.g. noticed while packing) makes a fix plate and takes the order back to Printing.</p>
-      <div class="toolbar" style="margin:0 0 6px"><select id="cdays" style="max-width:160px"><option value="1">Today</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option><option value="0">All</option></select><input id="csearch" placeholder="Search name or order" style="max-width:220px"><span class="grow"></span><button class="small" id="cslip">Packing slip</button></div>
-      <div class="msgs" id="lbmsg"></div>
-      <div class="tw"><table><thead><tr><th><input type="checkbox" id="call" title="Tick all shown"></th><th>Name</th><th>Order</th><th>Batch</th><th>Printer</th><th>Checked by</th><th>When</th><th>Label</th><th></th></tr></thead><tbody id="mkdone"></tbody></table></div>
-    </div>
-    <div id="mk-removed" class="mkpane" hidden>
-      <p class="hint">Plates taken off Bases / Letters. Nothing was deleted — <b>Put back</b> returns a plate to its list; <b>Printed by hand</b> sends it to Verify. A plate leaves this list once its orders are packed, shipped or cancelled.</p>
-      <div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Removed</th><th></th></tr></thead><tbody id="mkremoved"></tbody></table></div>
-    </div>
+    <div class="toolbar"><h2 style="margin:0">Download queue</h2><span class="grow hint" id="dlsession"></span>
+      <button id="qpause" class="small">Pause</button><button id="retry2" class="small">Retry failed</button></div>
+    <p class="hint">Names waiting for MakerWorld (from <b>Queue download</b> / <b>Re-download</b>). The SnapSTL Helper in your MakerWorld tab works through them one at a time, oldest first.</p>
+    <div class="tw" style="max-height:40vh;overflow:auto"><table><thead><tr><th>#</th><th>Name</th><th>Comp.</th><th>Batch</th><th>State</th><th>Watermark</th><th>Tries</th><th>Detail</th></tr></thead><tbody id="dlq"></tbody></table></div>
+    <div class="toolbar" style="margin:10px 0 0"><span class="hint grow" id="dlfolder"></span><button id="dlfinder" class="small fm">Show in Finder</button></div>
+    <p class="hint under">Every downloaded model is kept in this folder (one folder per name with <code>base.stl</code>, <code>name.stl</code>, <code>info.json</code>) and reused by later batches. SnapSTL never deletes them; a deleted one is simply downloaded again. Change the folder in Settings → Folders.</p>
+  </div>
+  <details class="card"><summary style="cursor:pointer;font-weight:600">Download helper log (technical)</summary><div class="log" id="log" style="margin-top:8px"></div></details>
   </div>
   <div class="qpanel" id="qpanel">
     <div class="qhead"><b>Queues</b><span class="hint" id="qsum"></span><button class="small" id="qtoggle" title="Hide or show the queue panel">Hide</button></div>
@@ -867,26 +880,11 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="card"><h3 style="margin-top:0">Printers</h3><div class="tw"><table><thead><tr><th>Printer</th><th style="text-align:right">Plates printed</th><th style="text-align:right">Failed</th><th style="text-align:right">Hours printing</th><th>Last used</th></tr></thead><tbody id="stprinters"></tbody></table></div><p class="hint">Hours printing are counted from 0.26 on.</p></div>
     <div class="card"><h3 style="margin-top:0">Checked by</h3><div class="tw"><table><thead><tr><th>Person</th><th style="text-align:right">Parts good</th><th style="text-align:right">Problems found</th><th style="text-align:right">Orders</th></tr></thead><tbody id="stcheckers"></tbody></table></div></div>
   </div>
+  <div class="card"><h3 style="margin-top:0">Print time per letter</h3><p class="hint">From the prints already done, at 124 % (Sport) speed: minutes per letter and the fixed minutes per plate (heating, levelling, first layers). A printer gets its own figures from 10 prints of a kind; Print uses its model's (or every printer's) until then. Much slower than the others: check its nozzle, bed or settings.</p>
+    <div class="tw"><table><thead><tr><th>Printer</th><th>Model</th><th style="text-align:right">Bases: min / letter</th><th style="text-align:right">+ per plate</th><th style="text-align:right">Prints</th><th style="text-align:right">Letters: min / letter</th><th style="text-align:right">+ per plate</th><th style="text-align:right">Prints</th></tr></thead><tbody id="stptime"></tbody></table></div></div>
 </section>
 
-<section id="t-activity" hidden>
-  <div class="card">
-    <div class="toolbar"><h2 style="margin:0">Activities</h2><span class="grow hint" id="actinfo"></span><button class="small" id="actrefresh">Refresh</button></div>
-    <p class="hint">What happened on this computer, newest first: downloads, builds, prints, checks (with who checked), merges and clean-ups.</p>
-    <div class="chips" id="actkinds"></div>
-    <div class="toolbar" style="margin:0 0 8px"><select id="actdays" style="max-width:160px"><option value="1">Today</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select><input id="actsearch" placeholder="Search" style="max-width:240px"></div>
-    <div class="tw" style="max-height:50vh;overflow:auto"><table><thead><tr><th style="width:150px">When</th><th style="width:110px">What</th><th>Details</th></tr></thead><tbody id="actlist"></tbody></table></div>
-  </div>
-  <div class="card">
-    <div class="toolbar"><h2 style="margin:0">Download queue</h2><span class="grow hint" id="dlsession"></span>
-      <button id="qpause" class="small">Pause</button><button id="retry2" class="small">Retry failed</button></div>
-    <p class="hint">Names waiting for MakerWorld (from <b>Queue download</b> / <b>Re-download</b>). The SnapSTL Helper in your MakerWorld tab works through them one at a time, oldest first.</p>
-    <div class="tw" style="max-height:40vh;overflow:auto"><table><thead><tr><th>#</th><th>Name</th><th>Comp.</th><th>Batch</th><th>State</th><th>Watermark</th><th>Tries</th><th>Detail</th></tr></thead><tbody id="dlq"></tbody></table></div>
-    <div class="toolbar" style="margin:10px 0 0"><span class="hint grow" id="dlfolder"></span><button id="dlfinder" class="small fm">Show in Finder</button></div>
-    <p class="hint under">Every downloaded model is kept in this folder (one folder per name with <code>base.stl</code>, <code>name.stl</code>, <code>info.json</code>) and reused by later batches. SnapSTL never deletes them; a deleted one is simply downloaded again. Change the folder in Settings → Folders.</p>
-  </div>
-  <details class="card"><summary style="cursor:pointer;font-weight:600">Download helper log (technical)</summary><div class="log" id="log" style="margin-top:8px"></div></details>
-</section>
+
 
 <section id="t-help" class="help" hidden>
   <div class="card">
@@ -903,7 +901,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Orders → Upload report (.xlsx)</b> — the webstore <i>Order Reconciliation Report</i>. Only <code>Magicians_35</code> orders are kept. Uploading the same or a newer report never creates duplicates; it only updates statuses.</li>
       <li><b>Check name</b> — fix names that start with a small letter, or have spaces, symbols or a missing colour, then <b>Approve</b>. Use <b>Skip</b> for orders you don't want to make.</li>
       <li><b>To make</b> — <b>EXPRESS</b> orders are at the top. Tick orders (or use the column filters and <b>Select all matching</b>) → <b>Create batch</b>. They move to <b>Ready to print</b>.</li>
-      <li><b>Batches → Queue download</b> — the helper in your MakerWorld tab generates each name, one at a time (watch it in the <b>Download queue</b> on the same page).</li>
+      <li><b>Print → Batches → Queue download</b> — the helper in your MakerWorld tab generates each name, one at a time (watch it in the <b>Download queue</b> on the same page).</li>
       <li>When the batch says <b>Ready to build</b> → <b>Queue build</b>.</li>
       <li><b>Print</b> → <b>Bases</b> / <b>Letters</b>: check the printer on each plate and click <b>Start print</b> (Express plates are at the top). Its orders move to <b>Printing</b>. Bases in white; names in the colour of their folder.</li>
       <li>When an order's name <b>and</b> base are both printed it moves to <b>Ready to pack</b>. The labelling team makes the label on the website and presses <b>Label Generated</b> → <b>Label done – ship it</b>.</li>
@@ -933,7 +931,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
 
   <div class="card" id="h-batches">
-    <h2>Batches</h2>
+    <h2>Batches (on Print)</h2>
+    <p>Since 0.35 batches are on <b>Print → Batches</b> (the last chip), with the <b>Download queue</b> under them. A batch still downloading or building shows at the top of Print as <b>Getting ready</b> (with <b>Queue download</b> / <b>Queue build</b> when it waits for you, and <b>Open</b>); once its plates are built they show under <b>To print</b> for their product. The batch number on a plate or an order opens it.</p>
     <table>
       <tr><th>Status</th><th>Meaning</th><th>What to do</th></tr>
       <tr><td>Created — not queued</td><td>Orders are reserved; nothing happens until you queue it.</td><td><b>Queue download</b> (or Cancel)</td></tr>
@@ -976,12 +975,15 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 
   <div class="card" id="h-downloads">
     <h2>Downloads</h2>
-    <p>The <b>Download queue</b> at the bottom of <b>Batches</b> shows every name waiting, being generated, done or failed, and which batch asked for it — with <b>Pause</b> and <b>Retry failed</b>.</p>
+    <p>The <b>Download queue</b> at the bottom of <b>Print → Batches</b> shows every name waiting, being generated, done or failed, and which batch asked for it — with <b>Pause</b> and <b>Retry failed</b>.</p>
     <p>Downloaded models are saved in the <b>Downloads folder</b> (default <code>~/SnapSTL/Downloads</code>, change it in Settings → Folders): one folder per name, e.g. <code>SONAL - 5 comp - …</code> with <code>base.stl</code> and <code>name.stl</code> exactly as MakerWorld made them. They're reused by every later batch and are <b>never deleted by SnapSTL</b> — clean them up yourself (<b>Show in Finder</b> under the queue). If you delete one, it's downloaded again the next time a batch needs it.</p>
   </div>
 
   <div class="card" id="h-printers">
     <h2>Print (print farm)</h2>
+    <p><b>By product (0.35):</b> <b>Custom Organizer</b> (Bases / Letters, each To print · Printing · Printed) · <b>GTA</b> · <b>Harry Potter</b> · <b>Barbie</b> (To print · Printing · Printed) · <b>Verify</b> and <b>Completed</b> (product chips; search finds any order ID) · <b>Batches</b>. <b>Removed plates</b> is a link under each To print list.</p>
+    <p><b>Print time:</b> under the printer picked, <i>≈ 6 h 40 m · ready ~9:15 pm</i> — learned from the prints already done (at 124 %, scaled to the speed chosen), counted from when that printer finishes its current print. A printer uses its own figures from 10 prints of a kind, else its model's, else every printer's; until a product has a few prints it says so. Stats → <b>Print time per letter</b> shows each printer's figures.</p>
+    <p><b>Merging base plates:</b> tick base plates not started (up to 3 bases) and <b>Merge onto one plate</b> — no scaling; refused when they don't fit on the bed. <b>Available to merge</b> suggests sets that look like they fit, with the time (≈ 8 h or more: a good overnight plate). <b>Split back</b> undoes it before printing. A plate holding a clubbed order whose other names are already made says <i>print this now</i>.</p>
     <p><b>Bambuddy</b>, the open-source print-farm manager, runs on one Windows computer (as a service, with only its slicer service in Docker), for every SnapSTL computer (set up with <code>bambuddy-server.ps1</code>). Each SnapSTL connects to it in <b>Settings → Connections</b> with that computer's address, e.g. <code>http://192.168.1.50:8000</code> — the sidebar's <b>IP address</b> line on the Bambuddy computer shows and copies it. Bambuddy is connected to your Bambu printers and keeps a queue per printer.</p>
     <p>If Bambuddy, Docker, the slicer service or OctoEverywhere stops, open SnapSTL on the Bambuddy computer: <b>Settings → Connections → This Bambuddy computer — external services</b> shows each one. <b>Check now</b> looks again, <b>Start</b> starts whatever is down (choose Yes if Windows asks), each has its own <b>Restart</b>, and <b>Restart all</b> restarts Bambuddy, the slicer and OctoEverywhere (Docker has its own Restart). <b>Keep running</b> (on by default) starts what stopped by itself every minute; it never restarts anything that's running.</p>
     <ol>
@@ -1066,8 +1068,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <tr><td>Complete the MakerWorld security check</td><td>Click the check in that tab.</td></tr>
       <tr><td>A name is Failed in the download queue</td><td>Read the detail; <b>Retry failed</b>.</td></tr>
       <tr><td>Fit check failed on a batch</td><td>That order wasn't printed and is back in Ready; create a new batch for it. If it keeps failing, check the scaling table.</td></tr>
-      <tr><td>Batch stays Downloading</td><td>Check the sidebar and the Download queue on Batches; Pause/Resume; or Build now with what's ready.</td></tr>
-      <tr><td>A model looks wrong</td><td>Batches → Open → <b>Objects</b> → <b>Re-download</b> that one (or Re-download the whole batch), then <b>Rebuild plates</b>.</td></tr>
+      <tr><td>Batch stays Downloading</td><td>Check the sidebar and the Download queue on Print → Batches; Pause/Resume; or Build now with what's ready.</td></tr>
+      <tr><td>A model looks wrong</td><td>Print → Batches → Open → <b>Objects</b> → <b>Re-download</b> that one (or Re-download the whole batch), then <b>Rebuild plates</b>.</td></tr>
       <tr><td>"watermark still on the base" / "didn't confirm the license password"</td><td>Check the license password in Settings, reload the SnapSTL Helper (2.2.1) in <code>chrome://extensions</code>, then <b>Retry failed</b> in the Download queue.</td></tr>
       <tr><td>Queue download says "Add the license password"</td><td>Settings → Product → License password → Save settings.</td></tr>
       <tr><td>Bambuddy isn't answering</td><td>Run the SnapSTL install command again (it starts Bambuddy, and never replaces one you already had). Log: <code>~/Library/Logs/Bambuddy</code> (Mac), <code>%LOCALAPPDATA%\SnapSTL</code> (Windows).</td></tr>
@@ -1127,7 +1129,7 @@ const post=(p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json
 const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"></span>${esc(c||'—')}`;
 
 // Long explanations sit behind a "?" next to each heading (0.24): a cleaner page; one click shows them
-(function tips(){for(const sec of ['t-orders','t-batches','t-makeit','t-activity','t-settings']){
+(function tips(){for(const sec of ['t-orders','t-makeit','t-settings']){
   for(const card of $(sec).querySelectorAll('.card')){
     const long=[...card.querySelectorAll('p.hint')].filter(p=>!p.id&&p.textContent.trim().length>140&&p.closest('.card')===card);
     if(!long.length)continue;long.forEach(p=>p.classList.add('tip'));
@@ -1136,17 +1138,17 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
     const h=card.querySelector('h2');if(h&&h.parentElement.classList.contains('toolbar')){h.insertAdjacentElement('afterend',btn);btn.style.margin='0'}else if(h)h.appendChild(btn);else if(card.querySelector('.toolbar')){const tb=card.querySelector('.toolbar');tb.appendChild(btn);btn.style.margin='0'}else card.prepend(btn)}}})();
 // tabs
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
-function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+function show(t){let pane=null;if(t==='batches'||t==='activity'){pane='batches';t='makeit'}tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   const sec=t==='history'?'orders':t;for(const s of PAGES)$('t-'+s).hidden=s!==sec;
-  if(t==='orders'||t==='history'){ordMode(t==='history'?'history':'pending');loadOrders();reportAge()} if(t==='batches')loadBatches(); if(t==='activity'){loadActivity();loadQueue()} if(t==='makeit'){loadMakeIt();loadQueues()} if(t==='printers')loadStatusAll(); if(t==='stats')loadStats(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadHelpPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
+  if(t==='orders'||t==='history'){ordMode(t==='history'?'history':'pending');loadOrders();reportAge()} if(t==='makeit'){loadMakeIt();loadQueues();loadBatches();if(pane)mkShow(pane)} if(t==='printers')loadStatusAll(); if(t==='stats')loadStats(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadHelpPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
 function ordMode(m,keepTab){$('ordtools').hidden=m!=='pending';
   document.querySelectorAll('#tabs button').forEach(b=>{if(b.dataset.t==='orders'||b.dataset.t==='history')b.classList.toggle('on',(b.dataset.t==='history')===(m==='history'))});
   if(OMODE===m)return;OMODE=m;filter.offset=0;SEL.clear();
   if(!keepTab)filter.tab=m==='pending'?'pending':'pack_it';
   visibleColumns=m==='pending'?[...PEND_COLS]:COLUMN_NAMES.map((_,i)=>i+1);renderColumns();
   loadFacets()}
-const PAGES=['orders','batches','makeit','printers','slicing','settings','stats','activity','help'];
-const OLD_PAGES={downloads:'activity',pstatus:'printers'};  // pages merged in 0.19 (the download queue is on Activities since 0.24)
+const PAGES=['orders','makeit','printers','slicing','settings','stats','help'];
+const OLD_PAGES={downloads:'makeit',pstatus:'printers',batches:'makeit',activity:'makeit'};  // 0.35: Batches and the download queue are on Print  // pages merged in 0.19 (the download queue is on Activities since 0.24)
 
 // ---------- orders ----------
 // Only orders waiting to be made can be ticked (→ Create batch).
@@ -1225,7 +1227,7 @@ async function loadOrders(){
     try{await post(`/api/orders/${encodeURIComponent(b.dataset.usespare)}/use-spare`,{uid:b.dataset.uid});refreshAll();if(!$('sparebox').hidden)spLoad()}catch(e){alert(e.message)}});
   document.querySelectorAll('[data-unreuse]').forEach(b=>b.onclick=async()=>{if(!confirm('Make this order after all? The piece becomes free again (back in stock).'))return;
     try{await post(`/api/orders/${encodeURIComponent(b.dataset.unreuse)}/undo-returned`);refreshAll()}catch(e){alert(e.message)}});
-  document.querySelectorAll('[data-batch]').forEach(a=>a.onclick=e=>{e.preventDefault();show('batches');openBatchDetail(+a.dataset.batch)});
+  document.querySelectorAll('[data-batch]').forEach(a=>a.onclick=e=>{e.preventDefault();goBatch(+a.dataset.batch)});
   document.querySelectorAll('[data-sel]').forEach(c=>c.onchange=()=>{const o=ROWS[c.dataset.sel]||{};
     const ids=o.club&&o.clubbed_id?Object.values(ROWS).filter(x=>x.clubbed_id===o.clubbed_id&&canTick(x)).map(x=>x.order_id):[c.dataset.sel];
     for(const id of ids){c.checked?SEL.add(id):SEL.delete(id);const x=document.querySelector(`[data-sel="${CSS.escape(id)}"]`);if(x)x.checked=c.checked}selUI()});
@@ -1242,8 +1244,8 @@ $('mknext').onclick=async()=>{const n=Math.max(1,Math.min(500,+$('seln').value||
   const prod=PRODUCTS.find(p=>p.key===filter.product)||PRODUCTS.find(p=>p.key==='organizer')||{key:'organizer',label:'Organizer',buildable:true};
   if(!confirm(`Make a batch of the ${n} oldest ${prod.label} orders in To make (Express first)?\n\nTheir models download and the plates build by themselves. If a model fails, Batches waits for you.`))return;
   $('mknext').disabled=true;try{const r=await post('/api/batches/next',{count:n,product:prod.key});SEL.clear();
-    $('ingestres').innerHTML=r.download_error?`<div class="w">Batch #${r.batch_id} made with ${r.orders} order(s), but the download didn't start: ${esc(r.download_error)} Then press <b>Queue download</b> on Batches.</div>`
-      :`<div class="o">Batch #${r.batch_id} made with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped)`:''}${r.clubbed_held?` — <span class="reason">${esc(r.clubbed_held)}</span>`:''}: downloading the models, then the plates build by themselves. Follow it on <b>Batches</b>.</div>`;refreshAll()}
+    $('ingestres').innerHTML=r.download_error?`<div class="w">Batch #${r.batch_id} made with ${r.orders} order(s), but the download didn't start: ${esc(r.download_error)} Then press <b>Queue download</b> on Print → Batches.</div>`
+      :`<div class="o">Batch #${r.batch_id} made with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped)`:''}${r.clubbed_held?` — <span class="reason">${esc(r.clubbed_held)}</span>`:''}: downloading the models, then the plates build by themselves. Follow it on <b>Print</b>.</div>`;refreshAll()}
   catch(e){alert(e.message)}finally{$('mknext').disabled=false}};
 // the last report: red when more than a day old (a new one in Downloads is imported by itself)
 async function reportAge(){try{const m=await api('/api/logistics/meta'),ri=await api('/api/report-import');if(!m.last_upload){$('reportage').innerHTML='';return}
@@ -1265,7 +1267,7 @@ async function loadFacets(){FACETS=await api('/api/orders/facets?tab='+filter.ta
 $('selclear').onclick=()=>{SEL.clear();loadOrders()};
 $('mkbatch').onclick=async()=>{if(!SEL.size)return;
   try{const r=await post('/api/batches',{order_ids:[...SEL]});SEL.clear();
-    $('ingestres').innerHTML=`<div class="o">Batch #${r.batch_id} created with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped — not ready${r.taken_elsewhere?`; ${r.taken_elsewhere} already taken on another computer`:''})`:''}${r.already_made_note?`. <span class="reason">${esc(r.already_made_note)} — not added (Remake them first if they must be made again)</span>`:''}${r.clubbed_added?`. ${r.clubbed_added} more name${r.clubbed_added>1?'s':''} of the same clubbed orders added — they're made together`:''}${r.clubbed_held?`. <span class="reason">${esc(r.clubbed_held)}</span>`:''}. Go to <b>Batches</b> and press <b>Queue download</b>.</div>`;
+    $('ingestres').innerHTML=`<div class="o">Batch #${r.batch_id} created with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped — not ready${r.taken_elsewhere?`; ${r.taken_elsewhere} already taken on another computer`:''})`:''}${r.already_made_note?`. <span class="reason">${esc(r.already_made_note)} — not added (Remake them first if they must be made again)</span>`:''}${r.clubbed_added?`. ${r.clubbed_added} more name${r.clubbed_added>1?'s':''} of the same clubbed orders added — they're made together`:''}${r.clubbed_held?`. <span class="reason">${esc(r.clubbed_held)}</span>`:''}. Then press <b>Queue download</b> on <b>Print → Batches</b>.</div>`;
     refreshAll()}catch(e){alert(e.message)}};
 // ---------- Orders → Product chips (0.29): Organizer is the default; name stands are listed, made in a later update
 try{const p=localStorage.getItem('oproduct');if(p!==null)filter.product=p}catch{}
@@ -1353,7 +1355,7 @@ function bProgress(b){const c=b.count,live=c.orders-c.cancelled;if(!c.orders)ret
   const bar=(n,l)=>`<div class="bprog"><span>${l}</span><div class="bar"><i style="width:${live?100*n/live:0}%"></i></div><span class="hint">${n}/${live}</span></div>`;
   return bar(c.printed,'Printed')+bar(c.checked,'Checked')+bar(c.packed,'Packed')+bar(c.shipped,'Shipped')+(c.cancelled?`<div class="hint">${c.cancelled} cancelled</div>`:'')}
 async function loadBatches(){let r;try{r=await api('/api/batches')}catch(e){$('batches').innerHTML=`<tr><td colspan="6" class="reason">${esc(e.message)}</td></tr>`;return}BDATA=r;bRender()}
-function bRender(){const r=BDATA;if(!r)return;const all=r.batches;
+function bRender(){const r=BDATA;if(!r)return;const all=r.batches;mkReady();if(MK)mkChips();
   const arch=all.filter(b=>b.archived_at),act=all.filter(b=>!b.archived_at);
   $('bchips').innerHTML=[['active','Active',act.length],['archive','Archive',arch.length]].map(([k,l,n])=>`<button data-btab="${k}" class="${BTAB===k?'on':''}">${l} · ${n}</button>`).join('');
   document.querySelectorAll('[data-btab]').forEach(x=>x.onclick=()=>{BTAB=x.dataset.btab;try{localStorage.setItem('btab',BTAB)}catch{}bRender()});
@@ -1389,9 +1391,9 @@ function bRow(b,showPc){const st=BST[b.status]||[b.status,''];const p=b.progress
 function bWire(){
   document.querySelectorAll('[data-bmore]').forEach(x=>x.onclick=()=>{const id=+x.dataset.bmore;BOPEN.has(id)?BOPEN.delete(id):BOPEN.add(id);bRender()});
   document.querySelectorAll('[data-b]').forEach(x=>x.onclick=()=>openBatchDetail(+x.dataset.b));
-  document.querySelectorAll('[data-make]').forEach(x=>x.onclick=()=>show('makeit'));
-  document.querySelectorAll('[data-dl]').forEach(x=>x.onclick=async()=>{try{const r=await post(`/api/batches/${x.dataset.dl}/download`);$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for the helper — see Activities → Download queue`}catch(e){alert(e.message)}loadBatches()});
-  document.querySelectorAll('[data-redl]').forEach(x=>x.onclick=async()=>{if(!confirm('Re-download every model of this batch from MakerWorld? The new downloads replace the saved ones. Then use Queue build / Rebuild plates.'))return;try{const r=await post(`/api/batches/${x.dataset.redl}/download`,{force:true});$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for re-download — see Activities → Download queue`}catch(e){alert(e.message)}loadBatches()});
+  document.querySelectorAll('[data-make]').forEach(x=>x.onclick=()=>mkShow(MKORG));
+  document.querySelectorAll('[data-dl]').forEach(x=>x.onclick=async()=>{try{const r=await post(`/api/batches/${x.dataset.dl}/download`);$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for the helper — see Print → Batches → Download queue`}catch(e){alert(e.message)}loadBatches()});
+  document.querySelectorAll('[data-redl]').forEach(x=>x.onclick=async()=>{if(!confirm('Re-download every model of this batch from MakerWorld? The new downloads replace the saved ones. Then use Queue build / Rebuild plates.'))return;try{const r=await post(`/api/batches/${x.dataset.redl}/download`,{force:true});$('queueinfo').textContent=`${r.downloads_queued} model(s) queued for re-download — see Print → Batches → Download queue`}catch(e){alert(e.message)}loadBatches()});
   document.querySelectorAll('[data-rebuild]').forEach(x=>x.onclick=async()=>{if(!confirm('Rebuild the plates from the downloaded models? A new Batch folder is written; the old folder stays.'))return;try{await post(`/api/batches/${x.dataset.rebuild}/build`)}catch(e){alert(e.message)}loadBatches()});
   document.querySelectorAll('[data-build]').forEach(x=>x.onclick=async()=>{if(x.dataset.partial&&!confirm('Build now with the models that are ready? Orders still missing a model go back to Ready.'))return;try{await post(`/api/batches/${x.dataset.build}/build`)}catch(e){alert(e.message)}loadBatches()});
   document.querySelectorAll('[data-cancel]').forEach(x=>x.onclick=async()=>{if(confirm(x.textContent==='Stop'?'Stop this re-download? The batch goes back to done; its plates are unchanged.':'Cancel this batch? Its orders go back to Ready.')){try{await post(`/api/batches/${x.dataset.cancel}/cancel`)}catch(e){alert(e.message)}refreshAll();loadBatches()}});
@@ -1415,7 +1417,7 @@ async function loadObjects(id,status,mine){let r;try{r=await api(`/api/batches/$
   document.querySelectorAll('.objs img[data-key]').forEach(i=>i.onclick=()=>{$('bzoom').innerHTML=`<div class="toolbar" style="margin-top:10px"><b>Top view</b><span class="grow"></span><button class="small" id="bzclose">Close</button></div><img class="zoomimg" src="/api/models/${i.dataset.key}/view.png?side=top"><div class="toolbar" style="margin-top:6px"><b>Back</b></div><img class="zoomimg" src="${i.src}">`;$('bzclose').onclick=()=>$('bzoom').innerHTML=''})}
 async function openBatchDetail(id,quiet){const changed=openBatch!==id;openBatch=id;const b=await api('/api/batches/'+id);const s=b.summary||{};
   if(changed){$('bobjsbox').open=false;$('bzoom').innerHTML=''}
-  $('bmakeit').hidden=!(b.mine&&b.status.startsWith('done'));$('bmakeit').onclick=()=>show('makeit');
+  $('bmakeit').hidden=!(b.mine&&b.status.startsWith('done'));$('bmakeit').onclick=()=>mkShow(MKORG);
   loadObjects(id,b.status,b.mine);
   $('bdetail').hidden=false;$('btitle').textContent=`${s.label||'Batch #'+id} · ${b.order_ids.length} orders · ${b.computer||'this computer'}`;$('bzip').href=`/api/batches/${id}/zip`;$('bzip').hidden=!b.status.startsWith('done')||!b.mine;
   $('bother').hidden=b.mine;$('bother').innerHTML=b.mine?'':`<div class="w">This batch belongs to <b>${esc(b.computer||'another computer')}</b>: its models are downloaded and its plates built and saved there. You can follow its progress here; open SnapSTL on ${esc(b.computer||'that computer')} to change it or get its files.</div>`;
@@ -1442,20 +1444,7 @@ async function loadQueue(){const r=await api('/api/downloads');const d=r.downloa
 $('dlfinder').onclick=()=>post('/api/downloads/reveal');
 $('qpause').onclick=async()=>{await post('/api/downloader/'+($('qpause').dataset.paused==='1'?'resume':'pause'));loadQueue();refresh()};
 $('retry2').onclick=async()=>{await post('/api/downloads/retry');loadQueue()};
-// ---------- Activities (0.24) ----------
-let ACT=null,ACTKIND='';try{ACTKIND=localStorage.getItem('actkind')||''}catch{}
-const ACTKINDS=[['','All'],['print','Prints'],['check','Checks'],['build','Builds'],['download','Downloads'],['merge','Merges'],['cleanup','Clean-up'],['orders','Orders'],['label','Labels']];
-const ACTWORD={spare:['Spare piece','ok'],print:['Print','info'],check:['Check','ok'],build:['Build',''],download:['Download',''],merge:['Merge','info'],cleanup:['Clean-up','warn']};
-async function loadActivity(){try{ACT=(await api('/api/activity?days='+$('actdays').value)).items}catch(e){$('actlist').innerHTML=`<tr><td colspan="3" class="reason">${esc(e.message)}</td></tr>`;return}actRender()}
-function actRender(){if(!ACT)return;const q=$('actsearch').value.trim().toLowerCase();
-  const n=k=>ACT.filter(a=>!k||a.kind===k).length;
-  $('actkinds').innerHTML=ACTKINDS.map(([k,l])=>`<button data-ak="${k}" class="${ACTKIND===k?'on':''}">${l} · ${n(k)}</button>`).join('');
-  document.querySelectorAll('[data-ak]').forEach(b=>b.onclick=()=>{ACTKIND=b.dataset.ak;try{localStorage.setItem('actkind',ACTKIND)}catch{}actRender()});
-  const L=ACT.filter(a=>(!ACTKIND||a.kind===ACTKIND)&&(!q||a.text.toLowerCase().includes(q)));
-  $('actinfo').textContent=`${L.length} shown`;
-  let day=null;$('actlist').innerHTML=L.length?L.slice(0,800).map(a=>{const k=dayKey(a.at),w=ACTWORD[a.kind]||[a.kind,''];const head=k!==day?(day=k,`<tr><td colspan="3" style="background:var(--chip);font-weight:600">${esc(dayLabel(k))}</td></tr>`):'';
-    return head+`<tr><td class="hint">${new Date(a.at*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</td><td><span class="pill ${w[1]}">${esc(w[0])}</span></td><td>${esc(a.text)}</td></tr>`}).join(''):'<tr><td colspan="3" class="empty">Nothing in this period</td></tr>'}
-$('actdays').onchange=loadActivity;$('actsearch').oninput=actRender;$('actrefresh').onclick=()=>{loadActivity();loadQueue()};
+// 0.35 (owner): no Activities page — the activity log is still written (Verify, label Details, Stats)
 $('orefresh').onclick=async()=>{const b=$('orefresh');b.disabled=true;$('ingestmsg').textContent='Refreshing…';
   try{if(META.shared_records){const s=await post('/api/sync');$('ingestmsg').textContent=s.error?s.error:`Up to date ${new Date().toLocaleTimeString()} · sent ${s.pushed||0}, loaded ${s.pulled||0}`}else $('ingestmsg').textContent=`Refreshed ${new Date().toLocaleTimeString()}`}
   catch(e){$('ingestmsg').textContent=e.message}finally{b.disabled=false;refreshAll();loadOrders()}};
@@ -1506,7 +1495,11 @@ const setVal=v=>v!==''&&v!=null;
 
 // ---------- Print: Bases / Names / Completed / Removed ----------
 let MK=null,MKTAB='bases',MKFAST=null;const MKGOING=new Set();/* plates whose Start print is being sent */const MKSEL={};const OPTLBL={bed_levelling:'Bed levelling',flow_cali:'Flow calibration',timelapse:'Timelapse'};
-const MKPANES=['bases','names','stands','verify','completed','removed'];
+const MKPANES=['bases','names','stands','verify','completed','removed','batches'];
+// 0.35 (owner): Print by product — Custom Organizer (Bases / Letters) · GTA · Harry Potter · Barbie · Verify · Completed · Batches
+let MKORG='bases',MKPROD='gta',MKVPROD='';try{MKORG=localStorage.getItem('mkorg')||'bases';MKPROD=localStorage.getItem('mkprod')||'gta';MKVPROD=localStorage.getItem('mkvprod')||''}catch{}
+const mkStandProducts=()=>(PRODUCTS||[]).filter(p=>p.kind==='stand');
+function goBatch(id){show('makeit');mkShow('batches');openBatchDetail(id)}
 try{MKTAB=localStorage.getItem('mktab')||'bases'}catch{}if(!MKPANES.includes(MKTAB))MKTAB='bases';
 const mkPrinter=id=>(MK&&MK.printers.find(p=>String(p.id)===String(id)))||{};
 // a plate's print defaults on a printer: letter plates use the printer's Letters speed (Slicing → Letters, 0.27)
@@ -1518,23 +1511,44 @@ function optSummary(o,speed,dflt){dflt=dflt||{};const eff={};
   const sp=speed||dflt.speed||'';const on=(sp?[`Speed ${cap(sp)}`]:[]).concat(Object.entries(eff).map(([k,v])=>k==='plate_type'?String(v):`${OPTLBL[k]||k} ${optVal(v)}`));
   const own=!!speed||Object.values(o||{}).some(setVal);
   return (on.length?on.join(' · '):'Bambuddy defaults')+(own?' · changed for this plate':'')}
-function mkShow(t){MKTAB=t;try{localStorage.setItem('mktab',t)}catch{}for(const k of MKPANES)$('mk-'+k).hidden=k!==t;mkChips()}
-function mkChips(){if(!MK)return;const n={bases:MK.bases.length,names:MK.names.length,stands:(MK.stands||[]).length,verify:MK.verify.length,completed:MK.completed.length,removed:MK.removed.length};
-  const withStands=n.stands||(MK.printed_stands||[]).length||MKTAB==='stands';
-  $('mktabs').innerHTML=[['bases','Bases'],['names','Letters'],...(withStands?[['stands','Name stands']]:[]),['verify','Verify'],['completed','Completed'],['removed','Removed']].map(([k,l])=>`<button data-mk="${k}" class="${MKTAB===k?'on':''}"${k==='verify'&&n.verify?' style="border-color:var(--warn);color:var(--warn)"':''}>${l} · ${n[k]}</button>`).join('');
-  document.querySelectorAll('[data-mk]').forEach(b=>b.onclick=()=>mkShow(b.dataset.mk))}
+function mkShow(t){MKTAB=t;if(t==='bases'||t==='names')MKORG=t;try{localStorage.setItem('mktab',t);localStorage.setItem('mkorg',MKORG)}catch{}
+  for(const k of MKPANES)$('mk-'+k).hidden=k!==t;if(t==='batches'){loadBatches();loadQueue()}mkChips();if(MK&&t==='stands')mkRender(true)}
+function mkChips(){if(!MK)return;const st=MK.stands||[],sp=mkStandProducts(),nb=MK.bases.length,nn=MK.names.length;
+  const act=BDATA?BDATA.batches.filter(b=>!b.archived_at).length:'…';
+  const top=[['org','Custom Organizer',nb+nn],...sp.map(p=>['p:'+p.key,p.label,st.filter(r=>r.product===p.key).length]),['verify','Verify',MK.verify.length],['completed','Completed',MK.completed.length],['batches','Batches',act]];
+  const cur=['bases','names','removed'].includes(MKTAB)?'org':MKTAB==='stands'?'p:'+MKPROD:MKTAB;
+  $('mktabs').innerHTML=top.map(([k,l,n])=>`<button data-mk="${k}" class="${cur===k?'on':''}"${k==='verify'&&MK.verify.length?' style="border-color:var(--warn);color:var(--warn)"':''}>${esc(l)} · ${n}</button>`).join('');
+  let sub='';
+  if(['bases','names'].includes(MKTAB))sub=[['bases','Bases',nb],['names','Letters',nn]].map(([k,l,n])=>`<button data-mk2="${k}" class="${MKTAB===k?'on':''}">${l} · ${n}</button>`).join('');
+  else if(['verify','completed'].includes(MKTAB)){const L=MKTAB==='verify'?MK.verify:MK.completed;
+    sub=[['','All'],['organizer','Custom Organizer'],...sp.map(p=>[p.key,p.label])].map(([k,l])=>`<button data-mkv="${k}" class="${MKVPROD===k?'on':''}">${esc(l)} · ${k?L.filter(c=>c.product===k).length:L.length}</button>`).join('')}
+  $('mktabs2').innerHTML=sub;$('mktabs2').hidden=!sub;
+  document.querySelectorAll('[data-mk]').forEach(b=>b.onclick=()=>{const k=b.dataset.mk;
+    if(k==='org')mkShow(MKORG);else if(k.startsWith('p:')){MKPROD=k.slice(2);try{localStorage.setItem('mkprod',MKPROD)}catch{}mkShow('stands')}else mkShow(k)});
+  document.querySelectorAll('[data-mk2]').forEach(b=>b.onclick=()=>mkShow(b.dataset.mk2));
+  document.querySelectorAll('[data-mkv]').forEach(b=>b.onclick=()=>{MKVPROD=b.dataset.mkv;try{localStorage.setItem('mkvprod',MKVPROD)}catch{}mkChips();vRender(true);cRender()});
+  document.querySelectorAll('[data-mkremoved]').forEach(a=>a.onclick=e=>{e.preventDefault();mkShow('removed')});
+  document.querySelectorAll('[data-mkback2]').forEach(a=>a.onclick=e=>{e.preventDefault();mkShow(MKORG)})}
+// Getting ready (0.35): batches still downloading / building, at the top of Print
+function mkReady(){if(!BDATA||!$('mkready'))return;const L=BDATA.batches.filter(b=>b.mine&&!b.archived_at&&['created','waiting','models_ready','build_requested','building','failed'].includes(b.status));
+  $('mkready').innerHTML=L.length?`<div class="msgs">${L.map(b=>{const p=b.progress,bad=b.status==='failed'||(p&&p.failed);
+    const what=b.status==='created'?'not queued yet':b.status==='waiting'?`downloading ${p?p.ready+'/'+p.models:''}`:b.status==='models_ready'?'models ready':b.status==='failed'?'build failed':'building plates';
+    const act=b.status==='created'?`<button class="small primary" data-dl="${b.id}">Queue download</button>`:b.status==='models_ready'?`<button class="small primary" data-build="${b.id}">Queue build</button>`:'';
+    return `<div class="${bad?'e':'w'}" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span><b>Getting ready:</b> ${esc(b.label||'Batch #'+b.id)}${b.product&&b.product!=='organizer'?' · '+esc(b.product_label):''} · ${b.names||(b.order_ids||[]).length||''} names · ${esc(what)}${p&&p.failed?` · <b>${p.failed} model${p.failed>1?'s':''} failed</b>`:''}</span><span class="grow"></span>${act}<button class="small" data-gobatch="${b.id}">Open</button></div>`}).join('')}</div>`:'';
+  document.querySelectorAll('[data-gobatch]').forEach(x=>x.onclick=()=>goBatch(+x.dataset.gobatch))}
 const mkKey=r=>r.batch_id+'|'+r.file;
 // Letters → Merge (0.25.1): tick letter plates of one colour (fix plates too), not started, up to 3 names in all
 const MERGESEL=new Map(),MAXMERGE=3;
-const canMerge=r=>r.kind==='names'&&!r.job_active&&r.extra!=='merged'&&(!r.job||['reprint','unmerged'].includes(r.job.state));
+const canMerge=r=>['names','bases'].includes(r.kind)&&!r.job_active&&r.extra!=='merged'&&(!r.job||['reprint','unmerged'].includes(r.job.state));
 let MERGING=false;  // 0.28: a merge is being saved — every Merge button stays off until the page reloads
-function mkMergeBar(){const sel=[...MERGESEL.values()],n=sel.reduce((a,r)=>a+(r.open_items||[]).length,0),cols=[...new Set(sel.map(r=>(r.colors[0]||'').toLowerCase()))];
-  const why=sel.length<2?'Tick at least two plates of one colour':cols.length>1?'Only plates of the same colour can be merged':n>MAXMERGE?`At most ${MAXMERGE} names on one plate (${n} ticked)`:'';
-  $('mkmergebar').hidden=!sel.length;if(!sel.length)return;
-  $('mkmergebar').innerHTML=`<b>${sel.length} plate${sel.length===1?'':'s'} ticked · ${n} name${n===1?'':'s'}</b>${cols.length===1?' '+sw(cols[0]):''}<button class="primary small" id="mkmergego" ${why||MERGING?'disabled':''}>Merge onto one plate</button><button class="small" id="mkmergeclr">Clear</button><span class="hint">${esc(why||'Same size, no scaling. Split back undoes it before printing.')}</span>`;
+function mkMergeBar(){const sel=[...MERGESEL.values()],n=sel.reduce((a,r)=>a+(r.open_items||[]).length,0),bases=sel.length&&sel[0].kind==='bases',cols=bases?['']:[...new Set(sel.map(r=>(r.colors[0]||'').toLowerCase()))];
+  const word=bases?'base':'name';
+  const why=sel.length<2?(bases?'Tick at least two base plates':'Tick at least two plates of one colour'):cols.length>1?'Only plates of the same colour can be merged':n>MAXMERGE?`At most ${MAXMERGE} ${word}s on one plate (${n} ticked)`:'';
+  const bar=bases?$('mkbmergebar'):$('mkmergebar');$('mkmergebar').hidden=true;$('mkbmergebar').hidden=true;if(!sel.length)return;bar.hidden=false;
+  bar.innerHTML=`<b>${sel.length} plate${sel.length===1?'':'s'} ticked · ${n} ${word}${n===1?'':'s'}</b>${!bases&&cols.length===1?' '+sw(cols[0]):''}<button class="primary small" id="mkmergego" ${why||MERGING?'disabled':''}>Merge onto one plate</button><button class="small" id="mkmergeclr">Clear</button><span class="hint">${esc(why||'Same size, no scaling'+(bases?' — refused if they don\'t fit on the bed':'')+'. Split back undoes it before printing.')}</span>`;
   $('mkmergeclr').onclick=()=>{MERGESEL.clear();mkRender(true)};
-  $('mkmergego').onclick=async()=>{if(MERGING)return;const early=sel.filter(r=>(r.other_ready||0)<(r.open_items||[]).length);
-    if(!confirm(`Merge these ${sel.length} plates onto one ${cols[0]} plate?\n\n${sel.map(r=>r.names.join(', ')).join('\n')}\n\nThe single plates leave the list; Split back undoes it before printing.`))return;
+  $('mkmergego').onclick=async()=>{if(MERGING)return;const early=bases?[]:sel.filter(r=>(r.other_ready||0)<(r.open_items||[]).length);
+    if(!confirm(`Merge these ${sel.length} plates onto one ${bases?'base':cols[0]} plate?\n\n${sel.map(r=>r.names.join(', ')).join('\n')}\n\nThe single plates leave the list; Split back undoes it before printing.`))return;
     if(early.length&&!confirm(`Base not printed yet for: ${early.map(r=>r.names.join(', ')).join('; ')}\n\nThese letters would wait, printed, until their bases are printed. Merge anyway?`))return;
     MERGING=true;$('mkmergego').disabled=true;$('mknote').innerHTML='<div class="w"><span class="spin" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle"></span> Merging…</div>';
     try{const r=await post('/api/makeit/merge',{plates:sel.map(p=>({batch_id:p.batch_id,file:p.file})),token:VTOK,staff:VNAME||($('vstaff')?$('vstaff').value:'')});
@@ -1569,6 +1583,16 @@ function mkStatus(r){const j=r.job;if(!j||j.state==='reprint')return `<span clas
   const st=j.state==='printing'?((mkPrinter(j.printer_id)||{}).status||{}):{};
   return jobPill(j)+(st.remaining_time?`<div><b>Ready at ${finishAt(st.remaining_time)}</b></div>`:'')}
 const trayLbl=t=>`${t.slot} — ${t.name||t.color||t.hex||'?'}${t.material?' '+t.material:''}${t.remain!=null?' · '+t.remain+'%':''}${t.match===2?' ✓':t.match===1?' ≈':''}`;
+// 0.35: ≈ print time on the printer picked (from the prints already done) and when it would be ready if started now
+const SPPCT={silent:50,standard:100,sport:124,ludicrous:166};
+const mkDur=m=>m<60?`${m} min`:`${Math.floor(m/60)} h${m%60?' '+(m%60)+' m':''}`;
+function mkClock(t){const d=new Date(t),now=new Date(),tom=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1);
+  const hm=d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});return d.toDateString()===now.toDateString()?hm:d.toDateString()===tom.toDateString()?'tomorrow '+hm:d.toLocaleDateString([], {day:'numeric',month:'short'})+' '+hm}
+function mkEst(r,sel){const c=r.choices.find(x=>String(x.id)===sel.printer);if(!c)return '';
+  if(!c.est)return '<div class="hint">Time: not enough prints of this kind yet</div>';
+  const pct=SPPCT[sel.speed||(mkDefaults(r,sel.printer)||{}).speed||'sport']||124,m=Math.round(c.est.min*124/pct),wait=c.free_in||0;
+  const end=Date.now()+(wait+m)*60000,night=new Date(end).getHours()>=22||new Date(end).getHours()<8;
+  return `<div class="hint mkest" title="From ${c.est.prints} prints (${esc(c.est.basis)}), usually within ±${Math.round(c.est.err)} min">≈ ${mkDur(m)} · ready ~${mkClock(end)}${wait?` <span>(after its current print, ${mkDur(wait)})</span>`:''}${night&&m>=240?' · <b>overnight</b>':''}</div>`}
 function mkTrays(r,sel){const c=r.choices.find(x=>String(x.id)===sel.printer);return c?(c.trays||[]):[]}
 function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={printer:String(r.suggested??(r.job&&r.job.printer_id?r.job.printer_id:'')),options:{...((r.job&&r.job.options)||{})},speed:(r.job&&r.job.speed)||'',tray:(r.job&&r.job.ams_tray!=null)?String(r.job.ams_tray):'',tray2:(r.job&&r.job.ams_tray2!=null)?String(r.job.ams_tray2):''});
   const ch=r.choices.find(x=>String(x.id)===sel.printer),trays=mkTrays(r,sel),stand=r.kind==='stands';
@@ -1587,11 +1611,11 @@ function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={pri
   const tag=r.extra==='fix'?'<span class="pill err" title="Printed again: only what was spoiled">Fix</span> ':r.extra==='merged'?'<span class="pill info" title="Several plates merged onto this one">Merged</span> ':r.extra==='divided'?'<span class="pill info" title="Part of a plate split into smaller ones">Part</span> ':'';
   const nOpen=(r.open_items||[]).length,divOpts=n=>{const o=[Array(n).fill(1)];if(n===3)o.push([2,1]);if(n===4)o.push([2,2]);if(n>4)o.push([...Array(Math.floor(n/2)).fill(2),...(n%2?[1]:[])]);return o};
   const divSel=!busy&&!r.extra&&r.kind!=='stands'&&nOpen>=2&&(!j||['reprint','unmerged','failed','cancelled'].includes(j.state))?` <select class="small" data-mkdiv="${esc(k)}" title="Split this plate into smaller plates (same size), e.g. to print on different printers for a night run" style="max-width:110px"><option value="">Split…</option>${divOpts(nOpen).map(s=>`<option value="${s.join(',')}">${s.join(' + ')}</option>`).join('')}</select>`:'';
-  const plate=`<div class="fn">${tag}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>${(r.in_stock||[]).length?`<div><span class="pill ok" title="A spare piece with this name and colour is in stock (Orders → Spare pieces) — send it instead and Remove this plate, or print anyway">In stock: ${r.in_stock.length} of ${(r.open_items||[]).length}</span></div>`:''}${mkOther(r)}${r.express_by?'<div>'+expressBadge(r.express_by)+'</div>':''}`;
-  const mt=withColour&&canMerge(r)?(()=>{const c0=MERGESEL.size?(([...MERGESEL.values()][0].colors[0]||'').toLowerCase()):null,other=c0!==null&&c0!==(r.colors[0]||'').toLowerCase();
-    return `<input type="checkbox" data-mkmsel="${esc(k)}" ${MERGESEL.has(k)?'checked':''} ${other?'disabled title="Only plates of the same colour can be merged"':'title="Tick to merge with other plates of this colour"'} style="margin-right:6px;vertical-align:middle">`})():'';
+  const plate=`<div class="fn">${tag}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div>${(r.in_stock||[]).length?`<div><span class="pill ok" title="A spare piece with this name and colour is in stock (Orders → Spare pieces) — send it instead and Remove this plate, or print anyway">In stock: ${r.in_stock.length} of ${(r.open_items||[]).length}</span></div>`:''}${mkOther(r)}${r.express_by?'<div>'+expressBadge(r.express_by)+'</div>':''}${(r.club_wait||[]).length?'<div class="reason" title="A clubbed order: its other names are already made — the parcel waits for this one">Clubbed — other names already made: print this now</div>':''}`;
+  const mt=(withColour||r.kind==='bases')&&canMerge(r)?(()=>{const f=MERGESEL.size?[...MERGESEL.values()][0]:null,c0=f?((f.colors[0]||'').toLowerCase()):null,other=f&&(f.kind!==r.kind||(r.kind==='names'&&c0!==(r.colors[0]||'').toLowerCase()));
+    return `<input type="checkbox" data-mkmsel="${esc(k)}" ${MERGESEL.has(k)?'checked':''} ${other?`disabled title="${f.kind!==r.kind?'Bases merge with bases, letters with letters':'Only plates of the same colour can be merged'}"`:`title="Tick to merge with other ${r.kind==='bases'?'base plates (up to 3 bases)':'plates of this colour'}"`} style="margin-right:6px;vertical-align:middle">`})():'';
   return `<tr><td class="hint" style="white-space:nowrap">${mt}${esc(r.batch)}</td>${withColour?`<td style="white-space:nowrap">${r.kind==='stands'?(r.colors||[]).slice(0,2).map(c=>sw(c)).join('<br>'):sw(r.colors[0]||'')}</td>`:''}<td>${plate}</td>
-    <td><select data-mkpr="${esc(k)}" ${busy?'disabled':''}>${opts}</select>${traySel}${tray2Sel}</td>
+    <td><select data-mkpr="${esc(k)}" ${busy?'disabled':''}>${opts}</select>${traySel}${tray2Sel}${busy?'':mkEst(r,sel)}</td>
     <td>${sliceCell(r,sel)}</td>
     <td>${busy?`<span class="hint">${esc(optSummary(j&&j.options,j&&j.speed))}</span>`:`<details><summary class="hint" style="cursor:pointer">${esc(optSummary(sel.options,sel.speed,d))}</summary>${speedSel}${Object.entries(MK.options).map(([kk,v])=>optSel(kk,v)).join('')}<div class="hint" style="margin-top:4px">For this plate only. Each printer's defaults: <a href="#" data-go="slicing">Slicing</a>.</div></details>`}</td>
     <td>${mkStatus(r)}</td><td style="white-space:nowrap">${btn}${busy?'':(r.extra==='merged'?` <button class="small" data-mksplit="${esc(k)}" title="Back to the single plates (only before printing)">Split back</button>`:r.extra==='divided'?` <button class="small" data-mkjoin="${esc(k)}" title="Put the parts back on one plate (only while no part is started)">Join back</button>`:'')+` <button class="small" data-mkrm="${esc(k)}" title="Take it off this list (e.g. a copy, or printed by hand) — Put back in Removed">Remove</button>`}${divSel}</td></tr>`}
@@ -1602,16 +1626,16 @@ function mkRender(force){const editing=!force&&['mkbases','mknames','mkstands'].
     $('mkbsub').innerHTML=[['todo','To print',bl.length],['run','Printing',br.length],['done','Printed',pb.length]].map(([k,l,n])=>`<button data-mkbs="${k}" class="${MKBSUB===k?'on':''}">${l} · ${n}</button>`).join('');
     $('mkb-todo').hidden=MKBSUB!=='todo';$('mkb-run').hidden=MKBSUB!=='run';$('mkb-done').hidden=MKBSUB!=='done';
     $('mkbrun').innerHTML=br.length?br.map(r=>mkRunRow(r,false)).join(''):`<tr><td colspan="4" class="empty">${bq?'Nothing matches the search':'No base plates printing right now'}</td></tr>`;
-    $('mkbases').innerHTML=bl.length?bl.map(r=>mkRow(r,false)).join(''):`<tr><td colspan="7" class="empty">${bq?'Nothing matches the search':'No base plates waiting — build a batch first (Batches → Queue build)'}</td></tr>`;
+    $('mkbases').innerHTML=bl.length?bl.map(r=>mkRow(r,false)).join(''):`<tr><td colspan="7" class="empty">${bq?'Nothing matches the search':'No base plates waiting — make a batch on Pending Orders (it builds by itself; Print → Batches shows it)'}</td></tr>`;
     $('mkbdone').innerHTML=pb.length?pb.map(r=>`<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td><td><div class="fn">${r.extra==='fix'?'<span class="pill err">Fix</span> ':''}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div></td><td>${esc(r.printer||'—')}</td><td class="hint" style="white-space:nowrap">${r.done_at?new Date(r.done_at*1000).toLocaleString([], {day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}):''}</td><td>${mkOther(r)||'—'}</td><td><button class="small" data-vplate="${esc(r.batch_id+'|'+r.file)}" title="The bases on this plate came out wrong: print the plate again (bases already checked stay checked)">Whole plate failed…</button></td></tr>`).join(''):`<tr><td colspan="6" class="empty">${bq?'Nothing matches the search':'No printed base plates waiting for their letters'}</td></tr>`;
     document.querySelectorAll('#mkbdone [data-vplate]').forEach(x=>x.onclick=()=>vPlateFailed(x.dataset.vplate));
     document.querySelectorAll('[data-mkbs]').forEach(x=>x.onclick=()=>{MKBSUB=x.dataset.mkbs;try{localStorage.setItem('mkbsub',MKBSUB)}catch{}mkRender(true)});
     // name stands (0.32): To print / Printing / Printed, like Bases
-    const sq=$('mksq').value,sa=(MK.stands||[]).filter(r=>mkHit(r,sq)),sl=sa.filter(r=>!mkOnWay(r)),sr=sa.filter(mkOnWay),ps=(MK.printed_stands||[]).filter(r=>mkHit(r,sq));
+    const sq=$('mksq').value,sa=(MK.stands||[]).filter(r=>mkHit(r,sq)&&r.product===MKPROD),sl=sa.filter(r=>!mkOnWay(r)),sr=sa.filter(mkOnWay),ps=(MK.printed_stands||[]).filter(r=>mkHit(r,sq)&&r.product===MKPROD);
     const pair=r=>`<td style="white-space:nowrap">${(r.colors||[]).slice(0,2).map(c=>sw(c)).join('<br>')}</td>`;
     $('mkssub').innerHTML=[['todo','To print',sl.length],['run','Printing',sr.length],['done','Printed',ps.length]].map(([k,l,n])=>`<button data-mkss="${k}" class="${MKSSUB===k?'on':''}">${l} · ${n}</button>`).join('');
     $('mks-todo').hidden=MKSSUB!=='todo';$('mks-run').hidden=MKSSUB!=='run';$('mks-done').hidden=MKSSUB!=='done';
-    $('mkstands').innerHTML=sl.length?sl.map(r=>mkRow(r,true)).join(''):`<tr><td colspan="8" class="empty">${sq?'Nothing matches the search':'No name stand plates waiting — build a stand batch first (Batches → Queue build)'}</td></tr>`;
+    $('mkstands').innerHTML=sl.length?sl.map(r=>mkRow(r,true)).join(''):`<tr><td colspan="8" class="empty">${sq?'Nothing matches the search':'No plates of this product waiting — make a batch on Pending Orders (Print → Batches shows it)'}</td></tr>`;
     $('mksrun').innerHTML=sr.length?sr.map(r=>mkRunRow(r,true)).join(''):`<tr><td colspan="5" class="empty">${sq?'Nothing matches the search':'No name stand plates printing right now'}</td></tr>`;
     $('mksdone').innerHTML=ps.length?ps.map(r=>`<tr><td class="hint" style="white-space:nowrap">${esc(r.batch)}</td>${pair(r)}<td><div class="fn">${r.extra==='fix'?'<span class="pill err">Fix</span> ':''}${esc(r.file.split('/').pop())}</div><div class="hint">${esc(r.names.join(', '))}</div></td><td>${esc(r.printer||'—')}</td><td class="hint" style="white-space:nowrap">${mkWhen(r.done_at)}</td><td><button class="small" data-vplate="${esc(r.batch_id+'|'+r.file)}" title="The stands on this plate came out wrong: print the plate again">Whole plate failed…</button></td></tr>`).join('')
       :`<tr><td colspan="6" class="empty">${sq?'Nothing matches the search':'No printed name stand plates waiting for a check'}</td></tr>`;
@@ -1632,12 +1656,19 @@ function mkRender(force){const editing=!force&&['mkbases','mknames','mkstands'].
       return `<tr><td colspan="8" class="mkgrp"><b>${title}</b> <span class="hint">· ${list.length} plate${list.length===1?'':'s'} — ${hint}</span></td></tr>`+list.map(r=>{const c=r.colors[0]||'';let head='';
         if(byColor&&c!==last){last=c;const n=list.filter(x=>(x.colors[0]||'')===c).length;head=`<tr><td colspan="8"><b>${sw(c)}</b> <span class="hint">· ${n} plate${n===1?'':'s'}</span></td></tr>`}
         return head+mkRow(r,true)}).join('')};
-    for(const [k] of MERGESEL){const r=MK.names.find(x=>mkKey(x)===k);if(!r||!canMerge(r))MERGESEL.delete(k);else MERGESEL.set(k,r)}
+    for(const [k] of MERGESEL){const r=[...MK.names,...MK.bases].find(x=>mkKey(x)===k);if(!r||!canMerge(r))MERGESEL.delete(k);else MERGESEL.set(k,r)}
     $('mknames').innerHTML=names.length?grp('Base printed — print these letters now','their bases are printed',names.filter(ready))+grp('Base still to print','print these once their bases are printed',names.filter(r=>!ready(r)))
       :`<tr><td colspan="8" class="empty">${nq?'Nothing matches the search':'No letter plates waiting'}</td></tr>`}
   mkMergeBar();
-  document.querySelectorAll('[data-mkmsel]').forEach(x=>x.onchange=()=>{const r=MK.names.find(y=>mkKey(y)===x.dataset.mkmsel);x.checked&&r?MERGESEL.set(x.dataset.mkmsel,r):MERGESEL.delete(x.dataset.mkmsel);mkRender(true)});
+  document.querySelectorAll('[data-mkmsel]').forEach(x=>x.onchange=()=>{const r=[...MK.names,...MK.bases].find(y=>mkKey(y)===x.dataset.mkmsel);x.checked&&r?MERGESEL.set(x.dataset.mkmsel,r):MERGESEL.delete(x.dataset.mkmsel);mkRender(true)});
   $('mkmergewrap').hidden=!(MK.merge||[]).length;
+  // 0.35: base plates — sets of up to 3 bases that look like they fit, with ≈ print time
+  $('mkbmergewrap').hidden=!(MK.merge_bases||[]).length;
+  $('mkbmerge').innerHTML=(MK.merge_bases||[]).map((s,i)=>`<div class="msgs"><div class="w" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>${s.names} bases · ${s.plates.map(p=>`<b>${esc(p.names.join(', '))}</b> <span class="hint">(${esc(p.batch||'')})</span>`).join(' + ')}${s.est?` · ≈ ${mkDur(s.est.min)}${s.est.min>=480?' — <b>good overnight plate</b>':''}`:''}</span><span class="grow"></span><button class="small primary" data-bmerge="${i}" ${MERGING?'disabled':''}>Merge onto one plate</button></div></div>`).join('');
+  document.querySelectorAll('[data-bmerge]').forEach(x=>x.onclick=async()=>{const s=MK.merge_bases[+x.dataset.bmerge];
+    if(!confirm(`Merge ${s.plates.length} base plates onto one plate (${s.names} bases)?\n\n${s.plates.map(p=>p.names.join(', ')).join('\n')}\n\nNo scaling — refused if they don't fit. Split back undoes it before printing.`))return;
+    if(MERGING)return;MERGING=true;document.querySelectorAll('[data-bmerge]').forEach(b=>b.disabled=true);
+    try{const r=await post('/api/makeit/merge',{plates:s.plates.map(p=>({batch_id:p.batch_id,file:p.file})),token:VTOK,staff:VNAME||($('vstaff')?$('vstaff').value:'')});$('mknote').innerHTML=`<div class="ok">Merged: ${esc(r.names)} — ${esc(r.file.split('/').pop())}</div>`}catch(e){alert(e.message)}await loadMakeIt();MERGING=false;mkRender(true)});
   const dp=MK.duplicates||[];$('mkdupes').innerHTML=dp.length?`<div class="msgs"><div class="e"><b>Same names on two plates</b> (merge pressed twice): ${dp.map(d=>`<b>${esc(d.file.split('/').pop())}</b> is a copy of ${esc(d.of.file.split('/').pop())} — press <b>Remove</b> on it`).join('; ')}. Don't print it.</div></div>`:'';
   $('mkmerge').innerHTML=(MK.merge||[]).map((s,i)=>`<div class="msgs"><div class="w" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>${sw(s.color)} · ${s.plates.length} plates with room — ${s.plates.map(p=>`<b>${esc(p.names.join(', '))}</b> <span class="hint">(${esc(p.batch||'')})</span>`).join(' + ')}</span><span class="grow"></span><button class="small primary" data-merge="${i}" ${MERGING?'disabled':''} title="Put these ${s.names} names on one ${esc(s.color)} plate (same size, no scaling)">Merge onto one plate</button></div></div>`).join('');
   vRender(force);cRender();
@@ -1758,7 +1789,7 @@ async function vPlateFailed(key){const [bid,...f]=key.split('|'),file=f.join('|'
   catch(e){$('mknote').innerHTML='';if(!vExpired(e))alert(e.message)}loadMakeIt()}
 let VBUSY=false;  // a check is being saved: keep its card (and the saving screen) until it's done
 function vRender(force){if(VBUSY||(!force&&$('mkverify').contains(document.activeElement)))return;vWho();
-  const all=MK.verify||[],q=$('vq').value.trim().toLowerCase(),L=all.filter(c=>!q||`${c.name} ${c.order_id} ${c.batch}`.toLowerCase().includes(q));
+  const all=MK.verify||[],q=$('vq').value.trim().toLowerCase(),L=all.filter(c=>(!MKVPROD||c.product===MKVPROD)&&(!q||`${c.name} ${c.order_id} ${c.batch}`.toLowerCase().includes(q)));
   const other=MK.verify_waiting_other||0;
   $('vinfo').textContent=`${all.length} name${all.length===1?'':'s'} to check${other?` · ${other} waiting for their other part to print`:''}`;
   $('mkverify').innerHTML=L.length?L.map(c=>{const ci=all.indexOf(c),todo=c.items.filter(i=>i.status==='waiting'),bad=todo.some(i=>(VSEL[vKey(i)]||{result:'good'}).result!=='good');
@@ -1841,7 +1872,7 @@ function lbWire(){
 const CSEL=new Set();let CPICK=null;  // Completed → Some letters spoiled: {order_id, item, pcs, picked}
 const CPROB={base:'Reprint base',name:'Reprint letters (whole name)',letters:'Some letters spoiled',both:'Reprint both (base and letters)',colour:'Wrong colour (letters)'};
 function cRows(){const days=+$('cdays').value,q=$('csearch').value.trim().toLowerCase(),since=days?Date.now()/1000-days*86400:0;
-  return (MK.completed||[]).filter(r=>(!since||(r.checked_at||r.made_at||0)>=since)&&(!q||(r.name||'').toLowerCase().includes(q)||(r.order_id||'').toLowerCase().includes(q)))}
+  return (MK.completed||[]).filter(r=>(!MKVPROD||r.product===MKVPROD)&&(!since||(r.checked_at||r.made_at||0)>=since)&&(!q||(r.name||'').toLowerCase().includes(q)||(r.order_id||'').toLowerCase().includes(q)))}
 function cRender(){const L=cRows();
   $('mkdone').innerHTML=L.length?L.map(r=>`<tr><td><input type="checkbox" data-csel="${esc(r.order_id)}" ${CSEL.has(r.order_id)?'checked':''}></td><td><b>${esc(r.name)}</b> ${sw(r.color)}${r.quantity>1?` <span class="pill">×${r.quantity}</span>`:''}${r.had_fix?' <span class="pill warn" title="A part was printed again before it was good">had a fix</span>':''}</td>
     <td class="fn" style="font-size:12px">${esc(r.order_id)}${r.tab==='ship_it'?' <span class="pill ok">label done</span>':''}</td><td class="hint">${esc(r.batch_label||'')}</td><td class="hint">${esc(r.printer||'')}</td><td>${esc(r.checked_by||'')}</td>
@@ -2226,7 +2257,10 @@ async function loadReportImport(){try{const r=await api('/api/report-import');$(
   $('riinfo').innerHTML=`Watched folder: <code>${esc(r.folder)}</code> (checked every minute; files saved in the last 2 days, each once).`+(r.last.length?` Last: ${r.last.map(x=>esc(x.file)+(x.ok?` — ${x.new} new, ${x.updated} updated`:` — ${esc(x.error)}`)).join('; ')}`:'')}catch{}}
 $('riauto').onchange=async()=>{try{await post('/api/report-import',{on:$('riauto').checked})}catch(e){alert(e.message)}loadReportImport()};
 // ---------- Stats (0.26) ----------
-async function loadStats(){let r;try{r=await api('/api/stats?days='+$('stdays').value)}catch(e){$('sttiles').innerHTML=`<div class="e">${esc(e.message)}</div>`;return}
+async function loadPrintTimes(){try{const r=await api('/api/stats/print-times');const f=x=>x?`<td style="text-align:right">${x.b}</td><td style="text-align:right">${Math.round(x.a)} min</td><td style="text-align:right">${x.n}</td>`:'<td style="text-align:right" class="hint">—</td><td></td><td style="text-align:right" class="hint">too few</td>';
+  $('stptime').innerHTML=r.rows.map(x=>`<tr><td>${esc(x.printer)}</td><td>${esc(x.model)}</td>${f(x.bases)}${f(x.names)}</tr>`).join('')+(r.all&&(r.all.bases||r.all.names)?`<tr><td><b>All printers</b></td><td></td>${f(r.all.bases)}${f(r.all.names)}</tr>`:'')||'<tr><td colspan="8" class="empty">No prints done yet</td></tr>'}
+  catch(e){$('stptime').innerHTML=`<tr><td colspan="8" class="reason">${esc(e.message)}</td></tr>`}}
+async function loadStats(){loadPrintTimes();let r;try{r=await api('/api/stats?days='+$('stdays').value)}catch(e){$('sttiles').innerHTML=`<div class="e">${esc(e.message)}</div>`;return}
   const b=r.backlog,t=r.today,fmt=v=>v==null?'—':v,dt=d=>d?new Date(d+'T12:00:00').toLocaleDateString([], {day:'numeric',month:'short'}):'—';
   const tile=(label,val,hint,cls)=>`<div class="stile ${cls||''}"><span class="hint">${label}</span><b>${val}</b><span class="hint">${hint||''}</span></div>`;
   $('stfrom').textContent=`updated ${new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;
@@ -2436,9 +2470,9 @@ async function refresh(){try{const st=await api('/api/state');showShared(st.shar
   licHint(st.license_set);
   const key=JSON.stringify(st.counts)+JSON.stringify(q)+st.building;
   if(key!==lastKey){lastKey=key;loadFacets();
-    if(tab==='orders'||tab==='history')loadOrders(); if(tab==='batches')loadBatches()}
-  if(tab==='activity')loadQueue();
-  if(++TICK%3===0){if(tab==='makeit')loadMakeIt();if(tab==='printers'&&$('psauto').checked)loadStatusAll()}
+    if(tab==='orders'||tab==='history')loadOrders(); if(tab==='makeit'&&MKTAB==='batches')loadBatches()}
+  if(tab==='makeit'&&MKTAB==='batches')loadQueue();
+  if(++TICK%3===0){if(tab==='makeit'){loadMakeIt();loadBatches()}if(tab==='printers'&&$('psauto').checked)loadStatusAll()}
   if(TICK%8===0)loadHealth();
   const log=$('log');const atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-4;log.textContent=st.log.join('\n');if(atEnd)log.scrollTop=log.scrollHeight;
 }catch(e){}}

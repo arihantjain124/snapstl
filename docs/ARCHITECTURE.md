@@ -281,6 +281,25 @@ tick box and with *ask support…*; approving is only on the customer help page 
 Address and Report status by default. `_ORDER`: Express → clubbed orders with a name in production / made / packed
 (`clubbed.PARTNER_SQL`) → oldest.
 
+**Print by product (0.35, owner)** — sidebar: Pending Orders, Order History, Print, Printers, Slicing, Settings,
+Stats, Help (Batches and Activities gone: `OLD_PAGES` sends old links to Print). Print's chips: Custom Organizer
+(Bases / Letters) · one per stand product (`products.STANDS`, plates filtered by `product`) · Verify · Completed
+(product chips) · Batches (the old Batches page and the download queue, pane `mk-batches`). `makeit.board` tags
+every plate, Verify card and Completed row with `product` (from its orders' SKU). "Getting ready" = this computer's
+batches created / downloading / ready / building / failed (from `/api/batches`). The activity log is still written.
+
+**Print time estimates (0.35, `estimate.py`)** — from `print_jobs` done with `started_at`: minutes (finish − start,
+brought to Sport 124 % by `SPEED_PCT`) against letters on the plate (`estimate.letters`: names, a fix plate only its
+letters); per kind a line a + b·letters fitted per printer (≥ 10 prints), per printer model (≥ 5), else for all
+(≥ 5), outliers beyond 4× the median error dropped once. Kept 10 minutes. Each printer choice on Print carries
+`est` {min, err, basis, prints} and `free_in` (minutes left of its current print); the page scales by the chosen
+speed. `/api/stats/print-times` for Stats.
+
+**Merging base plates (0.35)** — `extras.merge` takes base plates (and base fix plates) too: up to 3 bases, no
+scaling, `_write` refuses what doesn't fit; plates of one kind only. `extras.base_suggestions`: base plates not
+started with 1–2 bases, sets that pass a cautious strip check (`_fits`: from each plate's preview footprints) with ≈
+time. `makeit.board` puts plates holding a clubbed order whose other names are made (`club_wait`) after Express.
+
 **Clubbed orders made together (0.34, `clubbed.py`)** — `create_batch` runs `clubbed.whole` first: every other name
 of a ticked clubbed order that is to make (same product) joins the batch; while any name of it is in check_name the
 whole clubbed order is left out (`clubbed_held` in the answer). Select oldest / Select all (`/api/orders/ids?count=`)

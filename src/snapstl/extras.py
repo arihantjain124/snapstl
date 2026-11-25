@@ -356,13 +356,14 @@ MERGEABLE = (None, "reprint", "unmerged")  # not started (or back in the list af
 
 @_one_at_a_time
 def merge(plates: list[dict], staff: str = "") -> dict:
-    """Merge letter plates [{batch_id, file}] of one colour (≤ 3 names in all; letter fix plates too) onto one plate."""
+    """Merge letter plates [{batch_id, file}] of one colour (≤ 3 names in all; letter fix plates too) onto one plate.
+    0.35 (owner): base plates too — up to 3 bases, no extra scaling; refused when they don't fit on the bed."""
     from .makeit import _batch_orders, plate_order_ids
 
     if len(plates) < 2:
         raise ExtraError("Choose at least two plates to merge")
     with db.tx() as con:
-        items, colors, batches, parts = [], set(), {}, []
+        items, colors, batches, parts, kinds = [], set(), {}, [], set()
         for p in plates:
             b = _own(con, int(p["batch_id"]))
             batches[b["id"]] = b
@@ -371,16 +372,19 @@ def merge(plates: list[dict], staff: str = "") -> dict:
             if pl is None:
                 fix = con.execute("SELECT * FROM extra_plates WHERE batch_id=? AND file=? AND state='active'",
                                   (b["id"], p["file"])).fetchone()
-            if fix is not None and (fix["kind"] != "fix" or fix["part"] != "names"):
+            if fix is not None and (fix["kind"] != "fix" or fix["part"] not in ("names", "bases")):
                 fix = None
-            if (pl is None or pl["kind"] != "names") and fix is None:
-                raise ExtraError("Only letter plates (and letter fix plates) can be merged")
+            if (pl is None or pl["kind"] not in ("names", "bases")) and fix is None:
+                raise ExtraError("Only letter plates and base plates (and their fix plates) can be merged")
+            kinds.add(pl["kind"] if pl else fix["part"])
+            if len(kinds) > 1:
+                raise ExtraError("Merge base plates with base plates and letter plates with letter plates")
             file = pl["file"] if pl else fix["file"]
             if _latest_state(con, b["id"], file) not in MERGEABLE:
                 raise ExtraError(f"{Path(file).name} is already started, printed, removed or merged")
             src = {"src": file, "src_batch": b["id"]}
             if fix is not None:
-                colors.add((fix["color"] or "").lower())
+                colors.add((fix["color"] or "").lower() if fix["part"] == "names" else "")
                 fitems = json.loads(fix["items"] or "[]")
                 state = {r[0]: r[1] for r in con.execute(
                     f"SELECT order_id, state FROM orders WHERE order_id IN ({','.join('?' * len(fitems))})",
@@ -396,21 +400,23 @@ def merge(plates: list[dict], staff: str = "") -> dict:
                                                                        process=True)))
                 items += [{**i, **src} for i in fitems]
                 continue
-            colors.add(((pl.get("colors") or [""])[0] or "").lower())
+            colors.add(((pl.get("colors") or [""])[0] or "").lower() if pl["kind"] == "names" else "")
             orders = _batch_orders(con, b)
             state = {o["order_id"]: o["state"] for o in orders}
             on = plate_order_ids(_plates(b), orders).get(pl["file"], [])
             for it in verify.plate_items(b["id"], pl, on):
                 if state.get(it["order_id"]) == "bundled":
                     m, _ = item_mesh(b, it)
-                    parts.append(make_part(f"{it['name']} - Name · {it['order_id']} #{len(parts) + 1}", m))
+                    parts.append(make_part(f"{it['name']} - {_word(pl['kind'])} · {it['order_id']} #{len(parts) + 1}", m))
                     items.append({**it, **src})
         if len(colors) != 1:
             raise ExtraError("Only plates of the same colour can be merged")
         if not items:
             raise ExtraError("Nothing left to print on these plates")
+        kind = kinds.pop()
         if len(items) > MAX_MERGE:
-            raise ExtraError(f"At most {MAX_MERGE} names on one plate ({len(items)} chosen)")
+            raise ExtraError(f"At most {MAX_MERGE} {'bases' if kind == 'bases' else 'names'} on one plate "
+                             f"({len(items)} chosen)")
         mine = _src_keys(items)
         for x in con.execute("SELECT file, items FROM extra_plates WHERE state='active' AND kind IN ('merged','divided')"):
             if mine & _src_keys(json.loads(x[1] or "[]")):
@@ -418,16 +424,18 @@ def merge(plates: list[dict], staff: str = "") -> dict:
         color = colors.pop()
         home = batches[max(batches)]
         names = " + ".join(it["name"] + (f" ({it['letters']})" if it.get("letters") else "") for it in items)
-        file, prev = _write(Path(home["out_dir"]) / "Merged", f"Merged - {_title(color)} - {names}", parts,
-                            _plate_cfg(home), "names")
+        head = "Bases" if kind == "bases" else _title(color)
+        file, prev = _write(Path(home["out_dir"]) / "Merged", f"Merged - {head} - {names}", parts,
+                            _plate_cfg(home), kind)
         file = f"Merged/{file}"
-        _record(con, home["id"], file, "merged", "names", color, items, prev, names, staff)
+        _record(con, home["id"], file, "merged", kind, color, items, prev, names, staff)
         now = db.now()
         for p in plates:
             con.execute("INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,created_at,"
-                        "updated_at,computer_id) VALUES (?,?, 'names', ?, 0, '', 'merged', ?, ?, ?)",
-                        (int(p["batch_id"]), p["file"], color, now, now, computer.ID))
-        db.add_activity(con, "merge", f"Merged {len(plates)} {color} plates onto one: {names}")
+                        "updated_at,computer_id) VALUES (?,?,?,?, 0, '', 'merged', ?, ?, ?)",
+                        (int(p["batch_id"]), p["file"], kind, color, now, now, computer.ID))
+        db.add_activity(con, "merge", f"Merged {len(plates)} {head.lower() if kind == 'bases' else color} plates "
+                                      f"onto one: {names}")
     return {"batch_id": home["id"], "file": file, "names": names}
 
 
@@ -447,8 +455,8 @@ def split(batch_id: int, file: str) -> dict:
         for bid, pf in plates:
             if _latest_state(con, bid, pf) == "merged":
                 con.execute("INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,created_at,"
-                            "updated_at,computer_id) VALUES (?,?, 'names', ?, 0, '', 'unmerged', ?, ?, ?)",
-                            (bid, pf, x["color"], now, now, computer.ID))
+                            "updated_at,computer_id) VALUES (?,?,?,?, 0, '', 'unmerged', ?, ?, ?)",
+                            (bid, pf, x["part"], x["color"], now, now, computer.ID))
         db.add_activity(con, "merge", f"Split back {Path(file).name} into {len(plates)} plates")
     return {"ok": True, "plates": len(plates)}
 
@@ -631,3 +639,51 @@ def suggestions(names_rows: list[dict]) -> list[dict]:
                                     "batch": r.get("batch")} for r in pick]})
             rs = [r for r in rs if r not in pick]
     return out
+
+
+GAP = 5.0  # mm between bases (the fit check below is a quick, cautious guess; Merge itself packs them for real)
+
+
+def _fits(rows: list[dict]) -> bool:
+    """Bases side by side as strips: the longest fits the bed and their short sides add up within it."""
+    fps = [f for r in rows for f in (r.get("footprints") or [])]
+    bed = next((r.get("bed") for r in rows if r.get("bed")), None) or [256, 256]
+    margin = next((r.get("margin") for r in rows if r.get("margin") is not None), 5)
+    room = min(bed) - 2 * float(margin)
+    if not fps or len(fps) != sum(len(r.get("open_items") or []) for r in rows):
+        return False  # partly checked plates or no preview: don't guess
+    return max(f[0] for f in fps) <= room and sum(f[1] for f in fps) + GAP * (len(fps) - 1) <= room
+
+
+def base_suggestions(base_rows: list[dict], est: dict | None = None) -> list[dict]:
+    """Merge ideas for Print → Bases (0.35): base plates not started with 1–2 bases, sets of up to 3 bases that
+    look like they fit on one plate (most bases per plate first), with ≈ print time (overnight ≥ 8 h)."""
+    from . import estimate
+
+    cand = []
+    for r in base_rows:
+        if r.get("extra") or r.get("job_active") or r.get("done"):
+            continue
+        if ((r.get("job") or {}).get("state")) not in MERGEABLE:
+            continue
+        n = len(r.get("open_items") or [])
+        if 0 < n < MAX_MERGE and len(r.get("names") or []) == n:
+            cand.append({**r, "_n": n})
+    cand.sort(key=lambda r: (-r["_n"], r["batch_id"]))
+    out = []
+    while len(cand) >= 2:
+        pick = [cand[0]]
+        for r in cand[1:]:
+            if sum(x["_n"] for x in pick) + r["_n"] <= MAX_MERGE and _fits(pick + [r]):
+                pick.append(r)
+        if len(pick) < 2:
+            cand = cand[1:]
+            continue
+        names = [n for r in pick for n in r.get("names", [])]
+        m = estimate.minutes(est or {}, "bases", estimate.letters(names))
+        out.append({"kind": "bases", "names": len(names),
+                    "est": m, "plates": [{"batch_id": r["batch_id"], "file": r["file"], "names": r.get("names", []),
+                                          "batch": r.get("batch")} for r in pick]})
+        cand = [r for r in cand if r not in pick]
+    return out
+

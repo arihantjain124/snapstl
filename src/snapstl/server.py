@@ -1794,6 +1794,19 @@ def stats_get(days: int = 30):
     return stats.stats(days, SETTINGS.daily_target)
 
 
+@app.get("/api/stats/print-times")
+def stats_print_times():
+    """Stats → Print time per letter (0.35): each printer's figures from the prints already done."""
+    from . import estimate
+
+    try:
+        prs = farm.printers(with_status=False)
+    except farm.FarmError:
+        prs = []
+    m = estimate.model(prs)
+    return {"rows": estimate.table(prs), "all": {k: (m.get(k) or {}).get("all") for k in ("bases", "names", "stands")}}
+
+
 @app.post("/api/stats/target")
 async def stats_target(req: Request):
     """The daily target (orders made per day) shown on Stats."""
