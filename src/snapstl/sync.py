@@ -521,9 +521,9 @@ def _payload(o: dict) -> dict:
 
 def _evaluate(local: dict, status: str | None) -> str:
     """Local state for an order nobody is making (released)."""
-    from .ingest import PRINT_STATUSES
+    from .ingest import to_make
 
-    if (status or "") not in PRINT_STATUSES:
+    if not to_make(status):  # 0.34: PRINT, AWB EXPIRED, ACCEPTANCE PENDING
         return "not_needed"
     return "needs_review" if (local.get("review_reason") or not local.get("color")) else "ready"
 

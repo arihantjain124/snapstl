@@ -48,7 +48,8 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   (`farm.refresh_from_bambuddy`) only asks printers to report their status again.
 
 **Technical rules**
-- **Shipping labels (0.33, `labels.py`, `helper/shopdeck.js`)**: the helper never signs in to ShopDeck (a person does, then presses Continue) and uses only the page's own buttons, never ShopDeck's API. A label is pressed only after SnapSTL matched the page to the report's parcel exactly, the courier change gave a new AWB and the wait passed; it prints only after the PDF's AWB, order ID, item count, quantity and names matched. Every check fails closed; never retry a stopped job by itself, never loosen a check to make a job pass.
+- **Shipping labels (0.33, `labels.py`, `helper/shopdeck.js`)**: the helper never signs in to ShopDeck (a person does, then presses Continue) and uses only the page's own buttons, never ShopDeck's API. A label is pressed only after SnapSTL matched the page to the report's parcel exactly, the courier change gave a new AWB and the wait passed; it prints only after the PDF's AWB, order ID, item count, quantity and names matched. Every check fails closed; never retry a stopped job by itself, never loosen a check to make a job pass. A search counts as "not found" only on ShopDeck's own *No result found* (0.33.2); a quiet ShopDeck tab stops the job (never wait forever).
+- **Clubbed orders (0.34, `clubbed.py`)**: batched whole, and not at all while a name of it waits for its check — never batch one name of a clubbed order alone (one parcel ships only when every name is made).
 - MakerWorld models come **only** from the SnapSTL Helper (`helper/`) in the user's own Chrome.
   Direct API calls and app-controlled browsers were tried and **don't work** (ARCHITECTURE §16) — don't retry them.
 - Never add code that hides automation, spoofs browser fingerprints, or solves CAPTCHAs/Cloudflare

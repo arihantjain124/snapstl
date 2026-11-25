@@ -393,7 +393,7 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   block / letter colours and letter spacing.
 - **Spare pieces** (0.28, Orders → **Spare pieces**): bases kept in stock (extras, mistakes, bases made before
   SnapSTL) and complete pieces; letters aren't kept (0.28.1). Name exactly as on the base. A new order with that
-  name shows **In stock** (Orders → To make → **Piece in stock**, a notice on Orders, a tag on Print) — a base fits
+  name shows **In stock** (on its row in Pending Orders → To make, a notice there, a tag on Print) — a base fits
   whatever the letters' colour; a complete piece needs the same colour and is sent with **Use spare piece** (the
   order goes to Ready to pack; **Undo spare piece** puts it back; batches leave such orders out). Print → Removed →
   **Add to spare pieces** on a bases plate that was printed anyway. Shared with every computer.
@@ -459,24 +459,27 @@ The bottom of the sidebar shows at a glance whether the **Helper**, **Bambuddy**
      computers.
    - An older report never undoes a newer status.
    - **Ad-hoc request?** Click **Add ad-hoc order** and type the name to print, mobile and colour
-     (quantity and a note are optional). It goes straight to **New orders – to make → Ad-hoc** with today's date and
+     (quantity and a note are optional). It goes straight to **Pending Orders → To make** with today's date and
      time and an `AH-…` order ID, and from there is batched and printed like any other order.
-2. **Check the tabs** (three groups; every order is in exactly one tab):
-   - **Make:** **New orders – to make** (sub-tabs **Single**, **Clubbed**, **Ad-hoc**, **Returned piece
-     available**, **Express**), **Check name first**, **Ready to print** (in a batch), **Printing** (a
-     plate of it was started).
-   - **Pack & ship:** **Printed – pack it** (name and base both printed), **Label done – ship it**
-     (the labelling team pressed **Label Generated**, or the website says PACK / HANDOVER).
-   - **Records:** **On the way**, **Delivered**, **Coming back (RTO)**, **Cancelled**, **Problems –
-     check** (something doesn't add up: sort it out, then **Clear flag**), **Skipped**, **All**.
+2. **Check the lists** (0.34; every order is in exactly one):
+   - **Pending Orders:** **To make** — one list: PRINT, **AWB EXPIRED** and **ACCEPTANCE PENDING** orders,
+     single, clubbed and ad-hoc, Express on top, then clubbed orders whose other names are already in
+     production (*make this now*), then the oldest. Orders whose name support must check with the customer
+     are listed in date order but can't be ticked. **In production** (in a batch / printing).
+     **Needs attention** shows only when something needs a decision (sort it out, then **Clear flag**).
+   - **Order History:** **Ready to pack**, **Packed**, **Shipped**, **Delivered**, **Returned (RTO)**,
+     **Cancelled**, **Skipped**, **All**.
+   - **Clubbed orders are made together:** ticking one name ticks the others; a batch takes every name of it,
+     and none while one name still waits for its check.
    - **EXPRESS · needed by …** orders are always at the top (red from 3 days before the date).
    - **Returned piece available:** a returned order has exactly the same name and colour; check the
      piece, then **Use returned piece** sends it instead of making a new one (**Undo returned piece**
      to make it after all).
-   - Type in the boxes under the column names to filter. Choose columns under **Choose columns**; **Save current view** remembers the columns, category and filters in this browser. Use the controls below the table to change pages and rows per page.
-   - In **Check name first**, fix the name or colour and click **Approve**. Names starting with a small
-     letter (e.g. *riya*) land here too: usually a typing slip, so check it with the customer.
-3. **Make a batch.** In **New orders – to make** (oldest first, Express on top; each shows how many days it
+   - Type in the boxes under the column names to filter. Choose columns under **Columns** (Pending Orders hides
+     Phone, Address and Report status); **Save view** remembers the columns, category and filters in this browser. Use the controls below the table to change pages and rows per page.
+   - A name to check is confirmed by support on the customer help page (port 8003). Names starting with a small
+     letter (e.g. *riya*) need a check too: usually a typing slip, so check it with the customer.
+3. **Make a batch.** In **Pending Orders → To make** (oldest first, Express on top; each shows how many days it
    has waited and its **Payment**: Prepaid / COD / Partial COD), tick orders — or type how many and press
    **Select oldest**, or **Select all matching** — then click **Create batch**. They move to **Ready to print**.
    On **Batches**, each name shows **B** (base) and **L** (letters): ✓ printed, ◐ printing, ○ to print, and
@@ -536,7 +539,9 @@ The **Help** page in the app explains every tab, status and setting.
    (100 × 150 mm) in its Windows printer settings.
 2. Settings → Logistics → **Shipping labels**: tick *Shipping labels on*, pick the label printer, keep the courier
    order and the 60-second wait. Save settings.
-3. In Chrome (with the SnapSTL Helper), sign in to ShopDeck and leave **Process Orders** open.
+3. In Chrome (with the SnapSTL Helper 2.6+), sign in to ShopDeck and leave **Process Orders** open. On Print label
+   the Helper brings that tab to the front (Chrome slows tabs in the background) and goes back to SnapSTL when the
+   label is done; don't switch away meanwhile. A stopped label shows why — **Details** lists every step.
 4. Print → **Completed** → **Print label** on a checked order. A parcel with other products asks first whether every
    item is ready. The helper changes the courier, waits a minute, presses Label; SnapSTL checks the label and prints
    it, and the order goes to *Label done – ship it*. If ShopDeck asks you to sign in, do it, then press **Continue**.

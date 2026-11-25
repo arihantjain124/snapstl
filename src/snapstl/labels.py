@@ -16,6 +16,11 @@ unexpected stops the job with the reason, and a stopped job is never retried by 
 Steps of a job (`label_jobs.step`): find → (regenerate → find) → logistic → saving → wait → check → label →
 pressing → pdf → done. States: queued, working, login (waiting for a person to sign in), printing, done,
 failed, cancelled.
+
+0.33.2 (a day of staff use: 14 of 23 presses hung while "finding the order"): the helper brings the ShopDeck
+tab to the front for each job (Chrome slows and freezes background tabs) and sends a heartbeat; a job no tab
+takes within `pickup_timeout_s`, or whose tab goes quiet for `stall_timeout_s`, stops with the reason. Every
+look and step is kept in `label_events` and shown under the job.
 """
 from __future__ import annotations
 
@@ -112,7 +117,9 @@ def problems(p: dict) -> list[str]:
     for x in p["lines"]:
         if x["ours"] and not x["made"]:
             out.append(f"{x['shown'] or x['order_id']} isn't made and checked yet")
-        if x["status"] not in OK_STATUSES:
+        if x["status"] == "ACCEPTANCE-PENDING":  # 0.34: made before it's accepted — no label until then
+            out.append(f"{x['order_id']} is still waiting for acceptance — accept it on ShopDeck first")
+        elif x["status"] not in OK_STATUSES:
             out.append(f"{x['order_id']} is {x['status'] or 'unknown'} on the website (not waiting for a label)")
     return out
 
@@ -157,8 +164,11 @@ def request(order_ids: list[str], staff: str = "", items_ready: bool = False, se
                               (key, p["search"], int(p["clubbed"]), json.dumps(expected),
                                (staff or "someone") if p["others"] else None, staff or None, now, now))
             db.add_activity(con, "label", f"Print label: {key}" + (f" (all items ready — {staff})" if p["others"] else ""))
+            _trace(con, int(cur.lastrowid), f"Print label pressed by {staff or 'someone'}"
+                   + (" (all items ready)" if p["others"] else ""))
             out.append(_job(con, int(cur.lastrowid)))
-        return out
+    WATCHER.kick()
+    return out
 
 
 def _settings():
@@ -181,7 +191,19 @@ def _set(con, job_id: int, **values) -> None:
     con.execute(f"UPDATE label_jobs SET {', '.join(f'{k}=?' for k in values)} WHERE id=?", (*values.values(), job_id))
 
 
+def _trace(con, job_id: int, what: str) -> None:
+    con.execute("INSERT INTO label_events(job_id, at, what) VALUES (?,?,?)", (job_id, db.now(), what[:1000]))
+
+
+def trace(job_id: int) -> list[dict]:
+    """What the job saw and did, oldest first (for the page)."""
+    with db.tx() as con:
+        return [{"at": r[0], "what": r[1]} for r in
+                con.execute("SELECT at, what FROM label_events WHERE job_id=? ORDER BY id", (job_id,))]
+
+
 def _fail(con, job: dict, why: str) -> dict:
+    _trace(con, job["id"], f"Stopped: {why}")
     _set(con, job["id"], state="failed", error=why[:500])
     db.add_activity(con, "label", f"Label for {job['key']} stopped: {why}"[:500])
     return {"do": "stop", "error": why}
@@ -195,6 +217,7 @@ def cancel(job_id: int) -> dict:
             return j
         if j["step"] in ("pressing", "pdf"):
             raise LabelError("Label was already pressed on ShopDeck — wait for the PDF")
+        _trace(con, job_id, f"Stopped by a person (at: {STEP_WORDS.get(j['step'], j['step'])})")
         _set(con, job_id, state="cancelled", error="Stopped by a person")
         return _job(con, job_id)
 
@@ -204,12 +227,24 @@ def signed_in(job_id: int) -> dict:
     with _LOCK, db.tx() as con:
         j = _job(con, job_id)
         if j["state"] == "login":
+            _trace(con, job_id, "Continue pressed after signing in")
             _set(con, job_id, state="working", error=None)
-        return _job(con, job_id)
+            _ALIVE[job_id] = time.time()
+        out = _job(con, job_id)
+    WATCHER.kick()
+    return out
 
 
 # ---------------- the helper's side (helper/shopdeck.js) ----------------
 _SEEN = {"at": 0.0}  # the ShopDeck tab's last call (the page says when no ShopDeck tab is open)
+_ALIVE: dict[int, float] = {}  # job → the ShopDeck tab's last word about it (heartbeat, look or step)
+_VIS: dict[int, str] = {}      # job → the tab's last visibility ("visible" / "hidden")
+_FRONT: dict[int, float] = {}  # queued job → since when it is first in line with nothing else working
+_BOOT = time.time()
+
+
+def _last_word(j: dict) -> float:
+    return max(_ALIVE.get(j["id"], _BOOT), j["updated_at"] or 0)
 
 
 def helper_next(settings=None) -> dict:
@@ -223,7 +258,10 @@ def helper_next(settings=None) -> dict:
             if r is None:
                 return {"job": None}
             _set(con, r[0], state="working")
+            _trace(con, r[0], "ShopDeck tab took the job")
         j = _job(con, r[0])
+        if j["state"] == "working":
+            _ALIVE[j["id"]] = time.time()
         if j["state"] == "login":
             return {"job": None, "login": True, "key": j["key"]}
         if j["step"] in ("pressing", "pdf"):
@@ -269,9 +307,12 @@ def helper_seen(job_id: int, seen: dict) -> dict:
         j = _job(con, job_id)
         if j["state"] != "working":
             return {"do": "stop", "error": f"This job is {j['state']}"}
+        _ALIVE[job_id] = time.time()
+        _trace(con, job_id, "Saw: " + _seen_words(seen))
         where = seen.get("where")
         if where == "none":
-            return _fail(con, j, "Not found on ShopDeck (Print and Expired AWB, " + ("Clubbed" if j["clubbed"] else "Single")
+            return _fail(con, j, "ShopDeck said No result found in Print and in Expired AWB ("
+                         + ("Clubbed" if j["clubbed"] else "Single")
                          + " tab) — it may be packed, cancelled or older than the Expired AWB date range")
         if (seen.get("tab") or "") != ("clubbed" if j["clubbed"] else "single"):
             return _fail(con, j, f"Found in the {seen.get('tab')} tab, expected {'Clubbed' if j['clubbed'] else 'Single'}")
@@ -327,6 +368,8 @@ def helper_step(job_id: int, step: str, data: dict) -> dict:
         j = _job(con, job_id)
         if j["state"] != "working":
             return {"do": "stop", "error": f"This job is {j['state']}"}
+        _ALIVE[job_id] = time.time()
+        _trace(con, job_id, f"Step: {step}" + ("" if not data else " " + json.dumps(data, ensure_ascii=False)[:600]))
         allowed = {"regenerating": ("regenerate",), "regenerated": ("regenerating",), "saving": ("logistic",),
                    "saved": ("saving",), "pressing": ("label",), "pressed": ("pressing",)}
         if j["step"] not in allowed.get(step, ()):
@@ -372,7 +415,37 @@ def helper_fail(job_id: int, error: str) -> dict:
             if j["step"] in ("pressing", "pdf"):  # Label may be pressed: the PDF watcher decides
                 return {"ok": True}
             _fail(con, j, error or "The ShopDeck page didn't do what was expected")
+        else:
+            _trace(con, job_id, f"ShopDeck tab reported (job already {j['state']}): {error}")
         return {"ok": True}
+
+
+def helper_alive(job_id: int, info: dict) -> dict:
+    """Heartbeat from the ShopDeck tab while it works on a job (every few seconds, also while waiting).
+    `visible`: the tab's visibility; `note`: something worth keeping (tab brought to the front, …)."""
+    with _LOCK, db.tx() as con:
+        j = _job(con, job_id)
+        if j["state"] in ("working", "login"):
+            _ALIVE[job_id] = time.time()
+        vis = str(info.get("visible") or "")
+        if vis and vis != _VIS.get(job_id):
+            if vis != "visible" or job_id in _VIS:
+                _trace(con, job_id, "ShopDeck tab is " + ("in front" if vis == "visible" else
+                                                          "in the background — Chrome slows it down"))
+            _VIS[job_id] = vis
+        if info.get("note"):
+            _trace(con, job_id, str(info["note"])[:300])
+        return {"state": j["state"]}
+
+
+def _seen_words(s: dict) -> str:
+    if s.get("where") == "none":
+        return "not on ShopDeck" + (f" ({s['why']})" if s.get("why") else "")
+    out = f"{s.get('where')} list, {s.get('tab')} tab, {s.get('count') or 0} result(s)"
+    if s.get("club"):
+        out += f", clubbed {s['club']} ({s.get('sub') or '?'} sub-orders)"
+    return out + (f", orders {', '.join(s.get('ids') or []) or '-'}, SKUs {', '.join(s.get('skus') or []) or '-'}, "
+                  f"AWB {s.get('awb') or '-'}, courier {s.get('partner') or '-'}")
 
 
 def helper_login(job_id: int | None) -> dict:
@@ -383,6 +456,7 @@ def helper_login(job_id: int | None) -> dict:
         if jid:
             j = _job(con, jid)
             if j["state"] == "working" and j["step"] not in ("pressing", "pdf"):
+                _trace(con, jid, "ShopDeck asked for a sign-in")
                 _set(con, jid, state="login", error="Sign in to ShopDeck in Chrome, then press Continue")
     return {"ok": True}
 
@@ -502,6 +576,8 @@ def _finish(job_id: int, path: Path) -> None:
             _set(con, job_id, state="done", step="done", error=f"Label made but not printed: {err} — press Reprint")
         else:
             _set(con, job_id, state="done", step="done", error=None, printed_at=now, prints=(j["prints"] or 0) + 1)
+        _trace(con, job_id, f"Label PDF checked, kept as {dest.name}; " + (f"not printed: {err}" if err else
+                                                                           f"printed on {st.labels.printer}"))
         db.add_activity(con, "label", f"Label {j['key']} AWB {j['new_awb']} ({j['courier'] or ''})"
                         + (f" — not printed: {err}" if err else f" printed on {st.labels.printer}"))
 
@@ -546,12 +622,13 @@ class Watcher:
                 time.sleep(2)
 
     def tick(self) -> bool:
-        """One look at Downloads. Returns True while some job still waits for its PDF."""
+        """One look at Downloads and the clock. Returns True while some job is queued or working."""
         st = _settings()
+        busy = self._timeouts(st)
         with _LOCK, db.tx() as con:
             jobs = [_job(con, r[0]) for r in con.execute(
                 "SELECT id FROM label_jobs WHERE state='working' AND step IN ('pressing','pdf')")]
-        waiting = False
+        waiting = busy
         for j in jobs:
             f = find_pdf(j["key"], j["pressed_at"] or 0)
             if f is not None:
@@ -566,6 +643,47 @@ class Watcher:
             waiting = True
         return waiting
 
+
+    @staticmethod
+    def _timeouts(st) -> bool:
+        """0.33.2: stop a job no ShopDeck tab takes, or whose tab went quiet (Chrome slows background tabs
+        down and freezes them; a closed tab says nothing). Label pressed (pressing / pdf): the PDF decides."""
+        now = time.time()
+        lb = st.labels
+        with _LOCK, db.tx() as con:
+            rows = [_job(con, r[0]) for r in con.execute(
+                "SELECT id FROM label_jobs WHERE state IN ('queued','working','login') ORDER BY id")]
+            working = [j for j in rows if j["state"] in ("working", "login")]
+            for j in working:
+                if j["state"] != "working" or j["step"] in ("pressing", "pdf"):
+                    continue
+                last = _last_word(j)
+                quiet = now - last
+                limit = lb.stall_timeout_s + (lb.regenerate_timeout_s if j["step"] in ("regenerate", "regenerating")
+                                              else 0)
+                if j["step"] == "wait" and j["wait_until"]:
+                    limit += max(0.0, j["wait_until"] - last)
+                if quiet > limit:
+                    hidden = _VIS.get(j["id"]) == "hidden"
+                    _fail(con, j, f"The ShopDeck tab stopped answering ({int(quiet)} s) while "
+                                  f"{STEP_WORDS.get(j['step'], j['step'])}"
+                                  + (" — it was in the background" if hidden else "")
+                                  + _STALL_NOTE.get(j["step"], "")
+                                  + ". Keep ShopDeck's tab open; check the order on ShopDeck before trying again")
+            queued = [j for j in rows if j["state"] == "queued"]
+            if queued and not working:
+                j = queued[0]
+                since = _FRONT.setdefault(j["id"], max(now, j["created_at"]))
+                if now - since > lb.pickup_timeout_s:
+                    _fail(con, j, f"No ShopDeck tab took this label in {lb.pickup_timeout_s} s — open ShopDeck's "
+                                  "Process Orders in Chrome (signed in, SnapSTL Helper on), then press Print label again")
+            left = con.execute("SELECT COUNT(*) FROM label_jobs WHERE state IN ('queued','working')").fetchone()[0]
+            return bool(left)
+
+
+_STALL_NOTE = {"saving": " — the courier may have been changed on ShopDeck",
+               "regenerating": " — Regenerate may have run on ShopDeck",
+               "regenerate": " — Regenerate may have run on ShopDeck"}
 
 WATCHER = Watcher()
 

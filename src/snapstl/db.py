@@ -241,6 +241,10 @@ CREATE TABLE IF NOT EXISTS label_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, key
     items_ready_by TEXT, staff TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL, printed_at REAL,
     prints INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS label_jobs_key ON label_jobs(key);
+-- what each label job saw and did, step by step (0.33.2): shown under a stopped label, for finding out why
+CREATE TABLE IF NOT EXISTS label_events (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER NOT NULL, at REAL NOT NULL,
+    what TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS label_events_job ON label_events(job_id);
 -- a person confirmed a printer's bed is empty (Start print / Printers → Clear plate)
 CREATE TABLE IF NOT EXISTS bed_clears (printer_id INTEGER PRIMARY KEY, at REAL NOT NULL);
 -- when a downloaded model was last used by a batch (models unused for 15 days go to the Recycle Bin)

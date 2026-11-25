@@ -102,6 +102,7 @@ Snapstl/
 │   ├── content.js            on makerworld.com: works only in the working tab on the configured model page
 │   ├── inject.js             page world: copies plate_1/plate_2 .obj responses (read-only)
 │   ├── shopdeck.js           on pro.shopdeck.com: shipping labels — finds the order, courier, Label (2.5, 0.33)
+│   ├── snapstl_page.js       on SnapSTL's page: Print label → bring ShopDeck's tab to the front (2.6, 0.33.2)
 │   └── popup.html, popup.js  app status, model designId, working tab on/off the page; "Open model page", "Use this tab"
 ├── src/snapstl/
 │   ├── __init__.py           entry points: main() (window), serve() (service); port, keep awake, folder picker
@@ -272,14 +273,32 @@ case-sensitive, and colour, not used yet), `express` and `all`; rows sorted Expr
 flagged and reused ones). Mark printed / Back to Bundled buttons are gone (the endpoint stays for old
 data).
 
+**Pending Orders / Order History (0.34, owner)** — the sidebar has **Pending Orders** (chips: To make = `pending`
+= to_make + check_name, In production, and **Needs attention** = `problems` only while it isn't empty) and **Order
+History** (pack_it, ship_it and the records); both use the same section (`ordMode`). The sub-tab keys stay on the
+server (old saved views, the "show them" link of spare pieces). Name checks are listed in date order without a
+tick box and with *ask support…*; approving is only on the customer help page (8003). Pending Orders hides Phone,
+Address and Report status by default. `_ORDER`: Express → clubbed orders with a name in production / made / packed
+(`clubbed.PARTNER_SQL`) → oldest.
+
+**Clubbed orders made together (0.34, `clubbed.py`)** — `create_batch` runs `clubbed.whole` first: every other name
+of a ticked clubbed order that is to make (same product) joins the batch; while any name of it is in check_name the
+whole clubbed order is left out (`clubbed_held` in the answer). Select oldest / Select all (`/api/orders/ids?count=`)
+and Make next batch use `clubbed.take`: whole clubbed orders only, never split to reach the number. Rows carry
+`club` = {size, to_make, check, held, started}.
+
 **Report rules (0.23, `ingest.status_state` / `_status_flags`; `sync.merge` uses `status_state` too)**:
-a report never moves an order backwards. Ready / needs review stay to make on PRINT and AWB EXPIRED;
-not needed goes back to making only on PRINT and never after PACK / HANDOVER / IN-TRANSIT /
+a report never moves an order backwards. Ready / needs review stay to make on PRINT, AWB EXPIRED and (0.34)
+ACCEPTANCE PENDING (`ingest.MAKE_STATUSES` / `to_make`, also for new orders and `sync._evaluate`); not needed goes
+back to making only on PRINT or ACCEPTANCE PENDING and never after PACK / HANDOVER / IN-TRANSIT /
 DELIVERED / RTO / AWB EXPIRED. Flags (`db.set_group(..., "flag")`, only by the uploading computer):
 `past_print_not_made` (listed to make or in a batch, not made, report moves past PRINT; not for
 history or ad-hoc), `cancelled_in_production` (cancelled while in a batch or made, before it shipped),
 `back_to_print` (packed outside SnapSTL, then AWB EXPIRED / PRINT). AWB EXPIRED on a made / in-batch /
 labelled order clears `label_at` with `label_note` "Label expired – make a new label" → pack_it.
+Once after updating to 0.34, `ingest.repair_034` moves "not needed" ACCEPTANCE PENDING / AWB EXPIRED orders from
+`MADE_BEFORE` that were never batched, made, labelled or flagged to To make (they sat in Problems). Print label
+refuses an order still ACCEPTANCE PENDING ("accept it on ShopDeck first").
 Printing: `makeit.update_made` also sets `print_started_at` for orders on any plate with a print job
 (not Removed); called from Start print; `makeit.backfill_started` once at startup (`started_v1`).
 The Orders table offers browser-local saved views (column visibility, tab and filters) and a selectable page size; these preferences do not change order records. Tab SQL lives in `server.TABS`; column filters in `server.FILTERS` (text = contains; status, colour,
@@ -736,6 +755,21 @@ the SnapSTL Helper only operates ShopDeck's Process Orders page in the person's 
   -print-settings fit` on Windows, `lp -o fit-to-page` on a Mac) and the SnapSTL orders get `label_at` (Label done –
   ship it, shared). No PDF within `pdf_timeout_s` → stopped. **Reprint** prints the kept file again.
 * Every check fails closed; a stopped job is never retried by itself. Stop works until Label is pressed.
+* **The ShopDeck tab in front (0.33.2, helper 2.6)**: Chrome slows background tabs to about one timer a minute and
+  freezes them later — on the first day of staff use 14 of 23 presses hung while "finding the order" and ShopDeck's
+  dropdowns didn't open. Print label / Continue on SnapSTL's page posts `{snapstl: "label-start", job_id}`;
+  `helper/snapstl_page.js` (content script on `127.0.0.1:8317` / `localhost:8317`) asks the service worker to bring
+  the ShopDeck tab to the front (or open Process Orders), keep it from being discarded, and go back to the SnapSTL tab
+  when the job is over. While a job is on, the ShopDeck tab sends a heartbeat (`…/{id}/alive`, every 8 s, with its
+  visibility). The `Watcher` stops a job no tab takes within `pickup_timeout_s` (30) and one whose tab is quiet for
+  `stall_timeout_s` (60; plus the courier wait, plus `regenerate_timeout_s` while regenerating); Label pressed →
+  only the PDF decides.
+* **Search needs ShopDeck's answer (0.33.2)**: "not in this list" only on ShopDeck's own *No result found* for this
+  search (a list already saying so is first cleared to the full list, since a second empty search looks the same);
+  "found" only once the list narrowed to the order; neither within 20 s → stopped, never "not found".
+* **Trace (0.33.2, `label_events`)**: every press, pickup, look (list, tab, count, IDs, SKUs, AWB, courier), step
+  (with the couriers offered), heartbeat visibility change, stop and print — **Details** under a stopped or printed
+  label on the Completed page.
 
 ## Products (0.29, `products.py`)
 

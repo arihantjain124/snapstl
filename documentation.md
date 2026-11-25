@@ -700,3 +700,33 @@ English hard — the language help was skipped by the owner).
   AWB; not offered → next in the list), and the label is only taken after that change, never the existing one
   (expired AWBs). Already how it worked (every job changes the courier; an unchanged AWB stops it); now covered by a test.
 
+### 2026-11-26: 0.33.2 Labels: the ShopDeck tab in front, timeouts, search proof, a trace
+- First full day of staff use (2026-11-25): 23 Print label presses, 5 labels printed (all correct), 14 hung on
+  "finding the order on ShopDeck" until a person pressed Stop (one for 81 minutes), 3 clubbed orders stopped with
+  "Can't choose Order Id", 1 "Not found". The hung jobs never got a single report from the helper.
+- Cause (likely; Chrome reported the test tab as visible, so not reproduced): the ShopDeck tab sat behind SnapSTL's.
+  Chrome slows background tabs to about one timer a minute and freezes them later; ShopDeck's dropdowns didn't open in
+  time. Every label that printed took about a minute — typically pressed again right after a Stop.
+- Also: a search still loading was read as "no results" (it then tried Expired AWB and could say Not found); nothing
+  was recorded of what the helper saw (couriers offered, why a job hung).
+- Fixed: Print label brings the ShopDeck tab to the front (helper 2.6, new content script on SnapSTL's page) and goes
+  back when done; a heartbeat, and a job no tab takes in 30 s or whose tab is quiet for 60 s stops with the reason;
+  "not found" only on ShopDeck's own No result found (and "found" only once the list narrowed — checked on the live
+  page, both lists, Single and Clubbed); every step kept and shown under the label (Details).
+
+### 2026-11-26: 0.34.0 Pending Orders and Order History; clubbed orders made together
+- Owner: old orders were missed because they sat in Check name, Clubbed or Problems while new ones were made; too
+  many tabs. Live data: 140 ACCEPTANCE PENDING and 3 never-made AWB EXPIRED orders were in Problems, 49 in Check
+  name, and one clubbed order had a name printing while the other was still to make.
+- Sidebar: **Pending Orders** (To make · In production · Needs attention only when not empty) and **Order History**
+  (Ready to pack, Packed, Shipped, Delivered, Returned, Cancelled, Skipped, All). Sub-tabs Single / Clubbed / Ad-hoc /
+  Piece in stock / Express are gone: one To make list, Express on top, then clubbed orders whose other names are in
+  production, then the oldest. Name checks are listed in date order without a tick box ("ask support…");
+  approving moved to the customer help page only.
+- ACCEPTANCE PENDING and AWB EXPIRED orders are to make (new ones, and once the existing ones never made); Print
+  label waits for acceptance.
+- Clubbed orders: a batch takes every name (or none while one waits for its name check); Select oldest / Make next
+  batch never split one.
+- Pending Orders hides Phone, Address and Report status by default; views, columns, filters and CSV on one line.
+- Includes 0.33.2 (labels: ShopDeck tab in front, timeouts, search proof, trace).
+

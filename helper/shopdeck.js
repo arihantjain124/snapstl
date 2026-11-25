@@ -79,6 +79,18 @@
     await sleep(1500);
   }
 
+  const noResult = () => /No result found/i.test(document.body.innerText || "");
+  const showsId = (id) => {  // the order (or clubbed ID) in the results under the table header
+    const t = document.body.innerText || "";
+    const i = t.search(/Orders\s+\d+\s+Product/);
+    return i >= 0 && t.slice(i).includes(id);
+  };
+
+  const headCount = () => {  // "Orders NN Product": how many orders the list shows
+    const m = (document.body.innerText || "").match(/Orders\s+(\d+)\s+Product/);
+    return m ? Number(m[1]) : -1;
+  };
+
   const setNative = (input, value) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -100,28 +112,50 @@
       await sleep(500);
       if (txt(field) !== "Order Id") throw new Error('The search field didn\'t change to "Order Id"');
     }
-    input.focus();
-    setNative(input, "");
-    setNative(input, id);
-    for (const type of ["keydown", "keypress", "keyup"]) {
-      input.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
+    const enter = (v) => {
+      input.focus();
+      setNative(input, "");
+      setNative(input, v);
+      for (const type of ["keydown", "keypress", "keyup"]) {
+        input.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
+      }
+    };
+    // 2.6: "not in this list" only on ShopDeck's own "No result found" for THIS search. A list that already says
+    // so looks the same after a search that finds nothing, so show the whole list first.
+    let empty = false;
+    if (noResult()) {
+      enter("");
+      empty = !(await until(() => !noResult(), 6000));  // still nothing: this list is empty
     }
-    await sleep(1500);
-    // done when the order is shown, or ShopDeck says there's nothing
-    await until(() => (document.body.innerText || "").includes(id) || /No result found/.test(document.body.innerText || ""), 15000);
-    await sleep(800);
+    // the order counts as found only once the list narrowed to it (a full list may show it too)
+    const full = headCount();
+    const hit = () => showsId(id) && (headCount() <= 1 || (full > 0 && headCount() < full));
+    enter(id);
+    if (empty) {
+      await sleep(2500);
+      if (hit()) { await sleep(800); return "found"; }
+      if (noResult()) return "none";
+    } else {
+      const ans = await until(() => (hit() ? "found" : noResult() ? "none" : null), 20000, 200);
+      if (ans) {
+        await sleep(800);  // let the result settle, then read it again
+        if (hit()) return "found";
+        if (noResult()) return "none";
+      }
+    }
+    throw new Error("ShopDeck's search didn't answer (neither the order nor No result found) — keep the ShopDeck tab in front");
   }
 
   async function find(job) {
     const tab = job.clubbed ? "Clubbed" : "Single";
+    const why = [];
     for (const where of ["print", "expired"]) {
       await openList(where);
       await chooseTab(tab);
-      await search(job.search);
-      const seen = readResults(where, tab.toLowerCase());
-      if (Number(seen.count) > 0) return seen;
+      if ((await search(job.search)) === "found") return readResults(where, tab.toLowerCase());
+      why.push(`${where === "print" ? "Print" : "Expired AWB"}: No result found`);
     }
-    return { where: "none" };
+    return { where: "none", why: why.join("; ") };
   }
 
   // ---------- actions (each only after SnapSTL said so) ----------
@@ -137,8 +171,7 @@
       if (buttons("Yes").length || buttons("Confirm").length) {
         throw new Error("Regenerate asked for a confirmation SnapSTL doesn't know — finish it by hand on ShopDeck");
       }
-      await search(job.search);  // still in Expired AWB?
-      if (Number(readResults("expired", job.clubbed ? "clubbed" : "single").count) === 0) {
+      if ((await search(job.search)) === "none") {  // gone from Expired AWB (ShopDeck said No result found)
         await bg("sd_step", { job_id: job.id, step: "regenerated" });
         return;
       }
@@ -226,6 +259,12 @@
   }
 
   // ---------- the loop ----------
+  // 2.6: a heartbeat while a job is on, also while waiting — SnapSTL stops a job whose tab goes quiet
+  // (Chrome slows background tabs to about once a minute and freezes them later).
+  let current = null;
+  const beat = () => { if (current) bg("sd_alive", { job_id: current, visible: document.visibilityState }).catch(() => {}); };
+  setInterval(beat, 8000);
+  document.addEventListener("visibilitychange", beat);
   let busy = false;
   async function tick() {
     if (busy) return;
@@ -233,8 +272,12 @@
     let job = null;
     try {
       const r = await bg("sd_next");
-      if (!r || r.error || !r.job) return;  // nothing to do, another tab works, labels off, sign-in or PDF awaited
+      if (!r || r.error || !r.job) {  // nothing to do, another tab works, labels off, sign-in or PDF awaited
+        if (!(r && (r.login || r.waiting))) current = null;
+        return;
+      }
       job = r.job;
+      if (current !== job.id) { current = job.id; beat(); }
       if (onLoginPage()) { await bg("sd_login", { job_id: job.id }); return; }
       if (!location.pathname.startsWith("/orders/process-orders")) { location.assign(PRINT); return; }  // resumes after loading
       if (!(await until(onOrders, 20000))) { await bg("sd_login", { job_id: job.id }); return; }

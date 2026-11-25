@@ -76,6 +76,41 @@ async function allowShopdeckPopups() {
   return { ok: true };
 }
 
+// 2.6 (SnapSTL 0.33.2): Chrome slows background tabs down and freezes them, so a label made in a ShopDeck tab
+// behind SnapSTL's hung. Print label (the SnapSTL page tells us, snapstl_page.js) brings the ShopDeck tab to the
+// front — or opens one — and keeps Chrome from discarding it; when the job is over we go back to SnapSTL's tab.
+const SD_ORDERS = "https://pro.shopdeck.com/orders/process-orders/non-dispatched";
+async function frontShopdeck(jobId, returnTab) {
+  const { sdTab } = await session.get("sdTab");
+  let t = sdTab ? await tab(sdTab) : null;
+  let note = "ShopDeck tab brought to the front";
+  if (!t) {
+    const all = await chrome.tabs.query({ url: "https://pro.shopdeck.com/*" });
+    t = all.find((x) => (x.url || "").includes("/orders/process-orders")) || all[0] || null;
+  }
+  if (!t) {
+    const rt = returnTab ? await tab(returnTab) : null;
+    t = await chrome.tabs.create({ url: SD_ORDERS, active: true, ...(rt ? { windowId: rt.windowId } : {}) });
+    note = "No ShopDeck tab was open — opened Process Orders";
+  }
+  await session.set({ sdTab: t.id, sdReturn: { tabId: returnTab || null, jobId } });
+  await chrome.tabs.update(t.id, { active: true, autoDiscardable: false });
+  await chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
+  if (jobId) postJSON(`/api/helper/shopdeck/${jobId}/alive`, { note }).catch(() => {});
+  return { ok: true };
+}
+
+// The job is over (done, stopped): back to the SnapSTL tab it was started from.
+async function backToSnapstl() {
+  const { sdReturn } = await session.get("sdReturn");
+  if (!sdReturn) return;
+  await session.set({ sdReturn: null });
+  const t = sdReturn.tabId ? await tab(sdReturn.tabId) : null;
+  if (!t) return;
+  await chrome.tabs.update(t.id, { active: true }).catch(() => {});
+  await chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
+}
+
 async function shopdeckTab(tabId) {
   const { sdTab } = await session.get("sdTab");
   if (sdTab === tabId) return true;
@@ -136,9 +171,14 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         return await postJSON(`/api/helper/jobs/${msg.job_id}/release`);
 
       // ----- from a ShopDeck tab (shopdeck.js) -----
-      case "sd_next":
+      case "sd_next": {
         if (!(await shopdeckTab(tabId))) return { job: null, other_tab: true };
-        return await app("/api/helper/shopdeck/next");
+        const r = await app("/api/helper/shopdeck/next");
+        if (!r.job && !r.login && !r.waiting) await backToSnapstl();
+        return r;
+      }
+      case "sd_alive":
+        return await postJSON(`/api/helper/shopdeck/${msg.job_id}/alive`, { visible: msg.visible, note: msg.note });
       case "sd_seen":
         return await postJSON(`/api/helper/shopdeck/${msg.job_id}/seen`, msg.seen);
       case "sd_step":
@@ -147,6 +187,9 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         return await postJSON(`/api/helper/shopdeck/${msg.job_id}/fail`, { error: msg.error });
       case "sd_popups":
         return await allowShopdeckPopups();
+      // ----- from the SnapSTL page (snapstl_page.js): Print label / Continue pressed -----
+      case "sd_front":
+        return await frontShopdeck(msg.job_id || null, tabId);
       case "sd_login":
         return await postJSON("/api/helper/shopdeck/login", { job_id: msg.job_id || null });
 

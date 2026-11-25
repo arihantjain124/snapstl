@@ -24,6 +24,14 @@ from . import db, products, report, shop, tabs
 
 SKU = "magicians_35"
 PRINT_STATUSES = {"PRINT"}
+# 0.34 (owner): statuses whose order is still to be made — PRINT, AWB EXPIRED (the label expired, a new one can be
+# made) and ACCEPTANCE PENDING (accepted later; the AWB is made once the piece is made, so it doesn't expire)
+MAKE_STATUSES = ("PRINT", "AWB-EXPIRED", "ACCEPTANCE-PENDING")
+
+
+def to_make(status: str | None) -> bool:
+    """The webstore status of an order that is still to be made (any spelling: 'AWB EXPIRED', 'acceptance_pending')."""
+    return tabs.norm_status(status) in MAKE_STATUSES
 COLOR_ALIASES = {"gray": "grey"}
 MAX_CLEAN_LETTERS = 15
 
@@ -310,7 +318,7 @@ def _qty(v: str) -> int:
 
 def _evaluate(name: str, color: str, review: str | None, source_status: str,
               needs_color: bool = True) -> tuple[str, str | None]:
-    if source_status not in PRINT_STATUSES:
+    if not to_make(source_status):
         return "not_needed", review
     if needs_color and not color:  # a name stand's colours come with the product (0.29)
         review = "; ".join(x for x in [review, "No colour in the order"] if x)
@@ -391,14 +399,15 @@ def _past_print(st: str) -> bool:
 def status_state(state: str, old: str | None, new: str | None, back: str, in_batch: bool) -> str:
     """The app state of an order nobody is making after its webstore status changes old → new.
     `back` = ready or needs_review (its name check). A report never moves an order backwards:
-    * ready / needs review stay to make on PRINT and AWB EXPIRED (label expired before it was made);
-      any other status → not needed;
-    * not needed → back to making only on PRINT, and never after the website had a label for it
-      (PACK onwards): that's flagged instead (`_status_flags`, back_to_print)."""
+    * ready / needs review stay to make on PRINT, AWB EXPIRED (label expired before it was made) and
+      ACCEPTANCE PENDING (0.34); any other status → not needed;
+    * not needed → back to making only on PRINT (or ACCEPTANCE PENDING), and never after the website had a label
+      for it (PACK onwards): that's flagged instead (`_status_flags`, back_to_print)."""
     n, o = tabs.norm_status(new), tabs.norm_status(old)
     if state in ("ready", "needs_review"):
-        return state if (n in PRINT_STATUSES or n == "AWB-EXPIRED") else "not_needed"
-    if state == "not_needed" and n in PRINT_STATUSES and not in_batch and not (_past_print(o) or o == "AWB-EXPIRED"):
+        return state if to_make(n) else "not_needed"
+    if (state == "not_needed" and n in ("PRINT", "ACCEPTANCE-PENDING") and not in_batch
+            and not (_past_print(o) or o == "AWB-EXPIRED")):
         return back
     return state
 
@@ -463,6 +472,32 @@ def repair_026() -> dict:
                                             f"{out['skipped']} older ones skipped (made before {MADE_BEFORE}), "
                                             f"{out['unflagged']} packed / shipped orders out of Problems")
         con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('repair_026', '1')")
+    return out
+
+
+def repair_034() -> dict:
+    """Once after updating to 0.34 (owner): orders kept as "not needed" only because their status was ACCEPTANCE
+    PENDING or AWB EXPIRED — never in a batch, made, labelled or flagged, dated from MADE_BEFORE — go to To make
+    (or Check name). They sat in Problems, where nobody made them."""
+    out = {"back": 0}
+    with db.tx() as con:
+        if con.execute("SELECT 1 FROM sync_state WHERE key='repair_034'").fetchone():
+            return out
+        rows = db.rows(con, "SELECT order_id, order_date, source_status, review_reason, color, sku FROM orders "
+                            "WHERE state='not_needed' AND batch_id IS NULL AND batch_uid IS NULL AND label_at IS NULL "
+                            "AND flag IS NULL AND made_at IS NULL AND reuse_of IS NULL AND COALESCE(sku,'')<>?", ADHOC_SKU)
+        for r in rows:
+            st = tabs.norm_status(r["source_status"])
+            if st not in ("ACCEPTANCE-PENDING", "AWB-EXPIRED") or (r["order_date"] or "") < MADE_BEFORE:
+                continue
+            organizer = products.of_order(r).kind == "organizer"
+            review = r["review_reason"] or (None if r["color"] or not organizer else "No colour in the order")
+            con.execute("UPDATE orders SET state=?, review_reason=?, updated_at=? WHERE order_id=?",
+                        ("needs_review" if review else "ready", review, db.now(), r["order_id"]))
+            out["back"] += 1
+        if out["back"]:
+            db.add_activity(con, "cleanup", f"0.34: {out['back']} Acceptance pending / AWB expired orders back to To make")
+        con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('repair_034', '1')")
     return out
 
 

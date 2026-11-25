@@ -109,11 +109,16 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
     With the shared records (Supabase) set up, the orders are claimed there first: an order another
     computer has already taken is left out (and leaves Ready here). If the shared records can't be
     reached, no batch is created — so no order is ever made twice."""
-    from . import sync
+    from . import clubbed, sync
 
     if not order_ids:
         raise ValueError("Select at least one order")
     with db.tx() as con:
+        # 0.34 (owner): every name of a clubbed order goes into the batch together — or none while one still needs
+        # its name check
+        order_ids, club_added, club_held = clubbed.whole(con, order_ids)
+        if not order_ids:
+            raise ValueError(clubbed.held_words(club_held) or "Select at least one order")
         q = ",".join("?" * len(order_ids))
         rows = db.rows(con, f"SELECT * FROM orders WHERE state='ready' AND reuse_of IS NULL AND flag IS NULL "
                             f"AND order_id IN ({q}) ORDER BY order_date, order_id", *order_ids)
@@ -173,7 +178,8 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
             con.execute(f"DELETE FROM sync_outbox WHERE order_id IN ({','.join('?' * len(ids))})", ids)
     return {"batch_id": batch_id, "orders": len(ids), "skipped": len(order_ids) - len(ids),
             "taken_elsewhere": taken, "models": len(_needed(orders, settings)), "in_stock": len(in_stock),
-            "already_made": len(made), "already_made_note": _made_words(made) if made else ""}
+            "already_made": len(made), "already_made_note": _made_words(made) if made else "",
+            "clubbed_added": club_added, "clubbed_held": clubbed.held_words(club_held)}
 
 
 def _made_words(made: dict[str, str]) -> str:

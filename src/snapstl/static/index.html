@@ -222,6 +222,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 .pdtable select{min-width:120px;padding:3px 6px}.pdtable td{vertical-align:middle}
 @media (max-width:800px){.app{grid-template-columns:minmax(0,1fr)}nav#tabs{flex-wrap:wrap}.hint code,.callout code{word-break:break-all}.toolbar{flex-wrap:wrap}.side{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:0;border-bottom:1px solid var(--line);padding:8px 10px}
   nav#tabs{flex-direction:row}nav#tabs button{width:auto;padding:6px 9px}.side .foot{margin:0;flex-direction:row;flex-wrap:wrap}.health{flex-direction:row;flex-wrap:wrap;border:0;padding:0}.bar{display:none}}
+.ask{color:var(--warn);font-size:12px;font-weight:600;margin-top:3px;max-width:240px}tr.asking td{background:var(--warnbg)}
 .adhoc{border:1px solid var(--line);border-radius:10px;padding:12px;margin:8px 0}.adhocrow{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}.adhocrow label{display:flex;flex-direction:column;gap:4px;font-size:12px;min-width:0;flex:1 1 140px;margin:0}.adhocrow label.grow{flex:2 1 200px}.adhocrow input{width:100%;box-sizing:border-box}
 </style>
 </head>
@@ -230,7 +231,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 <aside class="side">
   <h1>SnapSTL<small>Name organizer plates</small><small id="pcname" class="pc"></small></h1>
   <nav id="tabs">
-    <button data-t="orders" class="on"><span class="ic">▤</span>Orders</button>
+    <button data-t="orders" class="on"><span class="ic">▤</span>Pending Orders</button>
+    <button data-t="history"><span class="ic">◷</span>Order History</button>
     <button data-t="batches"><span class="ic">▦</span>Batches</button>
     <button data-t="makeit"><span class="ic">⚒</span>Print</button>
     <button data-t="printers"><span class="ic">◉</span>Printers</button>
@@ -257,7 +259,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 <main>
   <div class="msgs" id="offlinebar" hidden style="margin:0 0 10px"><div class="e" id="offlinemsg"></div></div>
 <section id="t-orders">
-  <div class="card">
+  <div class="card" id="ordtools">
     <div class="toolbar">
       <label class="btn" style="margin:0;color:var(--text)">Upload report (.xlsx)<input id="report" type="file" accept=".xlsx,.xls,.csv" hidden></label>
       <button id="adhocgo" title="Type in an order for an ad-hoc request: name, mobile, colour">Add ad-hoc order</button>
@@ -269,7 +271,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="msgs" id="stockmsg"></div>
     <div id="sparebox" hidden style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">
       <h3 style="margin:0 0 4px">Spare pieces in stock</h3>
-      <p class="hint" style="margin:0 0 8px">Bases kept in stock (made by mistake, extras, bases made before SnapSTL) and complete pieces. Letters aren't kept. Type the name <b>exactly as on the base</b> (capital letters too). A new order with that name shows <b>In stock</b> (Orders → To make → <b>Piece in stock</b>, and on Print) — a base fits whatever the letters' colour, so only the letters need printing. A <b>complete</b> piece (same letters' colour) can be sent with <b>Use spare piece</b>.</p>
+      <p class="hint" style="margin:0 0 8px">Bases kept in stock (made by mistake, extras, bases made before SnapSTL) and complete pieces. Letters aren't kept. Type the name <b>exactly as on the base</b> (capital letters too). A new order with that name shows <b>In stock</b> (Pending Orders → To make, and on Print) — a base fits whatever the letters' colour, so only the letters need printing. A <b>complete</b> piece (same letters' colour) can be sent with <b>Use spare piece</b>.</p>
       <form id="spareform" class="adhoc" autocomplete="off" style="display:block">
         <div class="adhocrow">
           <label>Name as printed<input id="spname" required maxlength="60" placeholder="e.g. Aarav"></label>
@@ -290,9 +292,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="chips" id="prodchips" hidden></div>
     <div class="msgs" id="prodmsg"></div>
     <div class="chips" id="chips"></div>
-    <div class="chips" id="subchips"></div>
     <form id="adhocform" class="adhoc" hidden autocomplete="off">
-      <p class="hint" style="margin:0 0 8px">An order for an ad-hoc request, typed in by hand. It goes straight to Ready with today's date and time and an <b>AH-…</b> order ID; tick it and <b>Create batch</b> like any other order — it's batched, printed and shared the same way.</p>
+      <p class="hint" style="margin:0 0 8px">An order for an ad-hoc request, typed in by hand. It goes straight to To make with today's date and time and an <b>AH-…</b> order ID; tick it and <b>Create batch</b> like any other order — it's batched, printed and shared the same way.</p>
       <div class="adhocrow">
         <label>Name to print<input id="ahname" required maxlength="40" placeholder="e.g. Aarav"></label>
         <label>Mobile<input id="ahphone" required inputmode="tel" maxlength="20" placeholder="e.g. 98765 43210"></label>
@@ -305,14 +306,12 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <div class="msgs" id="ahmsg"></div>
     </form>
     <div class="toolbar">
-      <button id="fclear" class="small" title="Clear every column filter and show all orders">Clear all filters</button>
-      <span class="grow hint" id="fstate">Type in the boxes under the column names to filter; filters combine.</span>
-      <a class="btn" id="csvlink" href="/api/orders.csv?tab=all">Export CSV</a>
-    </div>
-    <div class="toolbar">
       <label for="ordview">View</label><select id="ordview" aria-label="Order view"></select>
-      <button id="saveview" class="small">Save current view</button><button id="deleteview" class="small">Delete view</button>
-      <details><summary>Choose columns</summary><div class="column-options" id="ordercolumns"></div></details>
+      <button id="saveview" class="small">Save view</button><button id="deleteview" class="small">Delete view</button>
+      <details><summary>Columns</summary><div class="column-options" id="ordercolumns"></div></details>
+      <span class="grow hint" id="fstate"></span>
+      <button id="fclear" class="small" title="Clear every column filter and show all orders">Clear all filters</button>
+      <a class="btn small" id="csvlink" href="/api/orders.csv?tab=all">Export CSV</a>
     </div>
     <div class="toolbar" id="selbar">
       <span id="selcount" class="hint">No orders selected</span>
@@ -913,23 +912,24 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 
   <div class="card" id="h-tabs">
     <h2>Order tabs</h2>
+    <p><b>Pending Orders</b> (sidebar) has the orders still to be made; <b>Order History</b> everything after: Ready to pack, Packed, Shipped, Delivered, Returned, Cancelled, Skipped, All.</p>
     <table>
       <tr><th>Tab</th><th>What's in it</th></tr>
-      <tr><th colspan="2">Make</th></tr>
-      <tr><td>To make</td><td>The website says PRINT: make these. Sub-tabs: <b>Single</b> (one name), <b>Clubbed</b> (one customer, several names, one parcel), <b>Ad-hoc</b> (typed in with <b>Add ad-hoc order</b>, ID <b>AH-…</b>), <b>Returned piece available</b> (a returned order with exactly the same name and colour: <b>Use returned piece</b> sends it instead of making a new one), <b>Express</b>.</td></tr>
+      <tr><th colspan="2">Pending Orders</th></tr>
+      <tr><td>To make</td><td>One list, Express on top, then clubbed orders whose other names are already in production (<i>make this now</i>), then the oldest first. The website says PRINT, <b>AWB EXPIRED</b> (a new label is made when it ships) or <b>ACCEPTANCE PENDING</b> (made now; its label once it is accepted). Single, clubbed and ad-hoc orders (<b>Add ad-hoc order</b>, ID <b>AH-…</b>) are all here; a returned or spare piece with the same name and colour shows on the row (<b>Use returned piece</b>).</td></tr>
+      <tr><td>To make: name to check</td><td>Listed in date order but can't be ticked: <i>ask support to check the name with the customer</i> (first letter small, space, symbols, missing colour, special request). Support confirms it on the customer help page (port 8003); then it can be made.</td></tr>
+      <tr><td>To make: clubbed</td><td>One customer, several names, one parcel — <b>made together</b>. Ticking one name ticks the others; Create batch, Select oldest and Make next batch take every name of it, and none while one name still waits for its check.</td></tr>
       <tr><td>To make: <i>Already made</i></td><td>An order already made and checked Good in an earlier batch never goes into a new batch by itself. Press <b>Remake</b> on it only if it really must be made again.</td></tr>
-      <tr><td>Check name</td><td>PRINT, but the name or colour needs a person (first letter small, space, symbols, missing colour, special request).</td></tr>
       <tr><td>In production</td><td>In a batch: waiting to print (no plate started yet) or printing (a plate holding it was started in Print). <b>Remake</b> makes it again from the start.</td></tr>
-      <tr><th colspan="2">Pack &amp; ship</th></tr>
+      <tr><td>Needs attention</td><td>Shown only when something needs a decision: an order cancelled while being made, a customer who wants to cancel, an order sent back to print after it was packed, or a status SnapSTL doesn't know. Sort it out, then <b>Clear flag</b>.</td></tr>
+      <tr><th colspan="2">Order History</th></tr>
       <tr><td>Ready to pack</td><td>Name and base both printed (or sent with a returned piece). "Label expired" means the website needs a new label.</td></tr>
       <tr><td>Packed</td><td>The labelling team pressed <b>Label Generated</b>, or the website says PACK or HANDOVER.</td></tr>
-      <tr><th colspan="2">Records</th></tr>
       <tr><td>Shipped · Delivered · Returned (RTO) · Cancelled</td><td>What the website says. For customer questions and records.</td></tr>
-      <tr><td>Problems</td><td>A real problem: an order cancelled while being made, a customer who wants to cancel, or an order sent back to print after it was packed. Sort it out, then <b>Clear flag</b>. (An order the website packed, shipped or delivered is made, wherever it was made: it is never a problem.)</td></tr>
       <tr><td>Skipped</td><td>You pressed Skip (also orders from before 13 Nov 2026 the website still says PRINT: made before SnapSTL). <b>Make anyway</b> moves it back to To make.</td></tr>
     </table>
     <p>A report never moves an order backwards: work done in SnapSTL (printed, label done) stays. <b>EXPRESS · needed by …</b> = the customer needs it by that date (red from 3 days before).</p>
-    <p>Filter columns with the boxes under their headings — filters combine. Choose columns and save the current category, filters and columns as a view in this browser. Change rows per page below the table. <b>Export CSV</b> exports matching orders.</p>
+    <p>Filter columns with the boxes under their headings — filters combine. Pending Orders hides Phone, Address and Report status (<b>Columns</b> shows them). Save the current category, filters and columns as a view in this browser. Change rows per page below the table. <b>Export CSV</b> exports matching orders.</p>
   </div>
 
   <div class="card" id="h-batches">
@@ -993,7 +993,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <p><b>Print</b> (sidebar) shows on top the printers <b>free for the next print</b> (with the colours loaded) and beds to clear, and has <b>Refresh from Bambuddy</b>. It has five lists. <b>Bases</b>: <i>To print</i> — every base plate still to print, with the next <b>available</b> printer and its best-matching filament slot already chosen; <i>Printed</i> — base plates printed whose letters aren't all printed yet. <b>Letters</b> (the names): every letter plate with its colour, first those whose <b>base is printed</b> (print these now), then those whose base is still to print; a printer and the slot closest to that colour are pre-selected. Both lists have a search (name, order ID or batch). Any printer and any loaded slot can be chosen — the slot is what the print uses. <b>Fix</b> plates (only what was spoiled) are listed first.</p>
     <ul>
       <li><b>Merge</b> (Letters): tick letter plates of one colour that aren't started — fix plates too — up to 3 names in all, and press <b>Merge onto one plate</b> (other colours can't be ticked; more than 3 names is refused). Under the list, <b>Available to merge</b> suggests plates whose bases are already printed; ticking a plate whose base isn’t printed asks first. Merge runs once per press (a second press is refused). <b>Remove</b> works on every plate, merged and split ones too. The names keep their size (no scaling) and go onto one new plate in the newest batch's <code>Merged/</code> folder; the single plates leave the list. <b>Split back</b> returns them while the merged plate isn't started. <b>Group by colour</b> lists every name plate by colour, so one spool can print them all.</li>
-      <li><b>Print label</b> (Completed; Settings → Logistics → Shipping labels): keep ShopDeck's Process Orders open and signed in in Chrome. The SnapSTL Helper finds the order (an expired AWB is regenerated first), changes the courier to the first one offered from the list, waits a minute and presses Label; SnapSTL prints the label only if it matches the order exactly (order, AWB, items, names). A parcel with other products asks whether all items are ready. Sign-in needed → sign in, then <b>Continue</b>. Anything unexpected stops with the reason.</li>
+      <li><b>Print label</b> (Completed; Settings → Logistics → Shipping labels): keep ShopDeck's Process Orders open and signed in in Chrome (the Helper brings it to the front while the label is made, then goes back). The SnapSTL Helper finds the order (an expired AWB is regenerated first), changes the courier to the first one offered from the list, waits a minute and presses Label; SnapSTL prints the label only if it matches the order exactly (order, AWB, items, names). A parcel with other products asks whether all items are ready. Sign-in needed → sign in, then <b>Continue</b>. Anything unexpected stops with the reason.</li>
       <li><b>Split</b> (Bases or Letters, not started): choose how many go on each part (e.g. 2 + 1); same size, saved in <code>Split/</code>. Splitting a <b>bases</b> plate splits its letter plates the same way, so the letters of each base part are on their own plate and can be printed once that base is done (a letter plate already started, printed, merged or split is left as it is). <b>Join back</b> on the bases joins those letters back too while nothing is started.</li>
       <li><b>Verify</b>: one card per name, once its letters and its base are both printed (Bambu reports them printed) — nothing goes straight to packing. Type your <b>PIN</b> once (<b>Done / switch person</b> when you leave; signed out after 30 minutes without a check): every check is saved under you. The owner gives each person a PIN in <b>Settings → Staff</b>; until anyone has a PIN, choose the name instead. Put the letters with their base and mark each: <b>Good</b>, <b>Letter(s) spoiled</b> (tap the spoiled letters on the picture), <b>Whole name spoiled</b>, <b>Wrong colour</b> or <b>Base broken or warped</b>, then <b>Confirm – ready to pack</b> (or <b>Save – send problems for reprint</b>) — a <i>Saving…</i> screen covers the card until it's done (a second press saves nothing twice). Each problem gets a small <b>Fix</b> plate with only what was spoiled, at the same size, at the top of Bases / Letters; it's printed and checked like any plate. <b>Whole plate failed…</b> (on a card, or in Bases → Printed / Letters → Printed) sends a whole printed plate back to print. A name fixed twice before shows a warning to check the model. An order moves to <b>Orders → Printed – pack it</b> only when its base and its name are both checked good; until then Orders shows <i>Printed – waiting for check</i>. Everything printed before 0.24 counts as checked (<i>Before 0.24</i>).</li>
       <li><b>Completed</b>: names checked good and not shipped yet — colour, order, batch, printer, who checked it and when, and <i>had a fix</i>. Filter by date or search; tick rows and press <b>Packing slip</b> for a printable list. <b>Found a problem</b> (e.g. while packing) makes a fix plate and takes the order back to Printing.</li>
@@ -1101,19 +1101,25 @@ const $=id=>document.getElementById(id);
 const COLORS={pink:'#f4a7c0','hot pink':'#ff4fa0','baby pink':'#f9c9d9',lavender:'#b9a3e3',red:'#e5534b',orange:'#f39a3d',yellow:'#f2d04b',green:'#5fb36a',blue:'#4a86d9','baby blue':'#9fd0f3','sky blue':'#7cc4f0',purple:'#9a6bd1',black:'#333',white:'#fafafa',grey:'#999',lightgray:'#ccc'};
 // Orders tabs (0.23, tabs.py): [key, words, pill colour], in three groups
 // 0.26: fewer, simpler words; Ready to print + Printing are one list (In production)
-const TABGROUPS=[['Make',[['to_make','To make','ok'],['check_name','Check name','warn'],['production','In production','info']]],
+// 0.34 (owner): Pending Orders = one To make list (name checks, clubbed, ad-hoc, Express in it) + In production
+// (+ Needs attention only when something needs a decision); Order History = everything after it is made
+const TABGROUPS=[['Make',[['pending','To make','ok'],['production','In production','info'],['problems','Needs attention','err']]],
   ['Pack & ship',[['pack_it','Ready to pack','ok'],['ship_it','Packed','ok']]],
-  ['Records',[['on_the_way','Shipped',''],['delivered','Delivered',''],['rto','Returned (RTO)','warn'],['cancelled','Cancelled',''],['problems','Problems','err'],['skipped','Skipped',''],['all','All','']]]];
+  ['Records',[['on_the_way','Shipped',''],['delivered','Delivered',''],['rto','Returned (RTO)','warn'],['cancelled','Cancelled',''],['skipped','Skipped',''],['all','All','']]]];
 const TABS=TABGROUPS.flatMap(g=>g[1]);
-const TABWORD=Object.fromEntries([...TABS,['ready_to_print','In production – waiting to print','info'],['printing','In production – printing','info']].map(t=>[t[0],t]));
-const SUBTABS=[['to_make','All new'],['to_make_single','Single'],['to_make_clubbed','Clubbed'],['to_make_adhoc','Ad-hoc'],['to_make_returned','Piece in stock'],['express','Express']];
+const TABWORD=Object.fromEntries([...TABS,['to_make','To make','ok'],['check_name','Name to check','warn'],['ready_to_print','In production – waiting to print','info'],['printing','In production – printing','info']].map(t=>[t[0],t]));
+const PENDTABS=new Set(['pending','production','problems','to_make','check_name','to_make_single','to_make_clubbed','to_make_adhoc','to_make_returned','express','ready_to_print','printing']);
+// lists reached by a link or an old saved view, not a chip
+const SUBTABS=[['to_make','To make – ready only'],['check_name','Name to check'],['to_make_single','Single'],['to_make_clubbed','Clubbed'],['to_make_adhoc','Ad-hoc'],['to_make_returned','Piece in stock'],['express','Express']];
+let OMODE='';  // 'pending' | 'history'
+const PEND_COLS=[1,2,3,7,8,9,10,11,12];  // 0.34: Phone, Address and Report status hidden on Pending Orders (Columns)
 const FLAGWORD={past_print_not_made:'Website moved it on, but SnapSTL never made it',cancelled_in_production:'Cancelled – don’t pack',cancel_request:'Customer wants to cancel',back_to_print:'Back to print after it was packed – check whether it is made',unknown_status:'Status SnapSTL doesn’t know'};
 // Express: "needed by 25 Nov", red from 3 days before
 function expressBadge(d,note){if(!d)return '';const days=Math.ceil((new Date(d+'T23:59:59')-Date.now())/864e5);
   const when=new Date(d+'T12:00:00').toLocaleDateString([], {day:'numeric',month:'short'});
   const lim=(S&&S.logistics&&Number.isInteger(S.logistics.express_red_days))?S.logistics.express_red_days:3;
   return `<span class="pill ${days<=lim?'err':'warn'}" title="${esc(note||'Express: the customer needs it by this date')}">EXPRESS · needed by ${esc(when)}${days<0?' (late)':''}</span>`}
-let S=null,META=null,filter={tab:'to_make',f:{},offset:0,product:'organizer'},PRODUCTS=[],LIMIT=100,openBatch=null,tab='orders',FACETS=null;
+let S=null,META=null,filter={tab:'pending',f:{},offset:0,product:'organizer'},PRODUCTS=[],LIMIT=100,openBatch=null,tab='orders',FACETS=null;
 const SEL=new Set();
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(path,opts={}){const r=await fetch(path,opts);if(r.status===401){location.href='/login';throw new Error('Signed out')}const t=await r.text();let j;try{j=JSON.parse(t)}catch{j={detail:t}}if(!r.ok)throw new Error(j.detail||r.statusText);return j}
@@ -1131,20 +1137,27 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 // tabs
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
-  for(const s of PAGES)$('t-'+s).hidden=s!==t;
-  if(t==='orders'){loadOrders();reportAge()} if(t==='batches')loadBatches(); if(t==='activity'){loadActivity();loadQueue()} if(t==='makeit'){loadMakeIt();loadQueues()} if(t==='printers')loadStatusAll(); if(t==='stats')loadStats(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadHelpPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
+  const sec=t==='history'?'orders':t;for(const s of PAGES)$('t-'+s).hidden=s!==sec;
+  if(t==='orders'||t==='history'){ordMode(t==='history'?'history':'pending');loadOrders();reportAge()} if(t==='batches')loadBatches(); if(t==='activity'){loadActivity();loadQueue()} if(t==='makeit'){loadMakeIt();loadQueues()} if(t==='printers')loadStatusAll(); if(t==='stats')loadStats(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadHelpPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
+function ordMode(m,keepTab){$('ordtools').hidden=m!=='pending';
+  document.querySelectorAll('#tabs button').forEach(b=>{if(b.dataset.t==='orders'||b.dataset.t==='history')b.classList.toggle('on',(b.dataset.t==='history')===(m==='history'))});
+  if(OMODE===m)return;OMODE=m;filter.offset=0;SEL.clear();
+  if(!keepTab)filter.tab=m==='pending'?'pending':'pack_it';
+  visibleColumns=m==='pending'?[...PEND_COLS]:COLUMN_NAMES.map((_,i)=>i+1);renderColumns();
+  loadFacets()}
 const PAGES=['orders','batches','makeit','printers','slicing','settings','stats','activity','help'];
 const OLD_PAGES={downloads:'activity',pstatus:'printers'};  // pages merged in 0.19 (the download queue is on Activities since 0.24)
 
 // ---------- orders ----------
 // Only orders waiting to be made can be ticked (→ Create batch).
 const SELKIND='ready';
-const canTick=o=>o.tab==='to_make'&&(!o.product||!PRODUCTS.length||(PRODUCTS.find(p=>p.key===o.product)||{makeable:true}).makeable);
+const canTick=o=>o.tab==='to_make'&&!(o.club&&o.club.held)&&(!o.product||!PRODUCTS.length||(PRODUCTS.find(p=>p.key===o.product)||{makeable:true}).makeable);
 async function loadOrders(){
   const p=filterParams({limit:LIMIT,offset:filter.offset});
   showFilterState();
   const r=await api('/api/orders?'+p);
-  $('stockmsg').innerHTML=r.in_stock?`<div class="o">${r.in_stock} order${r.in_stock>1?'s':''} to make match${r.in_stock>1?'':'es'} a spare piece in stock — <a href="#" id="stockgo">To make → Piece in stock</a>. Send the piece instead of making it again.</div>`:'';
+  $('stockmsg').innerHTML=r.in_stock?`<div class="o">${r.in_stock} order${r.in_stock>1?'s':''} to make match${r.in_stock>1?'':'es'} a spare piece in stock — <a href="#" id="stockgo">show them</a>. Send the piece instead of making it again.</div>`:'';
+  ROWS=Object.fromEntries(r.orders.map(o=>[o.order_id,o]));
   if($('stockgo'))$('stockgo').onclick=e=>{e.preventDefault();filter.tab='to_make_returned';filter.offset=0;refreshAll()};
   if(r.total && filter.offset>=r.total){filter.offset=Math.floor((r.total-1)/LIMIT)*LIMIT;return loadOrders()}
   $('pageinfo').textContent=r.total?`${filter.offset+1}–${Math.min(filter.offset+LIMIT,r.total)} of ${r.total} · Page ${Math.floor(filter.offset/LIMIT)+1} of ${Math.ceil(r.total/LIMIT)}`:'No orders';
@@ -1158,8 +1171,8 @@ async function loadOrders(){
   const day=t=>t?new Date(t*1000).toLocaleString([], {dateStyle:'short',timeStyle:'short'}):'';
   $('orders').innerHTML=r.orders.map(o=>{
     const st=TABWORD[o.tab]||[o.tab,o.tab,''];
-    const nameCell=!LOGISTICS&&o.state==='needs_review'&&o.tab==='check_name'
-      ?`<div class="edit"><input value="${esc(o.name)}" data-n="${esc(o.order_id)}" placeholder="Name to print">${o.product_kind==='stand'?'':`<input value="${esc(o.color)}" data-c="${esc(o.order_id)}" style="max-width:90px" placeholder="colour">`}<button class="small primary" data-ok="${esc(o.order_id)}">Approve</button></div><div class="hint">Customer typed: ${esc(o.raw_name)||'—'}</div><div class="reason">${esc(o.review_reason)}</div>`
+    const nameCell=o.tab==='check_name'
+      ?`${esc(o.name)||'<span class="hint">—</span>'}<div class="hint">Customer typed: ${esc(o.raw_name)||'—'}</div><div class="reason">${esc(o.review_reason||'')}</div>`
       :`${esc(o.name)}${o.name_edited?' <span class="hint">(edited)</span>':''}${o.raw_name&&o.raw_name.trim()!==o.name?`<div class="hint">typed: ${esc(o.raw_name)}</div>`:''}${o.last_error?`<div class="reason">${esc(o.last_error)}</div>`:''}`;
     // what happened to it, in words
     const notes=[
@@ -1185,10 +1198,19 @@ async function loadOrders(){
       :inBatch?remake
       :`<button class="small" data-reset="${esc(o.order_id)}" title="Make this order (again)">Make anyway</button>`].filter(Boolean).join(' ');
     const cb=canTick(o)?`<input type="checkbox" data-sel="${esc(o.order_id)}" ${SEL.has(o.order_id)?'checked':''}>`:'';
+    const pend=['to_make','check_name'].includes(o.tab),stn=(o.source_status||'').toUpperCase().replace(/[ _]/g,'-');
+    // 0.34: what keeps it from being made, under the order ID
+    const why=!pend?'':[
+      o.tab==='check_name'?`<div class="ask">Ask support to check the name with the customer and confirm — it can be made once they do</div>`:'',
+      stn==='ACCEPTANCE-PENDING'?'<div><span class="pill warn" title="Not accepted on the website yet: make it; its label can be made once it is accepted">Acceptance pending</span></div>':'',
+      stn==='AWB-EXPIRED'?'<div><span class="pill warn" title="The label expired before it was made: make it; Print label makes a new one">Label expired</span></div>':'',
+      o.club?`<div class="hint">Clubbed · ${o.club.size} names – made together</div>`:'',
+      o.club&&o.club.held&&o.tab==='to_make'?`<div class="reason">Waits for the name check of ${esc(o.club.check.join(', '))} — the whole clubbed order is made together</div>`:'',
+      o.club&&o.club.started?`<div class="reason">Other names already in production — make this now</div>`:''].join('');
     const club=o.clubbed_id?`<div class="club" title="Clubbed order ID">${o.clubbed?'clubbed · ':''}${esc(o.clubbed_id)}</div>`
       :o.adhoc?`<div class="club" title="Typed in by hand">ad-hoc${o.added_at?' · added '+day(o.added_at):''}${o.special_request?' · '+esc(o.special_request):''}</div>`:'';
     const exp=['to_make','check_name','ready_to_print','printing','pack_it'].includes(o.tab)?expressBadge(o.express_by,o.express_note):'';
-    return `<tr><td>${cb}</td><td>${esc(o.order_id)}${club}${exp?'<div>'+exp+'</div>':''}</td><td style="white-space:nowrap">${esc(o.order_date)}${waitDays(o)}</td><td>${esc(o.customer_name)}</td><td style="white-space:nowrap">${esc(o.phone)}</td><td class="addr">${esc(o.address)}</td><td>${esc(o.source_status)}</td><td>${nameCell}${notes}</td><td>${o.product_kind==='stand'?`<span class="pill info" title="Name stand (two colours: block + letters)">${esc(o.product_label)}</span><div style="white-space:nowrap">${(o.stand_colors||[]).map(c=>sw(c)).join(' ')}</div>`:(!LOGISTICS&&o.tab==='check_name'?'':sw(o.color))}</td><td>${o.quantity}</td><td>${o.stand_size?`${o.stand_size[0]}×${o.stand_size[1]}×${o.stand_size[2]}`:o.target?`${o.target[0]}×${o.target[1]} · ${o.compartments}`:'—'}</td><td><span class="pill ${st[2]}">${esc(st[1])}</span>${o.tab==='printing'&&o.print_done_at&&!o.checked_at?'<div class="pill warn" title="Printed — a person checks it on Print → Verify before packing">Printed – waiting for check</div>':''}${o.checked_by&&o.tab==='pack_it'?`<div class="hint">checked by ${esc(o.checked_by)}</div>`:''}</td><td>${payCell(o.payment)}</td><td>${act}</td></tr>`}).join('');
+    return `<tr class="${o.tab==='check_name'?'asking':''}"><td>${cb}</td><td>${esc(o.order_id)}${club}${exp?'<div>'+exp+'</div>':''}${why}</td><td style="white-space:nowrap">${esc(o.order_date)}${waitDays(o)}</td><td>${esc(o.customer_name)}</td><td style="white-space:nowrap">${esc(o.phone)}</td><td class="addr">${esc(o.address)}</td><td>${esc(o.source_status)}</td><td>${nameCell}${notes}</td><td>${o.product_kind==='stand'?`<span class="pill info" title="Name stand (two colours: block + letters)">${esc(o.product_label)}</span><div style="white-space:nowrap">${(o.stand_colors||[]).map(c=>sw(c)).join(' ')}</div>`:sw(o.color)}</td><td>${o.quantity}</td><td>${o.stand_size?`${o.stand_size[0]}×${o.stand_size[1]}×${o.stand_size[2]}`:o.target?`${o.target[0]}×${o.target[1]} · ${o.compartments}`:'—'}</td><td><span class="pill ${st[2]}">${esc(st[1])}</span>${o.tab==='printing'&&o.print_done_at&&!o.checked_at?'<div class="pill warn" title="Printed — a person checks it on Print → Verify before packing">Printed – waiting for check</div>':''}${o.checked_by&&o.tab==='pack_it'?`<div class="hint">checked by ${esc(o.checked_by)}</div>`:''}</td><td>${payCell(o.payment)}</td><td>${act}</td></tr>`}).join('');
   applyColumns();
   document.querySelectorAll('[data-ok]').forEach(b=>b.onclick=async()=>{const id=b.dataset.ok;
     const n=document.querySelector(`[data-n="${CSS.escape(id)}"]`).value, ci=document.querySelector(`[data-c="${CSS.escape(id)}"]`), c=ci?ci.value:'';
@@ -1204,11 +1226,13 @@ async function loadOrders(){
   document.querySelectorAll('[data-unreuse]').forEach(b=>b.onclick=async()=>{if(!confirm('Make this order after all? The piece becomes free again (back in stock).'))return;
     try{await post(`/api/orders/${encodeURIComponent(b.dataset.unreuse)}/undo-returned`);refreshAll()}catch(e){alert(e.message)}});
   document.querySelectorAll('[data-batch]').forEach(a=>a.onclick=e=>{e.preventDefault();show('batches');openBatchDetail(+a.dataset.batch)});
-  document.querySelectorAll('[data-sel]').forEach(c=>c.onchange=()=>{c.checked?SEL.add(c.dataset.sel):SEL.delete(c.dataset.sel);selUI()});
+  document.querySelectorAll('[data-sel]').forEach(c=>c.onchange=()=>{const o=ROWS[c.dataset.sel]||{};
+    const ids=o.club&&o.clubbed_id?Object.values(ROWS).filter(x=>x.clubbed_id===o.clubbed_id&&canTick(x)).map(x=>x.order_id):[c.dataset.sel];
+    for(const id of ids){c.checked?SEL.add(id):SEL.delete(id);const x=document.querySelector(`[data-sel="${CSS.escape(id)}"]`);if(x)x.checked=c.checked}selUI()});
   if(LOGISTICS)document.querySelectorAll('.otable tr').forEach(row=>{if(row.children.length===13){row.children[0].hidden=true;row.children[12].hidden=true}});
   selUI();
 }
-let PAGE=[];
+let PAGE=[],ROWS={};
 function selUI(){$('selcount').textContent=SEL.size?`${SEL.size} order${SEL.size>1?'s':''} selected`:'No orders selected';
   $('mkbatch').disabled=!SEL.size;
   $('mkbatch').textContent=SEL.size?`Create batch (${SEL.size})`:'Create batch';
@@ -1219,29 +1243,29 @@ $('mknext').onclick=async()=>{const n=Math.max(1,Math.min(500,+$('seln').value||
   if(!confirm(`Make a batch of the ${n} oldest ${prod.label} orders in To make (Express first)?\n\nTheir models download and the plates build by themselves. If a model fails, Batches waits for you.`))return;
   $('mknext').disabled=true;try{const r=await post('/api/batches/next',{count:n,product:prod.key});SEL.clear();
     $('ingestres').innerHTML=r.download_error?`<div class="w">Batch #${r.batch_id} made with ${r.orders} order(s), but the download didn't start: ${esc(r.download_error)} Then press <b>Queue download</b> on Batches.</div>`
-      :`<div class="o">Batch #${r.batch_id} made with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped)`:''}: downloading the models, then the plates build by themselves. Follow it on <b>Batches</b>.</div>`;refreshAll()}
+      :`<div class="o">Batch #${r.batch_id} made with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped)`:''}${r.clubbed_held?` — <span class="reason">${esc(r.clubbed_held)}</span>`:''}: downloading the models, then the plates build by themselves. Follow it on <b>Batches</b>.</div>`;refreshAll()}
   catch(e){alert(e.message)}finally{$('mknext').disabled=false}};
 // the last report: red when more than a day old (a new one in Downloads is imported by itself)
 async function reportAge(){try{const m=await api('/api/logistics/meta'),ri=await api('/api/report-import');if(!m.last_upload){$('reportage').innerHTML='';return}
   const h=(Date.now()-new Date(m.last_upload))/36e5;
   $('reportage').innerHTML=h>=24?`<div class="e">The last report was uploaded ${Math.floor(h)} hours ago — download a new <i>Order Reconciliation Report</i> from the website${ri.on?' (saved in Downloads it is imported by itself)':''}, so statuses are fresh.</div>`:'';}catch{}}
 $('seloldest').onclick=async()=>{const n=Math.max(1,Math.min(500,+$('seln').value||50));
-  const ids=await api('/api/orders/ids?'+filterParams({state:SELKIND}));SEL.clear();ids.slice(0,n).forEach(i=>SEL.add(i));loadOrders()};
+  const ids=await api('/api/orders/ids?'+filterParams({state:SELKIND,count:n}));SEL.clear();ids.forEach(i=>SEL.add(i));loadOrders()};
 $('selall').onclick=async()=>{const ids=await api('/api/orders/ids?'+filterParams({state:SELKIND}));ids.forEach(i=>SEL.add(i));loadOrders()};
 function filterParams(extra){const p=new URLSearchParams({tab:filter.tab,...extra});if(filter.product)p.set('product',filter.product);for(const [k,v] of Object.entries(filter.f))if(v)p.set('f_'+k,v);return p}
 let ft;document.querySelectorAll('.frow [data-f]').forEach(el=>{const go=()=>{filter.f[el.dataset.f]=el.value.trim();filter.offset=0;loadOrders()};
   if(el.tagName==='SELECT')el.onchange=go;else el.oninput=()=>{clearTimeout(ft);ft=setTimeout(go,250)}});
-$('fclear').onclick=()=>{filter.f={};filter.tab='all';document.querySelectorAll('.frow [data-f]').forEach(el=>el.value='');filter.offset=0;loadFacets();loadOrders()};
+$('fclear').onclick=()=>{filter.f={};document.querySelectorAll('.frow [data-f]').forEach(el=>el.value='');filter.offset=0;loadFacets();loadOrders()};
 function showFilterState(){const n=Object.values(filter.f).filter(Boolean).length;
   $('fclear').classList.toggle('primary',n>0);$('fclear').textContent=n?`Clear all filters (${n})`:'Clear all filters';
-  $('fstate').innerHTML=n?`<b>Filtered</b> by ${n} column${n>1?'s':''} — press <b>Clear all filters</b> to see every order again.`:'Type in the boxes under the column names to filter; filters combine.'}
+  $('fstate').innerHTML=n?`<b>Filtered</b> by ${n} column${n>1?'s':''}`:''}
 async function loadFacets(){FACETS=await api('/api/orders/facets?tab='+filter.tab+(filter.product?'&product='+encodeURIComponent(filter.product):''));renderProducts();renderChips(FACETS.tabs);
   for(const [k,vals] of [['status',FACETS.statuses],['color',FACETS.colors]]){const el=document.querySelector(`.frow [data-f="${k}"]`);const cur=el.value;
     el.innerHTML='<option value="">all</option>'+vals.map(v=>`<option ${v===cur?'selected':''}>${esc(v)}</option>`).join('')}}
 $('selclear').onclick=()=>{SEL.clear();loadOrders()};
 $('mkbatch').onclick=async()=>{if(!SEL.size)return;
   try{const r=await post('/api/batches',{order_ids:[...SEL]});SEL.clear();
-    $('ingestres').innerHTML=`<div class="o">Batch #${r.batch_id} created with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped — not ready${r.taken_elsewhere?`; ${r.taken_elsewhere} already taken on another computer`:''})`:''}${r.already_made_note?`. <span class="reason">${esc(r.already_made_note)} — not added (Remake them first if they must be made again)</span>`:''}. Go to <b>Batches</b> and press <b>Queue download</b>.</div>`;
+    $('ingestres').innerHTML=`<div class="o">Batch #${r.batch_id} created with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped — not ready${r.taken_elsewhere?`; ${r.taken_elsewhere} already taken on another computer`:''})`:''}${r.already_made_note?`. <span class="reason">${esc(r.already_made_note)} — not added (Remake them first if they must be made again)</span>`:''}${r.clubbed_added?`. ${r.clubbed_added} more name${r.clubbed_added>1?'s':''} of the same clubbed orders added — they're made together`:''}${r.clubbed_held?`. <span class="reason">${esc(r.clubbed_held)}</span>`:''}. Go to <b>Batches</b> and press <b>Queue download</b>.</div>`;
     refreshAll()}catch(e){alert(e.message)}};
 // ---------- Orders → Product chips (0.29): Organizer is the default; name stands are listed, made in a later update
 try{const p=localStorage.getItem('oproduct');if(p!==null)filter.product=p}catch{}
@@ -1255,15 +1279,15 @@ function renderProducts(){if(!PRODUCTS.length||LOGISTICS){$('prodchips').hidden=
     :cur&&!cur.printable?`<div class="o"><b>${esc(cur.label)}</b> name stands: tick them and <b>Create batch</b> (one product per batch) — the helper downloads them from their MakerWorld page, then <b>Queue build</b> makes two-colour plates (3 per plate). The Print page for stands comes in the next update.</div>`:'';}
 (async()=>{try{PRODUCTS=(await api('/api/products')).products;if(!PRODUCTS.some(p=>p.key===filter.product))filter.product=LOGISTICS?'':'organizer';if(FACETS)renderProducts();if(S)fillStands()}catch{}})();
 function renderChips(counts){
-  const top=filter.tab.startsWith('to_make')||filter.tab==='express'?'to_make':filter.tab;
-  $('chips').innerHTML=TABGROUPS.map(([g,ts])=>`<div class="chipgroup"><span class="chiphead">${esc(g)}</span>${ts.map(([k,l])=>`<button data-s="${k}" class="${top===k?'on':''}">${esc(l)} · ${counts[k]||0}</button>`).join('')}</div>`).join('');
-  $('adhocform').hidden=LOGISTICS||filter.tab!=='to_make_adhoc';
-  if(filter.tab==='to_make_adhoc')$('ahcolors').innerHTML=[...new Set([...Object.keys(COLORS),...((FACETS&&FACETS.colors)||[])].filter(Boolean))].map(c=>`<option value="${esc(c)}">`).join('');
-  $('subchips').innerHTML=top==='to_make'?SUBTABS.map(([k,l])=>`<button data-s="${k}" class="${filter.tab===k?'on':''}">${esc(l)} · ${counts[k]||0}</button>`).join(''):'';
-  $('selbar').hidden=LOGISTICS||top!=='to_make';
-  document.querySelectorAll('#chips button,#subchips button').forEach(b=>b.onclick=()=>{filter.tab=b.dataset.s;filter.offset=0;SEL.clear();loadFacets();loadOrders()});
+  const groups=OMODE==='history'?TABGROUPS.slice(1):[['Make',TABGROUPS[0][1].filter(([k])=>k!=='problems'||counts.problems||filter.tab==='problems')]];
+  const sub=SUBTABS.find(([k])=>k===filter.tab);  // a list reached by a link (e.g. Piece in stock)
+  $('chips').innerHTML=groups.map(([g,ts])=>`<div class="chipgroup"><span class="chiphead">${esc(g)}</span>${ts.map(([k,l])=>`<button data-s="${k}" class="${filter.tab===k?'on':''}"${k==='problems'?' style="border-color:var(--err);color:var(--err)"':''}>${esc(l)} · ${counts[k]||0}</button>`).join('')}</div>`).join('')
+    +(sub?`<div class="chipgroup"><button class="on" data-s="pending" title="Back to the whole To make list">${esc(sub[1])} · ${counts[sub[0]]||0} ✕</button></div>`:'');
+  $('selbar').hidden=LOGISTICS||!['pending','to_make','to_make_single','to_make_clubbed','to_make_adhoc','to_make_returned','express'].includes(filter.tab);
+  document.querySelectorAll('#chips button').forEach(b=>b.onclick=()=>{filter.tab=b.dataset.s;filter.offset=0;SEL.clear();loadFacets();loadOrders()});
 }
-$('adhocgo').onclick=()=>{filter.tab='to_make_adhoc';filter.offset=0;loadFacets().then(()=>$('ahname').focus());loadOrders()};
+$('adhocgo').onclick=()=>{const f=$('adhocform');f.hidden=LOGISTICS||!f.hidden;if(f.hidden)return;
+  $('ahcolors').innerHTML=[...new Set([...Object.keys(COLORS),...((FACETS&&FACETS.colors)||[])].filter(Boolean))].map(c=>`<option value="${esc(c)}">`).join('');$('ahname').focus()};
 $('adhocform').onsubmit=async e=>{e.preventDefault();
   try{const o=await post('/api/orders/adhoc',{name:$('ahname').value,phone:$('ahphone').value,color:$('ahcolor').value,quantity:+$('ahqty').value||1,note:$('ahnote').value});
     $('ahmsg').innerHTML=`<div class="o">Added <b>${esc(o.order_id)}</b> — ${esc(o.name)}, ${esc(o.color)}${o.quantity>1?' ×'+o.quantity:''}. It's in Ready; tick it and press <b>Create batch</b>.</div>`;
@@ -1285,7 +1309,8 @@ function renderViews(){const selected=$('ordview').value;$('ordview').innerHTML=
 function saveViews(){try{localStorage.setItem(VIEW_KEY,JSON.stringify(orderViews))}catch{alert('Could not save views in this browser.')}}
 $('saveview').onclick=()=>{const name=prompt('Name this view');if(!name||!name.trim())return;orderViews[name.trim()]={tab:filter.tab,f:{...filter.f},columns:[...visibleColumns]};saveViews();renderViews();$('ordview').value=name.trim()};
 $('deleteview').onclick=()=>{const n=$('ordview').value;if(n&&confirm(`Delete view “${n}”?`)){delete orderViews[n];saveViews();renderViews()}};
-$('ordview').onchange=async()=>{const v=orderViews[$('ordview').value];if(!v)return;filter.tab=v.tab;filter.f={...v.f};filter.offset=0;visibleColumns=v.columns.filter(i=>Number.isInteger(i)&&i>=1&&i<=12);document.querySelectorAll('.frow [data-f]').forEach(el=>el.value=filter.f[el.dataset.f]||'');await loadFacets();document.querySelectorAll('.frow [data-f]').forEach(el=>el.value=filter.f[el.dataset.f]||'');renderColumns();loadOrders()};
+$('ordview').onchange=async()=>{const v=orderViews[$('ordview').value];if(!v)return;if(!TABS.some(t=>t[0]===v.tab)&&!SUBTABS.some(t=>t[0]===v.tab))v.tab='pending';
+  OMODE='';ordMode(PENDTABS.has(v.tab)?'pending':'history',true);filter.tab=v.tab;filter.f={...v.f};filter.offset=0;visibleColumns=v.columns.filter(i=>Number.isInteger(i)&&i>=1&&i<=12);document.querySelectorAll('.frow [data-f]').forEach(el=>el.value=filter.f[el.dataset.f]||'');await loadFacets();document.querySelectorAll('.frow [data-f]').forEach(el=>el.value=filter.f[el.dataset.f]||'');renderColumns();loadOrders()};
 $('pagenumber').onchange=()=>{filter.offset=(+$('pagenumber').value-1)*LIMIT;loadOrders()};
 $('pagesize').onchange=()=>{LIMIT=+$('pagesize').value;filter.offset=0;loadOrders()};
 renderViews();renderColumns();
@@ -1778,6 +1803,8 @@ function lbCell(r){if(!lbOn())return '<span class="hint">—</span>';if(!LB)retu
   let out='';
   if(j&&j.state==='done')out=`<span class="pill ${j.error?'warn':'ok'}" title="${esc(j.error||'')}">${j.error?'label made, not printed':'label printed'}</span> <span class="hint">AWB ${esc(j.awb||'')} · ${esc(j.courier||'')}</span> ${j.has_pdf?`<button class="small" data-lbre="${j.id}">Reprint</button>`:''}${j.error?`<div class="reason">${esc(j.error)}</div>`:''}`;
   else if(j&&j.state==='failed')out=`<div class="reason">Label stopped: ${esc(j.error||'')}</div>`;
+  else if(j&&j.state==='cancelled')out=`<div class="hint">Label stopped by a person</div>`;
+  if(j&&['done','failed','cancelled'].includes(j.state))out+=` <button class="small" data-lbtrace="${j.id}">Details</button><div class="hint" id="lbtr${j.id}" hidden></div>`;
   if(j&&j.state==='done')return out+club;
   if(p.error)return out+`<span class="hint">${esc(p.error)}</span>`;
   if((p.problems||[]).length)return out+`<span class="hint" title="${esc(p.problems.join('; '))}">not yet: ${esc(p.problems[0])}</span>`+club;
@@ -1787,18 +1814,28 @@ async function lbLoad(ids){if(!lbOn()){$('lbmsg').innerHTML='';return}if(ids)LBI
   const act=LB.active||[],msg=[];
   if(!LB.tool)msg.push('<div class="e">SumatraPDF isn\'t installed on this computer — it prints the labels (Settings → Logistics → Shipping labels).</div>');
   if(act.some(j=>j.state==='login'))msg.push('<div class="w"><b>ShopDeck needs a sign-in.</b> In Chrome, sign in to ShopDeck (OTP, then <b>Login</b> under SNAP MAGICIANS), open Process Orders, then press <b>Continue</b> on the order below.</div>');
+  else if(act.length&&lbOldHelper())msg.push('<div class="w">The SnapSTL Helper on this page can\'t bring ShopDeck to the front (it needs 2.6 — reload this page after the Helper updates). Until then switch to ShopDeck\'s tab yourself while a label is made: Chrome slows down tabs in the background.</div>');
   else if(act.some(j=>['queued','working'].includes(j.state))&&!LB.tab_seen)msg.push('<div class="w">Open ShopDeck\'s <b>Process Orders</b> page in Chrome (signed in, with the SnapSTL Helper) — the label waits for it.</div>');
   $('lbmsg').innerHTML=msg.join('');
   document.querySelectorAll('[data-lbcell]').forEach(td=>{const r=(MK&&MK.completed||[]).find(o=>o.order_id===td.dataset.lbcell);if(r)td.innerHTML=lbCell(r)});lbWire();
   clearTimeout(LBTIMER);if(act.length&&!$('mk-completed').hidden)LBTIMER=setTimeout(()=>lbLoad(),3000)}
+// 0.33.2: Print label / Continue → the Helper (2.6, helper/snapstl_page.js) brings ShopDeck's tab to the front
+const lbFront=id=>{if(id)window.postMessage({snapstl:'label-start',job_id:id},location.origin)};
+function lbOldHelper(){const v=(document.documentElement.dataset.snapstlHelper||'0').split('.').map(Number);return v[0]<2||(v[0]===2&&(v[1]||0)<6)}
+async function lbTrace(id){const el=$('lbtr'+id);if(!el)return;if(!el.hidden){el.hidden=true;return}
+  try{const r=await api(`/api/labels/${id}/trace`);
+    el.innerHTML=(r.events||[]).map(e=>`<div>${esc(new Date(e.at*1000).toLocaleTimeString())} — ${esc(e.what)}</div>`).join('')||'Nothing recorded (labels from before 0.33.2).'}
+  catch(e){el.textContent=e.message}
+  el.hidden=false}
 function lbWire(){
   document.querySelectorAll('[data-lbprint]').forEach(b=>b.onclick=async()=>{const oid=b.dataset.lbprint,p=(LB&&LB.parcels[oid])||{};
     const who=vAuth();if(!who)return;let ready=false;
     const what=p.clubbed?`one label for clubbed order ${p.key} (${(p.names||[]).join(', ')})`:`the label for ${oid}`;
     if((p.others||[]).length){if(!confirm(`This parcel also holds:\n\n${p.others.map(x=>`• ${x.quantity} × ${x.product}`).join('\n')}\n\nAre ALL of these ready and going into this parcel? Only then press OK — the label is made on ShopDeck.`))return;ready=true}
     else if(!confirm(`Print ${what}?\n\nThe courier is changed on ShopDeck first (new AWB), then the label is printed on ${LB.printer}.`))return;
-    b.disabled=true;try{await post('/api/labels',{order_ids:[oid],items_ready:ready,...who})}catch(e){if(!vExpired(e))alert(e.message)}lbLoad()});
-  document.querySelectorAll('[data-lbgo]').forEach(b=>b.onclick=async()=>{try{await post(`/api/labels/${b.dataset.lbgo}/continue`)}catch(e){alert(e.message)}lbLoad()});
+    b.disabled=true;try{const r=await post('/api/labels',{order_ids:[oid],items_ready:ready,...who});lbFront(r.jobs&&r.jobs[0]&&r.jobs[0].id)}catch(e){if(!vExpired(e))alert(e.message)}lbLoad()});
+  document.querySelectorAll('[data-lbgo]').forEach(b=>b.onclick=async()=>{try{await post(`/api/labels/${b.dataset.lbgo}/continue`);lbFront(b.dataset.lbgo)}catch(e){alert(e.message)}lbLoad()});
+  document.querySelectorAll('[data-lbtrace]').forEach(b=>b.onclick=()=>lbTrace(b.dataset.lbtrace));
   document.querySelectorAll('[data-lbstop]').forEach(b=>b.onclick=async()=>{if(!confirm('Stop this label? Nothing is undone on ShopDeck.'))return;try{await post(`/api/labels/${b.dataset.lbstop}/cancel`)}catch(e){alert(e.message)}lbLoad()});
   document.querySelectorAll('[data-lbre]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await post(`/api/labels/${b.dataset.lbre}/reprint`)}catch(e){alert(e.message)}lbLoad()})}
 const CSEL=new Set();let CPICK=null;  // Completed → Some letters spoiled: {order_id, item, pcs, picked}
@@ -2399,7 +2436,7 @@ async function refresh(){try{const st=await api('/api/state');showShared(st.shar
   licHint(st.license_set);
   const key=JSON.stringify(st.counts)+JSON.stringify(q)+st.building;
   if(key!==lastKey){lastKey=key;loadFacets();
-    if(tab==='orders')loadOrders(); if(tab==='batches')loadBatches()}
+    if(tab==='orders'||tab==='history')loadOrders(); if(tab==='batches')loadBatches()}
   if(tab==='activity')loadQueue();
   if(++TICK%3===0){if(tab==='makeit')loadMakeIt();if(tab==='printers'&&$('psauto').checked)loadStatusAll()}
   if(TICK%8===0)loadHealth();
@@ -2624,7 +2661,7 @@ async function dOpen(id){D.open=id;use('open_order');let o;try{o=await api('/api
     f=>{const by=f.get('by');if(by&&new Date(by+'T23:59:59')<Date.now()+864e5&&!confirm('That date is today or already past. Save anyway?'))return;
       act('express',{needed_by:by,note:f.get('note')},by?'Express saved — production sees it at the top':'Express removed')});
   if($('dcancel'))$('dcancel').onclick=()=>form(`<label>What did the customer say? (optional)<input name="note" maxlength="300"></label>
-      <div class="hint">Production sees it at once in Problems – check. Also cancel it on the website.</div>`,
+      <div class="hint">Production sees it at once in Needs attention. Also cancel it on the website.</div>`,
     f=>act('cancel-request',{note:f.get('note')},'Cancel request sent to production'));
   if($('dremake'))$('dremake').onclick=()=>form(`<label>Why must it be made again?<input name="reason" maxlength="300" required placeholder="e.g. arrived broken"></label>`,
     f=>act('remake',{reason:f.get('reason')},'Remake requested — it is in To make'));
@@ -2647,7 +2684,7 @@ $('dcsv').onclick=()=>use('download_csv');
   $('status').textContent='SnapSTL · Customer help';
   await dLoad();use('open_page');setInterval(()=>{if(!D.open&&!document.querySelector('#dform form'))dLoad()},60000);return;
 }META=await api('/api/meta');S=await api('/api/settings');fillSettings();if(META.local)$('logout').hidden=true;
-  if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders';t=OLD_PAGES[t]||t}catch{}if(!PAGES.includes(t))t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;
+  if(!META.local)for(const id of ['mw_url','lic','o_dir','o_dl'])$(id).disabled=true;let t='orders';try{t=localStorage.getItem('tab')||'orders';t=OLD_PAGES[t]||t}catch{}if(!PAGES.includes(t)&&t!=='history')t='orders';if(META.version)$('helpversion').textContent='SnapSTL '+META.version;
   document.querySelectorAll('.fm').forEach(x=>x.textContent='Show in '+META.file_manager);
   if(META.os==='windows')document.body.classList.add('win');
   $('pcname').textContent=META.computer.name+(META.shared_records?' · shared records':'');$('resetsharedl').hidden=!META.shared_records;$('dbshared').hidden=!META.shared_records;$('dblocal').hidden=!!META.shared_records;show(t);refresh();loadHealth();setInterval(refresh,2000);

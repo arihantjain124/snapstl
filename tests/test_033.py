@@ -310,3 +310,87 @@ def test_settings_validate_labels():
     s.labels.wait_after_logistics_s = -1
     errs = " ".join(s.validate())
     assert "courier" in errs and "wait after logistics" in errs
+
+
+# ---------------- 0.33.2: a quiet ShopDeck tab, the trace ----------------
+def _one(client, oid="T1"):
+    client.post("/api/ingest", files={"file": ("r.csv", report([(oid, "", "PRINT", "Magicians_35", "Asha", 1)]), "text/csv")})
+    made(oid)
+    return client.post("/api/labels", json={"order_ids": [oid]}).json()["jobs"][0]
+
+
+def _age(job_id, seconds):
+    """As if the ShopDeck tab last said something about this job `seconds` ago."""
+    labels._ALIVE[job_id] = time.time() - seconds
+    with db.tx() as con:
+        con.execute("UPDATE label_jobs SET updated_at=? WHERE id=?", (time.time() - seconds, job_id))
+
+
+def test_a_label_no_shopdeck_tab_takes_is_stopped_with_the_reason(client, setup):  # noqa: F811
+    from snapstl import server
+
+    j = _one(client)
+    labels.Watcher._timeouts(server.SETTINGS)
+    assert job_of(client, "T1")["state"] == "queued"  # not yet
+    labels._FRONT[j["id"]] = time.time() - server.SETTINGS.labels.pickup_timeout_s - 1
+    labels.Watcher._timeouts(server.SETTINGS)
+    jb = job_of(client, "T1")
+    assert jb["state"] == "failed" and "No ShopDeck tab took this label" in jb["error"]
+
+
+def test_a_quiet_shopdeck_tab_stops_the_job_and_a_heartbeat_keeps_it(client, setup):  # noqa: F811
+    from snapstl import server
+
+    j = _one(client)
+    assert nxt(client)["job"]["id"] == j["id"]
+    _age(j["id"], 500)
+    client.post(f"/api/helper/shopdeck/{j['id']}/alive", json={"visible": "visible"})  # heartbeat: still there
+    labels.Watcher._timeouts(server.SETTINGS)
+    assert job_of(client, "T1")["state"] == "working"
+    client.post(f"/api/helper/shopdeck/{j['id']}/alive", json={"visible": "hidden"})
+    _age(j["id"], server.SETTINGS.labels.stall_timeout_s + 5)
+    labels.Watcher._timeouts(server.SETTINGS)
+    jb = job_of(client, "T1")
+    assert jb["state"] == "failed" and "stopped answering" in jb["error"] and "background" in jb["error"]
+    what = [e["what"] for e in client.get(f"/api/labels/{j['id']}/trace").json()["events"]]
+    assert what[0].startswith("Print label pressed") and "ShopDeck tab took the job" in what
+    assert any("in the background" in w for w in what) and what[-1].startswith("Stopped: The ShopDeck tab stopped")
+
+
+def test_the_wait_after_the_courier_change_and_a_pressed_label_are_not_timed_out(client, setup):  # noqa: F811
+    from snapstl import server
+
+    server.SETTINGS.labels.wait_after_logistics_s = 300
+    j = _one(client)
+    nxt(client)
+    seen(client, j["id"], ids=["T1"], skus=["Magicians_35"], awb="111111")
+    step(client, j["id"], "saving", courier="BLUEDART_AIR", offered=["BLUEDART_AIR"])
+    step(client, j["id"], "saved", awb="222222", courier="BLUEDART AIR")
+    labels._ALIVE[j["id"]] = time.time() - server.SETTINGS.labels.stall_timeout_s - 5  # quiet, but waiting 300 s
+    labels.Watcher._timeouts(server.SETTINGS)
+    assert job_of(client, "T1")["state"] == "working"
+    with db.tx() as con:  # Label pressed: only the PDF decides
+        con.execute("UPDATE label_jobs SET step='pdf', pressed_at=? WHERE id=?", (time.time(), j["id"]))
+    _age(j["id"], 1000)
+    labels.Watcher._timeouts(server.SETTINGS)
+    assert job_of(client, "T1")["state"] == "working"
+
+
+def test_the_trace_keeps_what_the_page_showed_and_the_couriers_offered(client, setup):  # noqa: F811
+    j = _one(client)
+    nxt(client)
+    seen(client, j["id"], ids=["T1"], skus=["Magicians_35"], awb="111111", partner="DELHIVERY SURFACE")
+    step(client, j["id"], "saving", courier="BLUEDART_SURFACE", offered=["DELHIVERY_SURFACE", "BLUEDART_SURFACE"])
+    client.post(f"/api/helper/shopdeck/{j['id']}/alive", json={"note": "ShopDeck tab brought to the front"})
+    what = "\n".join(e["what"] for e in client.get(f"/api/labels/{j['id']}/trace").json()["events"])
+    assert "Saw: print list, single tab, 01 result(s), orders T1, SKUs Magicians_35, AWB 111111" in what
+    assert '"offered": ["DELHIVERY_SURFACE", "BLUEDART_SURFACE"]' in what and "brought to the front" in what
+
+
+def test_not_found_needs_shopdecks_own_no_result_found(client, setup):  # noqa: F811
+    j = _one(client)
+    nxt(client)
+    a = seen(client, j["id"], where="none", why="Print: No result found; Expired AWB: No result found")
+    assert a["do"] == "stop" and "No result found" in a["error"]
+    what = [e["what"] for e in client.get(f"/api/labels/{j['id']}/trace").json()["events"]]
+    assert "Saw: not on ShopDeck (Print: No result found; Expired AWB: No result found)" in what

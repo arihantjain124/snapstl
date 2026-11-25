@@ -228,6 +228,8 @@ class LabelSettings:
     one_at_a_time: bool = True          # one Print label press = one order (False: a selection, one after another)
     regenerate_timeout_s: int = 180     # Expired AWB → Regenerate: how long to wait for the order to come back
     pdf_timeout_s: int = 120            # after Label: how long to wait for the PDF in Downloads
+    pickup_timeout_s: int = 30          # 0.33.2: no ShopDeck tab took the job by then → stopped
+    stall_timeout_s: int = 60           # 0.33.2: the ShopDeck tab went quiet (in the background, closed) → stopped
     sumatra_path: str = ""              # SumatraPDF.exe (Windows); empty = look in the usual places
 
 
@@ -323,7 +325,8 @@ class Settings:
         lb = self.labels
         if not isinstance(lb.printer, str) or len(lb.printer) > 200 or (lb.enabled and not lb.printer.strip()):
             errs.append("Labels: choose the label printer")
-        for k, lo, hi in (("wait_after_logistics_s", 0, 600), ("regenerate_timeout_s", 30, 1800), ("pdf_timeout_s", 20, 600)):
+        for k, lo, hi in (("wait_after_logistics_s", 0, 600), ("regenerate_timeout_s", 30, 1800), ("pdf_timeout_s", 20, 600),
+                          ("pickup_timeout_s", 10, 600), ("stall_timeout_s", 20, 600)):
             v = getattr(lb, k)
             if not isinstance(v, int) or isinstance(v, bool) or not (lo <= v <= hi):
                 errs.append(f"Labels: {k.replace('_', ' ')} must be a whole number {lo}–{hi}")

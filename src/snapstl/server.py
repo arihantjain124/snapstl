@@ -24,7 +24,7 @@ from starlette.concurrency import run_in_threadpool
 
 from . import (archive, auth, bambuddy_host, cache, computer, config, db, extras, farm, makeit, platform_os, products,
                sync, tabs, spares, updater, verify)
-from . import labels
+from . import clubbed, labels
 from .ingest import add_adhoc, ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
 from . import staff as staff_pins
@@ -64,6 +64,11 @@ async def _lifespan(_app):
         print("SnapSTL: 0.26 repair:", repair_026())  # one-time: stuck PRINT orders, packed ≠ problem
     except Exception as e:  # noqa: BLE001
         print(f"SnapSTL: 0.26 repair skipped: {e}")
+    try:
+        from .ingest import repair_034
+        print("SnapSTL: 0.34 repair:", repair_034())  # one-time: Acceptance pending / AWB expired → To make
+    except Exception as e:  # noqa: BLE001
+        print(f"SnapSTL: 0.34 repair skipped: {e}")
     try:
         from . import stands as _stands
 
@@ -438,6 +443,7 @@ def _order_view(r: dict) -> dict:
         "spares": r.get("_spares") or [],  # 0.28: spare pieces in stock that fit
         "made_before": r.get("_made_before"),  # 0.32.1: already made in this batch — Remake to make it again
         "reuse_words": spares.describe(r.get("reuse_of")),
+        "club": r.get("_club"),  # 0.34: {size, to_make, check, held, started} of its clubbed order
         "payment": r.get("payment") or "",
     }
 
@@ -461,12 +467,16 @@ TABS.update({
     "to_make_adhoc": f"{_T}='to_make' AND sku='Adhoc'",  # typed in by hand (ingest.add_adhoc)
     "to_make_returned": f"{_T}='to_make' AND {_RETURNED}",  # a returned piece could be sent instead
     "express": f"express_by IS NOT NULL AND {_T} IN {_MAKING_TABS}",
+    # 0.34 (owner): Pending Orders → To make is one list — orders ready to make and those whose name support still
+    # has to check with the customer (listed in date order so none is missed, but not tickable)
+    "pending": f"{_T} IN ('to_make','check_name')",
     "production": f"{_T} IN ('ready_to_print','printing')",  # 0.26: one list on the Orders page
     "all": "1=1",
 })
 # Express orders first (earliest needed-by date first), then the oldest order first (0.25, owner: clear the
-# backlog in order)
-_ORDER = "ORDER BY (express_by IS NULL), express_by, order_date, COALESCE(clubbed_id,''), order_id"
+# backlog in order); 0.34: after Express, clubbed orders whose other names are already in production
+_ORDER = (f"ORDER BY (express_by IS NULL), express_by, NOT {clubbed.PARTNER_SQL}, order_date, "
+          "COALESCE(clubbed_id,''), order_id")
 # payment type from the uploaded report (PREPAID / COD / PARTIAL-COD)
 _PAY = "COALESCE((SELECT json_extract(rr.data, '$.payment_method') FROM report_rows rr WHERE rr.order_id=orders.order_id),'')"
 # Per-column filters: name → (SQL expression, exact match?)
@@ -538,6 +548,10 @@ def list_orders(request: Request, tab: str = "to_make", limit: int = 200, offset
                 r["_spares"] = spares.for_order(con, r)
             r["_made_before"] = made.get(r["order_id"])
         in_stock = spares.waiting_matches(con)
+        g = clubbed.groups(con, [r["clubbed_id"] for r in rs])  # 0.34: made together
+        for r in rs:
+            if r["clubbed_id"] in g:
+                r["_club"] = clubbed.info(g[r["clubbed_id"]])
     return {"total": total, "orders": [_order_view(r) for r in rs], "in_stock": in_stock}
 
 
@@ -556,15 +570,17 @@ def returned_pieces(con, o: dict) -> list[dict]:
 
 
 @app.get("/api/orders/ids")
-def order_ids(request: Request, tab: str = "to_make", state: str = "ready"):
-    """All selectable order IDs matching the current tab + filters ('Select all matching'): orders that
-    can go into a batch (Create batch)."""
+def order_ids(request: Request, tab: str = "to_make", state: str = "ready", count: int = 100000):
+    """All selectable order IDs matching the current tab + filters ('Select all matching'), or the oldest `count`
+    ('Select oldest'): orders that can go into a batch (Create batch). 0.34: a clubbed order is taken whole — or
+    not at all while a name of it still needs its check."""
     if state != "ready":
         raise HTTPException(400, "Unknown state")
     w, args = _where(request, tab)
     with db.tx() as con:
         rs = db.rows(con, f"SELECT order_id FROM orders WHERE {w} AND {_T}='to_make' {_ORDER}", *args)
-    return [r["order_id"] for r in rs]
+        ids, _held = clubbed.take(con, [r["order_id"] for r in rs], max(1, count))
+    return ids
 
 
 @app.get("/api/orders/facets")
@@ -575,7 +591,8 @@ def order_facets(request: Request, tab: str = "to_make"):
     with db.tx() as con:
         counts = {k: 0 for k in TABS}
         counts.update({r[0]: r[1] for r in con.execute(f"SELECT {_T}, COUNT(*) FROM orders WHERE {pw} GROUP BY 1")})
-        for k in ("to_make_single", "to_make_clubbed", "to_make_adhoc", "to_make_returned", "express", "production", "all"):
+        for k in ("to_make_single", "to_make_clubbed", "to_make_adhoc", "to_make_returned", "express", "production",
+                  "pending", "all"):
             counts[k] = con.execute(f"SELECT COUNT(*) FROM orders WHERE {TABS[k]} AND {pw}").fetchone()[0]
         # Product chips: orders to make (To make + Check name) per product
         per = {r[0]: r[1] for r in con.execute(f"SELECT {products.key_sql()}, COUNT(*) FROM orders "
@@ -797,9 +814,9 @@ async def next_batch(req: Request):
                                          f"AND {products.in_sql([prod])} "
                                          f"AND NOT {spares.match_sql(complete=True)} {_ORDER}")]  # spare
         made = verify.made_before(con, ids)  # 0.32.1: already made in an earlier batch → only after Remake
-        ids = [i for i in ids if i not in made][:n]
+        ids, held = clubbed.take(con, [i for i in ids if i not in made], n)  # 0.34: clubbed orders whole
     if not ids:
-        raise HTTPException(400, "Nothing to make: To make is empty")
+        raise HTTPException(400, "Nothing to make: To make is empty" + (f" ({clubbed.held_words(held)})" if held else ""))
     try:
         out = B.create_batch(ids, SETTINGS)
     except ValueError as e:
@@ -939,6 +956,12 @@ async def shopdeck_fail(job_id: int, req: Request):
     return _label_call(labels.helper_fail, job_id, str(b.get("error") or "")[:400])
 
 
+@app.post("/api/helper/shopdeck/{job_id}/alive")
+async def shopdeck_alive(job_id: int, req: Request):
+    """0.33.2: the ShopDeck tab's heartbeat while it works on a job (+ its visibility, a note to keep)."""
+    return _label_call(labels.helper_alive, job_id, dict(await req.json()))
+
+
 @app.post("/api/helper/shopdeck/login")
 async def shopdeck_login(req: Request):
     b = await req.json()
@@ -977,6 +1000,12 @@ def labels_cancel(job_id: int):
 def labels_continue(job_id: int):
     """A person signed in to ShopDeck again: the helper takes over."""
     return _label_call(labels.signed_in, job_id)
+
+
+@app.get("/api/labels/{job_id}/trace")
+def labels_trace(job_id: int):
+    """0.33.2: what the label job saw and did, step by step."""
+    return {"events": labels.trace(job_id)}
 
 
 @app.post("/api/labels/{job_id}/reprint")
