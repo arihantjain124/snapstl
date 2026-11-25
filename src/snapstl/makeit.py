@@ -98,17 +98,25 @@ def available(printer: dict, load: int) -> bool:
             and str(st.get("state", "")).upper() in AVAILABLE_STATES)
 
 
+# 0.36: which printers a plate kind goes to first (printer roles, Printers page); any = no role set
+ROLE_RANK = {"bases": {"bases": 0, "any": 1, "flex": 2}, "names": {"letters": 0, "any": 1, "flex": 2},
+             farm.STANDS: {"letters": 0, "flex": 1, "any": 2, "bases": 3}}
+
+
 def choose(plates: list[dict], prs: list[dict], active: dict[int, int]) -> dict[str, int | None]:
     """Pre-selected printer per plate: an *available* printer whose loaded filament fits the colour best
     (exact, then same family, then nearest), then the most filament left. Each pick makes that printer busy for
-    the next plate, so plates spread over the free printers."""
+    the next plate, so plates spread over the free printers. 0.36: only printers whose role takes this kind
+    (bases → Bases / Any / Flex, letters → Letters / Any / Flex), in that order."""
     load = {p["id"]: active.get(p["id"], 0) for p in prs}
     out: dict[str, int | None] = {}
     for pl in plates:
         if pl.get("job_active"):
             continue
         need = farm.needed_color(pl)
-        ok = [p for p in prs if p.get("active", True) and available(p, load[p["id"]])]
+        rank = ROLE_RANK.get(pl.get("kind"), {})
+        ok = [p for p in prs if p.get("active", True) and available(p, load[p["id"]])
+              and (p.get("role") or "any") in rank]
         if not ok:
             out[pl["file"]] = None
             continue
@@ -120,7 +128,8 @@ def choose(plates: list[dict], prs: list[dict], active: dict[int, int]) -> dict[
             sp = next((x for x in p.get("spools") or [] if x["tray"] == t), None)
             return farm.tray_score(need, sp) if sp else (-1, -10 ** 7)
 
-        best = min(ok, key=lambda p: (-fit(p)[0], -fit(p)[1], -spool_left(p, need), p["name"]))
+        best = min(ok, key=lambda p: (rank[p.get("role") or "any"], -fit(p)[0], -fit(p)[1], -spool_left(p, need),
+                                      p["name"]))
         out[pl["file"]] = best["id"]
         load[best["id"]] += 1
     return out
@@ -300,6 +309,7 @@ def board(prs: list[dict] | None = None) -> dict:
                          "online": bool((p.get("status") or {}).get("connected")),
                          "state": (p.get("status") or {}).get("state", ""), "bed": beds[p["id"]],
                          "trays": farm.tray_choices(r["need"], p), "best_tray": farm.best_tray(r["need"], p),
+                         "role": p.get("role") or "any",
                          "est": estimate.minutes(est, r["kind"], estimate.letters(r["names"]), p["id"],
                                                  str(p.get("model") or "")),
                          "free_in": _free_in(p),

@@ -161,6 +161,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
 | Access control / other computers | `server._blocked`, `server.access_control`, `/api/portal`, `__init__.serve` (bind address) |
 | Download queue + folder, batches | Print → Batches (`<div id="mk-batches">` in `index.html`, `loadQueue`, `loadBatches`; 0.35: no Activities page), `GET /api/activity` in `server.py` (still used), `db.add_activity`; `cache.py` for the folder |
 | Print time estimates | `estimate.py` (from done prints), `makeit.board` (`est`, `free_in` per printer choice), `/api/stats/print-times` |
+| Printer roles, AMS slot plan, shift | `farm.py` (`role_by_printer`, `slots_by_printer`, `shift`, `describe_roles`), `makeit.choose` (`ROLE_RANK`), Printers → Printer roles, Print → Before you leave |
 | Print → Verify: checks, staff names, order made only when checked | `verify.py` (items, carriers, `update_orders`, `submit`, `backfill`), `makeit.update_made` (calls it), `vRender` / `cRender` in `index.html`; `tests/test_verify.py` |
 | Fix plates (letters / name / base) and merged plates | `extras.py` (`pieces`, `make_fixes`, `merge`, `split`, `suggestions`), `makeit.board` (lists them); `tests/test_verify.py` |
 | Bed clear before a print | `makeit.bed_state` / `confirm_bed_clear` / `start_print`, `farm.Worker` (never releases onto a busy printer) |

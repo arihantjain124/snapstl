@@ -743,3 +743,14 @@ English hard — the language help was skipped by the owner).
 - Base plates merge (up to 3 bases, no scaling, refused when they don't fit), with suggestions and ≈ time.
 - Plates holding a clubbed order whose other names are made come first (print this now).
 
+### 2026-11-26: 0.36.0 Printer roles, AMS colours, the shift and the night
+- Owner: two staff 8:00–22:00; every printer should print 3 bases overnight; 2–3 printers for letters only (they need
+  watching), the rest on bases. Last 7 days: printers busy 59 % of the time, 57 % at night; bases are about 90 % of the
+  printing; about 50 bases made a day against 65 orders.
+- Printers → Printer roles and AMS colours: Bases / Letters / Flex / Any per printer, the colour each AMS slot should
+  hold, the shift. Print pre-selects by role, Print next follows it, a slot not holding its colour shows in red,
+  letter colours no Letters printer has loaded are listed for the Flex printer.
+- Base plates say done before 22:00 / overnight plate / ends at night, then idle. Before you leave: a base plate for
+  every printer (letters printers too) that ends around the morning, with Start print once it's free, and how many
+  plates are short. Morning: what printed overnight and which beds to clear.
+

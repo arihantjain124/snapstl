@@ -1531,7 +1531,8 @@ def _makeit_board() -> dict:
     for p in prs:  # Print: a plate's options start from its printer's print defaults (Slicing)
         p["defaults"] = farm.print_defaults(p["id"], cfg)
         p["defaults_letters"] = farm.print_defaults(p["id"], cfg, "names")
-    return {"status": st, "printers": prs, **makeit.board(prs),
+    farm.describe_roles(prs, cfg)  # 0.36: role, AMS slot plan and where it isn't loaded as planned
+    return {"status": st, "printers": prs, **makeit.board(prs), "shift": farm.shift(cfg),
             "options": {k: list(v) for k, v in farm.OPTIONS.items()},
             "speeds": list(farm.SPEEDS_SET),
             "worker": {"log": farm.WORKER.log[-20:]}}
@@ -2029,6 +2030,32 @@ async def farm_connect(req: Request):
                                        str(body.get("api_key") or "") or None)
     except farm.FarmError as e:
         raise _farm_err(e) from e
+
+
+@app.get("/api/farm/roles")
+def farm_roles():
+    """Printers → Printer roles (0.36): each printer with its role, AMS slot plan and what's loaded; the shift."""
+    cfg = farm.load_config()
+    try:
+        prs = farm.printers(cfg)
+    except farm.FarmError as e:
+        raise HTTPException(400, str(e)) from e
+    farm.describe_roles(prs, cfg)
+    return {"shift": farm.shift(cfg), "roles": list(farm.ROLES),
+            "printers": [{"id": p["id"], "name": p["name"], "model": p.get("model") or "", "role": p["role"],
+                          "ams": p["ams"], "slot_plan": p["slot_plan"], "slot_issues": p["slot_issues"],
+                          "loaded": [{"tray": s.get("tray"), "slot": s.get("slot"), "color": s.get("name") or s.get("color")}
+                                     for s in p.get("spools") or []]} for p in prs]}
+
+
+@app.post("/api/farm/roles")
+async def farm_roles_set(req: Request):
+    b = await req.json()
+    try:
+        farm.set_roles(b.get("roles") or {}, b.get("slots") or {}, b.get("shift"))
+    except (farm.FarmError, ValueError) as e:
+        raise HTTPException(400, str(e)) from e
+    return farm_roles()
 
 
 @app.post("/api/farm/refresh")

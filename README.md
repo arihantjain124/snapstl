@@ -538,6 +538,12 @@ the printer picked and when it would be ready, learned from the prints already d
 letter). Base plates merge like letters (up to 3 bases, no scaling). There is no Activities page; the activity log
 is still kept.
 
+Since 0.36 each printer has a **role** (Printers → Printer roles and AMS colours): **Bases** (white), **Letters** (the
+common letter colours kept in its AMS slots, watched by staff), **Flex** (bases and the rare colours) or **Any**, and
+the **shift** (default 8:00–22:00). Print pre-selects printers by role, warns when an AMS slot doesn't hold its
+planned colour, marks base plates *done before 22:00* / *overnight plate* / *ends at night, then idle*, and
+**Before you leave** gives every printer an overnight base plate that ends around the morning.
+
 The **Help** page in the app explains every tab, status and setting.
 
 ### Shipping labels (ShopDeck, 0.33)

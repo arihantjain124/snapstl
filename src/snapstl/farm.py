@@ -74,7 +74,17 @@ DEFAULTS = {
     "external_spool_by_printer": {},
     # on the Windows Bambuddy computer: start Bambuddy / Docker / the slicer service when they stop (bambuddy_host)
     "keep_bambuddy_running": True,
+    # 0.36 (owner): what each printer is for — printer id (str) → bases | letters | flex | any (missing = any).
+    # Letters printers keep the common letter colours loaded; base printers stay on white; flex takes the rare
+    # colours. Every printer prints a base plate overnight (Print → Before you leave).
+    "role_by_printer": {},
+    # 0.36: the colour each AMS slot should hold — printer id (str) → [slot 1, slot 2, slot 3, slot 4] ("" = any)
+    "slots_by_printer": {},
+    # 0.36: when someone is at the printers (Print plans the night around it), "HH:MM"
+    "shift": {"start": "08:00", "end": "22:00"},
 }
+ROLES = ("any", "bases", "letters", "flex")
+ROLE_WORD = {"any": "Any", "bases": "Bases", "letters": "Letters", "flex": "Flex"}
 PRESET_SLOTS = ("printer", "process", "filament")
 SPEEDS_SET = {"silent": 1, "standard": 2, "sport": 3, "ludicrous": 4}  # print speed per job (Make It)
 # Build plates a printer can slice for (Bambuddy's `bed_type`: BambuStudio / OrcaSlicer `curr_bed_type`;
@@ -1523,3 +1533,76 @@ def _upload_name(label: str, kind: str, name: str, suffix: str = ".gcode.3mf") -
 
 
 WORKER = Worker()
+
+
+# ---------------- printer roles, AMS slot plan, shift (0.36) ----------------
+_HHMM = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+
+
+def role_of(printer_id, cfg: dict | None = None) -> str:
+    cfg = cfg or load_config()
+    r = (cfg.get("role_by_printer") or {}).get(str(printer_id)) or "any"
+    return r if r in ROLES else "any"
+
+
+def slot_plan(printer_id, cfg: dict | None = None) -> list[str]:
+    cfg = cfg or load_config()
+    return [str(x or "") for x in ((cfg.get("slots_by_printer") or {}).get(str(printer_id)) or [])][:4]
+
+
+def shift(cfg: dict | None = None) -> dict:
+    cfg = cfg or load_config()
+    sh = cfg.get("shift") or {}
+    return {"start": sh.get("start") or "08:00", "end": sh.get("end") or "22:00"}
+
+
+def set_roles(roles: dict, slots: dict, sh: dict | None = None) -> dict:
+    """Printers page → Printer roles: {id: role}, {id: [colour per AMS slot]}, shift {start, end}."""
+    clean_r = {}
+    for k, v in (roles or {}).items():
+        v = str(v or "any").lower()
+        if v not in ROLES:
+            raise FarmError(f"A printer's role is {', '.join(ROLES)}")
+        if v != "any":
+            clean_r[str(int(k))] = v
+    clean_s = {}
+    for k, v in (slots or {}).items():
+        cols = [str(x or "").strip().lower()[:30] for x in (v or [])][:4]
+        if any(cols):
+            clean_s[str(int(k))] = cols
+    out = {"role_by_printer": clean_r, "slots_by_printer": clean_s}
+    if sh is not None:
+        st, en = str(sh.get("start") or ""), str(sh.get("end") or "")
+        if not (_HHMM.match(st) and _HHMM.match(en)):
+            raise FarmError("Shift times are HH:MM, e.g. 08:00 and 22:00")
+        out["shift"] = {"start": st.zfill(5), "end": en.zfill(5)}
+    return update_config(**out)
+
+
+def slot_issues(printer: dict, cfg: dict | None = None) -> list[str]:
+    """Where an AMS slot doesn't hold the colour planned for it, in words (empty = as planned)."""
+    plan = slot_plan(printer["id"], cfg)
+    if not plan:
+        return []
+    loaded = {int(s["tray"]): s for s in printer.get("spools") or [] if isinstance(s.get("tray"), int) and s["tray"] < 16}
+    out = []
+    for i, want in enumerate(plan):
+        if not want:
+            continue
+        sp = loaded.get(i)
+        if sp is None:
+            out.append(f"slot {i + 1} should be {want.title()} — it's empty")
+        elif not color_match(want, [sp.get("color") or sp.get("name") or ""])[0]:
+            out.append(f"slot {i + 1} should be {want.title()} — {(sp.get('name') or sp.get('color') or '?').title()} is loaded")
+    return out
+
+
+def describe_roles(prs: list[dict], cfg: dict | None = None) -> None:
+    """Adds role, slot plan and slot issues to each printer (Print, Printers)."""
+    cfg = cfg or load_config()
+    for p in prs:
+        p["role"] = role_of(p["id"], cfg)
+        p["slot_plan"] = slot_plan(p["id"], cfg)
+        p["slot_issues"] = slot_issues(p, cfg)
+        p["ams"] = has_ams(p)
+

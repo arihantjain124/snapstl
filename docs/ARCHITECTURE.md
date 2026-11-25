@@ -295,6 +295,16 @@ letters); per kind a line a + b·letters fitted per printer (≥ 10 prints), per
 `est` {min, err, basis, prints} and `free_in` (minutes left of its current print); the page scales by the chosen
 speed. `/api/stats/print-times` for Stats.
 
+**Printer roles, AMS slot plan, shift (0.36, owner)** — `farm.json`: `role_by_printer` (bases | letters | flex | any),
+`slots_by_printer` (planned colour per AMS slot 1–4), `shift` {start, end}; set on Printers → Printer roles
+(`/api/farm/roles`). `farm.describe_roles` adds role, slot plan and `slot_issues` (planned colour not loaded, via
+`color_match`) to each printer on Print. `makeit.choose` pre-selects only printers whose role takes the kind
+(`ROLE_RANK`: bases → Bases, Any, Flex; letters → Letters, Any, Flex), in that order; no role set = as before. The
+page: Print next skips letters on Bases printers and bases on Letters printers during the shift (at night: bases
+only, everywhere); fit tags from the estimate and the shift; **Before you leave** greedily gives each printer free
+before the shift ends the base plate whose estimate ends closest after the next start (fewest bases last); a
+morning list from done plates since the shift ended. Nothing starts without a person's Start print.
+
 **Merging base plates (0.35)** — `extras.merge` takes base plates (and base fix plates) too: up to 3 bases, no
 scaling, `_write` refuses what doesn't fit; plates of one kind only. `extras.base_suggestions`: base plates not
 started with 1–2 bases, sets that pass a cautious strip check (`_fits`: from each plate's preview footprints) with ≈
