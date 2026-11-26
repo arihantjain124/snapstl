@@ -1,6 +1,7 @@
 """End-to-end: report → select orders → batch → helper downloads → plates → ZIP; plus DB maintenance."""
 import io
 import os
+import re
 import time
 import zipfile
 from pathlib import Path
@@ -91,9 +92,12 @@ def status(c, bid):
 
 
 def build_and_wait(c, bid):
-    """Downloads finished → wait for 'models_ready' → press Build plates → wait for done."""
-    wait_for(lambda: status(c, bid) == "models_ready")
-    assert c.post(f"/api/batches/{bid}/build").status_code == 200
+    """Downloads finished → it builds by itself (0.36.1); one waiting at 'models_ready' (a model failed, or made
+    before 0.36.1) → press Build plates → wait for done."""
+    st = wait_for(lambda: (lambda s: s if s in ("models_ready", "build_requested", "building") or s.startswith("done")
+                           else None)(status(c, bid)))
+    if st == "models_ready":
+        assert c.post(f"/api/batches/{bid}/build").status_code == 200
     return wait_for(lambda: (lambda d: d if d["status"].startswith("done") else None)(c.get(f"/api/batches/{bid}").json()))
 
 
@@ -113,17 +117,11 @@ def test_batch_with_helper_builds_plates(client):
     assert states == {"F1": "in_batch", "F2": "in_batch", "F3": "in_batch", "F4": "ready"}
     assert client.post("/api/batches", json={"order_ids": ["F1"]}).status_code == 400
 
-    # a new batch does nothing until Start download
-    assert status(client, bid) == "created"
-    assert client.get("/api/helper/next").json()["job"] is None
-    assert client.post(f"/api/batches/{bid}/build").status_code == 400  # can't build before downloading
-    assert client.post(f"/api/batches/{bid}/download").json()["downloads_queued"] == 3
+    # 0.36.1: a new batch downloads its models and builds its plates by itself
+    assert status(client, bid) == "waiting" and r.json()["download"]["downloads_queued"] == 3
     seen = helper_work(client)
     assert ("Ayra", 4) in seen and ("Manvi", 5) in seen  # compartments from the scaling table
     assert client.get("/api/state").json()["downloader"]["online"]
-
-    time.sleep(1)
-    assert status(client, bid) == "models_ready"  # downloaded, but plates wait for the button
     b = build_and_wait(client, bid)
     assert b["status"] == "done", b["summary"].get("errors")
     assert sorted(p["file"] for p in b["summary"]["plates"]) == [
@@ -133,7 +131,7 @@ def test_batch_with_helper_builds_plates(client):
     ]
     folder = Path(b["summary"]["folder"])
     today = time.strftime("%Y-%m-%d")
-    assert folder.is_dir() and folder.parent.name == today and folder.name == f"Batch 1 - {today}"
+    assert folder.is_dir() and folder.parent.name == today and re.fullmatch(rf"Batch \d+ - {today}", folder.name)
     assert b["summary"]["label"] == folder.name
     assert (folder / "report.csv").is_file() and len(list(folder.rglob("*.3mf"))) == 3
     assert not list(folder.parent.parent.rglob("*.zip"))  # no ZIP written anywhere
@@ -292,8 +290,9 @@ def test_rebuild_and_redownload_finished_batch(client):
         ("R1", "PRINT", "Magicians_35", "Neha", "Pink", 1),
         ("R2", "PRINT", "Magicians_35", "Ritu", "Pink", 1),
     ]), "text/csv")})
-    bid = client.post("/api/batches", json={"order_ids": ["R1", "R2"]}).json()["batch_id"]
-    assert client.post(f"/api/batches/{bid}/download").json()["downloads_queued"] == 2
+    made = client.post("/api/batches", json={"order_ids": ["R1", "R2"]}).json()
+    bid = made["batch_id"]
+    assert made["download"]["downloads_queued"] == 2  # 0.36.1: queued when the batch is made
     helper_work(client)
     first = build_and_wait(client, bid)
     folder1 = first["summary"]["folder"]
@@ -403,9 +402,11 @@ def test_download_needs_license_password(client):
 
     client.post("/api/ingest", files={"file": ("r.csv", report([("P1", "PRINT", "Magicians_35", "Tara", "Pink", 1)]),
                                                "text/csv")})
-    bid = client.post("/api/batches", json={"order_ids": ["P1"]}).json()["batch_id"]
     server.SETTINGS.license_passwords = {}
     save_settings(server.SETTINGS)
+    made = client.post("/api/batches", json={"order_ids": ["P1"]}).json()  # 0.36.1: the batch is made, its
+    bid = made["batch_id"]                                                  # download waits for the password
+    assert made["download"] is None and "license password" in made["download_error"]
     r = client.post(f"/api/batches/{bid}/download")
     assert r.status_code == 400 and "license password" in r.json()["detail"]
     # added later in Settings: the existing batch picks it up
@@ -459,7 +460,8 @@ def test_build_holds_back_watermarked_model_and_object_redownload(client):
         ("H2", "PRINT", "Magicians_35", "Anu", "Pink", 1),
     ]), "text/csv")})
     bid = client.post("/api/batches", json={"order_ids": ["H1", "H2"]}).json()["batch_id"]
-    client.post(f"/api/batches/{bid}/download")
+    with db.tx() as con:  # 0.36.1 builds by itself: hold it, the test changes a downloaded model first
+        con.execute("UPDATE batches SET auto_build=0 WHERE id=?", (bid,))
     helper_work(client)
     models = {m["name"]: m for m in client.get(f"/api/batches/{bid}/models").json()["items"]}
     # simulate an old download that still carries the watermark (saved before this check existed)
@@ -571,8 +573,9 @@ def test_adhoc_orders_are_added_by_hand_and_batched_like_any_order(client):
     assert [x["order_id"] for x in client.get("/api/orders?tab=to_make_adhoc").json()["orders"]] == [o["order_id"]]
     assert "Adhoc" in client.get("/api/orders.csv?tab=all").text
 
-    bid = client.post("/api/batches", json={"order_ids": [o["order_id"], "J1"]}).json()["batch_id"]
-    assert client.post(f"/api/batches/{bid}/download").json()["downloads_queued"] == 2
+    made = client.post("/api/batches", json={"order_ids": [o["order_id"], "J1"]}).json()
+    bid = made["batch_id"]
+    assert made["download"]["downloads_queued"] == 2  # 0.36.1: queued when the batch is made
     helper_work(client)
     b = build_and_wait(client, bid)
     assert b["status"] == "done", b["summary"].get("errors")
@@ -583,6 +586,7 @@ def test_adhoc_orders_are_added_by_hand_and_batched_like_any_order(client):
     for p in b["summary"]["plates"]:
         r = client.post("/api/makeit/remove", json={"batch_id": bid, "file": p["file"]})
         assert r.status_code == 200, r.text
+    client.post("/api/maintenance/reset", json={"confirm": "RESET"})  # the printer tests' clean-up drops print jobs
 
 
 def test_logistics_page_uses_utf8(monkeypatch):

@@ -224,6 +224,9 @@ class LabelSettings:
     enabled: bool = False
     printer: str = "iDPRT SP410BT"       # the label printer's name in Windows / macOS (4x6 labels)
     wait_after_logistics_s: int = 60    # ShopDeck may hand out the old label right after a courier change
+    wait_after_regenerate_s: int = 15   # 0.36.2: after Regenerate → Confirm, before looking in Print again
+    pack_wait_s: int = 60               # 0.36.2: the label PDF had the old AWB → wait, then download it from Pack
+    pack_tries: int = 3                 # 0.36.2: … at most this often, then the job stops
     couriers: list = field(default_factory=lambda: list(COURIERS))  # first one offered wins
     one_at_a_time: bool = True          # one Print label press = one order (False: a selection, one after another)
     regenerate_timeout_s: int = 180     # Expired AWB → Regenerate: how long to wait for the order to come back
@@ -326,7 +329,8 @@ class Settings:
         if not isinstance(lb.printer, str) or len(lb.printer) > 200 or (lb.enabled and not lb.printer.strip()):
             errs.append("Labels: choose the label printer")
         for k, lo, hi in (("wait_after_logistics_s", 0, 600), ("regenerate_timeout_s", 30, 1800), ("pdf_timeout_s", 20, 600),
-                          ("pickup_timeout_s", 10, 600), ("stall_timeout_s", 20, 600)):
+                          ("pickup_timeout_s", 10, 600), ("stall_timeout_s", 20, 600),
+                          ("wait_after_regenerate_s", 0, 600), ("pack_wait_s", 0, 600), ("pack_tries", 0, 10)):
             v = getattr(lb, k)
             if not isinstance(v, int) or isinstance(v, bool) or not (lo <= v <= hi):
                 errs.append(f"Labels: {k.replace('_', ' ')} must be a whole number {lo}–{hi}")

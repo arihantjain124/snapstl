@@ -41,6 +41,8 @@ def _batch(client, ids):  # noqa: F811
     b = client.post("/api/batches", json={"order_ids": ids})
     assert b.status_code == 200, b.text
     bid = b.json()["batch_id"]
+    with db.tx() as con:  # 0.36.1 builds by itself: these tests look at the download, so hold the build
+        con.execute("UPDATE batches SET auto_build=0 WHERE id=?", (bid,))
     r = client.post(f"/api/batches/{bid}/download", json={"force": True})  # even if an earlier test left it saved
     assert r.status_code == 200, r.text
     return bid

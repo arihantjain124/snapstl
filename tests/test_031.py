@@ -75,8 +75,9 @@ def test_a_stand_batch_is_built_end_to_end(client):  # noqa: F811
     job = client.get("/api/helper/next", params={"design": "2737384"}).json()["job"]
     assert client.post(f"/api/helper/jobs/{job['job_id']}/result",
                        files={"model": ("model.obj", stand_obj(), "text/plain")}).status_code == 200
-    wait_for(lambda: _status(bid) == "models_ready")
-    assert client.post(f"/api/batches/{bid}/build").status_code == 200
+    # 0.36.1: it builds by itself once downloaded (an older batch waits at models ready for Build)
+    if wait_for(lambda: (lambda s: s if s != "waiting" else None)(_status(bid))) == "models_ready":
+        assert client.post(f"/api/batches/{bid}/build").status_code == 200
     wait_for(lambda: _status(bid) in ("done", "done_with_problems", "failed"))
     with db.tx() as con:
         b = dict(con.execute("SELECT * FROM batches WHERE id=?", (bid,)).fetchone())

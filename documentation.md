@@ -754,3 +754,29 @@ English hard — the language help was skipped by the owner).
   every printer (letters printers too) that ends around the morning, with Start print once it's free, and how many
   plates are short. Morning: what printed overnight and which beds to clear.
 
+### 2026-11-26: 0.36.2 Labels: Re-Generate AWB confirmed; an old label is fetched again from Pack (Helper 2.7)
+- Owner: two labels stopped at ShopDeck's "Re-Generate AWB — New AWB for this order will be created" box (jobs 34,
+  38), one printed nothing because the PDF still had the AWB from before the courier change (job 37: Label pressed
+  23 s after the change; this computer waited 15 s).
+- Regenerate: the helper presses Confirm on exactly that box (SnapSTL checks its words; any other box still stops
+  the job), waits 15 s (Settings: Wait after Regenerate), looks in Print again. Already Bluedart Air (first in the
+  courier list): no courier change, the regenerated AWB is the new one. Another courier: changed as before.
+- A label PDF with an old AWB: set aside, then after 60 s the order is found in Pack, SnapSTL checks the AWB there is
+  the new one, the label is downloaded from Pack and checked in full again — at most 3 times (Settings). No courier
+  change in Pack. A stopped label that was pressed on ShopDeck has **Get label from Pack**.
+- Owner, with screenshots of Pack: Pack works like Print (Print ▾, Logistic; changing the courier there asks
+  Yes,Change and sends the order back to Print). Print label now also works for orders in Pack (5 made orders were
+  stuck at "PACK on the website"), and the order is looked for in Pack after Print and Expired AWB. In Pack: on
+  Bluedart Air → the label from Print ▾; else Logistic: Bluedart Air offered → changed, back to Print, the usual
+  flow; not offered → printed on the courier it has.
+- Not checked on ShopDeck yet: the options under Print ▾ in Pack (the helper takes exactly one option named like
+  "Label" and otherwise stops, listing the menu it saw).
+
+### 2026-11-26: 0.36.1 Getting ready tidied; Create batch builds by itself; Build together
+- Owner: the Getting ready strip on Print was cluttered (one row per batch, the names shown as [object Object]).
+  Cause: 15 batches of 1–3 names made with Create batch on 25 Nov waited for Queue build (only Make next batch built
+  by itself).
+- Getting ready is one line (batches, names, ready / downloading / building, failed in red), Show batches for the list.
+- Create batch downloads and builds by itself like Make next batch. Build together merges small batches waiting with
+  their models ready into one batch per product (fuller plates, nothing downloaded again).
+

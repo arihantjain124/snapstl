@@ -21,6 +21,22 @@ failed, cancelled.
 tab to the front for each job (Chrome slows and freezes background tabs) and sends a heartbeat; a job no tab
 takes within `pickup_timeout_s`, or whose tab goes quiet for `stall_timeout_s`, stops with the reason. Every
 look and step is kept in `label_events` and shown under the job.
+
+0.36.2 (owner): Expired AWB → Regenerate asks "Re-Generate AWB — New AWB for this order will be created":
+the helper presses Confirm on exactly that box (SnapSTL checks its words), waits `wait_after_regenerate_s`
+and looks in Print again (every so often until `regenerate_timeout_s`). Already on the first courier of
+Settings (Bluedart Air) after Regenerate: no courier change — the regenerated AWB is the new one. Else the
+usual courier change. A label PDF with an old AWB (ShopDeck hands out the old label for a while after a
+change) isn't the end any more: after `pack_wait_s` the helper finds the order in **Pack** (no courier change
+there), SnapSTL checks it shows the new AWB, the helper downloads the label there and the PDF is checked in
+full again — at most `pack_tries` times. A stopped job whose label was pressed can do the same by hand:
+**Get label from Pack**.
+
+Pack (owner, 0.36.2): the order is also looked for in Pack (after Print and Expired AWB), and Print label works for
+orders the report shows as PACK. In Pack: on the first courier of Settings (Bluedart Air) → the label is downloaded
+there (Print ▾ → label). Else Logistic is opened: the first courier offered → it is changed (Save → Yes,Change), the
+order goes back to Print and the usual Print flow follows (new AWB, wait, Label); not offered → the panel is closed
+unsaved and the label is downloaded on the courier it has.
 """
 from __future__ import annotations
 
@@ -35,7 +51,7 @@ from pathlib import Path
 from . import db, platform_os, products
 
 ACTIVE = ("queued", "working", "login", "printing")
-OK_STATUSES = ("PRINT", "AWB-EXPIRED")  # the website still waits for a label (else it's packed / gone)
+OK_STATUSES = ("PRINT", "AWB-EXPIRED", "PACK")  # a label can be made / fetched (0.36.2: PACK too, from Pack)
 ORGANIZER_FIELD = "ENTERYOURFIRSTNAME:"   # how the label prints the organizer's name (seen 2026-11-24)
 _LOCK = threading.RLock()
 
@@ -270,7 +286,7 @@ def helper_next(settings=None) -> dict:
         return {"job": {"id": j["id"], "key": j["key"], "search": j["search"], "clubbed": bool(j["clubbed"]),
                         "step": j["step"], "old_awb": j["old_awb"], "new_awb": j["new_awb"], "courier": j["courier"],
                         "couriers": list(lb.couriers), "wait_until": j["wait_until"], "now": time.time(),
-                        "regenerate_timeout_s": lb.regenerate_timeout_s}}
+                        "regenerate_timeout_s": lb.regenerate_timeout_s}}  # wait_until: also after Regenerate / before Pack
 
 
 def _check_group(job: dict, seen: dict) -> str | None:
@@ -310,24 +326,62 @@ def helper_seen(job_id: int, seen: dict) -> dict:
         _ALIVE[job_id] = time.time()
         _trace(con, job_id, "Saw: " + _seen_words(seen))
         where = seen.get("where")
+        if where == "none" and j["step"] in PACK_STEPS:
+            return _fail(con, j, "ShopDeck said No result found in Pack ("
+                         + ("Clubbed" if j["clubbed"] else "Single") + " tab) — look for the order on ShopDeck by hand")
         if where == "none":
             return _fail(con, j, "ShopDeck said No result found in Print and in Expired AWB ("
                          + ("Clubbed" if j["clubbed"] else "Single")
-                         + " tab) — it may be packed, cancelled or older than the Expired AWB date range")
+                         + " tab) or Pack — it may be handed over, cancelled or older than the Expired AWB date range")
         if (seen.get("tab") or "") != ("clubbed" if j["clubbed"] else "single"):
             return _fail(con, j, f"Found in the {seen.get('tab')} tab, expected {'Clubbed' if j['clubbed'] else 'Single'}")
         why = _check_group(j, seen)
         if why:
             return _fail(con, j, why)
         awb = seen["awb"]
+        st = _settings().labels
+        first = (st.couriers or [""])[0]
+        if j["step"] == "packsaving":
+            return _fail(con, j, "The courier change in Pack may not have been saved — check the order on ShopDeck by hand")
+        if j["step"] in PACK_STEPS:  # 0.36.2: the label from Pack
+            if where != "pack":
+                return _fail(con, j, f"Found in {where}, not in Pack")
+            want = j["old_awb"] if j["step"] == "packlogistic" else j["new_awb"]
+            if awb != want:
+                return _fail(con, j, f"Pack shows AWB {awb}, expected {want} — check it by hand")
+            if j["step"] != "packlogistic" and j["courier"] and courier_key(seen.get("partner")) != courier_key(j["courier"]):
+                return _fail(con, j, f"Pack shows {seen.get('partner')}, expected {j['courier']}")
+            if j["step"] == "pack":
+                return _pack_rule(con, j, seen, first)
+            return {"do": j["step"]}
+        if j["step"] == "moved":  # changed to the first courier in Pack: the order goes back to Print
+            if where == "print" and awb != j["old_awb"]:
+                if courier_key(seen.get("partner")) != courier_key(j["courier"]):
+                    return _fail(con, j, f"ShopDeck shows {seen.get('partner')} after the change in Pack, expected {j['courier']}")
+                return _saved(con, j, awb, seen.get("partner") or j["courier"])
+            if where in ("pack", "print") and j["regen_at"] and time.time() - j["regen_at"] < st.regenerate_timeout_s:
+                wait_until = time.time() + max(5, st.wait_after_regenerate_s)  # not moved / not changed yet
+                _set(con, job_id, wait_until=wait_until)
+                return {"do": "wait", "wait_until": wait_until, "now": time.time()}
+            return _fail(con, j, f"After the courier change in Pack the order is in {where} with AWB {awb} — check it by hand")
         if j["step"] in ("find", "found_again"):
+            if where == "pack" and j["step"] == "find":  # 0.36.2: already in Pack (a label was made before)
+                return _pack_rule(con, j, seen, first)
             if where == "expired":
                 if j["step"] == "found_again":
+                    if j["regen_at"] and time.time() - j["regen_at"] < st.regenerate_timeout_s:
+                        wait_until = time.time() + max(5, st.wait_after_regenerate_s)  # not back in Print yet
+                        _set(con, job_id, wait_until=wait_until)
+                        return {"do": "wait", "wait_until": wait_until, "now": time.time()}
                     return _fail(con, j, "Still in Expired AWB after Regenerate — regenerate it by hand on ShopDeck")
                 _set(con, job_id, step="regenerate", old_awb=awb)
                 return {"do": "regenerate"}
             if where != "print":
                 return _fail(con, j, f"Found in {where}, not in Print")
+            if j["step"] == "found_again" and courier_key(seen.get("partner")) == courier_key(first):
+                # 0.36.2 (owner): regenerated on the first courier already — the new AWB needs no courier change
+                _trace(con, job_id, f"Already {seen.get('partner')} after Regenerate — no courier change")
+                return _saved(con, j, awb, seen.get("partner") or first, wait_s=st.wait_after_regenerate_s)
             _set(con, job_id, step="logistic", old_awb=awb)
             return {"do": "logistic"}
         if j["step"] == "saving":  # the page reloaded during Save: did it go through?
@@ -349,13 +403,14 @@ def helper_seen(job_id: int, seen: dict) -> dict:
         return _fail(con, j, f"Unexpected step {j['step']}")
 
 
-def _saved(con, j: dict, awb: str, courier: str, settings=None) -> dict:
+def _saved(con, j: dict, awb: str, courier: str, settings=None, wait_s: int | None = None) -> dict:
     st = settings or _settings()
+    what = "Regenerate" if wait_s is not None else "the courier change"
     if not re.fullmatch(r"\d{6,20}", awb or ""):
-        return _fail(con, j, "Can't read the new AWB after the courier change")
+        return _fail(con, j, f"Can't read the new AWB after {what}")
     if awb == j["old_awb"]:
-        return _fail(con, j, "The AWB didn't change after the courier change — not printing an old label")
-    wait_until = time.time() + st.labels.wait_after_logistics_s
+        return _fail(con, j, f"The AWB didn't change after {what} — not printing an old label")
+    wait_until = time.time() + (st.labels.wait_after_logistics_s if wait_s is None else wait_s)
     _set(con, j["id"], step="wait", new_awb=awb, courier=courier, wait_until=wait_until)
     db.add_activity(con, "label", f"{j['key']}: courier {courier}, new AWB {awb} (old {j['old_awb']})")
     return {"do": "wait", "wait_until": wait_until, "now": time.time()}
@@ -370,17 +425,43 @@ def helper_step(job_id: int, step: str, data: dict) -> dict:
             return {"do": "stop", "error": f"This job is {j['state']}"}
         _ALIVE[job_id] = time.time()
         _trace(con, job_id, f"Step: {step}" + ("" if not data else " " + json.dumps(data, ensure_ascii=False)[:600]))
-        allowed = {"regenerating": ("regenerate",), "regenerated": ("regenerating",), "saving": ("logistic",),
-                   "saved": ("saving",), "pressing": ("label",), "pressed": ("pressing",)}
+        allowed = {"regenerating": ("regenerate",), "confirming": ("regenerating",), "regenerated": ("regenerating",),
+                   "pack_offered": ("packlogistic",), "pack_saved": ("packsaving",),
+                   "saving": ("logistic",), "saved": ("saving",), "pressing": ("label", "packlabel"),
+                   "pressed": ("pressing",)}
         if j["step"] not in allowed.get(step, ()):
             return _fail(con, j, f"{step} at step {j['step']} — out of order")
         if step == "regenerating":
             _set(con, job_id, step="regenerating")
             return {"do": "go"}
+        if step == "confirming":  # 0.36.2: the Re-Generate AWB box — Confirm only exactly that one
+            why = _regen_box(data)
+            if why:
+                return _fail(con, j, why)
+            return {"do": "go"}
+        if step == "pack_offered":  # 0.36.2: Logistic opened in Pack — change only to the first courier
+            first = (_settings().labels.couriers or [""])[0]
+            offered = [str(o) for o in (data.get("offered") or [])]
+            if data.get("more_hidden"):
+                return _fail(con, j, "Show more is still closed in the Edit Logistics panel — couriers may be hidden")
+            pick = next((o for o in offered if courier_key(o) == courier_key(first)), None)
+            if pick:
+                _set(con, job_id, step="packsaving", courier=pick)
+                _trace(con, job_id, f"Pack: {j['courier'] or '?'} → {pick} (the order goes back to Print)")
+                return {"do": "change", "courier": pick}
+            _set(con, job_id, step="packlabel", new_awb=j["old_awb"])  # the label on the courier it has
+            _trace(con, job_id, f"Pack: {first} not offered ({', '.join(offered) or 'none'}) — label on {j['courier'] or '?'}")
+            return {"do": "keep"}
+        if step == "pack_saved":
+            wait_until = time.time() + _settings().labels.wait_after_regenerate_s
+            _set(con, job_id, step="moved", regen_at=time.time(), wait_until=wait_until)
+            db.add_activity(con, "label", f"{j['key']}: courier changed to {j['courier']} in Pack — back to Print")
+            return {"do": "find", "wait_until": wait_until, "now": time.time()}
         if step == "regenerated":
-            _set(con, job_id, step="found_again")
+            wait_until = time.time() + _settings().labels.wait_after_regenerate_s
+            _set(con, job_id, step="found_again", regen_at=time.time(), wait_until=wait_until)
             db.add_activity(con, "label", f"{j['key']}: AWB regenerated on ShopDeck")
-            return {"do": "find"}
+            return {"do": "find", "wait_until": wait_until, "now": time.time()}
         if step == "saving":
             courier = str(data.get("courier") or "")
             couriers = _settings().labels.couriers
@@ -406,6 +487,33 @@ def helper_step(job_id: int, step: str, data: dict) -> dict:
         _set(con, job_id, step="pdf")
     WATCHER.kick()
     return {"do": "done"}
+
+
+PACK_STEPS = ("pack", "packlabel", "packlogistic")
+
+
+def _pack_rule(con, j: dict, seen: dict, first: str) -> dict:
+    """Owner, 0.36.2: in Pack on the first courier → download the label there; else look at Logistic first."""
+    awb, partner = seen["awb"], seen.get("partner") or ""
+    if courier_key(partner) == courier_key(first):
+        _set(con, j["id"], step="packlabel", new_awb=j["new_awb"] or awb, old_awb=j["old_awb"] or awb, courier=partner)
+        return {"do": "packlabel"}
+    _set(con, j["id"], step="packlogistic", old_awb=awb, courier=partner)
+    return {"do": "packlogistic"}
+
+
+REGEN_TITLE = "Re-Generate AWB"
+REGEN_TEXT = "New AWB for this order will be created"
+
+
+def _regen_box(data: dict) -> str | None:
+    """None when the box the helper is about to confirm is ShopDeck's Re-Generate AWB box (seen 2026-11-26)."""
+    text = " ".join(str(data.get("text") or "").split())
+    if REGEN_TITLE.lower() not in text.lower() or REGEN_TEXT.lower() not in text.lower():
+        return f"Regenerate asked something SnapSTL doesn't know ({text[:160] or 'no text'}) — finish it by hand on ShopDeck"
+    if str(data.get("button") or "") != "Confirm":
+        return f"The Re-Generate AWB box has no Confirm button ({data.get('button') or 'none'}) — finish it by hand"
+    return None
 
 
 def helper_fail(job_id: int, error: str) -> dict:
@@ -541,6 +649,57 @@ def check_pdf(job: dict, path: Path) -> str | None:
     return None
 
 
+_OLD_LABEL = ("The label file has AWB", "The label shows AWB")  # check_pdf's words for a label with another AWB
+
+
+def _set_aside(path: Path) -> None:
+    """An old label out of Downloads (kept for a look, never printed)."""
+    try:
+        d = labels_dir() / "Old labels"
+        d.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(path), d / path.name)
+    except OSError:
+        pass
+
+
+def _to_pack(con, j: dict, path: Path, why: str, st) -> None:
+    """0.36.2: the PDF had an old AWB — get the label again from Pack after a wait (no courier change there)."""
+    _set_aside(path)
+    n = (j["pack_tries"] or 0) + 1
+    _set(con, j["id"], step="pack", pack_tries=n, pressed_at=None, wait_until=time.time() + st.labels.pack_wait_s)
+    _ALIVE[j["id"]] = time.time()
+    _trace(con, j["id"], f"{why} — getting the label from Pack in {st.labels.pack_wait_s} s "
+                         f"(try {n} of {st.labels.pack_tries})")
+
+
+def from_pack(job_id: int, staff: str = "") -> dict:
+    """Get label from Pack (0.36.2): a stopped job whose Label was pressed on ShopDeck (so the order is in Pack
+    with the new AWB) fetches its label there — no courier change. Every check as before."""
+    st = _settings()
+    if not st.labels.enabled:
+        raise LabelError("Shipping labels are off (Settings → Logistics → Shipping labels)")
+    with _LOCK, db.tx() as con:
+        j = _job(con, job_id)
+        if not _can_pack(j):
+            raise LabelError("Get label from Pack is for a stopped label that was already pressed on ShopDeck")
+        busy = con.execute(f"SELECT key FROM label_jobs WHERE state IN ({','.join('?' * len(ACTIVE))})",
+                           ACTIVE).fetchall()
+        if any(r[0] == j["key"] for r in busy) or (st.labels.one_at_a_time and busy):
+            raise LabelError("A label is on its way already — wait for it to finish")
+        if con.execute("SELECT 1 FROM label_jobs WHERE key=? AND state='done' AND id>?", (j["key"], job_id)).fetchone():
+            raise LabelError("This parcel's label was printed since")
+        _trace(con, job_id, f"Get label from Pack pressed by {staff or 'someone'}")
+        _set(con, job_id, state="queued", step="pack", error=None, pack_tries=0, pressed_at=None, wait_until=None)
+        db.add_activity(con, "label", f"Get label from Pack: {j['key']}")
+        out = _job(con, job_id)
+    WATCHER.kick()
+    return out
+
+
+def _can_pack(j: dict) -> bool:
+    return j["state"] == "failed" and bool(j["new_awb"]) and j["step"] in ("pressing", "pdf")
+
+
 def labels_dir() -> Path:
     from .settings import load_settings
 
@@ -553,7 +712,12 @@ def _finish(job_id: int, path: Path) -> None:
     with _LOCK, db.tx() as con:
         j = _job(con, job_id)
         why = check_pdf(j, path)
+        if why and why.startswith(_OLD_LABEL) and (j["pack_tries"] or 0) < st.labels.pack_tries:
+            _to_pack(con, j, path, why, st)
+            return
         if why:
+            if why.startswith(_OLD_LABEL) and j["pack_tries"]:
+                why += f" (also from Pack, {j['pack_tries']} time{'s' if j['pack_tries'] > 1 else ''})"
             _fail(con, j, why + " — nothing printed")
             return
         dest_dir = labels_dir()
@@ -661,7 +825,7 @@ class Watcher:
                 quiet = now - last
                 limit = lb.stall_timeout_s + (lb.regenerate_timeout_s if j["step"] in ("regenerate", "regenerating")
                                               else 0)
-                if j["step"] == "wait" and j["wait_until"]:
+                if j["step"] in ("wait", "found_again", "pack", "moved") and j["wait_until"]:
                     limit += max(0.0, j["wait_until"] - last)
                 if quiet > limit:
                     hidden = _VIS.get(j["id"]) == "hidden"
@@ -683,6 +847,8 @@ class Watcher:
 
 _STALL_NOTE = {"saving": " — the courier may have been changed on ShopDeck",
                "regenerating": " — Regenerate may have run on ShopDeck",
+               "packlabel": " — the label may have been downloaded from Pack",
+               "packsaving": " — the courier may have been changed in Pack",
                "regenerate": " — Regenerate may have run on ShopDeck"}
 
 WATCHER = Watcher()
@@ -719,6 +885,9 @@ STEP_WORDS = {"find": "finding the order on ShopDeck", "regenerate": "regenerati
               "logistic": "changing the courier", "saving": "saving the courier change",
               "wait": "waiting for the new label", "check": "checking the order again", "label": "pressing Label",
               "pressing": "pressing Label", "pdf": "waiting for the label PDF", "print": "printing",
+              "pack": "getting the label again from Pack", "packlabel": "getting the label from Pack",
+              "packlogistic": "looking at the couriers in Pack", "packsaving": "changing the courier in Pack",
+              "moved": "finding the order in Print again",
               "done": "done"}
 
 
@@ -726,4 +895,4 @@ def _brief(j: dict) -> dict:
     return {"id": j["id"], "key": j["key"], "state": j["state"], "step": j["step"],
             "doing": STEP_WORDS.get(j["step"], j["step"]), "awb": j["new_awb"], "courier": j["courier"],
             "error": j["error"], "printed_at": j["printed_at"], "prints": j["prints"], "wait_until": j["wait_until"],
-            "has_pdf": bool(j["pdf"])}
+            "has_pdf": bool(j["pdf"]), "can_pack": _can_pack(j)}

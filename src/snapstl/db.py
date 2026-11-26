@@ -300,6 +300,8 @@ LATE_MIGRATIONS = [
     ("print_jobs", "started_at", "REAL"),  # 0.26: when Bambuddy said it is printing (Stats: hours printing)
     ("staff", "pin_hash", "TEXT"),         # 0.25.1: salted hash of the person's 4-digit PIN (staff.py)
     ("staff", "pin_changed", "REAL"),
+    ("label_jobs", "regen_at", "REAL"),       # 0.36.2: when Regenerate (Expired AWB) was confirmed
+    ("label_jobs", "pack_tries", "INTEGER"),  # 0.36.2: how often the label was fetched again from Pack
 ]
 
 

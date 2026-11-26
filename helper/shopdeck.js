@@ -8,6 +8,11 @@
 //   offered from Settings' list; Save → Yes, Change; the AWB must change) → wait (SnapSTL's time) → find again
 //   and report (AWB and courier must still match) → press Label (the PDF goes to Downloads; SnapSTL checks it).
 // Anything unexpected stops the job with the reason; nothing is retried by itself.
+// 2.7 (SnapSTL 0.36.2): Regenerate's "Re-Generate AWB" box is confirmed (SnapSTL checks its words first), then
+// the order is looked for in Print again after SnapSTL's wait. A label PDF with an old AWB: the order is found
+// in Pack (Single / Clubbed), SnapSTL checks the AWB there, and the label is downloaded from Pack (Print ▾ → label).
+// An order found in Pack not on Bluedart Air: Logistic is opened; Bluedart Air offered → changed (Yes,Change sends it
+// back to Print, then the usual Print flow), else the panel is closed unsaved and the label printed on its courier.
 (() => {
   if (window.top !== window) return;
 
@@ -54,21 +59,21 @@
   }
 
   // ---------- moving around the Process Orders page ----------
-  async function openList(where) {
-    const path = where === "print" ? PRINT : EXPIRED;
+  async function openList(where) {  // "print" / "pack" (Non-Dispatched Orders) or "expired"
+    const path = where === "expired" ? EXPIRED : PRINT;
     if (location.pathname !== path) {
-      const label = where === "print" ? "Non-Dispatched Orders (" : "Expired AWB Orders (";
+      const label = where === "expired" ? "Expired AWB Orders (" : "Non-Dispatched Orders (";
       const tabEl = [...document.querySelectorAll("span,div,a")].find((e) => e.childElementCount === 0 && txt(e).startsWith(label));
       if (!tabEl) throw new Error(`Can't find the "${label.trim()}" tab — the ShopDeck page may have changed`);
       tabEl.click();
       if (!(await until(() => location.pathname === path, 15000))) throw new Error(`ShopDeck didn't open ${label.trim()}`);
       await sleep(2000);
     }
-    if (where === "print") {
-      const p = buttons("Print")[0];
-      if (!p) throw new Error("Can't find the Print / Pack / Handover buttons");
+    if (where !== "expired") {
+      const p = buttons(where === "pack" ? "Pack" : "Print")[0];
+      if (!p) throw new Error(`Can't find the ${where === "pack" ? "Pack" : "Print"} button (Print / Pack / Handover)`);
       p.click();
-      await sleep(800);
+      await sleep(where === "pack" ? 1500 : 800);
     }
   }
 
@@ -149,13 +154,21 @@
   async function find(job) {
     const tab = job.clubbed ? "Clubbed" : "Single";
     const why = [];
-    for (const where of ["print", "expired"]) {
+    for (const where of ["print", "expired", "pack"]) {
       await openList(where);
       await chooseTab(tab);
       if ((await search(job.search)) === "found") return readResults(where, tab.toLowerCase());
-      why.push(`${where === "print" ? "Print" : "Expired AWB"}: No result found`);
+      why.push(`${{ print: "Print", expired: "Expired AWB", pack: "Pack" }[where]}: No result found`);
     }
     return { where: "none", why: why.join("; ") };
+  }
+
+  async function findPack(job) {  // 2.7: after Label was pressed the order sits in Pack
+    const tab = job.clubbed ? "Clubbed" : "Single";
+    await openList("pack");
+    await chooseTab(tab);
+    if ((await search(job.search)) === "found") return readResults("pack", tab.toLowerCase());
+    return { where: "none", why: "Pack: No result found" };
   }
 
   // ---------- actions (each only after SnapSTL said so) ----------
@@ -165,6 +178,21 @@
     const ok = await bg("sd_step", { job_id: job.id, step: "regenerating" });
     if (!ok || ok.do !== "go") return;
     b[0].click();
+    // 2.7: ShopDeck asks "Re-Generate AWB — New AWB for this order will be created" [Cancel] [Confirm]
+    const yes = await until(() => buttons("Confirm")[0] || buttons("Yes")[0], 10000);
+    if (yes) {
+      const box = dialogOf(yes);
+      const c = await bg("sd_step", { job_id: job.id, step: "confirming",
+        data: { text: txt(box).slice(0, 400), button: txt(yes) } });
+      if (!c || c.do !== "go") return;  // SnapSTL stopped the job (not the box it knows)
+      yes.click();
+      if (!(await until(() => !box.isConnected || !shown(yes), 15000))) {
+        throw new Error("The Re-Generate AWB box didn't close after Confirm — check the order on ShopDeck by hand");
+      }
+      const r = await bg("sd_step", { job_id: job.id, step: "regenerated" });
+      if (r && r.wait_until) await sleep(Math.max(0, (r.wait_until - r.now) * 1000) + 300);
+      return;  // the next look is in Print (SnapSTL: found_again)
+    }
     const end = Date.now() + (job.regenerate_timeout_s || 180) * 1000;
     while (Date.now() < end) {
       await sleep(8000);
@@ -177,6 +205,14 @@
       }
     }
     throw new Error("Regenerate didn't finish in time — the order is still in Expired AWB (regenerate it by hand)");
+  }
+
+  function dialogOf(btn) {  // the box around a dialog's button (role=dialog / a modal), else a few levels up
+    const d = btn.closest('[role=dialog],[role=alertdialog],[aria-modal=true],[class*=modal i],[class*=dialog i]');
+    if (d) return d;
+    let e = btn;
+    for (let i = 0; i < 4 && e.parentElement; i++) e = e.parentElement;
+    return e;
   }
 
   function drawer() {
@@ -198,7 +234,7 @@
     return all.slice(h + 1).filter((e) => /^[A-Z0-9]+(?:_[A-Z0-9]+)*$/.test(txt(e)) && txt(e).length > 3);
   }
 
-  async function logistic(job, tab) {
+  async function openLogistics() {  // the Edit Logistics panel with every courier shown → [panel, more()]
     const b = buttons("Logistic");
     if (b.length !== 1) throw new Error(`Expected one Logistic button, found ${b.length}`);
     b[0].click();
@@ -214,6 +250,11 @@
     }
     if (more()) throw new Error("Show more didn't open in the Edit Logistics panel — couriers may be hidden");
     await sleep(800);
+    return [d, more];
+  }
+
+  async function logistic(job, tab) {
+    const [d, more] = await openLogistics();
     const cards = offered(d);
     let pick = null;
     for (const c of job.couriers) {
@@ -258,6 +299,73 @@
     await bg("sd_step", { job_id: job.id, step: "pressed" });
   }
 
+  // 2.7: in Pack the row's Print ▾ opens a menu; the label is its one label option
+  const LABEL_OPTION = /^(print\s+|download\s+)?(shipping\s+)?label$/i;
+  function rowPrint() {  // the order row's Print ▾ (not the Print / Pack / Handover switch at the top)
+    const lg = buttons("Logistic");
+    if (lg.length !== 1) return null;
+    let e = lg[0];
+    for (let i = 0; i < 8 && e.parentElement; i++) {
+      e = e.parentElement;
+      const p = [...e.querySelectorAll("button")].filter((b) => shown(b) && txt(b) === "Print");
+      if (p.length === 1 && !buttons("Pack").some((x) => e.contains(x))) return p[0];
+      if (p.length > 1) return null;
+    }
+    return null;
+  }
+
+  async function packLabel(job, tab) {
+    const s = readResults("pack", tab);
+    if (s.awb !== job.new_awb) throw new Error(`The AWB in Pack is ${s.awb || "unreadable"}, expected ${job.new_awb}`);
+    const pb = rowPrint();
+    if (!pb) throw new Error("Can't find the order's Print ▾ button in Pack");
+    const before = new Set(leaves(document.body));
+    pb.click();
+    const opts = await until(() => {
+      const fresh = leaves(document.body).filter((e) => !before.has(e) && txt(e));
+      return fresh.length ? fresh : null;
+    }, 5000);
+    const texts = [...new Set((opts || []).map(txt))].slice(0, 20);
+    const hits = (opts || []).filter((e) => LABEL_OPTION.test(txt(e)));
+    if (hits.length !== 1) {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      throw new Error(`Expected one label option under Print ▾ in Pack, found ${hits.length} (menu: ${texts.join(" | ") || "nothing opened"})`);
+    }
+    const pop = await bg("sd_popups");
+    if (!pop || !pop.ok) throw new Error(`Pop-ups for ShopDeck are blocked in Chrome (${(pop && pop.error) || "can't allow them"}) — allow them, then try again`);
+    const ok = await bg("sd_step", { job_id: job.id, step: "pressing", data: { where: "pack", option: txt(hits[0]), menu: texts } });
+    if (!ok || ok.do !== "go") return;
+    hits[0].click();
+    await sleep(1500);
+    await bg("sd_step", { job_id: job.id, step: "pressed" });
+  }
+
+  async function packLogistic(job, tab) {  // not on Bluedart Air in Pack: SnapSTL decides change or keep
+    const current = readResults("pack", tab).partner;
+    const [d, more] = await openLogistics();
+    const cards = offered(d);
+    const ans = await bg("sd_step", { job_id: job.id, step: "pack_offered",
+      data: { offered: cards.map(txt), more_hidden: !!more(), current } });
+    if (!ans) return;
+    if (ans.do === "keep") { location.reload(); return; }  // close the panel unsaved; the label comes next
+    if (ans.do !== "change") return;
+    const pick = cards.find((e) => courierKey(txt(e)) === courierKey(ans.courier));
+    if (!pick) throw new Error(`${ans.courier} disappeared from the Edit Logistics panel`);
+    pick.click();
+    await sleep(600);
+    const save = [...d.querySelectorAll("button")].find((x) => shown(x) && txt(x) === "Save");
+    if (!save) throw new Error("Can't find Save in the Edit Logistics panel");
+    save.click();
+    const yes = await until(() => buttons("Yes,Change")[0] || buttons("Yes, Change")[0], 8000);
+    if (!yes) throw new Error("ShopDeck didn't ask Yes,Change after Save in Pack — check the order by hand");
+    yes.click();
+    if (!(await until(() => !drawer() && !shown(yes), 20000))) {
+      throw new Error("The courier change in Pack didn't finish — check the order on ShopDeck by hand");
+    }
+    const r = await bg("sd_step", { job_id: job.id, step: "pack_saved" });
+    if (r && r.wait_until) await sleep(Math.max(0, (r.wait_until - r.now) * 1000) + 300);
+  }
+
   // ---------- the loop ----------
   // 2.6: a heartbeat while a job is on, also while waiting — SnapSTL stops a job whose tab goes quiet
   // (Chrome slows background tabs to about once a minute and freezes them later).
@@ -282,6 +390,19 @@
       if (!location.pathname.startsWith("/orders/process-orders")) { location.assign(PRINT); return; }  // resumes after loading
       if (!(await until(onOrders, 20000))) { await bg("sd_login", { job_id: job.id }); return; }
       const tab = job.clubbed ? "clubbed" : "single";
+      // 2.7: SnapSTL's wait after Regenerate / before Pack (the heartbeat keeps going meanwhile)
+      if (["found_again", "pack", "moved"].includes(job.step) && job.wait_until && job.wait_until > job.now) {
+        await sleep(Math.min(30, job.wait_until - job.now) * 1000 + 300);
+        return;
+      }
+      if (["pack", "packlabel", "packlogistic"].includes(job.step)) {
+        const seen = await findPack(job);
+        const ans = await bg("sd_seen", { job_id: job.id, seen });
+        if (!ans || ans.error && ans.do !== "stop") throw new Error((ans && ans.error) || "SnapSTL didn't answer");
+        if (ans.do === "packlabel") await packLabel({ ...job, new_awb: job.new_awb || seen.awb }, tab);
+        else if (ans.do === "packlogistic") await packLogistic(job, tab);
+        return;
+      }
       if (job.step === "regenerate") { await regenerate(job); return; }
       if (job.step === "logistic") { await logistic(job, tab); return; }
       if (job.step === "regenerating") {
@@ -295,6 +416,8 @@
       else if (ans.do === "logistic") await logistic({ ...job, old_awb: seen.awb }, tab);
       else if (ans.do === "wait") await sleep(Math.max(0, (ans.wait_until - ans.now) * 1000) + 500);
       else if (ans.do === "label") await pressLabel(job, tab);
+      else if (ans.do === "packlabel") await packLabel({ ...job, new_awb: job.new_awb || seen.awb }, tab);  // found in Pack
+      else if (ans.do === "packlogistic") await packLogistic(job, tab);
       // "stop": SnapSTL stopped the job and shows why
     } catch (e) {
       if (job) await bg("sd_fail", { job_id: job.id, error: String((e && e.message) || e) }).catch(() => {});

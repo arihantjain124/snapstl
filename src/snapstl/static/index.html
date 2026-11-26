@@ -840,11 +840,14 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     </div>
     <div class="card">
       <h2>Shipping labels (ShopDeck)</h2>
-      <p class="hint">Print → Completed → <b>Print label</b>: the SnapSTL Helper in Chrome finds the order on ShopDeck's Process Orders page (Expired AWB orders are regenerated first), changes the courier to the first one offered from the list below, waits, presses Label; SnapSTL checks the label (order, AWB, items, names) and prints it. Keep ShopDeck open and signed in in Chrome; the helper never signs in.</p>
+      <p class="hint">Print → Completed → <b>Print label</b>: the SnapSTL Helper in Chrome finds the order on ShopDeck's Process Orders page (Expired AWB orders are regenerated first — Re-Generate AWB is confirmed — and keep their courier when it is already the first in the list), changes the courier to the first one offered from the list below, waits, presses Label (a label that still has the old AWB is downloaded again from Pack after a wait; an order already in Pack gets its label there, switched to the first courier only when Logistic offers it); SnapSTL checks the label (order, AWB, items, names) and prints it. Keep ShopDeck open and signed in in Chrome; the helper never signs in.</p>
       <label class="check"><input type="checkbox" id="lb_on"> Shipping labels on</label>
       <div class="grid2">
         <label>Label printer<input id="lb_printer" list="lb_printers" placeholder="iDPRT SP410BT"><datalist id="lb_printers"></datalist></label>
         <label>Wait after the courier change (seconds)<input id="lb_wait" type="number" min="0" max="600" step="1"></label>
+        <label>Wait after Regenerate (seconds)<input id="lb_regen_wait" type="number" min="0" max="600" step="1"></label>
+        <label>Old label: wait before Pack (seconds)<input id="lb_pack_wait" type="number" min="0" max="600" step="1"></label>
+        <label>Old label: tries from Pack<input id="lb_pack_tries" type="number" min="0" max="10" step="1"></label>
         <label>Courier order (first offered wins)<input id="lb_couriers" placeholder="BLUEDART_AIR, BLUEDART_SURFACE, DELHIVERY_SURFACE, XPRESSBEES"></label>
         <label>SumatraPDF (empty = find it)<input id="lb_sumatra" placeholder="C:\Users\…\SumatraPDF.exe"></label>
       </div>
@@ -942,7 +945,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 
   <div class="card" id="h-batches">
     <h2>Batches (on Print)</h2>
-    <p>Since 0.35 batches are on <b>Print → Batches</b> (the last chip), with the <b>Download queue</b> under them. A batch still downloading or building shows at the top of Print as <b>Getting ready</b> (with <b>Queue download</b> / <b>Queue build</b> when it waits for you, and <b>Open</b>); once its plates are built they show under <b>To print</b> for their product. The batch number on a plate or an order opens it.</p>
+    <p>Since 0.35 batches are on <b>Print → Batches</b> (the last chip), with the <b>Download queue</b> under them. Since 0.36.1 a new batch (Create batch or Make next batch) downloads its models and builds its plates by itself. Batches on their way show at the top of Print as one <b>Getting ready</b> line (how many, how many names, ready / downloading / building); <b>Show batches</b> lists them, a batch that needs you (a failed model or build) always shows in red with <b>Open</b>. <b>Build together</b> puts small batches waiting with their models ready into one batch per product — fuller plates, nothing downloaded again. Once built, plates show under <b>To print</b> for their product. The batch number on a plate or an order opens it.</p>
     <table>
       <tr><th>Status</th><th>Meaning</th><th>What to do</th></tr>
       <tr><td>Created — not queued</td><td>Orders are reserved; nothing happens until you queue it.</td><td><b>Queue download</b> (or Cancel)</td></tr>
@@ -1279,7 +1282,7 @@ async function loadFacets(){FACETS=await api('/api/orders/facets?tab='+filter.ta
 $('selclear').onclick=()=>{SEL.clear();loadOrders()};
 $('mkbatch').onclick=async()=>{if(!SEL.size)return;
   try{const r=await post('/api/batches',{order_ids:[...SEL]});SEL.clear();
-    $('ingestres').innerHTML=`<div class="o">Batch #${r.batch_id} created with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped — not ready${r.taken_elsewhere?`; ${r.taken_elsewhere} already taken on another computer`:''})`:''}${r.already_made_note?`. <span class="reason">${esc(r.already_made_note)} — not added (Remake them first if they must be made again)</span>`:''}${r.clubbed_added?`. ${r.clubbed_added} more name${r.clubbed_added>1?'s':''} of the same clubbed orders added — they're made together`:''}${r.clubbed_held?`. <span class="reason">${esc(r.clubbed_held)}</span>`:''}. Then press <b>Queue download</b> on <b>Print → Batches</b>.</div>`;
+    $('ingestres').innerHTML=`<div class="o">Batch #${r.batch_id} created with ${r.orders} order(s)${r.skipped?` (${r.skipped} skipped — not ready${r.taken_elsewhere?`; ${r.taken_elsewhere} already taken on another computer`:''})`:''}${r.already_made_note?`. <span class="reason">${esc(r.already_made_note)} — not added (Remake them first if they must be made again)</span>`:''}${r.clubbed_added?`. ${r.clubbed_added} more name${r.clubbed_added>1?'s':''} of the same clubbed orders added — they're made together`:''}${r.clubbed_held?`. <span class="reason">${esc(r.clubbed_held)}</span>`:''}. Its models download and the plates build by themselves — follow it on <b>Print</b>.</div>`;
     refreshAll()}catch(e){alert(e.message)}};
 // ---------- Orders → Product chips (0.29): Organizer is the default; name stands are listed, made in a later update
 try{const p=localStorage.getItem('oproduct');if(p!==null)filter.product=p}catch{}
@@ -1541,12 +1544,30 @@ function mkChips(){if(!MK)return;const st=MK.stands||[],sp=mkStandProducts(),nb=
   document.querySelectorAll('[data-mkv]').forEach(b=>b.onclick=()=>{MKVPROD=b.dataset.mkv;try{localStorage.setItem('mkvprod',MKVPROD)}catch{}mkChips();vRender(true);cRender()});
   document.querySelectorAll('[data-mkremoved]').forEach(a=>a.onclick=e=>{e.preventDefault();mkShow('removed')});
   document.querySelectorAll('[data-mkback2]').forEach(a=>a.onclick=e=>{e.preventDefault();mkShow(MKORG)})}
-// Getting ready (0.35): batches still downloading / building, at the top of Print
+// Getting ready (0.35; 0.36.1: one compact panel) — batches still downloading / building, at the top of Print.
+// One summary line; Show batches lists them one line each; a batch that needs a person always shows on its own.
+let MKREADYOPEN=false;
+const bNameList=b=>(b.names||[]).map(n=>typeof n==='string'?n:(n&&n.name)||'').filter(Boolean);
 function mkReady(){if(!BDATA||!$('mkready'))return;const L=BDATA.batches.filter(b=>b.mine&&!b.archived_at&&['created','waiting','models_ready','build_requested','building','failed'].includes(b.status));
-  $('mkready').innerHTML=L.length?`<div class="msgs">${L.map(b=>{const p=b.progress,bad=b.status==='failed'||(p&&p.failed);
-    const what=b.status==='created'?'not queued yet':b.status==='waiting'?`downloading ${p?p.ready+'/'+p.models:''}`:b.status==='models_ready'?'models ready':b.status==='failed'?'build failed':'building plates';
-    const act=b.status==='created'?`<button class="small primary" data-dl="${b.id}">Queue download</button>`:b.status==='models_ready'?`<button class="small primary" data-build="${b.id}">Queue build</button>`:'';
-    return `<div class="${bad?'e':'w'}" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span><b>Getting ready:</b> ${esc(b.label||'Batch #'+b.id)}${b.product&&b.product!=='organizer'?' · '+esc(b.product_label):''} · ${b.names||(b.order_ids||[]).length||''} names · ${esc(what)}${p&&p.failed?` · <b>${p.failed} model${p.failed>1?'s':''} failed</b>`:''}</span><span class="grow"></span>${act}<button class="small" data-gobatch="${b.id}">Open</button></div>`}).join('')}</div>`:'';
+  if(!L.length){$('mkready').innerHTML='';return}
+  const bad=b=>b.status==='failed'||(b.progress&&b.progress.failed);
+  const n=b=>bNameList(b).length||(b.order_ids||[]).length||0;
+  const ready=L.filter(b=>b.status==='models_ready'&&!bad(b)),dl=L.filter(b=>['created','waiting'].includes(b.status)&&!bad(b)),bld=L.filter(b=>['build_requested','building'].includes(b.status)),err=L.filter(bad);
+  const names=L.reduce((a,b)=>a+n(b),0),pg=dl.reduce((a,b)=>[a[0]+((b.progress||{}).ready||0),a[1]+((b.progress||{}).models||0)],[0,0]);
+  const what=b=>b.status==='created'?'not queued':b.status==='waiting'?`downloading ${b.progress?b.progress.ready+'/'+b.progress.models:''}`:b.status==='models_ready'?'models ready':b.status==='failed'?'build failed':'building plates';
+  const who=b=>{const ns=bNameList(b);return ns.length?esc(ns.slice(0,3).join(', '))+(ns.length>3?` +${ns.length-3}`:''):''};
+  const act=b=>b.status==='created'?`<button class="small" data-dl="${b.id}">Queue download</button>`:b.status==='models_ready'&&!bad(b)?`<button class="small" data-build="${b.id}">Build</button>`:'';
+  const parts=[ready.length?`<b>${ready.length}</b> ready to build`:'',dl.length?`<b>${dl.length}</b> downloading${pg[1]?` (${pg[0]}/${pg[1]} models)`:''}`:'',bld.length?`<b>${bld.length}</b> building`:'',err.length?`<b class="reason">${err.length} need${err.length===1?'s':''} you</b>`:''].filter(Boolean).join(' · ');
+  const byProd={};ready.forEach(b=>{byProd[b.product||'organizer']=(byProd[b.product||'organizer']||0)+1});const canJoin=Object.values(byProd).some(x=>x>=2);
+  $('mkready').innerHTML=`<div class="mkplan" style="padding:8px 12px"><div class="toolbar" style="margin:0;gap:8px;flex-wrap:wrap"><b>Getting ready</b><span class="hint">${L.length} batch${L.length===1?'':'es'} · ${names} name${names===1?'':'s'}</span><span>${parts}</span><span class="grow"></span>
+    ${canJoin?`<button class="small primary" id="mkjoin" title="Put the small batches waiting with their models ready into one batch per product and build it: fuller plates (3 per plate), fewer of them">Build together (${ready.length})</button>`:ready.length?`<button class="small primary" id="mkbuildall">Build all (${ready.length})</button>`:''}
+    <button class="small" id="mkreadytoggle">${MKREADYOPEN?'Hide batches':'Show batches'}</button></div>
+    ${err.map(b=>`<div class="e" style="display:flex;gap:8px;align-items:center;margin-top:6px"><span><b>${esc(b.label||'Batch #'+b.id)}</b> · ${who(b)} · ${b.status==='failed'?'build failed':`${b.progress.failed} model${b.progress.failed>1?'s':''} failed to download`}</span><span class="grow"></span><button class="small" data-gobatch="${b.id}">Open</button></div>`).join('')}
+    ${MKREADYOPEN?`<div class="tw" style="margin-top:6px"><table><thead><tr><th>Batch</th><th>Names</th><th>Status</th><th></th></tr></thead><tbody>${L.filter(b=>!bad(b)).map(b=>`<tr><td style="white-space:nowrap">${esc(b.label||'Batch #'+b.id)}${b.product&&b.product!=='organizer'?' <span class="pill info">'+esc(b.product_label)+'</span>':''}</td><td>${n(b)} · <span class="hint">${who(b)}</span></td><td class="hint">${esc(what(b))}</td><td style="white-space:nowrap">${act(b)} <button class="small" data-gobatch="${b.id}">Open</button></td></tr>`).join('')}</tbody></table></div>`:''}</div>`;
+  $('mkreadytoggle').onclick=()=>{MKREADYOPEN=!MKREADYOPEN;mkReady();bWire()};
+  if($('mkjoin'))$('mkjoin').onclick=async()=>{if(!confirm(`Build together: put the ${ready.length} small batches waiting with their models ready into one batch per product, then build it by itself?\n\nPlates hold 3 names / 3 bases instead of many small plates. Nothing is downloaded again.`))return;
+    $('mkjoin').disabled=true;try{const r=await post('/api/batches/combine');$('mknote').innerHTML=`<div class="ok">${r.combined.map(c=>`Batches ${c.from.map(x=>'#'+x).join(', ')} → batch #${c.batch_id} (${c.orders} orders) — building by itself${c.left_out?` · ${c.left_out} back to To make${c.clubbed_held?' ('+esc(c.clubbed_held)+')':''}`:''}${c.download_error?` · <span class="reason">${esc(c.download_error)}</span>`:''}`).join('<br>')}</div>`}catch(e){alert(e.message)}loadBatches();loadMakeIt()};
+  if($('mkbuildall'))$('mkbuildall').onclick=async()=>{$('mkbuildall').disabled=true;for(const b of ready){try{await post(`/api/batches/${b.id}/build`)}catch(e){alert(e.message);break}}loadBatches()};
   document.querySelectorAll('[data-gobatch]').forEach(x=>x.onclick=()=>goBatch(+x.dataset.gobatch))}
 const mkKey=r=>r.batch_id+'|'+r.file;
 // Letters → Merge (0.25.1): tick letter plates of one colour (fix plates too), not started, up to 3 names in all
@@ -1901,7 +1922,7 @@ function lbCell(r){if(!lbOn())return '<span class="hint">—</span>';if(!LB)retu
       +(['pressing','pdf','print'].includes(j.step)?'':` <button class="small" data-lbstop="${j.id}">Stop</button>`)+club}
   let out='';
   if(j&&j.state==='done')out=`<span class="pill ${j.error?'warn':'ok'}" title="${esc(j.error||'')}">${j.error?'label made, not printed':'label printed'}</span> <span class="hint">AWB ${esc(j.awb||'')} · ${esc(j.courier||'')}</span> ${j.has_pdf?`<button class="small" data-lbre="${j.id}">Reprint</button>`:''}${j.error?`<div class="reason">${esc(j.error)}</div>`:''}`;
-  else if(j&&j.state==='failed')out=`<div class="reason">Label stopped: ${esc(j.error||'')}</div>`;
+  else if(j&&j.state==='failed')out=`<div class="reason">Label stopped: ${esc(j.error||'')}</div>`+(j.can_pack?` <button class="small primary" data-lbpack="${j.id}" title="Label was already pressed on ShopDeck: find the order in Pack, check its AWB is ${esc(j.awb||'')} and download the label there — no courier change">Get label from Pack</button>`:'');
   else if(j&&j.state==='cancelled')out=`<div class="hint">Label stopped by a person</div>`;
   if(j&&['done','failed','cancelled'].includes(j.state))out+=` <button class="small" data-lbtrace="${j.id}">Details</button><div class="hint" id="lbtr${j.id}" hidden></div>`;
   if(j&&j.state==='done')return out+club;
@@ -1935,6 +1956,9 @@ function lbWire(){
     b.disabled=true;try{const r=await post('/api/labels',{order_ids:[oid],items_ready:ready,...who});lbFront(r.jobs&&r.jobs[0]&&r.jobs[0].id)}catch(e){if(!vExpired(e))alert(e.message)}lbLoad()});
   document.querySelectorAll('[data-lbgo]').forEach(b=>b.onclick=async()=>{try{await post(`/api/labels/${b.dataset.lbgo}/continue`);lbFront(b.dataset.lbgo)}catch(e){alert(e.message)}lbLoad()});
   document.querySelectorAll('[data-lbtrace]').forEach(b=>b.onclick=()=>lbTrace(b.dataset.lbtrace));
+  document.querySelectorAll('[data-lbpack]').forEach(b=>b.onclick=async()=>{const who=vAuth();if(!who)return;
+    if(!confirm('Get this label from ShopDeck\'s Pack section?\n\nNo courier change: the order is found in Pack, its AWB must be the new one, then the label is downloaded, checked and printed.'))return;
+    b.disabled=true;try{await post(`/api/labels/${b.dataset.lbpack}/from-pack`,who);lbFront(b.dataset.lbpack)}catch(e){if(!vExpired(e))alert(e.message)}lbLoad()});
   document.querySelectorAll('[data-lbstop]').forEach(b=>b.onclick=async()=>{if(!confirm('Stop this label? Nothing is undone on ShopDeck.'))return;try{await post(`/api/labels/${b.dataset.lbstop}/cancel`)}catch(e){alert(e.message)}lbLoad()});
   document.querySelectorAll('[data-lbre]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await post(`/api/labels/${b.dataset.lbre}/reprint`)}catch(e){alert(e.message)}lbLoad()})}
 const CSEL=new Set();let CPICK=null;  // Completed → Some letters spoiled: {order_id, item, pcs, picked}
@@ -2270,7 +2294,7 @@ function fillSettings(){const m=S.model;
   $('s_name_z').value=Math.round(S.scaling.name_z_scale*100);$('s_max_length').value=S.scaling.max_length;$('o_delay').value=S.delay_between_downloads_s;$('o_dir').value=S.output_dir;$('o_dir').disabled=!META.local;$('o_dl').value=S.downloads_dir;$('o_dl').disabled=!META.local;
   $('mw_url').value=S.makerworld_url;mwHint();$('lic').value=(S.license_passwords||{})[designOf(S.makerworld_url)]||'';
   fillStands();
-  const LBS=S.labels||{};$('lb_on').checked=!!LBS.enabled;$('lb_printer').value=LBS.printer||'';$('lb_wait').value=LBS.wait_after_logistics_s??60;$('lb_couriers').value=(LBS.couriers||[]).join(', ');$('lb_sumatra').value=LBS.sumatra_path||'';$('lb_one').checked=LBS.one_at_a_time!==false;
+  const LBS=S.labels||{};$('lb_on').checked=!!LBS.enabled;$('lb_printer').value=LBS.printer||'';$('lb_wait').value=LBS.wait_after_logistics_s??60;$('lb_regen_wait').value=LBS.wait_after_regenerate_s??15;$('lb_pack_wait').value=LBS.pack_wait_s??60;$('lb_pack_tries').value=LBS.pack_tries??3;$('lb_couriers').value=(LBS.couriers||[]).join(', ');$('lb_sumatra').value=LBS.sumatra_path||'';$('lb_one').checked=LBS.one_at_a_time!==false;
   api('/api/labels/printers').then(r=>{$('lb_printers').innerHTML=r.printers.map(n=>`<option value="${esc(n)}">`).join('');$('lb_hint').textContent=(r.printers.length?'Printers here: '+r.printers.join(', ')+'. ':'')+(r.tool?'Prints with '+r.tool:'SumatraPDF not found — install it to print labels.')}).catch(()=>{});
   const L=S.logistics||{};$('lg_track').value=L.tracking_url||'';$('lg_late').value=L.late_days;$('lg_exp').value=L.express_red_days;$('lg_stuck').value=L.stuck_days;
   lgMsgs(Object.entries(L.messages||{}))}
@@ -2304,7 +2328,7 @@ function readSettings(){const s=structuredClone(S);
   s.logistics={...(S.logistics||{}),tracking_url:$('lg_track').value.trim(),late_days:parseInt($('lg_late').value,10),
     express_red_days:parseInt($('lg_exp').value,10),stuck_days:parseInt($('lg_stuck').value,10),
     messages:Object.fromEntries(lgRead().filter(([k,v])=>k&&v.trim()))};
-  s.labels={...(S.labels||{}),enabled:$('lb_on').checked,printer:$('lb_printer').value.trim(),wait_after_logistics_s:parseInt($('lb_wait').value,10),
+  s.labels={...(S.labels||{}),enabled:$('lb_on').checked,printer:$('lb_printer').value.trim(),wait_after_logistics_s:parseInt($('lb_wait').value,10),wait_after_regenerate_s:parseInt($('lb_regen_wait').value,10),pack_wait_s:parseInt($('lb_pack_wait').value,10),pack_tries:parseInt($('lb_pack_tries').value,10),
     couriers:$('lb_couriers').value.split(',').map(x=>x.trim().toUpperCase().replace(/\s+/g,'_')).filter(Boolean),sumatra_path:$('lb_sumatra').value.trim(),one_at_a_time:$('lb_one').checked};return s}
 $('lg_add').onclick=()=>{const l=lgRead();l.push(['New message','Hello {customer}, about your order {order_id}: ']);lgMsgs(l)};
 $('save').onclick=async()=>{try{S=await api('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(readSettings())});fillSettings();$('savehint').textContent='Saved';$('savehint').style.color='';loadOrders()}catch(e){$('savehint').textContent=e.message;$('savehint').style.color='var(--err)'}};

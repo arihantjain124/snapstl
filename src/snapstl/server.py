@@ -792,7 +792,33 @@ async def new_batch(req: Request):
     if errs:
         raise HTTPException(400, "; ".join(errs))
     try:
-        return B.create_batch([str(x) for x in body.get("order_ids", [])][:2000], SETTINGS)
+        out = B.create_batch([str(x) for x in body.get("order_ids", [])][:2000], SETTINGS)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return out | _start_by_itself(out["batch_id"])
+
+
+def _start_by_itself(batch_id: int) -> dict:
+    """0.36.1 (owner): a new batch downloads its models and builds its plates by itself (as Make next batch did
+    since 0.30) — no Queue download / Queue build to remember. Printing still needs a person."""
+    with db.tx() as con:
+        prod = B.batch_product(con, con.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()).key
+        con.execute("UPDATE batches SET auto_build=? WHERE id=?", (int(prod in products.BUILDABLE), batch_id))
+    try:
+        return {"download": B.start_download(batch_id), "download_error": ""}
+    except ValueError as e:  # the batch is made; the download waits for what's missing (e.g. the license password)
+        return {"download": None, "download_error": str(e)}
+
+
+@app.post("/api/batches/combine")
+def combine_batches():
+    """Print → Getting ready → Build together (0.36.1): small batches with their models ready become one per
+    product."""
+    errs = SETTINGS.validate()
+    if errs:
+        raise HTTPException(400, "; ".join(errs))
+    try:
+        return B.combine_ready(SETTINGS)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
@@ -821,12 +847,7 @@ async def next_batch(req: Request):
         out = B.create_batch(ids, SETTINGS)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    with db.tx() as con:  # builds by itself once downloaded — not name stands yet (their plates: next update)
-        con.execute("UPDATE batches SET auto_build=? WHERE id=?", (int(prod in products.BUILDABLE), out["batch_id"]))
-    try:
-        return out | {"download": B.start_download(out["batch_id"]), "download_error": ""}
-    except ValueError as e:  # the batch is made; the download waits for what's missing (e.g. the license password)
-        return out | {"download": None, "download_error": str(e)}
+    return out | _start_by_itself(out["batch_id"])
 
 
 @app.get("/api/report-import")
@@ -1000,6 +1021,21 @@ def labels_cancel(job_id: int):
 def labels_continue(job_id: int):
     """A person signed in to ShopDeck again: the helper takes over."""
     return _label_call(labels.signed_in, job_id)
+
+
+@app.post("/api/labels/{job_id}/from-pack")
+async def labels_from_pack(job_id: int, req: Request):
+    """0.36.2: a stopped label that was pressed on ShopDeck: download it again from Pack (no courier change)."""
+    try:
+        b = await req.json()
+    except ValueError:
+        b = {}
+    b = b if isinstance(b, dict) else {}
+    try:
+        who = staff_pins.checker(str(b.get("token") or ""), str(b.get("staff") or ""))
+    except ValueError:
+        who = str(b.get("staff") or "")
+    return _label_call(labels.from_pack, job_id, who[:60])
 
 
 @app.get("/api/labels/{job_id}/trace")

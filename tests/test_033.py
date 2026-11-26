@@ -218,6 +218,10 @@ def test_already_on_bluedart_air_still_changes_the_courier_and_needs_a_new_awb(c
 
 
 def test_an_old_label_file_is_refused(client, setup):  # noqa: F811
+    from snapstl import server
+
+    server.SETTINGS.labels.pack_tries = 0  # 0.36.2: no second try from Pack here (test_0362)
+    save_settings(server.SETTINGS)
     client.post("/api/ingest", files={"file": ("r.csv", report([("Z2", "", "PRINT", "Magicians_35", "Zoya", 1)]), "text/csv")})
     made("Z2")
     client.post("/api/labels", json={"order_ids": ["Z2"]})
@@ -244,7 +248,7 @@ def test_expired_awb_is_regenerated_first_then_the_usual_flow(client, setup):  #
     g = dict(ids=["E1"], skus=["Magicians_35"])
     assert seen(client, j["id"], where="expired", **g, awb="111111111111122") == {"do": "regenerate"}
     assert step(client, j["id"], "regenerating") == {"do": "go"}
-    assert step(client, j["id"], "regenerated") == {"do": "find"}
+    assert step(client, j["id"], "regenerated")["do"] == "find"  # 0.36.2: with the wait before Print
     assert nxt(client)["job"]["step"] == "found_again"
     assert seen(client, j["id"], **g, awb="111111111111199") == {"do": "logistic"}
     # still in Expired AWB after a Regenerate: stop
@@ -254,6 +258,9 @@ def test_expired_awb_is_regenerated_first_then_the_usual_flow(client, setup):  #
     seen(client, j["id"], where="expired", **g, awb="1234567")
     step(client, j["id"], "regenerating")
     step(client, j["id"], "regenerated")
+    assert seen(client, j["id"], where="expired", **g, awb="1234567")["do"] == "wait"  # 0.36.2: not back yet
+    with db.tx() as con:  # … until regenerate_timeout_s
+        con.execute("UPDATE label_jobs SET regen_at=regen_at-1000 WHERE id=?", (j["id"],))
     a = seen(client, j["id"], where="expired", **g, awb="1234567")
     assert a["do"] == "stop" and "Still in Expired AWB" in a["error"]
 

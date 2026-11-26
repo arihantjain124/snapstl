@@ -431,6 +431,48 @@ def request_build(batch_id: int) -> None:
     MANAGER.wake()
 
 
+def combine_ready(settings: Settings) -> dict:
+    """Build together (0.36.1, owner): this computer's batches waiting with every model downloaded (none failed)
+    become one batch per product — their plates hold 3 names / 3 bases instead of many small plates. Each old
+    batch is cancelled (its orders go back to To make for a moment) and one new batch takes them all; its models
+    are already downloaded, so it builds by itself straight away. A clubbed order still goes whole (create_batch)."""
+    with db.tx() as con:
+        bs = db.rows(con, "SELECT * FROM batches WHERE status='models_ready' AND computer_id=? ORDER BY id", computer.ID)
+        groups: dict[str, list[tuple[int, list[str]]]] = {}
+        for b in bs:
+            p = batch_progress(b)
+            if p["failed"] or p["ready"] < p["models"]:
+                continue  # a model failed: that batch needs a person (Re-download) — left as it is
+            ids = [r[0] for r in con.execute("SELECT order_id FROM orders WHERE batch_id=? AND state='in_batch' "
+                                             "ORDER BY order_date, order_id", (b["id"],))]
+            if ids:
+                groups.setdefault(batch_product(con, b).key, []).append((b["id"], ids))
+    out = []
+    for prod, items in groups.items():
+        if len(items) < 2:
+            continue
+        ids = [i for _, x in items for i in x]
+        for bid, _ in items:
+            cancel_batch(bid)
+        res = create_batch(ids, settings)
+        err = ""
+        with db.tx() as con:
+            con.execute("UPDATE batches SET auto_build=? WHERE id=?", (int(prod in products.BUILDABLE), res["batch_id"]))
+            db.add_activity(con, "build", f"Build together: batches {', '.join('#' + str(b) for b, _ in items)} → "
+                                          f"batch #{res['batch_id']} ({res['orders']} orders)")
+        try:
+            start_download(res["batch_id"])
+        except ValueError as e:
+            err = str(e)
+        out.append({"product": prod, "from": [b for b, _ in items], "batch_id": res["batch_id"], "orders": res["orders"],
+                    "left_out": len(ids) - res["orders"], "clubbed_held": res.get("clubbed_held", ""),
+                    "download_error": err})
+    if not out:
+        raise ValueError("Nothing to build together: fewer than two batches of one product are waiting with all "
+                         "their models downloaded")
+    return {"combined": out}
+
+
 def cancel_batch(batch_id: int) -> None:
     """Cancel a batch that was never built, or stop a Re-download of a built one (it goes back to done)."""
     with db.tx() as con:

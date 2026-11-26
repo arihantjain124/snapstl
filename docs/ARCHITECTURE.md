@@ -101,7 +101,7 @@ Snapstl/
 │   ├── background.js         service worker: relays tab ↔ app (/api/helper/*); working tab; page check
 │   ├── content.js            on makerworld.com: works only in the working tab on the configured model page
 │   ├── inject.js             page world: copies plate_1/plate_2 .obj responses (read-only)
-│   ├── shopdeck.js           on pro.shopdeck.com: shipping labels — finds the order, courier, Label (2.5, 0.33)
+│   ├── shopdeck.js           on pro.shopdeck.com: shipping labels — finds the order, courier, Label (2.5, 0.33); Re-Generate box, Pack (2.7, 0.36.2)
 │   ├── snapstl_page.js       on SnapSTL's page: Print label → bring ShopDeck's tab to the front (2.6, 0.33.2)
 │   └── popup.html, popup.js  app status, model designId, working tab on/off the page; "Open model page", "Use this tab"
 ├── src/snapstl/
@@ -287,6 +287,30 @@ Stats, Help (Batches and Activities gone: `OLD_PAGES` sends old links to Print).
 (product chips) · Batches (the old Batches page and the download queue, pane `mk-batches`). `makeit.board` tags
 every plate, Verify card and Completed row with `product` (from its orders' SKU). "Getting ready" = this computer's
 batches created / downloading / ready / building / failed (from `/api/batches`). The activity log is still written.
+
+**Batches start by themselves; Build together (0.36.1, owner)** — `POST /api/batches` (Create batch) now does what Make
+next batch did: `auto_build` on and the download queued (`server._start_by_itself`); the plates build once every
+model is in. `batches.combine_ready` (`POST /api/batches/combine`, Print → Getting ready → Build together): this
+computer's `models_ready` batches with no failed model, per product, are cancelled and their orders made into one
+new batch (create_batch: clubbed orders whole), which builds by itself (models cached). Getting ready is one line
+with counts; Show batches lists them; failed ones always shown.
+
+**Labels: Re-Generate AWB box, Pack for an old label (0.36.2, helper 2.7, owner)** — Expired AWB → Regenerate:
+the helper reports the box (`confirming`: its text and button) and presses Confirm only when SnapSTL finds
+"Re-Generate AWB" / "New AWB for this order will be created" / Confirm (`labels._regen_box`); `regenerated` sets
+`regen_at` and `wait_until` (`wait_after_regenerate_s`, 15 s), then the order is looked for in Print again (still in
+Expired AWB: look again until `regenerate_timeout_s`). Found in Print on the first courier of Settings: no courier
+change, the regenerated AWB is the new AWB (`_saved` with the regenerate wait); else the usual courier change. A
+label PDF with another AWB (`check_pdf` → `_OLD_LABEL`) is set aside (Labels/<day>/Old labels) and the job goes to
+step `pack` (`pack_tries` + 1, `wait_until` = `pack_wait_s`): the helper finds the order in Pack (Single /
+Clubbed), SnapSTL checks group, AWB = `new_awb`, courier (`packlabel`), the helper presses the one label button
+there and the PDF is checked in full again; after `pack_tries` the job stops. `POST /api/labels/{id}/from-pack`
+(Get label from Pack): a stopped job whose Label was pressed (`step` pressing / pdf, `new_awb` known) is queued at
+step `pack`. In Pack (`labels._pack_rule`, also when Print label finds the order there — the report's PACK is
+allowed now, `OK_STATUSES`): on the first courier of Settings → `packlabel` (the row's Print ▾ → its one label
+option); else `packlogistic`: the helper opens Logistic and reports `pack_offered`; the first courier offered →
+`change` (Save → Yes,Change, the order goes back to Print: step `moved`, then `_saved` once Print shows a new AWB on
+that courier → the usual wait and Label); not offered → `keep` (panel closed unsaved, label on the courier it has).
 
 **Print time estimates (0.35, `estimate.py`)** — from `print_jobs` done with `started_at`: minutes (finish − start,
 brought to Sport 124 % by `SPEED_PCT`) against letters on the plate (`estimate.letters`: names, a fix plate only its
