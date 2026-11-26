@@ -895,6 +895,10 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="stiles" id="sttiles"></div>
   </div>
   <div class="card"><h3 style="margin-top:0">Made per day and new orders per day</h3><p class="hint">Made = base and letters checked good (counted since checks started on 18 Nov 2026). When the green bars are shorter than the grey ones, the backlog grows.</p><div id="stchart"></div></div>
+  <div class="card"><h3 style="margin-top:0">Labels and shipping per day</h3><p class="hint"><b>Labels — all</b>: every label made on ShopDeck, by anyone (seen live through the ShopDeck connection, counted from <span id="stlabsince">when it was connected</span>). <b>From SnapSTL</b>: labels made with SnapSTL's Print label button. <b>Shipped</b>: parcels the courier picked up and the pieces in them, every product (the report's pickup date; between reports, what ShopDeck shows live). A clubbed order is one parcel. Press <b>Names</b> for the day's list; any older day: pick a date.</p>
+    <div class="toolbar"><label for="stshipday" style="margin:0">Shipped on</label><input type="date" id="stshipday" style="max-width:170px"><button class="small" id="stshipopen">Show</button></div>
+    <div class="tw"><table><thead><tr><th>Day</th><th style="text-align:right">Labels — all</th><th style="text-align:right">From SnapSTL</th><th style="text-align:right">Parcels picked up</th><th style="text-align:right">Pieces shipped</th><th></th></tr></thead><tbody id="stfloor"></tbody></table></div>
+    <div id="stshiplog"></div></div>
   <div class="grid2">
     <div class="card"><h3 style="margin-top:0">Printers</h3><div class="tw"><table><thead><tr><th>Printer</th><th style="text-align:right">Plates printed</th><th style="text-align:right">Failed</th><th style="text-align:right">Hours printing</th><th>Last used</th></tr></thead><tbody id="stprinters"></tbody></table></div><p class="hint">Hours printing are counted from 0.26 on.</p></div>
     <div class="card"><h3 style="margin-top:0">Checked by</h3><div class="tw"><table><thead><tr><th>Person</th><th style="text-align:right">Parts good</th><th style="text-align:right">Problems found</th><th style="text-align:right">Orders</th></tr></thead><tbody id="stcheckers"></tbody></table></div></div>
@@ -2372,6 +2376,8 @@ async function loadStats(){loadPrintTimes();let r;try{r=await api('/api/stats?da
     +tile('Oldest order waiting',dt(b.oldest),b.oldest?`${Math.floor((Date.now()-new Date(b.oldest+'T00:00:00'))/864e5)} days ago`:'',b.oldest&&(Date.now()-new Date(b.oldest+'T00:00:00'))/864e5>=7?'bad':'')
     +tile('Ready to pack',b.to_pack,'made, no label yet')
     +tile('Plates printed today',t.plates,'')
+    +tile('Labels today',`${r.labels_since?t.labels_all:'—'} · ${t.labels_snapstl}`,'all on ShopDeck · from SnapSTL')
+    +tile('Shipped today',`${t.ship_orders} · ${t.ship_pcs}`,'parcels picked up · pieces')
     +tile('Order → made',r.times.order_to_made!=null?r.times.order_to_made+' days':'—','average, orders made in this period')
     +tile('Order → shipped',r.times.order_to_shipped!=null?r.times.order_to_shipped+' days':'—','average (courier pickup)')
     +tile('Fixes',r.rates.fix_pct+'%','of checked parts needed a fix',r.rates.fix_pct>=10?'bad':'')
@@ -2382,11 +2388,23 @@ async function loadStats(){loadPrintTimes();let r;try{r=await api('/api/stats?da
   $('stchart').innerHTML=`<div class="stchart">${r.days.map(d=>`<div class="stcol" title="${dt(d.day)}: made ${d.made} · new ${d.new} · plates ${d.plates}"><i class="m" style="height:${100*d.made/mx}%"></i><i class="n" style="height:${100*d.new/mx}%"></i>${t.target?`<span class="tg" style="bottom:${100*t.target/mx}%"></span>`:''}</div>`).join('')}</div>
     <div class="stlbl">${r.days.map((d,i)=>`<span>${i%Math.ceil(r.days.length/10)===0?dt(d.day):''}</span>`).join('')}</div>
     <p class="hint"><span class="swatch" style="background:var(--ok)"></span> made · <span class="swatch" style="background:var(--line)"></span> new orders${t.target?' · dashed line: daily target':''}</p>`;
+  $('stlabsince').textContent=r.labels_since?dt(r.labels_since):'when ShopDeck was connected (none yet)';
+  $('stfloor').innerHTML=r.days.slice().reverse().map(d=>`<tr><td>${dt(d.day)}</td><td style="text-align:right">${r.labels_since&&d.day>=r.labels_since?d.labels_all:'<span class="hint">—</span>'}</td><td style="text-align:right">${d.labels_snapstl||0}</td><td style="text-align:right">${d.ship_orders||0}</td><td style="text-align:right">${d.ship_pcs||0}</td><td>${d.ship_orders?`<button class="small" data-shipday="${d.day}">Names</button>`:''}</td></tr>`).join('');
+  document.querySelectorAll('[data-shipday]').forEach(b=>b.onclick=()=>loadShipLog(b.dataset.shipday));
   $('stprinters').innerHTML=r.printers.length?r.printers.map(p=>`<tr><td>${esc(p.name||'—')}</td><td style="text-align:right">${p.done||0}</td><td style="text-align:right">${p.failed||0}${p.fail_pct?` <span class="hint">(${p.fail_pct}%)</span>`:''}</td><td style="text-align:right">${p.hours||'—'}</td><td class="hint">${p.last?new Date(p.last*1000).toLocaleString([], {day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}):''}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No prints in this period</td></tr>';
   $('stcheckers').innerHTML=r.checkers.length?r.checkers.map(c=>`<tr><td>${esc(c.name)}</td><td style="text-align:right">${c.good||0}</td><td style="text-align:right">${c.problems||0}${c.problem_pct?` <span class="hint">(${c.problem_pct}%)</span>`:''}</td><td style="text-align:right">${c.orders||0}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">No checks in this period</td></tr>';
   if($('stsettarget'))$('stsettarget').onclick=async e=>{e.preventDefault();const v=prompt('How many orders should be made per day? (0 = no target)',t.target||'');if(v===null)return;
     try{await post('/api/stats/target',{target:+v||0});loadStats()}catch(err){alert(err.message)}}}
 $('stdays').onchange=loadStats;$('strefresh').onclick=loadStats;
+// 0.38: one day's courier pickups, one row per parcel (kept as long as the report lines are)
+async function loadShipLog(day){const box=$('stshiplog');box.innerHTML='<p class="hint">Loading…</p>';let r;
+  try{r=await api('/api/stats/shipped?day='+encodeURIComponent(day))}catch(e){box.innerHTML=`<div class="e">${esc(e.message)}</div>`;return}
+  const nice=new Date(day+'T12:00:00').toLocaleDateString([], {weekday:'short',day:'numeric',month:'short',year:'numeric'});
+  box.innerHTML=`<h3>Shipped on ${esc(nice)}: ${r.orders} parcel${r.orders===1?'':'s'}, ${r.pcs} piece${r.pcs===1?'':'s'} <a class="btn small" href="/api/stats/shipped?day=${encodeURIComponent(day)}&csv=1">Download CSV</a> <button class="small" id="stshipclose">Close</button></h3>
+    <p class="hint">${Object.entries(r.by_product).sort((a,b)=>b[1]-a[1]).map(([p,n])=>`${esc(p)} ${n}`).join(' · ')||'Nothing picked up that day (or no report with that day yet).'}</p>
+    ${r.rows.length?`<div class="tw"><table><thead><tr><th>Order</th><th>Product</th><th style="text-align:right">Pieces</th><th>Name printed</th><th>Customer</th><th>From</th></tr></thead><tbody>${r.rows.map(p=>p.items.map((it,i)=>`<tr><td><code>${esc(p.order_ids[i])}</code></td><td>${esc(it.product)}</td><td style="text-align:right">${it.qty}</td><td>${esc(it.name)}</td><td>${i?'':esc(p.customer)}</td><td class="hint">${i?'':esc(p.source)}</td></tr>`).join('')).join('')}</tbody></table></div>`:''}`;
+  $('stshipclose').onclick=()=>{box.innerHTML=''};$('stshipday').value=day}
+$('stshipopen').onclick=()=>{if($('stshipday').value)loadShipLog($('stshipday').value)};
 // ---------- Settings → ShopDeck (0.37): the partner API, live order status ----------
 const sdMsg=(m,bad)=>{$('sdmsg').innerHTML=m?`<div class="${bad?'e':'o'}">${esc(m)}</div>`:''};
 const sdWhen=t=>t?new Date(typeof t==='number'?t*1000:t).toLocaleString([], {day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}):'';

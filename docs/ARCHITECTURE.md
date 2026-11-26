@@ -792,6 +792,14 @@ for PRINT, AWB EXPIRED and ACCEPTANCE PENDING alike (2026-11-26). The change goe
 report's stamp rule (`@<IST today>|<IST today>|<now>`), `status_state` and `_status_flags`, so the shared records,
 the tabs and the flags behave exactly as for a report. The API has no customisation, courier change or Regenerate.
 
+**Stats: labels and shipping (0.38, `stats.floor_days`, `stats.shipped_log`)**: the poller records in
+`floor_events` (local) the moment it first sees an order item cross into labelled (created/enqueued → printed or
+later) or picked up (→ dispatched or later) — only changes it saw happen, never what its first look finds. Stats
+shows per day: labels — all (distinct clubbed group or order from `floor_events`), labels from SnapSTL (`label_jobs`
+done, distinct key, by `printed_at`), parcels picked up and pieces — every product, from the report's Pickup Date in
+`shop_lines`, else the API's day; a report's pickup day always wins and nothing is counted twice. `/api/stats/shipped?day=`
+lists one day's parcels (order, product, pieces, name printed, customer); `&csv=1` downloads it.
+
 **Customisation bridge (0.37.1)** until ShopDeck's API has the customisation: a Claude scheduled task (on the
 owner's computer, "SnapSTL – ShopDeck orders bridge") queries ShopDeck's warehouse through Claude's ShopDeck
 connector and writes `shopdeck-bridge-<time>.csv` (report-shaped, first line contains `SnapSTL bridge`) into

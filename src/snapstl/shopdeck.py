@@ -287,6 +287,26 @@ def stamp() -> str:
     return f"{db.STAMP}{d}|{d}|{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')}"
 
 
+# 0.38 Stats: an order item crossing these is "labelled" / "picked up" at the moment the API first shows it
+_BEFORE_LABEL = {"created", "enqueued"}
+_LABELLED = {"printed", "packed", "dispatched", "delivered", "rto_initiated", "rto_delivered", "rto_acknowledged"}
+_SHIPPED = {"dispatched", "delivered", "rto_initiated", "rto_delivered", "rto_acknowledged"}
+
+
+def _floor_events(con, oid: str, old: str | None, new: str | None, group: str, now: float) -> None:
+    """Only a change we saw happen counts (not what the first look at 35 days finds), so a day's count is real."""
+    old, new = (old or "").lower(), (new or "").lower()
+    if not old or old == new:
+        return
+    day = time.strftime("%Y-%m-%d", time.localtime(now))
+    if old in _BEFORE_LABEL and new in _LABELLED:
+        con.execute("INSERT OR IGNORE INTO floor_events(order_id, kind, group_key, day, at) VALUES (?,?,?,?,?)",
+                    (oid, "label", group, day, now))
+    if old in (_BEFORE_LABEL | {"printed", "packed"}) and new in _SHIPPED:
+        con.execute("INSERT OR IGNORE INTO floor_events(order_id, kind, group_key, day, at) VALUES (?,?,?,?,?)",
+                    (oid, "shipped", group, day, now))
+
+
 def store_and_apply(rows: list[dict], apply: bool = True) -> dict:
     """Keep what ShopDeck said; move the orders SnapSTL knows forward. Returns counts and the changes."""
     from .ingest import live_status
@@ -296,6 +316,8 @@ def store_and_apply(rows: list[dict], apply: bool = True) -> dict:
     with db.tx() as con:
         for x in rows:
             oid = str(x["id"])
+            was = con.execute("SELECT status FROM shopdeck_live WHERE order_id=?", (oid,)).fetchone()
+            _floor_events(con, oid, was[0] if was else None, x.get("order_status"), str(x.get("clubbed_id") or oid), now)
             con.execute("""INSERT INTO shopdeck_live(order_id, status, awb_no, courier, clubbed_id, label, sd_updated_at, seen_at)
                            VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(order_id) DO UPDATE SET status=excluded.status,
                            awb_no=excluded.awb_no, courier=excluded.courier, clubbed_id=excluded.clubbed_id,

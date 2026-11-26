@@ -18,7 +18,7 @@ import zipfile
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
@@ -1897,6 +1897,21 @@ def stats_print_times():
         prs = []
     m = estimate.model(prs)
     return {"rows": estimate.table(prs), "all": {k: (m.get(k) or {}).get("all") for k in ("bases", "names", "stands")}}
+
+
+@app.get("/api/stats/shipped")
+def stats_shipped(day: str = "", csv: int = 0):
+    """Stats → Shipped: one day's courier pickups (every product), one row per parcel; csv=1 to download."""
+    import re
+
+    from . import stats
+
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        raise HTTPException(400, "day must be YYYY-MM-DD")
+    if csv:
+        return Response(stats.shipped_csv(day), media_type="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="shipped-{day}.csv"'})
+    return stats.shipped_log(day)
 
 
 @app.post("/api/stats/target")

@@ -37,6 +37,115 @@ def _pace(con, days: int = 7) -> float:
     return n / span
 
 
+# ---------------- labels and shipping (0.38) ----------------
+# Labels: every label made on ShopDeck (an order item the ShopDeck API saw move from created / enqueued to printed or
+# later, shopdeck.floor_events — from when ShopDeck was connected) next to the labels SnapSTL's label button made
+# (label_jobs done). Shipped: courier pickups — the report's Pickup Date for every product (shop_lines), and between
+# reports the day the API saw it dispatched. One parcel = one order or one clubbed order; pieces = quantities.
+def _name_of(sku: str, text: str) -> str:
+    from .ingest import parse_customisation
+
+    cust = parse_customisation(text)
+    prod = products.by_sku(sku)
+    fields = products.NAME_FIELDS.get(prod.kind, ()) if prod else ()
+    name = next((cust[k] for k in fields if cust.get(k)), "") or next(
+        (v for k, v in cust.items() if "name" in k and v), "")
+    color = (cust.get("color") or cust.get("colour") or "") if prod and prod.kind == "organizer" else ""
+    return f"{name} ({color})" if name and color else name
+
+
+def _lines(con) -> dict[str, dict]:
+    return {oid: json.loads(d or "{}") for oid, d in con.execute("SELECT order_id, data FROM shop_lines")}
+
+
+def shipments(con, first_day: str, last_day: str = "9999-12-31") -> list[dict]:
+    """Every order item picked up between the two days (inclusive): {order_id, group, day, sku, product, qty,
+    name, customer, source}."""
+    from .ingest import _date
+
+    lines = _lines(con)
+    out, seen = [], set()
+    for oid, x in lines.items():
+        day = _date(x.get("Pickup Date") or "")
+        if day and first_day <= day <= last_day:
+            out.append((oid, day, "report"))
+            seen.add(oid)
+        elif day:
+            seen.add(oid)  # the report knows its pickup day: never counted again from the API
+    groups = {}
+    for oid, day, g in con.execute("SELECT order_id, day, group_key FROM floor_events WHERE kind='shipped' "
+                                   "AND day BETWEEN ? AND ?", (first_day, last_day)):
+        if oid not in seen:
+            out.append((oid, day, "ShopDeck"))
+            groups[oid] = g
+    res = []
+    for oid, day, src in out:
+        x = lines.get(oid) or {}
+        sku = x.get("SKU Code") or ""
+        prod = products.by_sku(sku)
+        try:
+            qty = max(1, int(float(x.get("Quantity") or 1)))
+        except ValueError:
+            qty = 1
+        res.append({"order_id": oid, "group": x.get("Clubbed Order ID") or groups.get(oid) or oid, "day": day, "sku": sku,
+                    "product": prod.label if prod else (x.get("Product Name") or sku or "?"), "qty": qty,
+                    "name": _name_of(sku, x.get("Product Customisation") or ""),
+                    "customer": (x.get("Customer Name") or "").strip(), "source": src})
+    return res
+
+
+def floor_days(con, days: list[str]) -> dict[str, dict]:
+    first, last = days[0], days[-1]
+    out = {d: {"labels_all": 0, "labels_snapstl": 0, "ship_orders": 0, "ship_pcs": 0} for d in days}
+    for d, n in con.execute("SELECT day, COUNT(DISTINCT group_key) FROM floor_events WHERE kind='label' "
+                            "AND day BETWEEN ? AND ? GROUP BY day", (first, last)):
+        out[d]["labels_all"] = n
+    for d, n in con.execute("SELECT date(printed_at,'unixepoch','localtime') d, COUNT(DISTINCT key) FROM label_jobs "
+                            "WHERE state='done' AND printed_at IS NOT NULL GROUP BY d HAVING d BETWEEN ? AND ?",
+                            (first, last)):
+        out[d]["labels_snapstl"] = n
+    groups: dict[str, set] = {}
+    for s in shipments(con, first, last):
+        out[s["day"]]["ship_pcs"] += s["qty"]
+        groups.setdefault(s["day"], set()).add(s["group"])
+    for d, g in groups.items():
+        out[d]["ship_orders"] = len(g)
+    return out
+
+
+def shipped_log(day: str) -> dict:
+    """One day's courier pickups for Stats → Shipped (and its CSV): one row per parcel."""
+    with db.tx() as con:
+        items = shipments(con, day, day)
+    parcels: dict[str, dict] = {}
+    for s in sorted(items, key=lambda s: (s["group"], s["order_id"])):
+        p = parcels.setdefault(s["group"], {"group": s["group"], "order_ids": [], "items": [], "pcs": 0,
+                                            "customer": s["customer"], "source": s["source"]})
+        p["order_ids"].append(s["order_id"])
+        p["items"].append({"product": s["product"], "qty": s["qty"], "name": s["name"]})
+        p["pcs"] += s["qty"]
+        p["customer"] = p["customer"] or s["customer"]
+    rows = list(parcels.values())
+    by_product: dict[str, int] = {}
+    for s in items:
+        by_product[s["product"]] = by_product.get(s["product"], 0) + s["qty"]
+    return {"day": day, "orders": len(rows), "pcs": sum(p["pcs"] for p in rows), "by_product": by_product,
+            "rows": rows}
+
+
+def shipped_csv(day: str) -> str:
+    import csv
+    import io
+
+    f = io.StringIO()
+    w = csv.writer(f)
+    w.writerow(["Pickup day", "Order ID", "Product", "Pieces", "Name printed", "Customer", "From"])
+    for p in shipped_log(day)["rows"]:
+        for oid, it in zip(p["order_ids"], p["items"]):
+            w.writerow([day, oid, it["product"], it["qty"], it["name"], p["customer"], p["source"]])
+    return f.getvalue()
+
+
 def stats(days: int = 30, target: int = 0) -> dict:
     days = max(7, min(int(days), 365))
     since = time.time() - days * 86400
@@ -54,6 +163,8 @@ def stats(days: int = 30, target: int = 0) -> dict:
         oldest = con.execute(f"SELECT MIN(order_date) FROM orders WHERE {ORG} AND {_T} IN ({','.join('?' * len(WAITING))})",
                              WAITING).fetchone()[0]
         pace7, pace30 = _pace(con, 7), _pace(con, 30)
+        fl = floor_days(con, _days(days))
+        labels_since = con.execute("SELECT MIN(day) FROM floor_events WHERE kind='label'").fetchone()[0]
         printers = db.rows(con, "SELECT printer_name AS name, SUM(state='done') AS done, SUM(state='failed') AS failed, "
                                 "SUM(state='cancelled') AS cancelled, "
                                 "SUM(CASE WHEN state='done' AND started_at IS NOT NULL THEN updated_at-started_at ELSE 0 END) AS secs, "
@@ -92,8 +203,11 @@ def stats(days: int = 30, target: int = 0) -> dict:
     checks_good = sum(c["good"] or 0 for c in checkers)
     checks_bad = sum(c["problems"] or 0 for c in checkers)
     return {
-        "days": [{"day": d, "made": made.get(d, 0), "new": new.get(d, 0), "plates": plates.get(d, 0)} for d in _days(days)],
-        "today": {"made": made.get(today, 0), "new": new.get(today, 0), "plates": plates.get(today, 0), "target": target},
+        "days": [{"day": d, "made": made.get(d, 0), "new": new.get(d, 0), "plates": plates.get(d, 0), **fl[d]}
+                 for d in _days(days)],
+        "today": {"made": made.get(today, 0), "new": new.get(today, 0), "plates": plates.get(today, 0), "target": target,
+                  **fl[today]},
+        "labels_since": labels_since,
         "pace7": round(pace7, 1), "pace30": round(pace30, 1),
         "new7": round(sum(new.get(d, 0) for d in _days(7)) / 7, 1),
         "backlog": {"waiting": waiting, "to_make": tab_n.get("to_make", 0), "check_name": tab_n.get("check_name", 0),

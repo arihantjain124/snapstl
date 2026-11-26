@@ -271,6 +271,9 @@ CREATE TRIGGER IF NOT EXISTS batches_unsynced AFTER UPDATE OF status, summary, o
 -- 0.37: what the ShopDeck API last said about each order item (shopdeck.py); this computer only
 CREATE TABLE IF NOT EXISTS shopdeck_live (order_id TEXT PRIMARY KEY, status TEXT, awb_no TEXT, courier TEXT,
     clubbed_id TEXT, label TEXT, sd_updated_at TEXT, seen_at REAL);
+-- 0.38: when the ShopDeck API first showed an order item labelled / picked up (shopdeck.py → Stats); this computer only
+CREATE TABLE IF NOT EXISTS floor_events (order_id TEXT, kind TEXT, group_key TEXT, day TEXT, at REAL,
+    PRIMARY KEY (order_id, kind));
 """
 
 

@@ -416,6 +416,9 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   ShopDeck** and allow it on ShopDeck's page. Every 5 minutes orders that ShopDeck shows as printed, packed, shipped,
   delivered, cancelled or returned move forward here (never backward). Names, colours, AWB EXPIRED and Acceptance
   pending still come from the report. Only the connected computer holds the key; it renews itself.
+  **Stats → Labels and shipping per day** (0.38): labels made on ShopDeck (all, from when ShopDeck was connected)
+  next to labels made with SnapSTL's Print label; parcels picked up and pieces shipped, every product; **Names** (or
+  pick any date) lists that day's parcels with the name printed and the customer, and downloads as CSV.
   **Names and colours before the report** (0.37.1): a scheduled Claude task drops new orders with their names and
   colours from ShopDeck into SnapSTL's `bridge-inbox` folder; SnapSTL adds only orders it doesn't have yet (still to
   make, name and colour complete) and never changes one that is already here — the next report always wins.

@@ -817,3 +817,14 @@ English hard — the language help was skipped by the owner).
   no report-upload record, no report rows / shop lines, only after a working sync, only files under 2 hours old,
   only files marked as bridge files; incomplete customisation or not-to-make rows are left for the report.
 - The Claude task "SnapSTL – ShopDeck orders bridge" writes the files (manual only until the owner sets a schedule).
+
+### 2026-11-27: 0.38.0 Stats — labels and shipping
+- Owner asked for labels printed and items shipped on Stats, both side by side: labels — all on ShopDeck vs from
+  SnapSTL; parcels picked up vs pieces, for every product; a list of what shipped each day (name printed and
+  customer), kept for looking back (any date, CSV).
+- Labels on ShopDeck are counted from the ShopDeck connection on (27 Nov 2026): the API shows no label date, so the
+  poller notes the moment it sees an order move. Shipped days come from the report's Pickup Date (history back to
+  every report imported), with the live status filling the gap until the next report.
+- Products SnapSTL doesn't make show their SKU code (the report has no product name).
+- Agreed next (plan 2026-11-27): day rhythm and a staff board in Hindi (English switch) replacing the shift plan
+  panel and Before you leave; maintenance tracking; 24 printers.
