@@ -379,6 +379,39 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   before its bases are printed).
 - **Merge** (Letters): tick letter plates of one colour (fix plates too), not started, up to 3 names, then
   **Merge onto one plate**; **Split back** returns exactly those plates while it isn't started.
+- **Products** (0.29): the name stands — GTA (`Magicians_174`), Harry Potter (`Magicians_156`), Barbie
+  (`Magicians_117`) — are read from the report and listed on Orders under **Product** chips (Organizer is the
+  default). Since 0.30 they're batched (one product per batch; Make next batch uses the product chosen) and the
+  helper (2.4) downloads them from their own MakerWorld page — it opens the right page by itself; no license
+  password. Since 0.31 **Queue build** makes their plates: sized by Settings → Name stands, up to 3 of one
+  product per plate, two-colour files `Stands/<Product>/<Product> - A + B + C.3mf` (each stand: Base → filament
+  1, Letters → filament 2; the back 45 mm of the bed left for the prime tower). Since 0.32 **Print → Name stands**:
+  only printers with an AMS, a block slot and a letters slot (picked by colour), sliced with two filaments and
+  sent with both slots; Verify has one check per stand (Good / Stand spoiled → fix plate / Whole plate failed);
+  Completed → Reprint the stand. Settings → **Name stands**:
+  size by letter count, thickness 40 mm (37 block + 3 letters), font size, brim offset 6, and per product the
+  block / letter colours and letter spacing.
+- **Spare pieces** (0.28, Orders → **Spare pieces**): bases kept in stock (extras, mistakes, bases made before
+  SnapSTL) and complete pieces; letters aren't kept (0.28.1). Name exactly as on the base. A new order with that
+  name shows **In stock** (on its row in Pending Orders → To make, a notice there, a tag on Print) — a base fits
+  whatever the letters' colour; a complete piece needs the same colour and is sent with **Use spare piece** (the
+  order goes to Ready to pack; **Undo spare piece** puts it back; batches leave such orders out). Print → Removed →
+  **Add to spare pieces** on a bases plate that was printed anyway. Shared with every computer.
+- **Start print** (0.28.1): the plate moves to **Printing** (Bases and Letters each have To print / **Printing** /
+  Printed — a plate is in one of them) with **Starting print…** and a progress bar (slicing → sending → printer
+  warming up), then the print's %. It takes a few minutes; no need to press again. A plate held because the
+  printer was busy stays in To print with Start print.
+- **Merging** (0.28): one merge at a time — a second press is refused, so the same names are never on two plates.
+  **Available to merge** (under Letters) suggests only plates whose bases are printed. **Remove** works on every
+  plate (merged plates and split parts too); a copy left by an older double press is flagged in red.
+- **Completed → Reprint / problem…** (0.28): reprint base, letters (whole name), some letters (tap them), both,
+  or wrong colour — until the order is shipped.
+- **Printers → External spool feeding** (0.28): a printer with an AMS offers its external spool only when this is on.
+- **Packing / customer help pages** (0.28): **Also pack:** the other products ordered in the same parcel (same
+  Clubbed Order ID in the report), e.g. a 3D decor piece with the name organizer.
+- **Slicing → Letters** (0.27): per printer, a Letters process profile and speed. Letter plates slice and print with
+  them; bases use the printer's own profiles. Once any printer has a Letters profile, letters go only to those
+  printers (e.g. the P1S with colours in the AMS) — Print and Print next pick it by themselves.
 - **Settings → Staff**: the owner PIN (set it first; forgotten: `uv run snapstl-admin reset-owner-pin` on that
   computer), the people who check prints and their 4-digit PINs (shared with every computer, stored only as a
   scrambled code). Until anyone has a PIN, Verify lets people pick their name as before.
@@ -426,24 +459,27 @@ The bottom of the sidebar shows at a glance whether the **Helper**, **Bambuddy**
      computers.
    - An older report never undoes a newer status.
    - **Ad-hoc request?** Click **Add ad-hoc order** and type the name to print, mobile and colour
-     (quantity and a note are optional). It goes straight to **New orders – to make → Ad-hoc** with today's date and
+     (quantity and a note are optional). It goes straight to **Pending Orders → To make** with today's date and
      time and an `AH-…` order ID, and from there is batched and printed like any other order.
-2. **Check the tabs** (three groups; every order is in exactly one tab):
-   - **Make:** **New orders – to make** (sub-tabs **Single**, **Clubbed**, **Ad-hoc**, **Returned piece
-     available**, **Express**), **Check name first**, **Ready to print** (in a batch), **Printing** (a
-     plate of it was started).
-   - **Pack & ship:** **Printed – pack it** (name and base both printed), **Label done – ship it**
-     (the labelling team pressed **Label Generated**, or the website says PACK / HANDOVER).
-   - **Records:** **On the way**, **Delivered**, **Coming back (RTO)**, **Cancelled**, **Problems –
-     check** (something doesn't add up: sort it out, then **Clear flag**), **Skipped**, **All**.
+2. **Check the lists** (0.34; every order is in exactly one):
+   - **Pending Orders:** **To make** — one list: PRINT, **AWB EXPIRED** and **ACCEPTANCE PENDING** orders,
+     single, clubbed and ad-hoc, Express on top, then clubbed orders whose other names are already in
+     production (*make this now*), then the oldest. Orders whose name support must check with the customer
+     are listed in date order but can't be ticked. **In production** (in a batch / printing).
+     **Needs attention** shows only when something needs a decision (sort it out, then **Clear flag**).
+   - **Order History:** **Ready to pack**, **Packed**, **Shipped**, **Delivered**, **Returned (RTO)**,
+     **Cancelled**, **Skipped**, **All**.
+   - **Clubbed orders are made together:** ticking one name ticks the others; a batch takes every name of it,
+     and none while one name still waits for its check.
    - **EXPRESS · needed by …** orders are always at the top (red from 3 days before the date).
    - **Returned piece available:** a returned order has exactly the same name and colour; check the
      piece, then **Use returned piece** sends it instead of making a new one (**Undo returned piece**
      to make it after all).
-   - Type in the boxes under the column names to filter. Choose columns under **Choose columns**; **Save current view** remembers the columns, category and filters in this browser. Use the controls below the table to change pages and rows per page.
-   - In **Check name first**, fix the name or colour and click **Approve**. Names starting with a small
-     letter (e.g. *riya*) land here too: usually a typing slip, so check it with the customer.
-3. **Make a batch.** In **New orders – to make** (oldest first, Express on top; each shows how many days it
+   - Type in the boxes under the column names to filter. Choose columns under **Columns** (Pending Orders hides
+     Phone, Address and Report status); **Save view** remembers the columns, category and filters in this browser. Use the controls below the table to change pages and rows per page.
+   - A name to check is confirmed by support on the customer help page (port 8003). Names starting with a small
+     letter (e.g. *riya*) need a check too: usually a typing slip, so check it with the customer.
+3. **Make a batch.** In **Pending Orders → To make** (oldest first, Express on top; each shows how many days it
    has waited and its **Payment**: Prepaid / COD / Partial COD), tick orders — or type how many and press
    **Select oldest**, or **Select all matching** — then click **Create batch**. They move to **Ready to print**.
    On **Batches**, each name shows **B** (base) and **L** (letters): ✓ printed, ◐ printing, ○ to print, and
@@ -496,9 +532,36 @@ orders were all on the way 10 days ago, go to the Recycle Bin (Trash on a Mac).
 Since 0.24 a printed plate goes to **Print → Verify**: a staff member checks every base and name; spoiled
 letters, a spoiled name, a wrong colour or a broken base get a small fix plate, and an order is packed only
 after both its parts are checked good. Batches show their names and progress and move to **Archive** once
-shipped; **Activities** lists what happened on the computer.
+shipped.
+
+Since 0.35 **Print** is by product: **Custom Organizer** (Bases / Letters, each To print · Printing · Printed),
+**GTA**, **Harry Potter**, **Barbie**, **Verify** and **Completed** (product chips), and **Batches** (with the
+download queue; a batch still getting ready shows at the top of Print). Each plate shows ≈ how long it prints on
+the printer picked and when it would be ready, learned from the prints already done (Stats → Print time per
+letter). Base plates merge like letters (up to 3 bases, no scaling). There is no Activities page; the activity log
+is still kept.
+
+Since 0.36 each printer has a **role** (Printers → Printer roles and AMS colours): **Bases** (white), **Letters** (the
+common letter colours kept in its AMS slots, watched by staff), **Flex** (bases and the rare colours) or **Any**, and
+the **shift** (default 8:00–22:00). Print pre-selects printers by role, warns when an AMS slot doesn't hold its
+planned colour, marks base plates *done before 22:00* / *overnight plate* / *ends at night, then idle*, and
+**Before you leave** gives every printer an overnight base plate that ends around the morning.
 
 The **Help** page in the app explains every tab, status and setting.
+
+### Shipping labels (ShopDeck, 0.33)
+
+1. Install **SumatraPDF** (free, prints the labels without opening them) and check the label printer's paper is 4×6
+   (100 × 150 mm) in its Windows printer settings.
+2. Settings → Logistics → **Shipping labels**: tick *Shipping labels on*, pick the label printer, keep the courier
+   order and the 60-second wait. Save settings.
+3. In Chrome (with the SnapSTL Helper 2.6+), sign in to ShopDeck and leave **Process Orders** open. On Print label
+   the Helper brings that tab to the front (Chrome slows tabs in the background) and goes back to SnapSTL when the
+   label is done; don't switch away meanwhile. A stopped label shows why — **Details** lists every step.
+4. Print → **Completed** → **Print label** on a checked order. A parcel with other products asks first whether every
+   item is ready. The helper changes the courier, waits a minute, presses Label; SnapSTL checks the label and prints
+   it, and the order goes to *Label done – ship it*. If ShopDeck asks you to sign in, do it, then press **Continue**.
+   Anything unexpected stops with the reason — finish that order by hand on ShopDeck.
 
 ## Several computers
 
@@ -697,9 +760,19 @@ SNAPSTL_HOME=/tmp/snapstl-dev SNAPSTL_PORT=8320 uv run uvicorn snapstl.server:ap
   records; `uv run snapstl-db export` saves a copy of them in the backups folder.
 
 
-### Logistics page (label and customer-care team)
+### Packing page (port 8002) and customer help page (port 8003) — 0.26
 
-Open `http://HOST-IP:8002` and sign in with the logistics password.
+**Packing page** — open `http://HOST-IP:8002` and sign in with the packing password (Settings → Connections →
+Packing page). It shows only orders **made and checked**, oldest first (Express on top); a clubbed order only
+when every name of it is made. Each row: the names with colour and quantity, the order IDs (click to copy) and
+**Label Generated**. Tick several (or **Paste order IDs…**) to do many at once; **Packed today** lists today's
+labels with **Undo**. The search looks only at the **name to print** (what the packer reads on the piece); it
+shows the whole clubbed order, and an order not ready says where it is.
+
+**Customer help** — open `http://HOST-IP:8003` and sign in with its own password (Settings → Connections →
+Customer help page). Everything below (search, status, tracking, notes, WhatsApp, name check, Express, cancel,
+remake), plus **Late – message first**: orders waiting a week or more, each with **WhatsApp: sorry** (a note
+is saved).
 
 - **Search** (top): order ID, phone (any way it's written), customer name or the name to print (as
   the customer typed it or as corrected) — a phone search shows all of that customer's orders. "Last report uploaded" says how fresh the statuses are.

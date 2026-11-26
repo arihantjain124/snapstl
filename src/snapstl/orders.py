@@ -10,7 +10,8 @@ class Order:
     name: str  # text printed on the organizer
     color: str  # normalised colour of the name piece
     order_id: str = ""  # webstore Order ID
-    compartments: int = 5  # from the scaling table (by letter count)
+    compartments: int = 5  # from the scaling table (by letter count); 0 for a name stand
+    product: str = "organizer"  # products.py key (0.30)
 
     @property
     def letters(self) -> int:

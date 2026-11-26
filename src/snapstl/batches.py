@@ -23,8 +23,8 @@ import time
 import traceback
 from dataclasses import asdict
 
-from . import cache, computer, db, model_studio, watermark
-from .meshes import dims, obj_to_mesh
+from . import cache, computer, db, model_studio, products, spares, verify, watermark
+from .meshes import dims, obj_by_material, obj_to_mesh
 from .orders import Order
 from .pipeline import build, new_batch_dir
 from .scaling import pick_band
@@ -51,13 +51,25 @@ def _expand(rows: list[dict], settings: Settings) -> list[Order]:
     orders: list[Order] = []
     for r in rows:
         letters = sum(c.isalpha() for c in r["name"])
+        prod = products.of_order(r)
+        comps = compartments_for(letters, settings) if prod.kind == "organizer" else 0
         for _ in range(max(1, int(r["quantity"]))):
-            orders.append(Order(len(orders), r["name"], r["color"], r["order_id"], compartments_for(letters, settings)))
+            orders.append(Order(len(orders), r["name"], r["color"], r["order_id"], comps, prod.key))
     return orders
 
 
+def stand_job(o: Order, settings: Settings) -> dict:
+    """What the helper fills in on the product's MakerWorld page for this name stand (0.30)."""
+    return products.stand_job(o.name, products.BY_KEY[o.product], settings.stands)
+
+
 def model_key(o: Order, settings: Settings, builtin: dict | None = None) -> str:
-    """Download key for one organizer: name + model options + compartments + model link + its password."""
+    """Download key: an organizer — name + model options + compartments + model link + its password
+    (the built-in organizer: its approval, options and scaling); a name stand (0.30) — name + product +
+    every value sent to MakerWorld."""
+    if o.product != products.ORGANIZER.key:
+        j = stand_job(o, settings)
+        return cache.stand_key(o.name, o.product, j["design"], j["fields"])
     if builtin:
         payload = ["builtin-organizer-v1", builtin, o.name, o.compartments,
                    asdict(settings.model), asdict(settings.scaling)]
@@ -77,6 +89,18 @@ def _builtin(batch) -> dict | None:
 
 def model_source(batch) -> str:
     return "builtin" if _builtin(batch) else "makerworld"
+
+
+def _stand_jobs(orders: list[Order], settings: Settings) -> dict[str, dict]:
+    """cache_key → MakerWorld form, for the name stands among the orders."""
+    return {model_key(o, settings): stand_job(o, settings) for o in orders if o.product != products.ORGANIZER.key}
+
+
+def batch_product(con, b) -> products.Product:
+    """A batch's product (one per batch since 0.30; older batches are the organizer's)."""
+    ids = json.loads(b["order_ids"] or "[]")
+    r = con.execute("SELECT sku FROM orders WHERE order_id=?", (ids[0],)).fetchone() if ids else None
+    return products.of_order({"sku": r[0]} if r else {})
 
 
 # ---------------- batch lifecycle ----------------
@@ -100,14 +124,43 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
     With the shared records (Supabase) set up, the orders are claimed there first: an order another
     computer has already taken is left out (and leaves Ready here). If the shared records can't be
     reached, no batch is created — so no order is ever made twice."""
-    from . import sync
+    from . import clubbed, sync
 
     if not order_ids:
         raise ValueError("Select at least one order")
     with db.tx() as con:
+        # 0.34 (owner): every name of a clubbed order goes into the batch together — or none while one still needs
+        # its name check
+        order_ids, club_added, club_held = clubbed.whole(con, order_ids)
+        if not order_ids:
+            raise ValueError(clubbed.held_words(club_held) or "Select at least one order")
         q = ",".join("?" * len(order_ids))
         rows = db.rows(con, f"SELECT * FROM orders WHERE state='ready' AND reuse_of IS NULL AND flag IS NULL "
                             f"AND order_id IN ({q}) ORDER BY order_date, order_id", *order_ids)
+        # 0.28: an order with a complete spare piece in stock is sent with it, not printed again
+        in_stock = {r[0] for r in con.execute(f"SELECT order_id FROM orders WHERE order_id IN ({q}) "
+                                              f"AND {spares.match_sql(complete=True)}", order_ids)}
+        # 0.32.1: an order already made and checked Good in an earlier batch is never made again by itself
+        # (only after Remake) — e.g. one that came back to To make after it was made
+        made = verify.made_before(con, [r["order_id"] for r in rows])
+    kinds = {products.of_order(r).key for r in rows if products.of_order(r).key in products.MAKEABLE}
+    if len(kinds) > 1:
+        raise ValueError("One product per batch: " + ", ".join(sorted(products.BY_KEY[k].label for k in kinds))
+                         + " are selected — pick one product with the Product chips")
+    later = [r for r in rows if products.of_order(r).key not in products.MAKEABLE]
+    rows = [r for r in rows if products.of_order(r).key in products.MAKEABLE]
+    if later and not rows:
+        raise ValueError(f"{products.of_order(later[0]).label} orders can't be made in SnapSTL yet (a later update) — "
+                         "they are listed so none is missed")
+    rows = [r for r in rows if r["order_id"] not in in_stock]
+    if in_stock and not rows:
+        raise ValueError(f"{len(in_stock)} selected order{'s have' if len(in_stock) > 1 else ' has'} a spare piece in "
+                         "stock — use it (Orders → To make → Piece in stock) instead of making it again")
+    if made:
+        rows = [r for r in rows if r["order_id"] not in made]
+        if not rows:
+            raise ValueError(_made_words(made) + " — not made again. If it really must be made again, "
+                             "press Remake on it first")
     if not rows:
         raise ValueError("None of the selected orders are ready (they may need review or be in another batch)")
     uid = uuid.uuid4().hex
@@ -139,7 +192,16 @@ def create_batch(order_ids: list[str], settings: Settings) -> dict:
         if state_at:  # already in the shared records exactly like this: nothing to push
             con.execute(f"DELETE FROM sync_outbox WHERE order_id IN ({','.join('?' * len(ids))})", ids)
     return {"batch_id": batch_id, "orders": len(ids), "skipped": len(order_ids) - len(ids),
-            "taken_elsewhere": taken, "models": len(_needed(orders, settings))}
+            "taken_elsewhere": taken, "models": len(_needed(orders, settings)), "in_stock": len(in_stock),
+            "already_made": len(made), "already_made_note": _made_words(made) if made else "",
+            "clubbed_added": club_added, "clubbed_held": clubbed.held_words(club_held)}
+
+
+def _made_words(made: dict[str, str]) -> str:
+    """'2 selected orders were already made and checked Good (Batch 10 - 2026-11-19)'."""
+    n = len(made)
+    where = ", ".join(sorted(set(made.values())))
+    return (f"{n} selected order{'s were' if n > 1 else ' was'} already made and checked Good ({where})")
 
 
 FINISHED = ("done", "done_with_problems", "failed")
@@ -171,6 +233,9 @@ def start_download(batch_id: int, force: bool = False, source: str | None = None
                              + ("" if force else " — use Re-download for a finished batch"))
         existing = _builtin(b)
         builtin = existing if source is None else approval
+        organizer = batch_product(con, b) is products.ORGANIZER
+        if builtin and not organizer:
+            raise ValueError("The built-in organizer is only a model source for organizer batches.")
         if builtin and source is None and model_studio.approved_organizer() != builtin:
             raise ValueError("This batch's organizer approval is no longer current. Choose a model source again.")
         if builtin != existing and b["status"] not in ("created", *FINISHED):
@@ -178,17 +243,18 @@ def start_download(batch_id: int, force: bool = False, source: str | None = None
         settings, orders = _batch_orders(con, b)
         if not builtin:
             settings = _with_current_passwords(con, b)
-        if not builtin and not settings.license_password:
+        if organizer and not builtin and not settings.license_password:  # name stands need no password (0.30)
             raise ValueError(NO_PASSWORD)
         snapshot = settings.to_dict()
         if builtin:
             snapshot["builtin_organizer"] = builtin
         con.execute("UPDATE batches SET status='waiting', settings=? WHERE id=?", (json.dumps(snapshot), batch_id))
         queued = 0
+        stands = _stand_jobs(orders, settings)
         for key, (name, comps) in _needed(orders, settings, builtin).items():
             if not force and cache.load_exists(key):
                 continue
-            queued += _queue(con, key, name, comps, settings, batch_id, builtin=builtin)
+            queued += _queue(con, key, name, comps, settings, batch_id, builtin=builtin, stand=stands.get(key))
         if builtin != existing:
             _cancel_unneeded_downloads(con)
     MANAGER.wake()
@@ -210,17 +276,23 @@ def _with_current_passwords(con, b) -> Settings:
     return settings
 
 
-def _queue(con, key: str, name: str, comps: int, settings: Settings, batch_id: int,
-           manual: bool = False, builtin: dict | None = None) -> int:
-    """Queue one model unless it's already queued / being downloaded. Returns 1 if queued."""
+def _queue(con, key: str, name: str, comps: int, settings: Settings, batch_id: int, manual: bool = False,
+           builtin: dict | None = None, stand: dict | None = None) -> int:
+    """Queue one model unless it's already queued / being downloaded. Returns 1 if queued.
+    `builtin`: made on this computer from the approved organizer; `stand`: a name stand's MakerWorld form
+    (0.30) instead of the organizer's options."""
     if con.execute("SELECT 1 FROM downloads WHERE cache_key=? AND computer_id=? AND state IN ('queued','claimed')",
                    (key, computer.ID)).fetchone():
         return 0
-    model = asdict(settings.model)
-    if builtin:
-        model.update(_builtin=builtin, _scaling=asdict(settings.scaling))
+    if stand:
+        model = {"_kind": "stand", "_design": stand["design"], "_product": stand["product"], "_url": stand["url"],
+                 "_fields": stand["fields"]}
     else:
-        model.update(_license=settings.license_password, _design=settings.design_id)
+        model = asdict(settings.model)
+        if builtin:
+            model.update(_builtin=builtin, _scaling=asdict(settings.scaling))
+        else:
+            model.update(_license=settings.license_password, _design=settings.design_id)
     if manual:
         model["_manual"] = True  # re-download of one object: kept even if its batch is finished
     con.execute(
@@ -255,14 +327,15 @@ def redownload_model(batch_id: int, key: str) -> dict:
         settings, orders = _batch_orders(con, b)
         if not builtin:
             settings = _with_current_passwords(con, b)
-        if not builtin and not settings.license_password:
+        if batch_product(con, b) is products.ORGANIZER and not builtin and not settings.license_password:
             raise ValueError(NO_PASSWORD)
         needed = _needed(orders, settings, builtin)
         if key not in needed:
             raise ValueError("That object isn't part of this batch (was the license password changed? "
                              "use Re-download for the whole batch)")
         name, comps = needed[key]
-        queued = _queue(con, key, name, comps, settings, batch_id, manual=True, builtin=builtin)
+        queued = _queue(con, key, name, comps, settings, batch_id, manual=True, builtin=builtin,
+                        stand=_stand_jobs(orders, settings).get(key))
         if b["status"] in ("created", "models_ready"):
             con.execute("UPDATE batches SET status='waiting' WHERE id=?", (batch_id,))
     MANAGER.wake()
@@ -327,12 +400,14 @@ def batch_models(batch_id: int) -> list[dict]:
             else:
                 status = "not downloaded"
             info = _info(key) if have else {}
+            stand = os_[0].product != products.ORGANIZER.key
             out.append({
                 "key": key, "name": os_[0].name, "compartments": os_[0].compartments,
                 "copies": len(os_), "colors": sorted({o.color for o in os_}),
                 "status": status, "downloaded": info.get("downloaded"),
                 "watermark": (scanned_watermark(key) if mine else (bool(last["watermark"]) if last and
-                              last["watermark"] is not None else None)) if have else None,
+                              last["watermark"] is not None else None)) if have and not stand else None,
+                "product": os_[0].product,
                 "pictures": mine,
                 "license_check": info.get("license_check"),
                 "error": last["error"] if last and state in ("failed", "queued") else None,
@@ -382,6 +457,11 @@ def request_build(batch_id: int) -> None:
     _require_mine(b)
     if b is None or b["status"] not in ("waiting", "models_ready") + FINISHED:
         raise ValueError("Queue the download first — plates are built from downloaded models")
+    with db.tx() as con:
+        prod = batch_product(con, b)
+    if prod.key not in products.BUILDABLE:
+        raise ValueError(f"Plates for {prod.label} name stands come in the next update — their models are downloaded "
+                         "and kept in the Downloads folder until then")
     prog = batch_progress(dict(b))
     if _builtin(b) and b["status"] == "waiting":
         raise ValueError("Wait for local generation to finish before building plates.")
@@ -444,7 +524,20 @@ def _kick_sync() -> None:
 
 
 # ---------------- download queue ----------------
-def _claim_next(builtin: bool = False) -> dict | None:
+def _design_of(d) -> str:
+    """The MakerWorld designId a queued download is made on (organizer jobs: the Settings model)."""
+    m = json.loads(d["model_json"] or "{}")
+    return str(m.get("_design") or "")
+
+
+def _is_stand(d) -> bool:
+    return json.loads(d["model_json"] or "{}").get("_kind") == "stand"
+
+
+def _claim_next(design: str | None = None, builtin: bool = False) -> dict | None:
+    """The oldest queued download. builtin=True: the next one this computer makes itself (built-in organizer).
+    Otherwise a MakerWorld download — on the page `design` if given (helper 2.4 tells the page it is on);
+    without it (an older helper) only organizer downloads, never a name stand."""
     t = db.now()
     source = LOCAL_JOB if builtin else f"NOT ({LOCAL_JOB})"
     with db.tx() as con:
@@ -452,8 +545,15 @@ def _claim_next(builtin: bool = False) -> dict | None:
         # re-queue claims left behind by a crash / restart
         con.execute("UPDATE downloads SET state='queued', updated_at=? WHERE state='claimed' AND claimed_at < ? "
                     f"AND computer_id=? AND {source}", (t, t - CLAIM_TIMEOUT_S, computer.ID))
-        d = con.execute(f"SELECT * FROM downloads WHERE state='queued' AND computer_id=? AND {source} ORDER BY id LIMIT 1",
-                        (computer.ID,)).fetchone()
+        d = None
+        for row in con.execute(f"SELECT * FROM downloads WHERE state='queued' AND computer_id=? AND {source} ORDER BY id",
+                               (computer.ID,)):
+            if builtin or (design is None and not _is_stand(row)):
+                d = row
+                break
+            if design is not None and (_design_of(row) == design or (not _is_stand(row) and design == _organizer_design())):
+                d = row
+                break
         if d is None:
             return None
         con.execute("UPDATE downloads SET state='claimed', claimed_at=?, attempts=attempts+1, updated_at=? WHERE id=?",
@@ -528,6 +628,47 @@ def store_result(job_id: int, plate_1: bytes, plate_2: bytes, check: dict | None
     DOWNLOADER.next_after = time.time() + DOWNLOADER.pause_s
     MANAGER.wake()
     return {"base": [round(v, 1) for v in dims(base)], "name": [round(v, 1) for v in dims(name)]}
+
+
+STAND_TOL = 0.3  # mm
+
+
+def store_stand_result(job_id: int, obj_text: str) -> dict:
+    """A name stand from MakerWorld (0.30): one OBJ, two materials. The lower one is the coloured block, the
+    one on top the raised letters; checked against the sizes sent (back thickness, letter protrusion)."""
+    with db.tx() as con:
+        d = con.execute("SELECT * FROM downloads WHERE id=?", (job_id,)).fetchone()
+    if d is None:
+        raise KeyError(job_id)
+    model = json.loads(d["model_json"])
+    if model.get("_kind") != "stand":
+        raise ValueError("This download is an organizer, not a name stand")
+    parts = obj_by_material(obj_text)
+    if len(parts) != 2:
+        raise ValueError(f"Expected 2 colours in the MakerWorld model, got {len(parts)} — has the model changed?")
+    block, letters = sorted(parts.values(), key=lambda m: (float(m.bounds[0][2]), -float(m.bounds[1][2])))
+    sent = {f[0]: f[2] for f in model.get("_fields") or []}
+    back, lp = float(sent.get("back thickness", 0)), float(sent.get("letter protrusion", 0))
+    bz = float(block.bounds[1][2] - block.bounds[0][2])
+    lz = float(letters.bounds[1][2] - letters.bounds[0][2])
+    gap = float(letters.bounds[0][2] - block.bounds[1][2])
+    if abs(bz - back) > STAND_TOL or abs(lz - lp) > STAND_TOL or abs(gap) > STAND_TOL:
+        raise ValueError(f"Unexpected name stand: block {bz:.1f} mm (sent {back:g}), letters {lz:.1f} mm "
+                         f"(sent {lp:g}), letters {gap:+.1f} mm from the block's top — not saved")
+    label = products.BY_KEY[model["_product"]].label if model.get("_product") in products.BY_KEY else "stand"
+    cache.store_stand(d["cache_key"], block, letters, obj_text, {
+        "name": d["name"], "kind": "stand", "product": model.get("_product"), "product_label": label,
+        "design": model.get("_design"), "fields": model.get("_fields"), "source": "makerworld",
+        "downloaded": time.strftime("%Y-%m-%d %H:%M:%S"), "batch": d["batch_id"],
+        "block": [round(v, 2) for v in dims(block)], "letters": [round(v, 2) for v in dims(letters)]})
+    with db.tx() as con:
+        con.execute("UPDATE downloads SET state='done', error=NULL, license_check=?, updated_at=? WHERE id=?",
+                    ("not needed (name stand)", db.now(), job_id))
+    DOWNLOADER.done_count += 1
+    DOWNLOADER.current = None
+    DOWNLOADER.next_after = time.time() + DOWNLOADER.pause_s
+    MANAGER.wake()
+    return {"block": [round(v, 1) for v in dims(block)], "letters": [round(v, 1) for v in dims(letters)]}
 
 
 def store_failure(job_id: int, error: str) -> None:
@@ -609,18 +750,46 @@ class Downloader:
                 "last_seen": self.last_seen}
 
 
-def helper_next() -> dict | None:
-    """Claim the next queued model for the helper (None when paused or nothing to do)."""
+def _organizer_design() -> str:
+    return load_settings().design_id or cache.DEFAULT_DESIGN
+
+
+def helper_go(design: str | None) -> str | None:
+    """Helper 2.4 on page `design` with nothing to do there: the page of the oldest queued download elsewhere
+    (it opens it in the working tab), else None."""
+    if DOWNLOADER.paused or design is None:
+        return None
+    with db.tx() as con:
+        for row in con.execute("SELECT * FROM downloads WHERE state='queued' AND computer_id=? ORDER BY id", (computer.ID,)):
+            m = json.loads(row["model_json"] or "{}")
+            if m.get("_kind") == "stand":
+                if str(m.get("_design")) != design:
+                    return m.get("_url") or None
+            elif design != _organizer_design():
+                return load_settings().makerworld_url
+            return None
+    return None
+
+
+def helper_next(design: str | None = None) -> dict | None:
+    """Claim the next queued model for the helper (None when paused or nothing to do on this page)."""
     if DOWNLOADER.paused:
         return None
     if time.time() < DOWNLOADER.next_after:  # enforced here too, so retries keep the gap
         return None
     while True:
-        job = _claim_next()
+        job = _claim_next(design)
         if job is None:
             DOWNLOADER.current = None
             return None
         model = json.loads(job["model_json"])
+        if model.get("_kind") == "stand":  # a name stand (0.30): no password, its own form
+            DOWNLOADER.current = job["name"]
+            DOWNLOADER.claimed_at = time.time()
+            label = products.BY_KEY[model["_product"]].label if model.get("_product") in products.BY_KEY else "stand"
+            return {"job_id": job["id"], "kind": "stand", "name": job["name"], "product": label,
+                    "design": model.get("_design"), "fields": model.get("_fields") or [],
+                    "pause_after_s": DOWNLOADER.pause_s}
         if model.get("_license"):
             break
         with db.tx() as con:  # queued before the password rule: never generate without it
@@ -714,12 +883,22 @@ class Manager:
                                    "ORDER BY id", computer.ID)
         for b in batches:
             if b["status"] == "build_requested":
+                with db.tx() as con:
+                    buildable = batch_product(con, b).key in products.BUILDABLE
+                if not buildable:  # never build a product with the organizer's plates (name stands: next update)
+                    with db.tx() as con:
+                        con.execute("UPDATE batches SET status='models_ready' WHERE id=?", (b["id"],))
+                    continue
                 self._build(b)  # only when the user pressed Build plates
                 continue
             p = batch_progress(b)
             if p["models"] - p["ready"] - p["failed"] == 0:
-                with db.tx() as con:  # all downloaded (or failed): wait for "Build plates"
-                    con.execute("UPDATE batches SET status='models_ready' WHERE id=? AND status='waiting'", (b["id"],))
+                with db.tx() as con:
+                    if b.get("auto_build") and p["ready"] and not p["failed"]:  # Make next batch: build by itself
+                        con.execute("UPDATE batches SET status='build_requested' WHERE id=? AND status='waiting'", (b["id"],))
+                        self._ev.set()
+                    else:  # all downloaded (or some failed): wait for "Build plates"
+                        con.execute("UPDATE batches SET status='models_ready' WHERE id=? AND status='waiting'", (b["id"],))
 
     def _build(self, b: dict) -> None:
         batch_id = b["id"]
@@ -735,6 +914,9 @@ class Manager:
                                     "ORDER BY order_date, order_id", *ids)
             orders = _expand(rows, settings)
             builtin = _builtin(b)
+            if orders and orders[0].product != products.ORGANIZER.key:  # name stands (0.31): their own plates
+                self._build_stands(b, settings, orders)
+                return
             meshes = {}
             marked: dict[str, bool] = {}  # cache key → watermark found
             for o in orders:
@@ -788,5 +970,39 @@ class Manager:
                 _cancel_unneeded_downloads(con)  # failed / missing models of a finished batch
 
 
+def _build_stands(self, b: dict, settings: Settings, orders: list[Order]) -> None:
+    """A name stand batch (0.31, stands.py): scale, up to 3 per plate, two-colour .3mf files. Its plates are
+    the batch's "plates" with kind "stands" (0.32; 0.31 kept them in "stand_plates" — stands.repair_031)."""
+    from . import stands
+
+    batch_id = b["id"]
+    meshes = {}
+    for o in orders:
+        got = cache.load(model_key(o, settings))
+        if got:
+            meshes[o.idx] = got
+    missing = sorted({o.name for o in orders if o.idx not in meshes})
+    if not meshes:
+        raise RuntimeError("None of this batch's models are in the Downloads folder")
+    out = new_batch_dir(settings.output_dir, batch_id)
+    with db.tx() as con:
+        con.execute("UPDATE batches SET out_dir=? WHERE id=?", (str(out), batch_id))
+    usable = [o for o in orders if o.idx in meshes]
+    self._log(f"Building batch #{batch_id} ({len(usable)} name stands)")
+    res = stands.build(usable, meshes, settings, out, self._log)
+    done_ids = sorted({o.order_id for o in usable} - {o.order_id for o in orders if not res.complete(o.idx)})
+    errors = res.errors + [f"{n}: model not in the Downloads folder — left out of these plates" for n in missing]
+    summary = {"ok": res.ok and not missing, "errors": errors, "warnings": res.warnings,
+               "plates": [asdict(p) for p in res.plates], "orders": len(done_ids), "stands": len(usable),
+               "product": usable[0].product, "folder": str(out), "label": out.name}
+    old = json.loads(b.get("summary") or "{}")
+    summary["previous_folders"] = old.get("previous_folders", []) + ([old["folder"]] if old.get("folder") else [])
+    with db.tx() as con:
+        db.finish_batch(con, batch_id, "done" if summary["ok"] else "done_with_problems", summary, done_ids)
+    self._log(f"Batch #{batch_id} done: {len(res.plates)} name stand plates")
+    _kick_sync()
+
+
+Manager._build_stands = _build_stands
 MANAGER = Manager()
 PREVIEW_DIR = Path(cache.APP_DIR) / "previews"  # rendered plate / object pictures (safe to delete)

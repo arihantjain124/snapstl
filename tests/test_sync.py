@@ -6,6 +6,7 @@ Each "computer" is its own local SQLite database + computer id; both sync with t
 import csv
 import io
 import os
+import time
 from contextlib import contextmanager
 
 import pytest
@@ -249,7 +250,7 @@ def test_only_snapstl_reaches_the_records(two):
                                  "'snapstl'::regnamespace AND relkind = 'r'").fetchall())
             assert rls == {"order_records": True, "batch_records": True, "meta": True, "report_rows": True,
                            "report_uploads": True, "order_notes": True, "usage_counts": True, "staff": True,
-                           "print_checks": True}
+                           "print_checks": True, "spares": True}
             c.execute("SET ROLE anon")
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 c.execute("SELECT * FROM snapstl.order_records")
@@ -511,10 +512,9 @@ def test_report_columns_reach_the_shared_records(two):
             ups = rc.execute("SELECT filename, magicians_rows, computer_name FROM snapstl.report_uploads "
                              "ORDER BY uploaded_at").fetchall()
             assert [u["filename"] for u in ups] == ["old.csv", "new.csv", "older.csv"] and ups[0]["computer_name"] == "PC A"
-            # listed to make, never made, now delivered: flagged (0.23)
+            # listed to make, never made, now delivered: delivered (0.26: made, wherever — no flag)
             full = rc.execute("SELECT tab, flag FROM snapstl.order_records WHERE order_id='R1'").fetchone()
-            assert (full["tab"], full["flag"]) == ("problems", "past_print_not_made")
-            assert rc.execute("SELECT tab FROM snapstl.orders_full WHERE order_id='R1'").fetchone()["tab"] == "problems"
+            assert (full["tab"], full["flag"]) == ("delivered", None)
         with pytest.raises(sync.SyncError, match="never deleted"):
             with sync._remote() as rc:
                 rc.execute("DELETE FROM snapstl.report_rows")
@@ -808,3 +808,83 @@ def test_print_checks_and_staff_reach_every_computer(two):
         import psycopg
         with pytest.raises(psycopg.Error):
             rc.execute("DELETE FROM snapstl.print_checks")
+
+
+def test_a_leftover_connection_never_hangs_the_sync(two, monkeypatch):
+    """0.26.1: a sync cut off midway (app restarted) can leave its transaction open, holding a table. The setup
+    used to wait for it forever ("Connecting to the shared order records…"); now it gives up and retries."""
+    import psycopg
+
+    pc = two
+    with pc("A"):
+        ok(sync.sync_now())
+        monkeypatch.setattr(sync, "LOCK_WAIT", "1s")
+        monkeypatch.setattr(sync, "_setup_done", "")  # as after a restart: the setup runs again
+        held = psycopg.connect(os.environ["SNAPSTL_TEST_DATABASE_URL"])
+        try:
+            held.execute("SELECT * FROM snapstl.staff").fetchall()  # left open, like the cut-off sync
+            t = time.time()
+            s = sync.sync_now()
+            assert "busy" in s["error"] and time.time() - t < 15
+        finally:
+            held.close()
+        ok(sync.sync_now())  # and works again once the old connection is gone
+        with sync._remote() as rc:
+            assert rc.execute("SHOW idle_in_transaction_session_timeout").fetchone()["idle_in_transaction_session_timeout"] == "2min"
+
+
+def test_spare_pieces_reach_every_computer(two):
+    """0.28: the spare stock is shared; using a piece on one computer shows it used on the others."""
+    from snapstl import spares
+
+    pc = two
+    data = report([("SP1", "PRINT", "Kiara", "")])
+    for name in ("A", "B"):
+        with pc(name):
+            ingest.ingest(data, "r.csv")
+            ok(sync.sync_now())
+    with pc("A"):
+        uid = spares.add("Kiara", "pink", "both", "shelf 2", "Meena")[0]["uid"]
+        ok(sync.sync_now())
+    with pc("B"):
+        ok(sync.sync_now())
+        st = spares.listing()["stock"]
+        assert [(s["uid"], s["name"], s["note"], s["fits"]) for s in st] == [(uid, "Kiara", "shelf 2", ["SP1"])]
+        spares.use("SP1", uid)
+        ok(sync.sync_now())
+        assert order("SP1")["reuse_of"] == "spare:" + uid
+    with pc("A"):
+        ok(sync.sync_now())
+        assert spares.listing()["used"][0]["used_by"] == "SP1" and order("SP1")["reuse_of"] == "spare:" + uid
+    with sync._remote() as rc:  # never deleted
+        import psycopg
+        with pytest.raises(psycopg.Error):
+            rc.execute("DELETE FROM snapstl.spares")
+
+
+def test_name_stand_orders_are_shared_once_batched(two):
+    """A ready stand order stays on this computer (a computer before 0.29 would take it for an organizer);
+    taken into a batch (0.30) it is claimed in the shared records, so no other computer makes it too."""
+    from snapstl import batches as B
+
+    from .test_029 import ROWS, report as report_029
+
+    pc = two
+    data = report_029(ROWS)
+    for name in ("A", "B"):
+        with pc(name):
+            ingest.ingest(data, "r.csv")
+            ok(sync.sync_now())
+    with pc("A"):
+        assert remote("O1") is not None
+        assert remote("G1") is None and remote("H1") is None
+        with db.tx() as con:
+            assert con.execute("SELECT COUNT(*) FROM sync_outbox").fetchone()[0] == 0
+        assert B.create_batch(["G1"], Settings())["orders"] == 1
+        assert remote("G1")["state"] == "in_batch" and remote("G1")["sku"] == "Magicians_174"
+    with pc("B"):
+        ok(sync.sync_now())
+        assert order("G1")["state"] == "in_batch" and order("G1")["batch_computer"] == "PC A"
+        with pytest.raises(ValueError):
+            B.create_batch(["G1"], Settings())  # already taken on A
+        assert remote("G2") is None

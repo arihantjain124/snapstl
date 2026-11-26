@@ -1,7 +1,8 @@
 // SnapSTL Helper — runs on makerworld.com pages, but only WORKS in the working tab and only while
-// that tab is on the exact model page set in SnapSTL (Settings → MakerWorld model page link,
-// matched by designId). MakerWorld changes pages without reloading, so the page is re-checked
-// before every name.
+// that tab is on one of SnapSTL's model pages (the organizer's from Settings → MakerWorld model page link;
+// since 2.4 also each name stand's), matched by designId. MakerWorld changes pages without reloading, so
+// the page is re-checked before every name. 2.4: the app hands out the work of the page the tab is on; when
+// the next download is another product's, the tab opens that product's page.
 // Loop: ask the SnapSTL app for the next name → fill the form → press Generate → send the two
 // model files back. One name at a time, a short pause between names. Security checks are left to
 // the person using the tab: the helper simply waits.
@@ -98,6 +99,44 @@
   }
 
   const valueOf = (label) => field(label).querySelector(TEXT).value;
+  async function setCheck(label, on) {
+    const box = () => field(label).querySelector("input[type=checkbox]");
+    if (!box()) throw new Error(`Can't find the "${label}" box (the MakerWorld page may have changed)`);
+    if (box().checked !== on) { box().click(); await sleep(250); }
+    if (box().checked !== on) throw new Error(`Couldn't set ${label}`);
+  }
+
+  // A name stand (2.4): the app sends the form (label → value); one OBJ with both colours comes back.
+  async function runStand(job, say) {
+    for (const [label, type, value] of job.fields || []) {
+      if (type === "text") await setText(label, String(value));
+      else if (type === "number") await setNumber(label, value);
+      else if (type === "check") await setCheck(label, !!value);
+    }
+    let gen = null;  // the page may still be busy with an earlier build: wait up to 90 s
+    for (let i = 0; i < 900 && !gen; i++) {
+      if (!menuOpen()) gen = generateButton();
+      if (!gen) await sleep(100);
+    }
+    if (!gen) throw new Error("The Generate button isn't available");
+    await sleep(800);
+    if (valueOf("text input") !== job.name) throw new Error("The name box changed before Generate — not generating");
+    gen = generateButton();
+    if (!gen) throw new Error("The Generate button isn't available");
+    captured = {};
+    gen.click();
+    const end = Date.now() + GENERATE_TIMEOUT_MS;
+    let lastPing = Date.now();
+    while (Date.now() < end) {
+      if (captured.model) return { model: captured.model };
+      if (Date.now() - lastPing > 5000) { await say(`Generating ${job.name} (${job.product})`); lastPing = Date.now(); }
+      if (blocked()) await waitWhileBlocked(say);
+      const err = errorToast();
+      if (err) throw new Error(`MakerWorld: ${err}`);
+      await sleep(500);
+    }
+    throw new Error("Timed out waiting for MakerWorld to generate the model");
+  }
   const PASSWORD = "License password";
 
   async function runJob(job, say) {
@@ -162,9 +201,10 @@
   }
 
   // ---------- main loop ----------
+  const pageDesign = () => new URLSearchParams(location.search).get("designId") || "";
   function onModelPage(cfg) {
-    return location.pathname.includes("/makerlab/parametricModelMaker") && !!cfg.design_id &&
-      new URLSearchParams(location.search).get("designId") === String(cfg.design_id);
+    const known = Object.keys(cfg.pages || {}).concat(cfg.design_id ? [String(cfg.design_id)] : []);
+    return location.pathname.includes("/makerlab/parametricModelMaker") && known.includes(pageDesign());
   }
 
   async function main() {
@@ -180,22 +220,28 @@
         if (!claim.ok) { await sleep(4000); continue; } // another tab is the working tab: stay quiet
         if (!recovered) { await bg("recover"); recovered = true; } // a name left half-done goes back to the queue
         if (!onPage) {
-          await say("This tab isn't on the SnapSTL model page — use 'Open model page' in the helper");
+          await say("This tab isn't on a SnapSTL model page — use 'Open model page' in the helper");
           await bg("next", { status: lastSaid, onPage: false }); // tells the app; never gets work
           await sleep(3000);
           continue;
         }
         if (blocked()) { await waitWhileBlocked(say); continue; }
         if (!formShown()) { await say("Waiting for the MakerWorld page to load"); await sleep(2000); continue; }
-        const r = await bg("next", { status: lastSaid, onPage: true });
+        const r = await bg("next", { status: lastSaid, onPage: true, design: pageDesign() });
         if (r.error) { await say(`SnapSTL app not reachable — is it running? (${r.error})`); await sleep(5000); continue; }
         if (r.paused) { await say("Paused in SnapSTL"); await sleep(4000); continue; }
+        if (!r.job && r.go) {  // the next download is on another product's page (2.4)
+          await say("Opening the next product's model page");
+          location.href = r.go;
+          await sleep(15000);
+          continue;
+        }
         if (!r.job) { await say("Ready on the model page — nothing to download"); await sleep(4000); continue; }
         const job = r.job;
         await bg("working", { job_id: job.job_id });
-        await say(`Generating ${job.name} (${job.compartments} compartments)`);
+        await say(job.kind === "stand" ? `Generating ${job.name} (${job.product})` : `Generating ${job.name} (${job.compartments} compartments)`);
         try {
-          const files = await runJob(job, say);
+          const files = job.kind === "stand" ? await runStand(job, say) : await runJob(job, say);
           await say(`Sending ${job.name} to SnapSTL`);
           const up = await bg("result", { job_id: job.job_id, ...files });
           if (up && up.error) throw new Error(up.error);

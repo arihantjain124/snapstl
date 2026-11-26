@@ -9,6 +9,11 @@ settings, so files stay valid across Bambu Studio updates.
 
 Dependency-free on purpose (stdlib zipfile + xml); `read_3mf` is used to re-check files
 after writing.
+
+Name stands (0.31, `write_3mf_assemblies`): each stand is one object made of two parts (core 3MF
+components), and model_settings.config gives each part its filament — Bambu Studio's own fields
+(`<object><part subtype="normal_part"><metadata key="extruder" …>`), which Bambuddy's slicer and its
+filament mapping read.
 """
 from __future__ import annotations
 
@@ -85,6 +90,62 @@ def write_3mf(path: Path, objects: list[Object3MF], title: str = "") -> None:
     tmp.replace(path)
 
 
+def write_3mf_assemblies(path: Path, assemblies: list[tuple[str, list[tuple]]], title: str = "") -> None:
+    """One object per entry, made of parts: [(object name, [(part name, vertices, faces, filament), …]), …].
+    Parts are in bed coordinates (no transforms). Filament numbers start at 1."""
+    if not assemblies:
+        raise ValueError("Nothing to write")
+    res, items, conf = [], [], []
+    nid = 1
+    for name, parts in assemblies:
+        ids = []
+        for pname, v, f, _ in parts:
+            res.append(_mesh_xml(Object3MF(pname, v, f), nid))
+            ids.append(nid)
+            nid += 1
+        aid = nid
+        nid += 1
+        comps = "".join(f'<component objectid="{i}"/>' for i in ids)
+        res.append(f'<object id="{aid}" name={quoteattr(name)} type="model"><components>{comps}</components></object>')
+        items.append(f'<item objectid="{aid}"/>')
+        rows = [f'  <object id="{aid}">', f'    <metadata key="name" value="{_attr(name)}"/>',
+                f'    <metadata key="extruder" value="{int(parts[0][3])}"/>']
+        for i, (pname, _, _, ext) in zip(ids, parts):
+            rows += [f'    <part id="{i}" subtype="normal_part">', f'      <metadata key="name" value="{_attr(pname)}"/>',
+                     f'      <metadata key="extruder" value="{int(ext)}"/>', "    </part>"]
+        rows.append("  </object>")
+        conf.append("\n".join(rows))
+    model = ['<?xml version="1.0" encoding="UTF-8"?>',
+             f'<model unit="millimeter" xml:lang="en-US" xmlns="{CORE_NS}">',
+             '<metadata name="Application">SnapSTL</metadata>']
+    if title:
+        model.append(f"<metadata name=\"Title\">{_esc(title)}</metadata>")
+    model += ["<resources>", *res, "</resources><build>", *items, "</build></model>"]
+    config = '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n' + "\n".join(conf) + "\n</config>\n"
+    tmp = path.with_suffix(path.suffix + ".part")
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+        z.writestr("[Content_Types].xml", CONTENT_TYPES)
+        z.writestr("_rels/.rels", RELS)
+        z.writestr(MODEL_PATH, "\n".join(model))
+        z.writestr(BAMBU_CONFIG, config)
+    tmp.replace(path)
+
+
+def read_parts_config(path: Path) -> list[tuple[str, list[tuple[str, int]]]]:
+    """model_settings.config of a stands plate: [(object name, [(part name, filament), …]), …]."""
+    with zipfile.ZipFile(path) as z:
+        root = ET.fromstring(z.read(BAMBU_CONFIG))
+    out = []
+    for obj in root.findall("object"):
+        name = next((m.get("value") for m in obj.findall("metadata") if m.get("key") == "name"), "")
+        parts = []
+        for p in obj.findall("part"):
+            meta = {m.get("key"): m.get("value") for m in p.findall("metadata")}
+            parts.append((meta.get("name", ""), int(meta.get("extruder") or 0)))
+        out.append((name or "", parts))
+    return out
+
+
 def _names_config(objects: list[Object3MF]) -> str:
     rows = [f'  <object id="{i + 1}">\n    <metadata type="object" key="name" value="{_attr(o.name)}"/>\n  </object>'
             for i, o in enumerate(objects)]
@@ -107,6 +168,8 @@ def read_3mf(path: Path) -> list[Object3MF]:
     root = ET.parse(io.BytesIO(data)).getroot()
     out = []
     for obj in root.findall("m:resources/m:object", ns):
+        if obj.find("m:mesh", ns) is None:
+            continue  # an object made of parts (components): its parts are read as their own objects
         vs = obj.findall("m:mesh/m:vertices/m:vertex", ns)
         ts = obj.findall("m:mesh/m:triangles/m:triangle", ns)
         v = np.array([[float(e.get("x")), float(e.get("y")), float(e.get("z"))] for e in vs])

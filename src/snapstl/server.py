@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 from contextlib import asynccontextmanager
 import io
+import threading
 import time
 import json
 import os
@@ -22,8 +23,9 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import (archive, auth, bambuddy_host, cache, computer, config, db, extras, farm, makeit, model_studio, platform_os,
-               sync, tabs, updater, verify)
+from . import (archive, auth, bambuddy_host, cache, computer, config, db, extras, farm, makeit, model_studio,
+               platform_os, products, sync, tabs, spares, updater, verify)
+from . import clubbed, labels
 from .ingest import add_adhoc, ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
 from . import staff as staff_pins
@@ -56,6 +58,31 @@ async def _lifespan(_app):
     except Exception as e:  # noqa: BLE001  (never block starting the app)
         print(f"SnapSTL: Printing backfill skipped: {e}")
     try:
+        labels.WATCHER.kick()  # 0.33: a label PDF still awaited when the app stopped
+    except Exception as e:  # noqa: BLE001
+        print(f"SnapSTL: label watcher skipped: {e}")
+    try:
+        from .ingest import repair_026
+        print("SnapSTL: 0.26 repair:", repair_026())  # one-time: stuck PRINT orders, packed ≠ problem
+    except Exception as e:  # noqa: BLE001
+        print(f"SnapSTL: 0.26 repair skipped: {e}")
+    try:
+        from .ingest import repair_034
+        print("SnapSTL: 0.34 repair:", repair_034())  # one-time: Acceptance pending / AWB expired → To make
+    except Exception as e:  # noqa: BLE001
+        print(f"SnapSTL: 0.34 repair skipped: {e}")
+    try:
+        from . import stands as _stands
+
+        _stands.repair_031()  # 0.32: name stand plates join the batch's plates (Print / Verify)
+    except Exception as e:  # noqa: BLE001
+        print(f"SnapSTL: 0.31 stand plates repair skipped: {e}")
+    try:
+        from .extras import repair_028
+        print("SnapSTL: 0.28 repair:", repair_028())  # one-time: merged plates made twice by a double press
+    except Exception as e:  # noqa: BLE001
+        print(f"SnapSTL: 0.28 repair skipped: {e}")
+    try:
         from .ingest import recheck_small_first
         recheck_small_first()               # one-time (0.23.1): waiting names with a small first letter → Check name
     except Exception as e:  # noqa: BLE001
@@ -68,6 +95,8 @@ async def _lifespan(_app):
     sync.LOOP.start()   # shared order records (Supabase), if connected in Settings
     farm.WORKER.start()  # Push to queue → Bambuddy (connects by itself on a fresh install)
     archive.CLEANER.start()  # once a day: old batch folders / unused models → Recycle Bin
+    from .reportwatch import WATCHER
+    WATCHER.start()  # a new report in Downloads is imported by itself (Settings: report_import)
     bambuddy_host.start_watch()  # Bambuddy computer: Keep running (starts Bambuddy / Docker when they stop)
     yield
     from .logistics import stop as stop_logistics
@@ -86,7 +115,7 @@ OPEN_PATHS = {"/login", "/api/login", "/api/auth-check", "/favicon.ico"}
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]", "::1")
 # Things only the SnapSTL computer itself may do (helper, Finder, folders, portal setup, reset, print-farm
 # setup: Bambuddy connection, slicing settings, clearing a bed).
-MAC_ONLY_PREFIXES = ("/api/helper/", "/api/downloads/reveal", "/api/portal", "/api/maintenance/reset",
+MAC_ONLY_PREFIXES = ("/api/helper/", "/api/downloads/reveal", "/api/portal", "/api/help-portal", "/api/maintenance/reset",
                      "/api/update", "/api/shared-records", "/api/setup", "/api/farm/")
 
 
@@ -145,7 +174,7 @@ async def access_control(request: Request, call_next):
 
 # Work that may go on without the shared records: connecting them, settings, the helper's running downloads
 WITHOUT_SHARED = ("/api/shared-records", "/api/sync", "/api/settings", "/api/helper/", "/api/update",
-                  "/api/login", "/api/logout", "/api/portal", "/api/maintenance/backup", "/api/farm/connect",
+                  "/api/login", "/api/logout", "/api/portal", "/api/help-portal", "/api/maintenance/backup", "/api/farm/connect",
                   "/api/bambuddy-host")
 
 
@@ -191,10 +220,10 @@ def auth_check(request: Request):
 
 
 # ---------------- web portal for other computers (this computer only) ----------------
-def _portal_urls() -> list[str]:
+def _portal_urls(port: int = 8002) -> list[str]:
     """Current LAN addresses, with copyable numeric IPs first."""
     hosts = [*platform_os.lan_ips(), platform_os.lan_name()]
-    return [f"http://{host}:8002" for host in dict.fromkeys(hosts) if host]
+    return [f"http://{host}:{port}" for host in dict.fromkeys(hosts) if host]
 
 
 def _port() -> int:
@@ -349,8 +378,35 @@ async def portal_update(req: Request):
     SETTINGS.lan_access = enable
     save_settings(SETTINGS)
     from . import logistics
-    await run_in_threadpool(logistics.start if enable else logistics.stop)
+    await run_in_threadpool(logistics.PACK.start if enable else logistics.PACK.stop)
     return portal_info() | {"restarting": False, "note": "Saved"}
+
+
+@app.get("/api/help-portal")
+def help_portal_info():
+    """Settings → Connections → Customer help page (port 8003, its own password)."""
+    from .logistics import HELP, HELP_PORT
+    return {"enabled": SETTINGS.help_access, "password_set": auth.HELP.enabled(), **HELP.status(),
+            "urls": _portal_urls(HELP_PORT) if SETTINGS.help_access else []}
+
+
+@app.post("/api/help-portal")
+async def help_portal_update(req: Request):
+    body = await req.json()
+    pw = str(body.get("password", ""))
+    if pw:
+        try:
+            auth.HELP.set_password(pw)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+    enable = bool(body.get("enabled", SETTINGS.help_access))
+    if enable and not auth.HELP.enabled():
+        raise HTTPException(400, "Set a password for the customer help page first (at least 10 characters)")
+    SETTINGS.help_access = enable
+    save_settings(SETTINGS)
+    from . import logistics
+    await run_in_threadpool(logistics.HELP.start if enable else logistics.HELP.stop)
+    return help_portal_info() | {"note": "Saved"}
 
 
 
@@ -419,9 +475,18 @@ async def upload_report(file: UploadFile = File(...)):
     return out
 
 
+def _stand_size(letters: int) -> list | None:
+    """Name stand (0.29): [length, height, thickness] from Settings → Name stands."""
+    st = SETTINGS.stands
+    b = next((b for b in sorted(st.bands, key=lambda b: b.min_letters) if b.min_letters <= letters <= b.max_letters), None)
+    return [b.length, b.height, st.thickness] if b else None
+
+
 def _order_view(r: dict) -> dict:
     letters = sum(c.isalpha() for c in (r.get("name") or ""))
-    band = pick_band(letters, SETTINGS.scaling.bands) if letters else None
+    prod = products.of_order(r)
+    stand = prod.kind == "stand"
+    band = pick_band(letters, SETTINGS.scaling.bands) if letters and not stand else None
     return {
         "order_id": r["order_id"], "clubbed_id": r["clubbed_id"], "order_date": r["order_date"],
         "customer_name": r.get("customer_name") or "", "phone": r.get("phone") or "", "address": r.get("address") or "",
@@ -431,14 +496,22 @@ def _order_view(r: dict) -> dict:
         "state": r["state"], "batch_id": r["batch_id"], "last_error": r["last_error"], "letters": letters,
         "batch_computer": r.get("batch_computer") or "", "batch_label": r.get("batch_label") or "",
         "batch_here": bool(r.get("batch_id")), "printed_at": r.get("printed_at"), "bundled_at": r.get("bundled_at"),
-        "made_at": r.get("made_at"), "adhoc": r.get("sku") == "Adhoc", "added_at": r.get("first_seen"),
+        "made_at": r.get("made_at"), "adhoc": r.get("sku") == "Adhoc",
+        "product": prod.key, "product_label": prod.label, "product_kind": prod.kind, "added_at": r.get("first_seen"),
+        "stand_size": _stand_size(letters) if stand and letters else None,
+        "stand_colors": [SETTINGS.stands.products.get(prod.key, {}).get(k, "") for k in ("base_color", "letter_color")]
+        if stand else None,
         "clubbed": bool(r.get("club_size", 1) > 1),
         "target": [min(band.length, SETTINGS.scaling.max_length), band.height] if band else None,
-        "compartments": compartments_for(letters, SETTINGS) if letters else None,
+        "compartments": compartments_for(letters, SETTINGS) if letters and not stand else None,
         # 0.23 order flow
         "tab": tabs.tab_of(r), "first_status": r.get("first_status"), "print_started_at": r.get("print_started_at"),
         **{c: r.get(c) for g, cs in db.FIELD_GROUPS.items() for c in cs},
         "returned": r.get("_returned") or [],
+        "spares": r.get("_spares") or [],  # 0.28: spare pieces in stock that fit
+        "made_before": r.get("_made_before"),  # 0.32.1: already made in this batch — Remake to make it again
+        "reuse_words": spares.describe(r.get("reuse_of")),
+        "club": r.get("_club"),  # 0.34: {size, to_make, check, held, started} of its clubbed order
         "payment": r.get("payment") or "",
     }
 
@@ -450,8 +523,10 @@ _T = tabs.TAB_SQL
 # a returned (RTO) piece with exactly the same name (same letter case) and colour, not used yet
 _RTO = "REPLACE(UPPER(COALESCE({t}.source_status,'')),'_','-') LIKE 'RTO-%'"
 _RETURNED = (f"EXISTS (SELECT 1 FROM orders rt WHERE rt.order_id<>orders.order_id AND rt.name=orders.name "
+             f"AND {products.key_sql('rt.sku')}={products.key_sql('orders.sku')} "  # 0.29: the same product
              f"AND COALESCE(rt.color,'')=COALESCE(orders.color,'') AND {_RTO.format(t='rt')} AND rt.reused_by IS NULL "
              "AND COALESCE(orders.name,'')<>'')")
+_RETURNED = f"({_RETURNED} OR {spares.match_sql()})"  # 0.28: or a spare piece in stock
 _MAKING_TABS = "('to_make','check_name','ready_to_print','printing','pack_it')"
 TABS = {k: f"{_T}='{k}'" for k in tabs.KEYS}
 TABS.update({
@@ -460,11 +535,16 @@ TABS.update({
     "to_make_adhoc": f"{_T}='to_make' AND sku='Adhoc'",  # typed in by hand (ingest.add_adhoc)
     "to_make_returned": f"{_T}='to_make' AND {_RETURNED}",  # a returned piece could be sent instead
     "express": f"express_by IS NOT NULL AND {_T} IN {_MAKING_TABS}",
+    # 0.34 (owner): Pending Orders → To make is one list — orders ready to make and those whose name support still
+    # has to check with the customer (listed in date order so none is missed, but not tickable)
+    "pending": f"{_T} IN ('to_make','check_name')",
+    "production": f"{_T} IN ('ready_to_print','printing')",  # 0.26: one list on the Orders page
     "all": "1=1",
 })
 # Express orders first (earliest needed-by date first), then the oldest order first (0.25, owner: clear the
-# backlog in order)
-_ORDER = "ORDER BY (express_by IS NULL), express_by, order_date, COALESCE(clubbed_id,''), order_id"
+# backlog in order); 0.34: after Express, clubbed orders whose other names are already in production
+_ORDER = (f"ORDER BY (express_by IS NULL), express_by, NOT {clubbed.PARTNER_SQL}, order_date, "
+          "COALESCE(clubbed_id,''), order_id")
 # payment type from the uploaded report (PREPAID / COD / PARTIAL-COD)
 _PAY = "COALESCE((SELECT json_extract(rr.data, '$.payment_method') FROM report_rows rr WHERE rr.order_id=orders.order_id),'')"
 # Per-column filters: name → (SQL expression, exact match?)
@@ -483,10 +563,27 @@ FILTERS = {
 }
 
 
+def _product_param(request: Request) -> str:
+    """Orders page Product chips (0.29): '' = every product."""
+    p = (request.query_params.get("product") or "").strip()
+    if p and p not in products.BY_KEY:
+        raise HTTPException(400, f"Unknown product {p!r}")
+    return p
+
+
+@app.get("/api/products")
+def product_list():
+    """The products SnapSTL knows (Orders page chips, Settings → Name stands)."""
+    return {"products": products.public()}
+
+
 def _where(request: Request, tab: str) -> tuple[str, list]:
     if tab not in TABS:
         raise HTTPException(400, f"Unknown tab {tab!r}")
     where, args = [TABS[tab]], []
+    prod = _product_param(request)
+    if prod:
+        where.append(products.in_sql([prod]))
     for key, (expr, exact) in FILTERS.items():
         v = (request.query_params.get("f_" + key) or "").strip()
         if not v:
@@ -512,10 +609,18 @@ def list_orders(request: Request, tab: str = "to_make", limit: int = 200, offset
         total = con.execute(f"SELECT COUNT(*) FROM orders WHERE {w}", args).fetchone()[0]
         rs = db.rows(con, f"SELECT *, {_CLUB} AS club_size, {_PAY} AS payment FROM orders WHERE {w} {_ORDER} LIMIT ? OFFSET ?",
                      *args, limit, offset)
+        made = verify.made_before(con, [r["order_id"] for r in rs if r["state"] in ("ready", "needs_review")])
         for r in rs:
             if r["state"] in ("ready", "needs_review") and r.get("name"):
                 r["_returned"] = returned_pieces(con, r)
-    return {"total": total, "orders": [_order_view(r) for r in rs]}
+                r["_spares"] = spares.for_order(con, r)
+            r["_made_before"] = made.get(r["order_id"])
+        in_stock = spares.waiting_matches(con)
+        g = clubbed.groups(con, [r["clubbed_id"] for r in rs])  # 0.34: made together
+        for r in rs:
+            if r["clubbed_id"] in g:
+                r["_club"] = clubbed.info(g[r["clubbed_id"]])
+    return {"total": total, "orders": [_order_view(r) for r in rs], "in_stock": in_stock}
 
 
 def returned_pieces(con, o: dict) -> list[dict]:
@@ -524,37 +629,47 @@ def returned_pieces(con, o: dict) -> list[dict]:
     if not o.get("name") or o.get("reuse_of"):
         return []
     rs = db.rows(con, f"SELECT order_id, source_status FROM orders rt WHERE rt.order_id<>? AND rt.name=? "
-                      f"AND COALESCE(rt.color,'')=? AND {_RTO.format(t='rt')} AND rt.reused_by IS NULL",
-                 o["order_id"], o["name"], o.get("color") or "")
+                      f"AND COALESCE(rt.color,'')=? AND {_RTO.format(t='rt')} AND rt.reused_by IS NULL "
+                      f"AND {products.key_sql('rt.sku')}=?",
+                 o["order_id"], o["name"], o.get("color") or "", products.of_order(o).key)
     out = [{"order_id": r["order_id"], "status": r["source_status"],
             "back": tabs.norm_status(r["source_status"]) == "RTO-DELIVERED"} for r in rs]
     return sorted(out, key=lambda x: (not x["back"], x["order_id"]))
 
 
 @app.get("/api/orders/ids")
-def order_ids(request: Request, tab: str = "to_make", state: str = "ready"):
-    """All selectable order IDs matching the current tab + filters ('Select all matching'): orders that
-    can go into a batch (Create batch)."""
+def order_ids(request: Request, tab: str = "to_make", state: str = "ready", count: int = 100000):
+    """All selectable order IDs matching the current tab + filters ('Select all matching'), or the oldest `count`
+    ('Select oldest'): orders that can go into a batch (Create batch). 0.34: a clubbed order is taken whole — or
+    not at all while a name of it still needs its check."""
     if state != "ready":
         raise HTTPException(400, "Unknown state")
     w, args = _where(request, tab)
     with db.tx() as con:
         rs = db.rows(con, f"SELECT order_id FROM orders WHERE {w} AND {_T}='to_make' {_ORDER}", *args)
-    return [r["order_id"] for r in rs]
+        ids, _held = clubbed.take(con, [r["order_id"] for r in rs], max(1, count))
+    return ids
 
 
 @app.get("/api/orders/facets")
 def order_facets(request: Request, tab: str = "to_make"):
     """Tab counts plus the values offered in the status / colour filter dropdowns."""
+    prod = _product_param(request)
+    pw = products.in_sql([prod]) if prod else "1=1"  # 0.29: tab counts of the chosen product
     with db.tx() as con:
         counts = {k: 0 for k in TABS}
-        counts.update({r[0]: r[1] for r in con.execute(f"SELECT {_T}, COUNT(*) FROM orders GROUP BY 1")})
-        for k in ("to_make_single", "to_make_clubbed", "to_make_adhoc", "to_make_returned", "express", "all"):
-            counts[k] = con.execute(f"SELECT COUNT(*) FROM orders WHERE {TABS[k]}").fetchone()[0]
-        w = TABS.get(tab, "1=1")
+        counts.update({r[0]: r[1] for r in con.execute(f"SELECT {_T}, COUNT(*) FROM orders WHERE {pw} GROUP BY 1")})
+        for k in ("to_make_single", "to_make_clubbed", "to_make_adhoc", "to_make_returned", "express", "production",
+                  "pending", "all"):
+            counts[k] = con.execute(f"SELECT COUNT(*) FROM orders WHERE {TABS[k]} AND {pw}").fetchone()[0]
+        # Product chips: orders to make (To make + Check name) per product
+        per = {r[0]: r[1] for r in con.execute(f"SELECT {products.key_sql()}, COUNT(*) FROM orders "
+                                               f"WHERE {_T} IN ('to_make','check_name') GROUP BY 1")}
+        w = TABS.get(tab, "1=1") + f" AND {pw}"
         statuses = [r["v"] for r in db.rows(con, f"SELECT DISTINCT source_status v FROM orders WHERE {w} ORDER BY v")]
         colors = [r["v"] for r in db.rows(con, f"SELECT DISTINCT COALESCE(color,'') v FROM orders WHERE {w} ORDER BY v")]
-    return {"tabs": counts, "statuses": statuses, "colors": colors}
+    return {"tabs": counts, "statuses": statuses, "colors": colors,
+            "products": {p.key: per.get(p.key, 0) for p in products.PRODUCTS}}
 
 
 @app.get("/api/orders.csv")
@@ -609,7 +724,9 @@ def reset_order(order_id: str):
         if o.get("reuse_of"):  # made again: no longer sent with a returned piece
             db.set_group(con, order_id, "reuse")
             o["reuse_of"] = None
-        if tabs.tab_of(o) not in ("to_make", "check_name") and o.get("flag") is None:
+        # 0.32.1: an order already made in an earlier batch is made again only after a recorded Remake
+        again = bool(verify.made_before(con, [order_id]))
+        if again or (tabs.tab_of(o) not in ("to_make", "check_name") and o.get("flag") is None):
             db.set_group(con, order_id, "remake", remake_at=db.now(), remake_reason="Made again (Remake)")
     sync.LOOP.kick()
     return {"ok": True}
@@ -647,6 +764,59 @@ async def use_returned(order_id: str, req: Request):
     return {"ok": True}
 
 
+@app.post("/api/orders/{order_id}/use-spare")
+async def use_spare(order_id: str, req: Request):
+    """Send this order with a complete spare piece from stock instead of making it (0.28)."""
+    try:
+        spares.use(order_id, str((await req.json()).get("uid") or ""))
+    except spares.SpareError as e:
+        raise HTTPException(409, str(e)) from e
+    sync.LOOP.kick()
+    return {"ok": True}
+
+
+@app.get("/api/spares")
+def spares_list():
+    """Orders → Spare pieces (0.28)."""
+    with db.tx() as con:
+        return spares.listing(con) | {"in_stock": spares.waiting_matches(con)}
+
+
+@app.post("/api/spares")
+async def spares_add(req: Request):
+    b = await req.json()
+    try:
+        out = spares.add(str(b.get("name") or ""), str(b.get("color") or ""), str(b.get("part") or ""),
+                         str(b.get("note") or ""), str(b.get("staff") or ""), int(b.get("count") or 1))
+    except (spares.SpareError, ValueError) as e:
+        raise HTTPException(400, str(e)) from e
+    sync.LOOP.kick()
+    return {"added": out}
+
+
+@app.put("/api/spares/{uid}")
+async def spares_edit(uid: str, req: Request):
+    b = await req.json()
+    try:
+        spares.edit(uid, str(b.get("name") or ""), str(b.get("color") or ""), str(b.get("part") or ""),
+                    str(b.get("note") or ""))
+    except spares.SpareError as e:
+        raise HTTPException(400, str(e)) from e
+    sync.LOOP.kick()
+    return {"ok": True}
+
+
+@app.post("/api/spares/{uid}/remove")
+async def spares_remove(uid: str, req: Request):
+    b = await req.json()
+    try:
+        spares.remove(uid, bool(b.get("put_back")))
+    except spares.SpareError as e:
+        raise HTTPException(400, str(e)) from e
+    sync.LOOP.kick()
+    return {"ok": True}
+
+
 @app.post("/api/orders/{order_id}/undo-returned")
 def undo_returned(order_id: str):
     with db.tx() as con:
@@ -654,7 +824,10 @@ def undo_returned(order_id: str):
         if cur is None or not cur["reuse_of"]:
             raise HTTPException(409, "This order doesn't use a returned piece")
         db.set_group(con, order_id, "reuse")
-        db.set_group(con, cur["reuse_of"], "reuse")
+        if cur["reuse_of"].startswith(spares.PREFIX):
+            spares.release(con, order_id, cur["reuse_of"])  # the spare piece is in stock again
+        else:
+            db.set_group(con, cur["reuse_of"], "reuse")
         db.count_usage(con, "undo_returned")
     sync.LOOP.kick()
     return {"ok": True}
@@ -690,6 +863,53 @@ async def new_batch(req: Request):
         return B.create_batch([str(x) for x in body.get("order_ids", [])][:2000], SETTINGS)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/batches/next")
+async def next_batch(req: Request):
+    """Orders → Make next batch ({count}): the oldest orders to make (Express first) into a batch; its models are
+    downloaded and its plates built by themselves (when a model fails, Batches waits for a person)."""
+    body = await req.json()
+    n = max(1, min(int(body.get("count") or 50), 500))
+    prod = str(body.get("product") or products.ORGANIZER.key)  # 0.30: the product chosen on Orders
+    if prod not in products.BY_KEY:
+        raise HTTPException(400, f"Unknown product {prod!r}")
+    errs = SETTINGS.validate()
+    if errs:
+        raise HTTPException(400, "; ".join(errs))
+    with db.tx() as con:
+        ids = [r[0] for r in con.execute(f"SELECT order_id FROM orders WHERE {_T}='to_make' "  # not those with a
+                                         f"AND {products.in_sql([prod])} "
+                                         f"AND NOT {spares.match_sql(complete=True)} {_ORDER}")]  # spare
+        made = verify.made_before(con, ids)  # 0.32.1: already made in an earlier batch → only after Remake
+        ids, held = clubbed.take(con, [i for i in ids if i not in made], n)  # 0.34: clubbed orders whole
+    if not ids:
+        raise HTTPException(400, "Nothing to make: To make is empty" + (f" ({clubbed.held_words(held)})" if held else ""))
+    try:
+        out = B.create_batch(ids, SETTINGS)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    with db.tx() as con:  # builds by itself once downloaded — not name stands yet (their plates: next update)
+        con.execute("UPDATE batches SET auto_build=? WHERE id=?", (int(prod in products.BUILDABLE), out["batch_id"]))
+    try:
+        return out | {"download": B.start_download(out["batch_id"]), "download_error": ""}
+    except ValueError as e:  # the batch is made; the download waits for what's missing (e.g. the license password)
+        return out | {"download": None, "download_error": str(e)}
+
+
+@app.get("/api/report-import")
+def report_import_info():
+    """Settings / Orders: the Downloads folder watched for new reports, and the last import done by itself."""
+    from . import reportwatch
+
+    return {"on": SETTINGS.report_import, "folder": str(reportwatch.folder()), "last": reportwatch.WATCHER.last}
+
+
+@app.post("/api/report-import")
+async def report_import_set(req: Request):
+    SETTINGS.report_import = bool((await req.json()).get("on"))
+    save_settings(SETTINGS)
+    return report_import_info()
 
 
 @app.post("/api/batches/{batch_id}/download")
@@ -734,7 +954,12 @@ def helper_config():
     """Which MakerWorld page the helper must be on (Settings → MakerWorld model page link)."""
     from .settings import design_id
 
-    return {"model_url": SETTINGS.makerworld_url, "design_id": design_id(SETTINGS.makerworld_url),
+    org = design_id(SETTINGS.makerworld_url)
+    # 0.30: every product's page the helper may work on (designId → page); the organizer's from Settings
+    pages = {org: SETTINGS.makerworld_url} if org else {}
+    pages.update({p.design_id: p.url for p in products.STANDS})
+    return {"model_url": SETTINGS.makerworld_url, "design_id": org, "pages": pages,
+            "shopdeck": bool(SETTINGS.labels.enabled),  # 0.33: shipping labels on ShopDeck (helper 2.5)
             "helper_version": _helper_version()}  # the helper reloads itself when its files were updated
 
 
@@ -746,11 +971,16 @@ def _helper_version() -> str:
 
 
 @app.get("/api/helper/next")
-def helper_next(status: str = "", on_page: int = 1):
+def helper_next(status: str = "", on_page: int = 1, design: str = ""):
+    """`design` (helper 2.4+): the designId of the page the working tab is on — it gets that page's work, or
+    `go` = the page to open for the next queued download. Without it (older helpers): organizer work only."""
     DOWNLOADER.seen(status, bool(on_page))
-    if not on_page:  # never hand out work to a tab that isn't on the model page
+    if not on_page:  # never hand out work to a tab that isn't on a model page
         return {"job": None, "paused": DOWNLOADER.paused}
-    return {"job": B.helper_next(), "paused": DOWNLOADER.paused}
+    d = design.strip() or None
+    job = B.helper_next(d)
+    go = None if job else B.helper_go(d)
+    return {"job": job, "paused": DOWNLOADER.paused, **({"go": go} if go else {})}
 
 
 @app.post("/api/helper/ping")
@@ -762,11 +992,119 @@ async def helper_ping(req: Request):
     return {"paused": DOWNLOADER.paused}
 
 
+# ---------------- shipping labels (0.33, labels.py; the helper's ShopDeck page: helper/shopdeck.js) ----------------
+def _label_call(fn, *a):
+    try:
+        return fn(*a)
+    except labels.LabelError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.get("/api/helper/shopdeck/next")
+def shopdeck_next():
+    if not SETTINGS.labels.enabled:
+        return {"job": None, "off": True}
+    return labels.helper_next(SETTINGS)
+
+
+@app.post("/api/helper/shopdeck/{job_id}/seen")
+async def shopdeck_seen(job_id: int, req: Request):
+    return _label_call(labels.helper_seen, job_id, dict(await req.json()))
+
+
+@app.post("/api/helper/shopdeck/{job_id}/step")
+async def shopdeck_step(job_id: int, req: Request):
+    b = await req.json()
+    return _label_call(labels.helper_step, job_id, str(b.get("step") or ""), dict(b))
+
+
+@app.post("/api/helper/shopdeck/{job_id}/fail")
+async def shopdeck_fail(job_id: int, req: Request):
+    b = await req.json()
+    return _label_call(labels.helper_fail, job_id, str(b.get("error") or "")[:400])
+
+
+@app.post("/api/helper/shopdeck/{job_id}/alive")
+async def shopdeck_alive(job_id: int, req: Request):
+    """0.33.2: the ShopDeck tab's heartbeat while it works on a job (+ its visibility, a note to keep)."""
+    return _label_call(labels.helper_alive, job_id, dict(await req.json()))
+
+
+@app.post("/api/helper/shopdeck/login")
+async def shopdeck_login(req: Request):
+    b = await req.json()
+    return labels.helper_login(int(b["job_id"]) if b.get("job_id") else None)
+
+
+@app.get("/api/labels")
+def labels_state(ids: str = ""):
+    """Print → Completed: label jobs, and for these orders whether their parcel can get a label."""
+    out = labels.state([i for i in ids.split(",") if i][:300])
+    return {**out, "enabled": bool(SETTINGS.labels.enabled), "one_at_a_time": bool(SETTINGS.labels.one_at_a_time),
+            "printer": SETTINGS.labels.printer, "tool": bool(platform_os.pdf_printer_tool(SETTINGS.labels.sumatra_path))}
+
+
+@app.post("/api/labels")
+async def labels_request(req: Request):
+    """Print label ({order_ids, items_ready, staff/token}): one parcel per order (its clubbed order)."""
+    b = await req.json()
+    try:
+        who = staff_pins.checker(str(b.get("token") or ""), str(b.get("staff") or ""))
+    except ValueError:
+        who = str(b.get("staff") or "")
+    jobs = _label_call(labels.request, [str(x) for x in b.get("order_ids") or []][:50], who,
+                       bool(b.get("items_ready")), SETTINGS)
+    with db.tx() as con:
+        db.count_usage(con, "label_print")
+    return {"jobs": jobs}
+
+
+@app.post("/api/labels/{job_id}/cancel")
+def labels_cancel(job_id: int):
+    return _label_call(labels.cancel, job_id)
+
+
+@app.post("/api/labels/{job_id}/continue")
+def labels_continue(job_id: int):
+    """A person signed in to ShopDeck again: the helper takes over."""
+    return _label_call(labels.signed_in, job_id)
+
+
+@app.get("/api/labels/{job_id}/trace")
+def labels_trace(job_id: int):
+    """0.33.2: what the label job saw and did, step by step."""
+    return {"events": labels.trace(job_id)}
+
+
+@app.post("/api/labels/{job_id}/reprint")
+async def labels_reprint(job_id: int):
+    return await run_in_threadpool(_label_call, labels.reprint, job_id)
+
+
+@app.get("/api/labels/printers")
+def labels_printers():
+    return {"printers": platform_os.printers(), "tool": platform_os.pdf_printer_tool(SETTINGS.labels.sumatra_path)}
+
+
 @app.post("/api/helper/jobs/{job_id}/result")
-async def helper_result(job_id: int, plate_1: UploadFile = File(...), plate_2: UploadFile = File(...),
-                        check: str = Form("")):
-    """`check` (JSON from helper 2.2.0+): did the License password box hold the password at Generate?"""
+async def helper_result(job_id: int, plate_1: UploadFile | None = File(None), plate_2: UploadFile | None = File(None),
+                        model: UploadFile | None = File(None), check: str = Form("")):
+    """An organizer: plate_1 + plate_2, `check` (JSON from helper 2.2.0+): did the License password box hold the
+    password at Generate? A name stand (helper 2.4): `model` = MakerWorld's one OBJ with both colours."""
     DOWNLOADER.seen("Uploading")
+    if model is not None:
+        m = await model.read(MAX_UPLOAD + 1)
+        if len(m) > MAX_UPLOAD:
+            raise HTTPException(413, "Model too large")
+        try:
+            return B.store_stand_result(job_id, m.decode("utf-8", errors="replace"))
+        except KeyError as e:
+            raise HTTPException(404, "No such job") from e
+        except ValueError as e:
+            B.store_failure(job_id, str(e))
+            raise HTTPException(400, str(e)) from e
+    if plate_1 is None or plate_2 is None:
+        raise HTTPException(400, "Send plate_1 and plate_2 (organizer) or model (name stand)")
     try:
         chk = json.loads(check) if check else None
     except json.JSONDecodeError:
@@ -1232,9 +1570,27 @@ def farm_info(request: Request):
 
 
 # ---------------- Make It (Bases / Names / Completed) ----------------
+_BOARD_LOCK = threading.Lock()
+_BOARD: tuple[float, dict] | None = None
+
+
 @app.get("/api/makeit")
 def makeit_board():
-    """Make It tab: plates to print by Bases and Names (with pre-selected printers) and Completed."""
+    """Make It tab: plates to print by Bases and Names (with pre-selected printers) and Completed.
+    0.28.1: one at a time — requests that arrive while it is being worked out get that same answer, so pages
+    asking together (several tabs, the 5 s refresh) never pile up and keep the computer busy."""
+    global _BOARD
+    asked = time.time()
+    with _BOARD_LOCK:
+        if _BOARD is not None and _BOARD[0] >= asked:
+            return _BOARD[1]
+        started = time.time()
+        out = _makeit_board()
+        _BOARD = (started, out)
+        return out
+
+
+def _makeit_board() -> dict:
     cfg = farm.load_config()
     st = farm.status(cfg)
     prs: list[dict] = []
@@ -1245,7 +1601,9 @@ def makeit_board():
             st["error"] = str(e)
     for p in prs:  # Print: a plate's options start from its printer's print defaults (Slicing)
         p["defaults"] = farm.print_defaults(p["id"], cfg)
-    return {"status": st, "printers": prs, **makeit.board(prs),
+        p["defaults_letters"] = farm.print_defaults(p["id"], cfg, "names")
+    farm.describe_roles(prs, cfg)  # 0.36: role, AMS slot plan and where it isn't loaded as planned
+    return {"status": st, "printers": prs, **makeit.board(prs), "shift": farm.shift(cfg),
             "options": {k: list(v) for k, v in farm.OPTIONS.items()},
             "speeds": list(farm.SPEEDS_SET),
             "worker": {"log": farm.WORKER.log[-20:]}}
@@ -1263,7 +1621,8 @@ async def makeit_start(req: Request):
         prs = await run_in_threadpool(farm.printers)
         return await run_in_threadpool(makeit.start_print, int(b["batch_id"]), str(b.get("file", "")),
                                        int(b["printer_id"]), b.get("options") or {}, prs, bool(b.get("force")),
-                                       str(b.get("speed") or ""), b.get("tray"), bool(b.get("bed_clear")))
+                                       str(b.get("speed") or ""), b.get("tray"), bool(b.get("bed_clear")),
+                                       b.get("tray2"))  # tray2: a name stand's letters slot (0.32)
     except makeit.BedNotClear as e:
         raise HTTPException(428, str(e)) from e
     except farm.StartBlocked as e:
@@ -1299,8 +1658,12 @@ def makeit_presets(printer: int = 0, refresh: int = 0):
             "speeds": list(farm.SPEEDS_SET), "options": {k: list(v) for k, v in farm.OPTIONS.items()},
             "plates": list(farm.PLATE_TYPES), "activity": makeit.slicing_summary()}
     chosen = farm.chosen_presets(printer, cfg)
+    lp = farm.letters_process(printer, cfg)
     base |= {"chosen": {k: f"{v['source']}:{v['id']}" for k, v in chosen.items()},
-             "names": {k: v["name"] for k, v in chosen.items()}}
+             "names": {k: v["name"] for k, v in chosen.items()},
+             "letters": {"process": f"{lp['source']}:{lp['id']}" if lp else "", "name": (lp or {}).get("name", ""),
+                         "speed": (cfg.get("letters_speed_by_printer") or {}).get(str(printer), "")},
+             "letters_printers": sorted(farm.letters_printers(cfg))}
     try:  # local (yours in Bambuddy) + standard profiles only — no cloud (ARCHITECTURE #62)
         avail, notice = farm.preset_listing(cfg, refresh=bool(refresh))
     except farm.FarmError as e:
@@ -1326,6 +1689,30 @@ async def makeit_presets_save(req: Request):
     except farm.FarmError as e:
         raise _farm_err(e) from e
     return {"names": {k: v["name"] for k, v in chosen.items()}}
+
+
+@app.put("/api/printers/external")
+async def printers_external(req: Request):
+    """Printers → External spool (0.28): {printer_id, on}. A printer with an AMS offers its external spool for
+    printing only when on."""
+    b = await req.json()
+    if not b.get("printer_id"):
+        raise HTTPException(400, "Choose a printer")
+    return await run_in_threadpool(farm.set_external, int(b["printer_id"]), bool(b.get("on")))
+
+
+@app.put("/api/makeit/letters")
+async def makeit_letters_save(req: Request):
+    """Slicing → Letters: {printer_id, process ("source:id" or "" = none), speed ("" = the printer's)}. Letter plates
+    slice with that process profile and print at that speed; with any set, letters print only on those printers."""
+    b = await req.json()
+    if not b.get("printer_id"):
+        raise HTTPException(400, "Choose a printer")
+    try:
+        return await run_in_threadpool(farm.set_letters, int(b["printer_id"]), str(b.get("process") or ""),
+                                       str(b.get("speed") or ""))
+    except farm.FarmError as e:
+        raise _farm_err(e) from e
 
 
 @app.put("/api/makeit/print-defaults")
@@ -1357,7 +1744,7 @@ async def makeit_slice(req: Request):
             raise _farm_err(e) from e
         if not p.get("printer_id"):
             raise HTTPException(400, "Choose the printer to slice for — a plate is sliced with its printer's profiles")
-        todo.append((bid, file, plate["kind"], (plate.get("colors") or [""])[0]))
+        todo.append((bid, file, plate["kind"], farm.plate_color(plate)))  # a name stand: "block+letters"
         pids.append(int(p["printer_id"]))
     if not todo:
         raise HTTPException(400, "Choose the plates to slice")
@@ -1412,6 +1799,26 @@ async def makeit_split(req: Request):
         raise HTTPException(409, str(e)) from e
 
 
+@app.post("/api/makeit/divide")
+async def makeit_divide(req: Request):
+    """Split a plate that isn't started into smaller plates ({batch_id, file, sizes: [2, 1]})."""
+    b = await req.json()
+    try:
+        return await run_in_threadpool(extras.divide, int(b.get("batch_id") or 0), str(b.get("file", "")),
+                                       list(b.get("sizes") or []))
+    except (extras.ExtraError, ValueError) as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.post("/api/makeit/join")
+async def makeit_join(req: Request):
+    b = await req.json()
+    try:
+        return extras.join(int(b.get("batch_id") or 0), str(b.get("file", "")))
+    except extras.ExtraError as e:
+        raise HTTPException(409, str(e)) from e
+
+
 @app.post("/api/verify")
 async def verify_submit(req: Request):
     """Print → Verify (and Completed → Found a problem): {carrier: {batch_id, file}, staff, results, note}."""
@@ -1434,6 +1841,56 @@ def verify_letters(batch_id: int, plate: str, idx: int):
         return {"pieces": verify.letter_pieces(batch_id, plate, idx)}
     except (ValueError, extras.ExtraError) as e:
         raise HTTPException(409, str(e)) from e
+
+
+@app.get("/api/printers/now")
+def printers_now_light():
+    """Every page, every 30 s: each printer's state, for the "printer finished / failed" alert."""
+    cfg = farm.load_config()
+    if not farm.status(cfg)["connected"]:
+        return {"printers": []}
+    try:
+        prs = farm.printers(cfg)
+    except farm.FarmError:
+        return {"printers": []}
+    return {"printers": [{"id": p["id"], "name": p["name"], "state": (p.get("status") or {}).get("state", ""),
+                          "connected": (p.get("status") or {}).get("connected", False),
+                          "clear": (p.get("status") or {}).get("awaiting_plate_clear", False)} for p in prs]}
+
+
+@app.get("/api/stats")
+def stats_get(days: int = 30):
+    """Stats page: made per day against new orders, backlog, printers, checkers, waiting times."""
+    from . import stats
+
+    return stats.stats(days, SETTINGS.daily_target)
+
+
+@app.get("/api/stats/print-times")
+def stats_print_times():
+    """Stats → Print time per letter (0.35): each printer's figures from the prints already done."""
+    from . import estimate
+
+    try:
+        prs = farm.printers(with_status=False)
+    except farm.FarmError:
+        prs = []
+    m = estimate.model(prs)
+    return {"rows": estimate.table(prs), "all": {k: (m.get(k) or {}).get("all") for k in ("bases", "names", "stands")}}
+
+
+@app.post("/api/stats/target")
+async def stats_target(req: Request):
+    """The daily target (orders made per day) shown on Stats."""
+    try:
+        n = int((await req.json()).get("target") or 0)
+    except (TypeError, ValueError) as e:
+        raise HTTPException(400, "Type a number") from e
+    if not 0 <= n <= 10000:
+        raise HTTPException(400, "Type a number from 0 to 10000")
+    SETTINGS.daily_target = n
+    save_settings(SETTINGS)
+    return {"target": n}
 
 
 @app.get("/api/staff")
@@ -1646,6 +2103,32 @@ async def farm_connect(req: Request):
         raise _farm_err(e) from e
 
 
+@app.get("/api/farm/roles")
+def farm_roles():
+    """Printers → Printer roles (0.36): each printer with its role, AMS slot plan and what's loaded; the shift."""
+    cfg = farm.load_config()
+    try:
+        prs = farm.printers(cfg)
+    except farm.FarmError as e:
+        raise HTTPException(400, str(e)) from e
+    farm.describe_roles(prs, cfg)
+    return {"shift": farm.shift(cfg), "roles": list(farm.ROLES),
+            "printers": [{"id": p["id"], "name": p["name"], "model": p.get("model") or "", "role": p["role"],
+                          "ams": p["ams"], "slot_plan": p["slot_plan"], "slot_issues": p["slot_issues"],
+                          "loaded": [{"tray": s.get("tray"), "slot": s.get("slot"), "color": s.get("name") or s.get("color")}
+                                     for s in p.get("spools") or []]} for p in prs]}
+
+
+@app.post("/api/farm/roles")
+async def farm_roles_set(req: Request):
+    b = await req.json()
+    try:
+        farm.set_roles(b.get("roles") or {}, b.get("slots") or {}, b.get("shift"))
+    except (farm.FarmError, ValueError) as e:
+        raise HTTPException(400, str(e)) from e
+    return farm_roles()
+
+
 @app.post("/api/farm/refresh")
 def farm_refresh():
     """Printers → Refresh from Bambuddy: every printer reports its status and filament again (e.g. after a
@@ -1791,6 +2274,9 @@ async def put_settings(req: Request):
     except (TypeError, ValueError) as e:
         raise HTTPException(400, f"Invalid settings: {e}") from e
     new.lan_access = SETTINGS.lan_access  # changed only through /api/portal (this computer)
+    new.help_access = SETTINGS.help_access  # … and /api/help-portal
+    new.daily_target = SETTINGS.daily_target  # Stats → daily target
+    new.report_import = SETTINGS.report_import  # /api/report-import
     if is_local(req):  # on the SnapSTL computer: folders can be changed
         out = Path(new.output_dir).expanduser()
         if not out.is_absolute():

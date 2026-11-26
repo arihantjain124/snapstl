@@ -106,6 +106,63 @@ class PlateSettings:
     rotations: list[int] = field(default_factory=lambda: [0, 180])  # degrees about Z only
 
 
+@dataclass
+class StandBand:
+    """Name stands (0.29): size by letter count (Settings → Name stands)."""
+    min_letters: int
+    max_letters: int  # inclusive; 999 = "and up"
+    length: float  # X, mm
+    height: float  # letter height when it stands (Y on the bed), mm
+
+
+def default_stand_bands() -> list[StandBand]:
+    # starting values (lengths as the organizer's): the owner checks them on the first prints
+    return [StandBand(1, 3, 195, 40), StandBand(4, 4, 200, 40), StandBand(5, 5, 210, 40),
+            StandBand(6, 7, 222, 40), StandBand(8, 10, 232, 40), StandBand(11, 999, 240, 40)]
+
+
+def default_stand_products() -> dict:
+    """Per product: letter spacing (MakerWorld's default) and the two filament colours (owner, 0.29)."""
+    return {"gta": {"letter_spacing": 25, "base_color": "black", "letter_color": "white"},
+            "harry_potter": {"letter_spacing": 0, "base_color": "yellow", "letter_color": "black"},
+            "barbie": {"letter_spacing": 0, "base_color": "hot pink", "letter_color": "white"}}
+
+
+@dataclass
+class StandSettings:
+    """Name stands (GTA, Harry Potter, Barbie): one block of settings for all of them (owner, 0.29).
+    MakerWorld settings not here stay at the model's default (place in printing position on, flat bottom
+    cut 0.5, units per em, preview colours)."""
+    bands: list[StandBand] = field(default_factory=default_stand_bands)
+    thickness: float = 40.0        # total, mm: back thickness = thickness − letter protrusion
+    letter_protrusion: float = 3.0  # raised letters, mm (the top colour)
+    font_size: float = 40.0
+    brim_offset: float = 6.0        # how far the coloured block grows around the letters, mm
+    products: dict = field(default_factory=default_stand_products)
+
+    def validate(self) -> list[str]:
+        errs = []
+        if not (10 <= self.thickness <= 80):
+            errs.append("Name stands: thickness must be 10–80 mm")
+        if not (0.5 <= self.letter_protrusion <= 10) or self.letter_protrusion >= self.thickness:
+            errs.append("Name stands: letter protrusion must be 0.5–10 mm and less than the thickness")
+        if not (10 <= self.font_size <= 200):
+            errs.append("Name stands: font size must be 10–200")
+        if not (0 <= self.brim_offset <= 10):
+            errs.append("Name stands: brim offset must be 0–10 mm")
+        if not self.bands:
+            errs.append("Name stands: the size table is empty")
+        for b in self.bands:
+            if not (20 <= b.length <= 246 and 10 <= b.height <= 120):
+                errs.append(f"Name stands: {b.min_letters}+ letters — length 20–246 mm, height 10–120 mm")
+                break
+        for k, v in (self.products or {}).items():
+            if not isinstance(v, dict) or not (-200 <= float(v.get("letter_spacing", 0)) <= 200) \
+                    or not str(v.get("base_color", "")).strip() or not str(v.get("letter_color", "")).strip():
+                errs.append(f"Name stands: {k} needs a letter spacing (−200–200) and both colours")
+        return errs
+
+
 def default_messages() -> dict:
     """Ready-made replies on the logistics page (0.25). {customer} {order_id} {name} {colour} {tracking} {address}
     {needed_by} {courier} {delivered} are filled in from the order. The page offers each one only for the
@@ -157,12 +214,33 @@ class LogisticsSettings:
     messages: dict = field(default_factory=default_messages)
 
 
+COURIERS = ("BLUEDART_AIR", "BLUEDART_SURFACE", "DELHIVERY_SURFACE", "XPRESSBEES")  # owner's order, 2026-11-24
+
+
+@dataclass
+class LabelSettings:
+    """Shipping labels from ShopDeck (0.33, labels.py): the SnapSTL Helper changes the courier and presses
+    Label in the person's signed-in Chrome; SnapSTL checks the PDF and prints it."""
+    enabled: bool = False
+    printer: str = "iDPRT SP410BT"       # the label printer's name in Windows / macOS (4x6 labels)
+    wait_after_logistics_s: int = 60    # ShopDeck may hand out the old label right after a courier change
+    couriers: list = field(default_factory=lambda: list(COURIERS))  # first one offered wins
+    one_at_a_time: bool = True          # one Print label press = one order (False: a selection, one after another)
+    regenerate_timeout_s: int = 180     # Expired AWB → Regenerate: how long to wait for the order to come back
+    pdf_timeout_s: int = 120            # after Label: how long to wait for the PDF in Downloads
+    pickup_timeout_s: int = 30          # 0.33.2: no ShopDeck tab took the job by then → stopped
+    stall_timeout_s: int = 60           # 0.33.2: the ShopDeck tab went quiet (in the background, closed) → stopped
+    sumatra_path: str = ""              # SumatraPDF.exe (Windows); empty = look in the usual places
+
+
 @dataclass
 class Settings:
     model: ModelParams = field(default_factory=ModelParams)
     scaling: ScalingSettings = field(default_factory=ScalingSettings)
     plate: PlateSettings = field(default_factory=PlateSettings)
     logistics: LogisticsSettings = field(default_factory=LogisticsSettings)
+    stands: StandSettings = field(default_factory=StandSettings)
+    labels: LabelSettings = field(default_factory=LabelSettings)
     output_dir: str = str(DEFAULT_OUTPUT_DIR)
     downloads_dir: str = str(DEFAULT_DOWNLOADS_DIR)  # downloaded models, kept until deleted in Finder
     makerworld_url: str = MAKERWORLD_URL  # the model-maker page the helper must be on (its designId is checked)
@@ -178,6 +256,9 @@ class Settings:
         """License password of the model currently set in makerworld_url."""
         return str(self.license_passwords.get(self.design_id, ""))
     delay_between_downloads_s: float = 3.0
+    daily_target: int = 0  # Stats: orders to make per day (0 = not set)
+    report_import: bool = True  # import new Order Reconciliation Reports from the Downloads folder by itself
+    help_access: bool = False  # the customer help page on port 8003 (its own password)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -199,14 +280,24 @@ class Settings:
             if not isinstance(s.logistics.messages, dict) or not s.logistics.messages \
                     or s.logistics.messages == old_default_messages():
                 s.logistics.messages = default_messages()
+        if isinstance(d.get("stands"), dict):
+            st = d["stands"]
+            bands = [StandBand(**_known(StandBand, b)) for b in st.get("bands") or []] or default_stand_bands()
+            prods = {**default_stand_products(), **{k: {**default_stand_products().get(k, {}), **v}
+                                                     for k, v in (st.get("products") or {}).items()
+                                                     if isinstance(v, dict)}}
+            s.stands = StandSettings(bands=bands, products=prods, **{k: v for k, v in _known(StandSettings, st).items()
+                                                                      if k != "products"})
+        if isinstance(d.get("labels"), dict):
+            s.labels = LabelSettings(**_known(LabelSettings, {**asdict(s.labels), **d["labels"]}))
         for k in ("output_dir", "downloads_dir", "makerworld_url", "lan_access", "delay_between_downloads_s",
-                  "license_passwords"):
+                  "license_passwords", "daily_target", "report_import", "help_access"):
             if k in d:
                 setattr(s, k, d[k])
         return s
 
     def validate(self) -> list[str]:
-        errs = self.model.validate()
+        errs = self.model.validate() + self.stands.validate()
         if design_id(self.makerworld_url) is None:
             errs.append("MakerWorld model page link must be a makerworld.com …/makerlab/parametricModelMaker?designId=… link")
         p = self.plate
@@ -231,6 +322,17 @@ class Settings:
                 isinstance(k, str) and isinstance(v, str) and 0 < len(k) <= 40 and len(v) <= 1000
                 for k, v in lg.messages.items()):
             errs.append("Messages: at most 20, each with a name (up to 40 letters) and text (up to 1000)")
+        lb = self.labels
+        if not isinstance(lb.printer, str) or len(lb.printer) > 200 or (lb.enabled and not lb.printer.strip()):
+            errs.append("Labels: choose the label printer")
+        for k, lo, hi in (("wait_after_logistics_s", 0, 600), ("regenerate_timeout_s", 30, 1800), ("pdf_timeout_s", 20, 600),
+                          ("pickup_timeout_s", 10, 600), ("stall_timeout_s", 20, 600)):
+            v = getattr(lb, k)
+            if not isinstance(v, int) or isinstance(v, bool) or not (lo <= v <= hi):
+                errs.append(f"Labels: {k.replace('_', ' ')} must be a whole number {lo}–{hi}")
+        if not isinstance(lb.couriers, list) or not lb.couriers or not all(
+                isinstance(c, str) and 0 < len(c.strip()) <= 40 for c in lb.couriers):
+            errs.append("Labels: list at least one courier, as ShopDeck names it (e.g. BLUEDART_AIR)")
         bands = sorted(self.scaling.bands, key=lambda b: b.min_letters)
         if not bands:
             errs.append("Scaling table is empty")

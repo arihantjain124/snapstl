@@ -144,9 +144,7 @@ def test_spoiled_letters_only(client, bb, monkeypatch):
 def test_merge_name_plates_across_batches_and_split_back(client, bb):
     b1, f1 = built_batch(client, "PO")
     b2, f2 = built_batch(client, "PN")
-    m = client.get("/api/makeit").json()
-    sug = {s["color"]: s for s in m["merge"]}
-    assert set(sug) == {"pink", "blue"} and sug["pink"]["names"] == 2
+    assert client.get("/api/makeit").json()["merge"] == []  # 0.28: merge ideas only once the bases are printed
     plates = [{"batch_id": b1, "file": PINK}, {"batch_id": b2, "file": PINK}]
     assert client.post("/api/makeit/merge", json={"plates": plates + [{"batch_id": b1, "file": BLUE}]}).status_code == 409
     r = client.post("/api/makeit/merge", json={"plates": plates})
@@ -343,3 +341,30 @@ def test_a_spoiled_letters_plate_goes_back_before_its_bases_are_printed(client, 
     assert r.status_code == 200 and r.json()["failed"]
     m = client.get("/api/makeit").json()
     assert m["printed_letters"] == [] and next(r for r in m["names"] if r["file"] == PINK)["job"]["state"] == "reprint"
+
+
+def test_a_base_plate_splits_into_smaller_plates_and_joins_back(client, bb):
+    """0.26: a plate not started splits into smaller plates (same size) to print on different printers; its
+    items are printed and checked on the parts; Join back returns the plate while no part is started."""
+    bid, folder = built_batch(client, "PZ")
+    r = client.post("/api/makeit/divide", json={"batch_id": bid, "file": BASE, "sizes": [1, 1]})
+    assert r.status_code == 200, r.text
+    parts = r.json()["files"]
+    assert len(parts) == 2 and all((folder / f).is_file() and len(read_3mf(folder / f)) == 1 for f in parts)
+    bases = {(x["file"], x["extra"]) for x in client.get("/api/makeit").json()["bases"]}
+    assert bases == {(parts[0], "divided"), (parts[1], "divided")}  # the whole plate left the list
+    assert client.post("/api/makeit/divide", json={"batch_id": bid, "file": BASE, "sizes": [1, 1]}).status_code == 409
+    assert client.post("/api/makeit/join", json={"batch_id": bid, "file": parts[1]}).status_code == 200
+    assert {x["file"] for x in client.get("/api/makeit").json()["bases"]} == {BASE}
+    assert client.post("/api/makeit/divide", json={"batch_id": bid, "file": BASE, "sizes": [2]}).status_code == 409
+    # split again; print and check on the parts
+    parts = client.post("/api/makeit/divide", json={"batch_id": bid, "file": BASE, "sizes": [1, 1]}).json()["files"]
+    client.post("/api/staff", json={"name": "Asha"})
+    for f in (*parts, PINK, BLUE):
+        assert client.post("/api/makeit/by-hand", json={"batch_id": bid, "file": f}).status_code == 200
+    assert client.post("/api/makeit/join", json={"batch_id": bid, "file": parts[0]}).status_code == 409  # printed
+    cards = _cards(client)
+    assert {f for _, f in cards} == {*parts, PINK, BLUE}
+    for (b, f), card in cards.items():
+        assert _check(client, b, f, _res(card, lambda i: "good")).status_code == 200
+    assert _tab(client, "PZ") == {"PZ1": "pack_it", "PZ2": "pack_it"}

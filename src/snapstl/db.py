@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import os
 import time
 import uuid
 from contextlib import contextmanager
@@ -122,6 +123,7 @@ CREATE INDEX IF NOT EXISTS print_jobs_batch ON print_jobs(batch_id);
 MIGRATIONS = [
     ("batches", "settings", "TEXT"),       # JSON settings snapshot used for this batch
     ("batches", "finished_at", "REAL"),
+    ("batches", "auto_build", "INTEGER"),  # 0.26 Make next batch: build the plates once every model is in
     ("orders", "customer_name", "TEXT"),   # shown in the UI
     ("orders", "phone", "TEXT"),
     ("orders", "address", "TEXT"),         # address, city, state, pincode joined
@@ -156,6 +158,7 @@ MIGRATIONS = [
     ("slices", "sliced_path", "TEXT"),      # OrcaSlicer's sliced file (batch folder / Sliced/<model>/…)
     ("files", "sent", "INTEGER"),           # 1 = in the shared records' report_uploads
     ("print_jobs", "ams_tray", "INTEGER"),  # filament slot it prints from (Bambu global tray id: AMS n·4+slot, 254 external)
+    ("print_jobs", "ams_tray2", "INTEGER"),  # name stands (0.32): the letters' slot (ams_tray = the block's)
     # 0.23: order flow + logistics (docs/build-plan-order-flow-and-logistics.md)
     ("orders", "first_status", "TEXT"),      # webstore status when first seen (orders first seen past PRINT are history)
     ("orders", "print_started_at", "REAL"),  # a plate holding it was first started → Printing
@@ -202,6 +205,11 @@ CREATE INDEX IF NOT EXISTS order_notes_order ON order_notes(order_id, at);
 CREATE TABLE IF NOT EXISTS usage_counts (day TEXT NOT NULL, feature TEXT NOT NULL, count INTEGER NOT NULL,
     sent INTEGER, PRIMARY KEY (day, feature));
 -- Print → Verify (0.24): who may check prints (a name is hidden, never removed); shared with every computer
+-- spare name pieces in stock (0.28, spares.py); shared with every computer, never deleted
+CREATE TABLE IF NOT EXISTS spares (uid TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT, part TEXT NOT NULL,
+    note TEXT, staff TEXT, added_at REAL, used_by TEXT, used_at REAL, removed_at REAL, changed REAL, computer TEXT,
+    sent INTEGER);
+CREATE INDEX IF NOT EXISTS spares_name ON spares(name, color);
 CREATE TABLE IF NOT EXISTS staff (name TEXT PRIMARY KEY COLLATE NOCASE, added_at REAL, hidden INTEGER NOT NULL DEFAULT 0,
     changed REAL, sent INTEGER);
 -- one row per printed item checked (a base or a name of one copy of an order on a plate); the newest row of an
@@ -226,6 +234,17 @@ CREATE INDEX IF NOT EXISTS extra_items_batch ON extra_items(batch_id);
 CREATE TABLE IF NOT EXISTS activity (id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL NOT NULL, kind TEXT NOT NULL,
     text TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS activity_at ON activity(at);
+-- shipping labels from ShopDeck (0.33, labels.py): one row per Print label press (this computer only)
+CREATE TABLE IF NOT EXISTS label_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL, search TEXT NOT NULL,
+    clubbed INTEGER NOT NULL DEFAULT 0, expected TEXT NOT NULL, state TEXT NOT NULL, step TEXT NOT NULL,
+    old_awb TEXT, new_awb TEXT, courier TEXT, wait_until REAL, pressed_at REAL, pdf TEXT, error TEXT,
+    items_ready_by TEXT, staff TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL, printed_at REAL,
+    prints INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS label_jobs_key ON label_jobs(key);
+-- what each label job saw and did, step by step (0.33.2): shown under a stopped label, for finding out why
+CREATE TABLE IF NOT EXISTS label_events (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER NOT NULL, at REAL NOT NULL,
+    what TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS label_events_job ON label_events(job_id);
 -- a person confirmed a printer's bed is empty (Start print / Printers → Clear plate)
 CREATE TABLE IF NOT EXISTS bed_clears (printer_id INTEGER PRIMARY KEY, at REAL NOT NULL);
 -- when a downloaded model was last used by a batch (models unused for 15 days go to the Recycle Bin)
@@ -278,6 +297,7 @@ def _upgrade_stamps(con) -> None:
 
 # columns of tables made in POST_SCHEMA
 LATE_MIGRATIONS = [
+    ("print_jobs", "started_at", "REAL"),  # 0.26: when Bambuddy said it is printing (Stats: hours printing)
     ("staff", "pin_hash", "TEXT"),         # 0.25.1: salted hash of the person's 4-digit PIN (staff.py)
     ("staff", "pin_changed", "REAL"),
 ]
@@ -294,6 +314,19 @@ def _add_columns(con, migrations) -> None:
                     raise
 
 
+# 0.28.1: tables and columns are made once per database file per run, not on every connection (the Print page
+# opened hundreds of connections per load, each re-checking every column: seconds of CPU)
+_SCHEMA_DONE: set[tuple] = set()
+
+
+def _file_key(p: Path) -> tuple | None:
+    try:
+        st = os.stat(p)
+    except OSError:
+        return None
+    return (str(Path(p).resolve()), st.st_ino, st.st_ctime_ns)
+
+
 def connect(path: Path | None = None) -> sqlite3.Connection:
     p = path or DB_PATH
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -301,10 +334,16 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA foreign_keys=ON")
-    con.executescript(SCHEMA)
-    _add_columns(con, MIGRATIONS)
-    con.executescript(POST_SCHEMA)
-    _add_columns(con, LATE_MIGRATIONS)
+    key = _file_key(p)
+    if key is None or key not in _SCHEMA_DONE:
+        con.executescript(SCHEMA)
+        _add_columns(con, MIGRATIONS)
+        con.executescript(POST_SCHEMA)
+        _add_columns(con, LATE_MIGRATIONS)
+        con.commit()
+        key = _file_key(p)
+        if key is not None:
+            _SCHEMA_DONE.add(key)
     # older rows: everything here is this computer's, and every batch gets a unique id
     con.execute("UPDATE batches SET computer_id=?, computer_name=? WHERE computer_id IS NULL", (computer.ID, computer.NAME))
     con.execute("UPDATE downloads SET computer_id=? WHERE computer_id IS NULL", (computer.ID,))
@@ -379,7 +418,7 @@ def add_note(con, order_id: str, text: str, author: str = "") -> dict:
 
 
 def add_activity(con, kind: str, text: str) -> None:
-    """One line on the Activities tab (kinds: download, build, print, check, merge, cleanup, sync)."""
+    """One line on the Activities tab (kinds: download, build, print, check, merge, cleanup, sync, orders, label)."""
     con.execute("INSERT INTO activity(at, kind, text) VALUES (?,?,?)", (now(), kind, (text or "")[:500]))
 
 

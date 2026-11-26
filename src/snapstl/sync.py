@@ -40,7 +40,7 @@ import threading
 import time
 from contextlib import contextmanager
 
-from . import computer, config, db
+from . import computer, config, db, products
 
 SCHEMA = "snapstl"
 SYNC_EVERY = 60
@@ -61,6 +61,7 @@ from .ingest import PRINT_STATUSES as _PS  # noqa: E402
 
 PRINT_SQL = ", ".join(f"'{x}'" for x in sorted(_PS))
 from . import report as _report  # noqa: E402
+from . import spares as _spares  # noqa: E402
 from . import tabs as _tabs  # noqa: E402
 
 REPORT_SQL = _report.setup_sql(SCHEMA).strip() + "\n"
@@ -276,14 +277,14 @@ CREATE OR REPLACE TRIGGER usage_counts_no_delete BEFORE DELETE ON {SCHEMA}.usage
     FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.refuse_delete();
 CREATE OR REPLACE TRIGGER usage_counts_no_truncate BEFORE TRUNCATE ON {SCHEMA}.usage_counts
     FOR EACH STATEMENT EXECUTE FUNCTION {SCHEMA}.refuse_delete();
-{REPORT_SQL}-- Only SnapSTL (the database owner, through the connection string) reads or writes these tables.
+{_spares.PG_SQL.format(S=SCHEMA)}{REPORT_SQL}-- Only SnapSTL (the database owner, through the connection string) reads or writes these tables.
 -- Row level security with no policies refuses everyone else, and Supabase's API roles get no access
 -- even if the schema is ever exposed in the Data API settings. The owner bypasses RLS.
 DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['order_records', 'batch_records', 'meta', 'report_rows', 'report_uploads',
-                           'order_notes', 'usage_counts', 'staff', 'print_checks'] LOOP
+                           'order_notes', 'usage_counts', 'staff', 'print_checks', 'spares'] LOOP
     IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = format('{SCHEMA}.%I', t)::regclass) THEN
       EXECUTE format('ALTER TABLE {SCHEMA}.%I ENABLE ROW LEVEL SECURITY', t);
     END IF;
@@ -440,6 +441,13 @@ _setup_done = ""  # connection string the tables were last checked on
 _lock = threading.RLock()
 
 
+# 0.26.1: never hang. A sync cut off midway (app restarted) can leave its transaction open in the pooler; the
+# setup then waited for it forever ("Connecting to the shared order records…"). Now a transaction left idle
+# ends by itself, and the setup gives up after LOCK_WAIT and tries again at the next sync.
+IDLE_TX_TIMEOUT = "120s"
+LOCK_WAIT = "20s"
+
+
 @contextmanager
 def _remote(url: str | None = None):
     """One transaction on the shared records (committed at the end, rolled back on error)."""
@@ -455,9 +463,15 @@ def _remote(url: str | None = None):
         raise SyncError(f"Can't reach the shared records: {_short(e)}") from e
     try:
         with con:
+            con.execute(f"SET idle_in_transaction_session_timeout = '{IDLE_TX_TIMEOUT}'")
             if _setup_done != url:
-                con.execute("SELECT pg_advisory_xact_lock(83170002)")
-                con.execute(_SETUP_SQL)
+                con.execute(f"SET LOCAL lock_timeout = '{LOCK_WAIT}'")
+                try:
+                    con.execute("SELECT pg_advisory_xact_lock(83170002)")
+                    con.execute(_SETUP_SQL)
+                except psycopg.errors.LockNotAvailable as e:
+                    raise SyncError("The shared records are busy (an earlier connection still holds a table) — "
+                                    "trying again in a minute") from e
                 r = con.execute(f"SELECT value FROM {SCHEMA}.meta WHERE key='schema_version'").fetchone()
                 have = int(r["value"]) if r else 0
                 if have > SCHEMA_VERSION:
@@ -507,9 +521,9 @@ def _payload(o: dict) -> dict:
 
 def _evaluate(local: dict, status: str | None) -> str:
     """Local state for an order nobody is making (released)."""
-    from .ingest import PRINT_STATUSES
+    from .ingest import to_make
 
-    if (status or "") not in PRINT_STATUSES:
+    if not to_make(status):  # 0.34: PRINT, AWB EXPIRED, ACCEPTANCE PENDING
         return "not_needed"
     return "needs_review" if (local.get("review_reason") or not local.get("color")) else "ready"
 
@@ -565,6 +579,8 @@ def merge(con, r: dict, force: bool = False) -> str | None:
     """Bring one shared record into the local database. Returns the order_id if this computer must
     release a stale claim of its own (its batch no longer exists here)."""
     oid = r["order_id"]
+    if r.get("sku") and products.by_sku(r["sku"]) is None:
+        return None  # a product this version doesn't know stays out
     r = {**r, "status_at": db.upgrade_stamp(r.get("status_at"))}  # written by a SnapSTL before 0.22.21
     cur = con.execute("SELECT * FROM orders WHERE order_id=?", (oid,)).fetchone()
     L = dict(cur) if cur else None
@@ -634,6 +650,11 @@ def merge(con, r: dict, force: bool = False) -> str | None:
                 sets.update(state=_evaluate(L, status), batch_id=None, batch_uid=None, batch_label=None,
                             batch_computer=None, batch_computer_id=None, printed_at=None, made_at=None,
                             print_started_at=None, state_at=r["state_at"])
+                # 0.32.1: say so — an order leaving its batch could otherwise be made a second time unseen
+                db.add_activity(con, "orders", f"{L.get('name') or oid} ({oid}) left "
+                                f"{L.get('batch_label') or ('batch #' + str(L['batch_id']) if L.get('batch_id') else 'its batch')}"
+                                f" — released in the shared records by {r.get('updated_by') or 'another computer'}"
+                                + (" after it was made" if L.get("made_at") else ""))
             if making or sets.get("state", L["state"]) in ("ready", "needs_review", "not_needed", "skipped"):
                 # Skip / Make anyway / Approve pressed on another computer
                 v = _view({**L, **sets}, r, status)
@@ -728,7 +749,11 @@ def _push(rc) -> int:
             con.execute("DELETE FROM sync_state WHERE key='pulled_until'")
             con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES (?, '1')", (VIEW_SENT,))
         con.execute("INSERT OR IGNORE INTO sync_outbox(order_id, queued_at) SELECT order_id, ? FROM orders "
-                    "WHERE COALESCE(in_remote,0)=0", (db.now(),))
+                    f"WHERE COALESCE(in_remote,0)=0 AND {products.shared_sql()}", (db.now(),))
+        # a name stand reaches the shared records only once it's in a batch (a computer before 0.29 would take a
+        # ready one for an organizer)
+        con.execute("DELETE FROM sync_outbox WHERE order_id IN (SELECT order_id FROM orders "
+                    f"WHERE NOT {products.shared_sql()})")
         queued = db.rows(con, "SELECT o.*, q.queued_at FROM sync_outbox q JOIN orders o USING(order_id) "
                               f"ORDER BY q.queued_at LIMIT {PUSH_BATCH}")
         orphans = [r[0] for r in con.execute("SELECT order_id FROM sync_outbox WHERE order_id NOT IN "
@@ -846,6 +871,7 @@ def _push_notes(rc) -> int:
             con.execute("UPDATE usage_counts SET sent=1 WHERE day=? AND feature=? AND count=?",
                         (u["day"], u["feature"], u["count"]))
     _push_checks(rc)
+    _spares.push(rc, SCHEMA, _many)
     return len(notes)
 
 
@@ -878,6 +904,7 @@ def _push_checks(rc) -> None:
 
 
 def _pull_checks(rc) -> None:
+    _spares.pull(rc, SCHEMA)
     staff = rc.execute(f"SELECT name, added_at, hidden, changed, pin_hash, pin_changed FROM {SCHEMA}.staff").fetchall()
     with db.tx() as con:
         for x in staff:
@@ -1105,6 +1132,7 @@ def _save_copy(rc, dest) -> dict:
     usage_rows = rc.execute(f"SELECT * FROM {SCHEMA}.usage_counts ORDER BY day, feature").fetchall()
     staff = rc.execute(f"SELECT * FROM {SCHEMA}.staff ORDER BY name").fetchall()
     checks = rc.execute(f"SELECT * FROM {SCHEMA}.print_checks ORDER BY stored_at").fetchall()
+    spare_rows = rc.execute(f"SELECT * FROM {SCHEMA}.spares ORDER BY added_at").fetchall()
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -1112,7 +1140,7 @@ def _save_copy(rc, dest) -> dict:
         json.dump({"saved_at": time.time(), "by": computer.NAME, "order_records": orders,
                    "batch_records": batches, "report_rows": reports, "report_uploads": uploads,
                    "shop_report_lines": lines, "order_notes": notes, "usage_counts": usage_rows,
-                   "staff": staff, "print_checks": checks},
+                   "staff": staff, "print_checks": checks, "spares": spare_rows},
                   f, default=str, indent=1)
     os.replace(tmp, dest)
     return {"orders": len(orders), "batches": len(batches)}

@@ -15,6 +15,12 @@ next time a batch needs it. STL is only this folder's internal format; plates ar
 
 Key = hash of everything that changes the geometry (name + model options + compartments +
 license password). The password itself is never written; only a salted hash goes into the key.
+
+Name stands (0.30) are kept the same way, in `<Name> - GTA - <key>/`:
+    model.obj    exactly as MakerWorld generated it (both colours, as materials)
+    base.stl     the coloured block (bottom), unscaled
+    letters.stl  the raised letters (top), unscaled
+    info.json
 """
 from __future__ import annotations
 
@@ -55,6 +61,37 @@ def cache_key(name: str, model: ModelParams, compartments: int, password: str, d
     return hashlib.sha256(payload.encode()).hexdigest()[:24]
 
 
+def stand_key(name: str, product: str, design: str, fields: list) -> str:
+    """Download key for one name stand: the name, the product's model and every value sent to MakerWorld."""
+    data = {"v": CACHE_VERSION, "kind": "stand", "name": name, "product": product, "design": design,
+            "fields": [f for f in fields if f[0] != "text input"]}
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()[:24]
+
+
+def stand_folder_name(key: str, name: str, label: str) -> str:
+    return f"{_BAD.sub('', name).strip()[:60] or 'model'} - {_BAD.sub('', label).strip()[:30]} - {key}"
+
+
+def store_stand(key: str, block: trimesh.Trimesh, letters: trimesh.Trimesh, obj_text: str, meta: dict,
+                root: Path | None = None) -> Path:
+    """Save (or overwrite) a name stand: the original OBJ and its two parts."""
+    root = root or ROOT
+    root.mkdir(parents=True, exist_ok=True)
+    d = find(key, root) or root / stand_folder_name(key, meta.get("name", "model"), meta.get("product_label", "stand"))
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "model.obj").write_text(obj_text, encoding="utf-8")
+    block.export(d / "base.stl", file_type="stl")
+    letters.export(d / "letters.stl", file_type="stl")
+    (d / "info.json").write_text(json.dumps(meta, indent=2))
+    touch(d)
+    return d
+
+
+def _second(d: Path) -> Path:
+    """The organizer's name piece, or a name stand's letters."""
+    return d / "name.stl" if (d / "name.stl").exists() else d / "letters.stl"
+
+
 def folder_name(key: str, name: str, compartments: int) -> str:
     label = _BAD.sub("", name).strip()[:60] or "model"
     return f"{label} - {int(compartments)} comp - {key}"
@@ -74,14 +111,14 @@ def find(key: str, root: Path | None = None) -> Path | None:
 
 def load_exists(key: str, root: Path | None = None) -> bool:
     d = find(key, root)
-    return bool(d) and (d / "base.stl").exists() and (d / "name.stl").exists()
+    return bool(d) and (d / "base.stl").exists() and _second(d).exists()
 
 
 def load(key: str, root: Path | None = None) -> tuple[trimesh.Trimesh, trimesh.Trimesh] | None:
     d = find(key, root)
     if not d:
         return None
-    b, n = d / "base.stl", d / "name.stl"
+    b, n = d / "base.stl", _second(d)
     if not (b.exists() and n.exists()):
         return None
     try:

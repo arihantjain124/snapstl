@@ -300,6 +300,7 @@ def test_cleanup_keeps_made_orders_and_reset_empties(client):
 def test_other_computers_need_portal_and_login(client, monkeypatch):
     from snapstl import server, logistics
     monkeypatch.setattr(logistics, 'PORT', 0)  # disposable port; never collide with the owner's listener
+    monkeypatch.setattr(logistics, 'HELP_PORT', 0)
     remote = TestClient(server.app, base_url='http://192.168.1.20:8317', client=('192.168.1.50', 50001))
     staff = TestClient(logistics.app, base_url='http://192.168.1.20:8002', client=('192.168.1.50', 50001))
     assert staff.get('/api/logistics/orders').status_code == 403
@@ -313,25 +314,41 @@ def test_other_computers_need_portal_and_login(client, monkeypatch):
         assert staff.post('/api/login', json={'password': 'wrong'}).status_code == 401
         assert staff.post('/api/login', json={'password': 'portal-pass-123'}).status_code == 200
         page = staff.get('/')
-        assert page.status_code == 200 and 'const LOGISTICS=true;' in page.text
-        assert 'id="t-desk"' in page.text
-        for path in ['/api/logistics/orders?view=labels', '/api/logistics/counts', '/api/logistics/meta',
-                     '/api/logistics/orders.csv?view=labels']:
+        assert page.status_code == 200 and "const LOGISTICS='pack';" in page.text and 'id="t-pack"' in page.text
+        for path in ['/api/pack/list', '/api/pack/list?view=today&q=x', '/api/logistics/meta']:
             assert staff.get(path).status_code == 200, path
-        # 0.23: only the logistics lists and its own actions; nothing else of the app
+        # 0.26: the packing page reads only its list and makes only labels; customer help is on 8003
         for path in ['/api/settings', '/api/state', '/api/farm/printers', '/api/helper/next', '/api/orders',
-                     '/api/orders/facets', '/api/orders.csv', '/api/usage']:
+                     '/api/orders/facets', '/api/orders.csv', '/api/usage', '/api/logistics/orders',
+                     '/api/logistics/order/X1', '/api/logistics/counts']:
             assert staff.get(path).status_code == 403, path
         for path in ['/api/sync', '/api/orders/printed', '/api/ingest', '/api/batches', '/api/portal',
-                     '/api/orders/X1/skip', '/api/orders/X1/reset', '/api/orders/X1/clear-flag', '/api/orders/X1/name']:
+                     '/api/orders/X1/skip', '/api/orders/X1/reset', '/api/orders/X1/clear-flag', '/api/orders/X1/name',
+                     '/api/logistics/order/X1/note', '/api/logistics/order/X1/express']:
             assert staff.post(path, json={}).status_code == 403, path
         assert staff.post('/api/logistics/order/nope/label', json={}).status_code == 404  # allowed path, no order
         assert staff.post('/api/usage', json={'feature': 'open_page'}).status_code == 200
-        assert staff.get('/api/logistics/counts', headers={'Origin': 'http://evil.example'}).status_code == 403
+        assert staff.get('/api/pack/list', headers={'Origin': 'http://evil.example'}).status_code == 403
         assert client.get('/api/state').status_code == 200
     finally:
         client.post('/api/portal', json={'enabled': False})
-    assert staff.get('/api/logistics/orders').status_code == 403
+    assert staff.get('/api/pack/list').status_code == 403
+
+    # customer help (8003): its own password and cookie; the full customer-care lists and actions
+    help_ = TestClient(logistics.HELP.app, base_url='http://192.168.1.20:8003', client=('192.168.1.50', 50001))
+    assert help_.get('/api/logistics/orders').status_code == 403  # off
+    assert client.post('/api/help-portal', json={'enabled': True}).status_code == 400  # no password yet
+    r = client.post('/api/help-portal', json={'enabled': True, 'password': 'help-pass-1234'})
+    assert r.status_code == 200 and r.json()['listening_on_network']
+    try:
+        assert help_.post('/api/login', json={'password': 'portal-pass-123'}).status_code == 401  # packing password
+        assert help_.post('/api/login', json={'password': 'help-pass-1234'}).status_code == 200
+        assert "const LOGISTICS='help';" in help_.get('/').text
+        for path in ['/api/logistics/orders?view=late', '/api/logistics/counts', '/api/logistics/meta']:
+            assert help_.get(path).status_code == 200, path
+        assert help_.get('/api/settings').status_code == 403 and help_.post('/api/ingest', json={}).status_code == 403
+    finally:
+        client.post('/api/help-portal', json={'enabled': False})
 
 
 def _req(path, origin=None, host="127.0.0.1:8317", client_ip="127.0.0.1"):
@@ -660,7 +677,7 @@ def test_logistics_page_uses_utf8(monkeypatch):
             assert kwargs.get('encoding') == 'utf-8'
         return original(path, *args, **kwargs)
     monkeypatch.setattr(Path, 'read_text', windows_default)
-    assert 'const LOGISTICS=true;' in logistics.page().body.decode('utf-8')
+    assert "const LOGISTICS='pack';" in logistics.PACK.page().body.decode('utf-8')
 
 
 def test_logistics_reports_occupied_port(monkeypatch):

@@ -65,6 +65,8 @@ Bambuddy hold, selected filament slot, printer presets and bed-clear rules as Pr
   (`farm.refresh_from_bambuddy`) only asks printers to report their status again.
 
 **Technical rules**
+- **Shipping labels (0.33, `labels.py`, `helper/shopdeck.js`)**: the helper never signs in to ShopDeck (a person does, then presses Continue) and uses only the page's own buttons, never ShopDeck's API. A label is pressed only after SnapSTL matched the page to the report's parcel exactly, the courier change gave a new AWB and the wait passed; it prints only after the PDF's AWB, order ID, item count, quantity and names matched. Every check fails closed; never retry a stopped job by itself, never loosen a check to make a job pass. A search counts as "not found" only on ShopDeck's own *No result found* (0.33.2); a quiet ShopDeck tab stops the job (never wait forever).
+- **Clubbed orders (0.34, `clubbed.py`)**: batched whole, and not at all while a name of it waits for its check — never batch one name of a clubbed order alone (one parcel ships only when every name is made).
 - MakerWorld models come **only** from the SnapSTL Helper (`helper/`) in the user's own Chrome.
   Direct API calls and app-controlled browsers were tried and **don't work** (ARCHITECTURE §16) — don't retry them.
 - Never add code that hides automation, spoofs browser fingerprints, or solves CAPTCHAs/Cloudflare
@@ -175,7 +177,9 @@ Bambuddy hold, selected filament slot, printer presets and bed-clear rules as Pr
 | Updates (git pull, helper self-reload) | `updater.py`, `server.update_*`, `scripts/update.sh`, `helper/background.js` (`reloadIfUpdated`) |
 | Logistics page (label + customer-care team): lists, search, actions, tracking link, messages | `logistics_api.py` (`VIEWS`, `ROUTES`), `logistics.py` (`READS` / `WRITES`), `settings.LogisticsSettings`, `<section id="t-desk">` + `dLoad` / `dOpen` in `index.html`; `tests/test_logistics_page.py` |
 | Access control / other computers | `server._blocked`, `server.access_control`, `/api/portal`, `__init__.serve` (bind address) |
-| Download queue + folder, activity list | `<section id="t-activity">` in `index.html` (`loadQueue`, `loadActivity`), `GET /api/activity` in `server.py`, `db.add_activity`; `cache.py` for the folder |
+| Download queue + folder, batches | Print → Batches (`<div id="mk-batches">` in `index.html`, `loadQueue`, `loadBatches`; 0.35: no Activities page), `GET /api/activity` in `server.py` (still used), `db.add_activity`; `cache.py` for the folder |
+| Print time estimates | `estimate.py` (from done prints), `makeit.board` (`est`, `free_in` per printer choice), `/api/stats/print-times` |
+| Printer roles, AMS slot plan, shift | `farm.py` (`role_by_printer`, `slots_by_printer`, `shift`, `describe_roles`), `makeit.choose` (`ROLE_RANK`), Printers → Printer roles, Print → Before you leave |
 | Print → Verify: checks, staff names, order made only when checked | `verify.py` (items, carriers, `update_orders`, `submit`, `backfill`), `makeit.update_made` (calls it), `vRender` / `cRender` in `index.html`; `tests/test_verify.py` |
 | Fix plates (letters / name / base) and merged plates | `extras.py` (`pieces`, `make_fixes`, `merge`, `split`, `suggestions`), `makeit.board` (lists them); `tests/test_verify.py` |
 | Bed clear before a print | `makeit.bed_state` / `confirm_bed_clear` / `start_print`, `farm.Worker` (never releases onto a busy printer) |

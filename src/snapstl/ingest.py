@@ -1,6 +1,7 @@
 """Ingest the webstore 'Order Reconciliation Report' (XLSX or CSV).
 
-* Keeps only SKU `Magicians_35` rows.
+* Keeps the rows of the products SnapSTL makes (`products.py`: `Magicians_35`, and since 0.29 the name
+  stands); every row of every product also goes to the shop records (shop.py).
 * Upserts by Order ID, so the same order in later reports is never duplicated.
 * Only orders whose report status is PRINT need making; delivered / in transit /
   packed / cancelled / returned orders are recorded but skipped.
@@ -19,10 +20,18 @@ from pathlib import Path
 
 from datetime import datetime, timezone
 
-from . import db, report, shop, tabs
+from . import db, products, report, shop, tabs
 
 SKU = "magicians_35"
 PRINT_STATUSES = {"PRINT"}
+# 0.34 (owner): statuses whose order is still to be made — PRINT, AWB EXPIRED (the label expired, a new one can be
+# made) and ACCEPTANCE PENDING (accepted later; the AWB is made once the piece is made, so it doesn't expire)
+MAKE_STATUSES = ("PRINT", "AWB-EXPIRED", "ACCEPTANCE-PENDING")
+
+
+def to_make(status: str | None) -> bool:
+    """The webstore status of an order that is still to be made (any spelling: 'AWB EXPIRED', 'acceptance_pending')."""
+    return tabs.norm_status(status) in MAKE_STATUSES
 COLOR_ALIASES = {"gray": "grey"}
 MAX_CLEAN_LETTERS = 15
 
@@ -35,6 +44,7 @@ class IngestSummary:
     already_seen_file: bool = False
     rows_total: int = 0
     sku_rows: int = 0
+    by_product: dict = field(default_factory=dict)  # 0.29: rows per product key
     new: int = 0
     updated: int = 0
     unchanged: int = 0
@@ -254,16 +264,20 @@ def ingest(data: bytes, filename: str, db_path: Path | None = None) -> IngestSum
                 shop.store_line(con, any_id, {h: (r[i] if i < len(r) else "") for h, i in ix.items()},
                                 status_stamp(max((_date(get(r, c)) for c in EVENT_COLUMNS), default=""),
                                              s.as_of, uploaded), filename)
-            if get(r, "SKU Code").lower() != SKU:
+            prod = products.by_sku(get(r, "SKU Code"))
+            if prod is None or get(r, "SKU Code").lower() == ADHOC_SKU.lower():  # Adhoc: typed in by hand only
                 continue
             s.sku_rows += 1
+            s.by_product[prod.key] = s.by_product.get(prod.key, 0) + 1
             oid = get(r, "Order ID")
             if not oid:
-                s.warnings.append("A Magicians_35 row has no Order ID — skipped")
+                s.warnings.append(f"A {get(r, 'SKU Code')} row has no Order ID — skipped")
                 continue
             stamp = status_stamp(max((_date(get(r, c)) for c in EVENT_COLUMNS), default=""), s.as_of, uploaded)
-            report.store(con, oid, report.parse(lambda hdr, r=r: get(r, hdr)), stamp, filename)
+            if prod is products.ORGANIZER:  # report_rows = the organizer's report columns (shared records)
+                report.store(con, oid, report.parse(lambda hdr, r=r: get(r, hdr)), stamp, filename)
             _upsert(con, s, filename, {
+                "sku": products.canonical_sku(get(r, "SKU Code")), "product": prod,
                 "order_id": oid,
                 "clubbed_id": get(r, "Clubbed Order ID"),
                 "order_date": _iso_date(get(r, "Order Creation Date")),
@@ -302,18 +316,20 @@ def _qty(v: str) -> int:
         return 1
 
 
-def _evaluate(name: str, color: str, review: str | None, source_status: str) -> tuple[str, str | None]:
-    if source_status not in PRINT_STATUSES:
+def _evaluate(name: str, color: str, review: str | None, source_status: str,
+              needs_color: bool = True) -> tuple[str, str | None]:
+    if not to_make(source_status):
         return "not_needed", review
-    if not color:
+    if needs_color and not color:  # a name stand's colours come with the product (0.29)
         review = "; ".join(x for x in [review, "No colour in the order"] if x)
     return ("needs_review" if review else "ready"), review
 
 
 def _upsert(con, s: IngestSummary, filename: str, o: dict) -> None:
     cust = o["cust"]
-    raw_name = cust.get("enter your first name", "")
-    raw_color = cust.get("color", "") or cust.get("colour", "")
+    prod = o.get("product") or products.ORGANIZER
+    raw_name = next((cust[k] for k in products.NAME_FIELDS[prod.kind] if cust.get(k)), "")
+    raw_color = (cust.get("color", "") or cust.get("colour", "")) if prod.kind == "organizer" else ""
     special = cust.get("special requests", "")
     t = db.now()
     cur = con.execute("SELECT * FROM orders WHERE order_id=?", (o["order_id"],)).fetchone()
@@ -323,13 +339,13 @@ def _upsert(con, s: IngestSummary, filename: str, o: dict) -> None:
         color = normalise_color(raw_color)
         if special:
             review = "; ".join(x for x in [review, f"Special request: {special}"] if x)
-        state, review = _evaluate(name, color, review, o["source_status"])
+        state, review = _evaluate(name, color, review, o["source_status"], prod.kind == "organizer")
         con.execute(
             """INSERT INTO orders(order_id,clubbed_id,sku,order_date,source_status,quantity,raw_name,raw_color,
                special_request,name,color,review_reason,state,first_file,last_file,first_seen,updated_at,
                customer_name,phone,address,status_at,state_at,first_status)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (o["order_id"], o["clubbed_id"], "Magicians_35", o["order_date"], o["source_status"], o["quantity"],
+            (o["order_id"], o["clubbed_id"], o.get("sku") or "Magicians_35", o["order_date"], o["source_status"], o["quantity"],
              raw_name, raw_color, special, name, color, review, state, filename, filename, t, t,
              o["customer_name"], o["phone"], o["address"], o["status_at"], t, o["source_status"]),
         )
@@ -383,14 +399,15 @@ def _past_print(st: str) -> bool:
 def status_state(state: str, old: str | None, new: str | None, back: str, in_batch: bool) -> str:
     """The app state of an order nobody is making after its webstore status changes old → new.
     `back` = ready or needs_review (its name check). A report never moves an order backwards:
-    * ready / needs review stay to make on PRINT and AWB EXPIRED (label expired before it was made);
-      any other status → not needed;
-    * not needed → back to making only on PRINT, and never after the website had a label for it
-      (PACK onwards): that's flagged instead (`_status_flags`, back_to_print)."""
+    * ready / needs review stay to make on PRINT, AWB EXPIRED (label expired before it was made) and
+      ACCEPTANCE PENDING (0.34); any other status → not needed;
+    * not needed → back to making only on PRINT (or ACCEPTANCE PENDING), and never after the website had a label
+      for it (PACK onwards): that's flagged instead (`_status_flags`, back_to_print)."""
     n, o = tabs.norm_status(new), tabs.norm_status(old)
     if state in ("ready", "needs_review"):
-        return state if (n in PRINT_STATUSES or n == "AWB-EXPIRED") else "not_needed"
-    if state == "not_needed" and n in PRINT_STATUSES and not in_batch and not (_past_print(o) or o == "AWB-EXPIRED"):
+        return state if to_make(n) else "not_needed"
+    if (state == "not_needed" and n in ("PRINT", "ACCEPTANCE-PENDING") and not in_batch
+            and not (_past_print(o) or o == "AWB-EXPIRED")):
         return back
     return state
 
@@ -413,17 +430,75 @@ def _status_flags(con, s: IngestSummary, cur: dict, new: str) -> None:
         if (made or making) and o not in _SHIPPED and not o.startswith("RTO"):
             flag("cancelled_in_production", "Cancelled – don't pack")
         return
-    if made or making:
-        if _past_print(n) and not made and o in ("PRINT", "AWB-EXPIRED") and cur.get("sku") != ADHOC_SKU \
-                and (cur.get("first_status") or "PRINT") == "PRINT":
-            flag("past_print_not_made", f"Website says {new} but SnapSTL hasn't printed it")
-        return
-    if state in ("ready", "needs_review"):
-        if _past_print(n) and cur.get("sku") != ADHOC_SKU and (cur.get("first_status") or "PRINT") == "PRINT":
-            flag("past_print_not_made", f"Website says {new} but SnapSTL hasn't made it")
+    # 0.26 (owner): packed, in transit or delivered means it was made — wherever it was made. No flag; the
+    # Print lists leave such orders out (makeit.SHIPPED_SQL).
+    if made or making or state in ("ready", "needs_review"):
         return
     if state == "not_needed" and (n in PRINT_STATUSES or n == "AWB-EXPIRED") and o in ("PACK", "HANDOVER"):
         flag("back_to_print", f"Back to {new} after it was packed outside SnapSTL – check whether it is made")
+
+
+# ---------------- one-time repair (0.26) ----------------
+MADE_BEFORE = "2026-11-13"  # owner, 2026-11-21: orders from before this date were made outside SnapSTL
+
+
+def repair_026() -> dict:
+    """Once after updating to 0.26:
+    * orders the website still says PRINT, dated from MADE_BEFORE, never in a batch, kept as "not needed"
+      (shared records said so and the report never changed their status) → back to To make / Check name;
+    * the same from before MADE_BEFORE (and AWB EXPIRED ones) → Skipped (made before SnapSTL);
+    * the flag "website moved it on, but SnapSTL never made it" is cleared everywhere (owner: packed means made)."""
+    out = {"back": 0, "skipped": 0, "unflagged": 0}
+    with db.tx() as con:
+        if con.execute("SELECT 1 FROM sync_state WHERE key='repair_026'").fetchone():
+            return out
+        rows = db.rows(con, "SELECT order_id, order_date, source_status, review_reason FROM orders WHERE state='not_needed' "
+                            "AND batch_id IS NULL AND batch_uid IS NULL AND label_at IS NULL AND flag IS NULL "
+                            "AND made_at IS NULL AND COALESCE(sku,'')<>?", ADHOC_SKU)
+        for r in rows:
+            st = tabs.norm_status(r["source_status"])
+            if st == "PRINT" and (r["order_date"] or "") >= MADE_BEFORE:
+                con.execute("UPDATE orders SET state=?, updated_at=? WHERE order_id=?",
+                            ("needs_review" if r["review_reason"] else "ready", db.now(), r["order_id"]))
+                out["back"] += 1
+            elif st in ("PRINT", "AWB-EXPIRED"):
+                con.execute("UPDATE orders SET state='skipped', updated_at=? WHERE order_id=?", (db.now(), r["order_id"]))
+                out["skipped"] += 1
+        for (oid,) in con.execute("SELECT order_id FROM orders WHERE flag='past_print_not_made'").fetchall():
+            db.set_group(con, oid, "flag")
+            out["unflagged"] += 1
+        if any(out.values()):
+            db.add_activity(con, "cleanup", f"0.26: {out['back']} orders back to To make (website still says PRINT), "
+                                            f"{out['skipped']} older ones skipped (made before {MADE_BEFORE}), "
+                                            f"{out['unflagged']} packed / shipped orders out of Problems")
+        con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('repair_026', '1')")
+    return out
+
+
+def repair_034() -> dict:
+    """Once after updating to 0.34 (owner): orders kept as "not needed" only because their status was ACCEPTANCE
+    PENDING or AWB EXPIRED — never in a batch, made, labelled or flagged, dated from MADE_BEFORE — go to To make
+    (or Check name). They sat in Problems, where nobody made them."""
+    out = {"back": 0}
+    with db.tx() as con:
+        if con.execute("SELECT 1 FROM sync_state WHERE key='repair_034'").fetchone():
+            return out
+        rows = db.rows(con, "SELECT order_id, order_date, source_status, review_reason, color, sku FROM orders "
+                            "WHERE state='not_needed' AND batch_id IS NULL AND batch_uid IS NULL AND label_at IS NULL "
+                            "AND flag IS NULL AND made_at IS NULL AND reuse_of IS NULL AND COALESCE(sku,'')<>?", ADHOC_SKU)
+        for r in rows:
+            st = tabs.norm_status(r["source_status"])
+            if st not in ("ACCEPTANCE-PENDING", "AWB-EXPIRED") or (r["order_date"] or "") < MADE_BEFORE:
+                continue
+            organizer = products.of_order(r).kind == "organizer"
+            review = r["review_reason"] or (None if r["color"] or not organizer else "No colour in the order")
+            con.execute("UPDATE orders SET state=?, review_reason=?, updated_at=? WHERE order_id=?",
+                        ("needs_review" if review else "ready", review, db.now(), r["order_id"]))
+            out["back"] += 1
+        if out["back"]:
+            db.add_activity(con, "cleanup", f"0.34: {out['back']} Acceptance pending / AWB expired orders back to To make")
+        con.execute("INSERT OR REPLACE INTO sync_state(key, value) VALUES ('repair_034', '1')")
+    return out
 
 
 # ---------------- review actions ----------------
@@ -435,8 +510,9 @@ def set_name(order_id: str, name: str, color: str | None = None, db_path: Path |
         cur = con.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
         if cur is None:
             raise KeyError(order_id)
-        color = normalise_color(color) if color is not None else cur["color"]
-        if not color:
+        stand = products.of_order(dict(cur)).kind == "stand"  # 0.29: a name stand's colours come with the product
+        color = "" if stand else (normalise_color(color) if color is not None else cur["color"])
+        if not color and not stand:
             raise ValueError("Colour is required")
         state = cur["state"]
         if state == "needs_review":
@@ -462,13 +538,17 @@ def set_printed(order_ids: list[str], printed: bool = True, db_path: Path | None
                            f"WHERE state='printed' AND order_id IN ({q})", (db.now(), *order_ids)).rowcount
 
 
-def reset_to_ready(order_id: str, db_path: Path | None = None) -> None:
+def reset_to_ready(order_id: str, db_path: Path | None = None, why: str = "Remake") -> None:
     """Allow a bundled / printed / skipped order to be made again (e.g. reprint)."""
     with db.tx(db_path) as con:
         cur = con.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
         if cur is None:
             raise KeyError(order_id)
         state = "needs_review" if cur["review_reason"] else "ready"
+        if cur["batch_id"] or cur["batch_uid"] or cur["made_at"]:  # 0.32.1: an order leaving its batch is logged
+            where = cur["batch_label"] or (f"batch #{cur['batch_id']}" if cur["batch_id"] else "its batch")
+            db.add_activity(con, "orders", f"{cur['name'] or order_id} ({order_id}) left {where} — back to To make "
+                                           f"({why}{', after it was made' if cur['made_at'] else ''})")
         con.execute(
             "UPDATE orders SET state=?, batch_id=NULL, batch_uid=NULL, batch_label=NULL, batch_computer=NULL, "
             "batch_computer_id=NULL, printed_at=NULL, made_at=NULL, print_started_at=NULL, updated_at=? "

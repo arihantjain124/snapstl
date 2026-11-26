@@ -19,7 +19,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from . import db, sync, tabs
-from .ingest import reset_to_ready, set_name
+from .ingest import SKU, reset_to_ready, set_name
 
 BY = "logistics"
 MAKING = ("to_make", "check_name", "ready_to_print", "printing")
@@ -47,6 +47,9 @@ VIEWS: dict[str, tuple[str, str]] = {  # key → (SQL where, order by)
     "delivered": (f"{_T}='delivered'", "order_date DESC, order_id"),
     "rto": (f"{_T}='rto'", "order_date DESC, order_id"),
     "cancelled": (f"{_T}='cancelled'", "order_date DESC, order_id"),
+    # 0.26: waiting a week or more and not shipped — message them before they ask (customer help)
+    "late": (f"{_T} IN ({', '.join(repr(t) for t in NOT_SHIPPED)}) AND order_date <= date('now','localtime','-7 days')",
+             "order_date, order_id"),
 }
 FLAG_WORDS = {
     "past_print_not_made": "Website moved it on, but it was never made",
@@ -252,8 +255,9 @@ def order_detail(order_id: str):
         notes = db.rows(con, "SELECT uid, at, text, author FROM order_notes WHERE order_id=? ORDER BY at DESC", order_id)
         returned = returned_pieces(con, o) if o["state"] in ("ready", "needs_review") else []
         pc = pace(con)
+        also = also_pack(con, [o.get("clubbed_id")]).get(o.get("clubbed_id") or "", [])
     v = view_of(o, rep.get(order_id, {}), pc)
-    return {**v, "notes": notes, "returned": returned,
+    return {**v, "notes": notes, "returned": returned, "also": also,
             "group": [view_of(g, rep.get(g["order_id"], {}), pc) for g in group],
             "other_orders": [view_of(s, rep.get(s["order_id"], {}), pc) for s in same]}
 
@@ -410,7 +414,7 @@ async def remake(order_id: str, req: Request):
         o = _order(con, order_id)
         if tabs.tab_of(o) in MAKING:
             raise HTTPException(409, "It's being made already")
-    reset_to_ready(order_id)
+    reset_to_ready(order_id, why="Remake request from logistics")
     with db.tx() as con:
         db.set_group(con, order_id, "remake", remake_at=db.now(), remake_reason=reason)
         if o.get("reuse_of"):
@@ -443,7 +447,94 @@ def usage(days: int = 30):
     return {"rows": rows, "shared": False}
 
 
+# ---------------- packing page (port 8002, 0.26) ----------------
+def product_name(code: str) -> str:
+    """'Shopdeck-3D-Decor-Radium-Boo-Ghosts-Peace-Boo' → '3D Decor Radium Boo Ghosts Peace Boo'."""
+    s = re.sub(r"^shopdeck-", "", (code or "").strip(), flags=re.I)
+    return re.sub(r"\s+", " ", s.replace("-", " ")).strip()
+
+
+def also_pack(con, clubbed_ids) -> dict[str, list[dict]]:
+    """0.28: other products ordered in the same parcel (same Clubbed Order ID in the report, not the name
+    organizer, not cancelled): clubbed id → [{product, quantity}]. From the report rows kept on this computer."""
+    ids = sorted({c for c in clubbed_ids if c})
+    if not ids:
+        return {}
+    out: dict[str, dict[str, int]] = {}
+    for (data,) in con.execute(f"SELECT data FROM shop_lines WHERE json_extract(data, '$.\"Clubbed Order ID\"') "
+                               f"IN ({','.join('?' * len(ids))})", ids):
+        d = json.loads(data or "{}")
+        if (d.get("SKU Code") or "").lower() == SKU or "CANCEL" in (d.get("Order Status") or "").upper():
+            continue
+        name = product_name(d.get("Product Code") or "") or d.get("SKU Code") or "Other product"
+        try:
+            q = int(float(d.get("Quantity") or 1))
+        except ValueError:
+            q = 1
+        box = out.setdefault(d["Clubbed Order ID"], {})
+        box[name] = box.get(name, 0) + q
+    return {k: [{"product": p, "quantity": q} for p, q in sorted(v.items())] for k, v in out.items()}
+
+
+def _groups(con, rows: list[dict]) -> list[dict]:
+    """Orders shipped together (same clubbed order ID) as one group, oldest first."""
+    by: dict[str, list[dict]] = {}
+    for r in rows:
+        by.setdefault(r.get("clubbed_id") or r["order_id"], []).append(r)
+    out = []
+    for k, os_ in by.items():
+        os_.sort(key=lambda o: o["order_id"])
+        out.append({"key": k, "clubbed_id": os_[0].get("clubbed_id") or "", "order_date": min(o["order_date"] or "" for o in os_),
+                    "express_by": min((o["express_by"] for o in os_ if o.get("express_by")), default=None),
+                    "label_at": max((o.get("label_at") or 0) for o in os_) or None, "label_note": os_[0].get("label_note") or "",
+                    "orders": [{"order_id": o["order_id"], "name": o.get("name") or "", "color": o.get("color") or "",
+                                "quantity": o.get("quantity") or 1} for o in os_]})
+    also = also_pack(con, [g["clubbed_id"] for g in out])
+    for g in out:
+        g["also"] = also.get(g["clubbed_id"], [])
+    out.sort(key=lambda g: (g["express_by"] is None, g["express_by"] or "", g["order_date"], g["key"]))
+    return out
+
+
+def _name_search(q: str) -> tuple[str, list]:
+    """Packing page (owner, 0.26): only the name to print — what the packer reads on the piece — as it will
+    print or as the customer typed it."""
+    q = f"%{q.strip()}%"
+    return "(COALESCE(name,'') LIKE ? OR COALESCE(raw_name,'') LIKE ?)", [q, q]
+
+
+def pack_list(request: Request, view: str = "ready", q: str = ""):
+    """Packing page: only orders made and checked (Ready to pack), a clubbed order only when every name of it is
+    made; or the ones labelled today (Packed today, to undo a mistake). A search shows the whole clubbed order;
+    an order that isn't ready says where it is instead."""
+    start = datetime.combine(date.today(), datetime.min.time()).timestamp()
+    with db.tx() as con:
+        made = db.rows(con, f"SELECT *, {_T} AS tab FROM orders WHERE {_T}='pack_it'")
+        clubs = {r["clubbed_id"] for r in made if r.get("clubbed_id")}
+        partners = db.rows(con, f"SELECT *, {_T} AS tab FROM orders WHERE clubbed_id IN ({','.join('?' * len(clubs))})",
+                           *clubs) if clubs else []
+        waiting = {r["clubbed_id"] for r in partners if r["tab"] in MAKING}  # a name of it isn't made yet
+        ready = [r for r in made if not (r.get("clubbed_id") and r["clubbed_id"] in waiting)]
+        today = db.rows(con, f"SELECT *, {_T} AS tab FROM orders WHERE label_at >= ? AND {_T}='ship_it'", start)
+        groups = {"ready": _groups(con, ready), "today": _groups(con, today)}
+        held = len({r["clubbed_id"] for r in made if r.get("clubbed_id") in waiting})
+        out = {"counts": {k: len(v) for k, v in groups.items()}, "held_clubbed": held, "not_ready": []}
+        if q.strip():
+            w, args = _name_search(q)
+            hit = {r["order_id"] for r in db.rows(con, f"SELECT order_id FROM orders WHERE {w}", *args)}
+            shown = [g for g in groups["ready"] + groups["today"] if any(o["order_id"] in hit for o in g["orders"])]
+            seen = {o["order_id"] for g in shown for o in g["orders"]}
+            rest = db.rows(con, f"SELECT *, {_T} AS tab FROM orders WHERE {w} ORDER BY order_date DESC LIMIT 20", *args)
+            out["not_ready"] = [{"order_id": r["order_id"], "name": r.get("name") or "", "color": r.get("color") or "",
+                                 "words": words(r, r["tab"], {})} for r in rest if r["order_id"] not in seen][:10]
+            out["groups"] = shown
+        else:
+            out["groups"] = groups["today" if view == "today" else "ready"]
+    return out
+
+
 ROUTES = [  # (method, path, endpoint) — registered on the main app and on the logistics listener
+    ("GET", "/api/pack/list", pack_list),
     ("GET", "/api/logistics/orders", list_orders),
     ("GET", "/api/logistics/counts", counts),
     ("GET", "/api/logistics/meta", meta),

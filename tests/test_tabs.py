@@ -120,11 +120,9 @@ def test_problems_are_flagged(tmp_path):
     sql(p, "UPDATE orders SET state='bundled' WHERE order_id IN ('P2','P3')")
     sql(p, "UPDATE orders SET state='bundled', made_at=2 WHERE order_id='P4'")
     ingest(report([("P1", "PACK"), ("P2", "PACK"), ("P3", "CANCELLED INITIATED"), ("P4", "PACK")]), "b.csv", p)
-    # listed to make, never made, website packed it
-    assert (get(p, "P1")["flag"], tab(p, "P1")) == ("past_print_not_made", "problems")
-    assert "PACK" in get(p, "P1")["flag_note"] and get(p, "P1")["state"] == "not_needed"
-    # in a batch, not printed yet, website packed it
-    assert (get(p, "P2")["flag"], tab(p, "P2")) == ("past_print_not_made", "problems")
+    # 0.26 (owner): website packed it = made, wherever: no flag, it follows the website
+    assert (get(p, "P1")["flag"], tab(p, "P1")) == (None, "ship_it") and get(p, "P1")["state"] == "not_needed"
+    assert (get(p, "P2")["flag"], tab(p, "P2")) == (None, "ship_it")
     # cancelled while being made
     assert (get(p, "P3")["flag"], get(p, "P3")["flag_note"]) == ("cancelled_in_production", "Cancelled – don't pack")
     # made and packed: just Label done, no flag
@@ -209,3 +207,21 @@ def test_a_name_starting_with_a_small_letter_is_checked_first(tmp_path):
     assert (l2["state"], tab(p, "L2"), l2["review_reason"]) == ("needs_review", "check_name", SMALL_FIRST)
     assert get(p, "L3")["state"] == "ready" and get(p, "L1")["state"] == "ready"
     assert recheck_small_first(p) == 0  # only once
+
+
+def test_repair_026_stuck_print_orders_and_packed_problems(tmp_path, monkeypatch):
+    """0.26: PRINT orders kept as "not needed" go back to To make (from 13 Nov) or to Skipped (older); the old
+    "website moved it on" flag is cleared."""
+    from snapstl import ingest as ing
+
+    p = tmp_path / "t.db"
+    monkeypatch.setattr(db, "DB_PATH", p)
+    ingest(report([("S1", "PRINT"), ("S2", "PRINT"), ("S3", "PRINT"), ("S4", "PRINT")]), "a.csv", p)
+    sql(p, "UPDATE orders SET state='not_needed', order_date='2026-11-14' WHERE order_id IN ('S1','S2')")
+    sql(p, "UPDATE orders SET review_reason='No colour in the order' WHERE order_id='S2'")
+    sql(p, "UPDATE orders SET state='not_needed', order_date='2026-11-11' WHERE order_id='S3'")
+    sql(p, "UPDATE orders SET flag='past_print_not_made', flag_note='x' WHERE order_id='S4'")
+    assert {tab(p, o) for o in ("S1", "S2", "S3", "S4")} == {"problems"}
+    assert ing.repair_026() == {"back": 2, "skipped": 1, "unflagged": 1}
+    assert [tab(p, o) for o in ("S1", "S2", "S3", "S4")] == ["to_make", "check_name", "skipped", "to_make"]
+    assert ing.repair_026() == {"back": 0, "skipped": 0, "unflagged": 0}  # once

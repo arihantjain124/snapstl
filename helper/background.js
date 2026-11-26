@@ -1,8 +1,8 @@
 // SnapSTL Helper service worker: relays between the working MakerWorld tab and the SnapSTL app
 // on this Mac (http://127.0.0.1:8317). No tokens: the app accepts these calls only from this computer.
 //
-// The helper works in ONE tab ("working tab") and only while that tab is on the exact model page
-// set in SnapSTL → Settings → MakerWorld model page link (matched by its designId).
+// The helper works in ONE tab ("working tab") and only while that tab is on one of SnapSTL's model pages
+// (the organizer's from Settings → MakerWorld model page link, and each name stand's, 2.4), matched by designId.
 const APP = "http://127.0.0.1:8317";
 const session = chrome.storage.session;
 
@@ -43,8 +43,10 @@ async function reloadIfUpdated(want) {
 function onModelPage(url, cfg) {
   try {
     const u = new URL(url);
+    const d = u.searchParams.get("designId");
+    const known = Object.keys(cfg.pages || {}).concat(cfg.design_id ? [String(cfg.design_id)] : []);
     return u.hostname.endsWith("makerworld.com") && u.pathname.includes("/makerlab/parametricModelMaker") &&
-      !!cfg.design_id && u.searchParams.get("designId") === String(cfg.design_id);
+      !!d && known.includes(d);
   } catch { return false; }
 }
 
@@ -57,7 +59,65 @@ async function tab(id) {
 chrome.runtime.onInstalled.addListener(async () => {
   const tabs = await chrome.tabs.query({ url: "https://makerworld.com/*" });
   for (const t of tabs) if ((t.url || "").includes("/makerlab/parametricModelMaker")) chrome.tabs.reload(t.id);
+  // 2.5: ShopDeck's Process Orders tabs get the shipping-label page script
+  const sd = await chrome.tabs.query({ url: "https://pro.shopdeck.com/orders/*" });
+  for (const t of sd) chrome.tabs.reload(t.id);
 });
+
+// ----- ShopDeck shipping labels (2.5, SnapSTL 0.33): one ShopDeck tab works at a time -----
+// 2.5.1: Label opens the PDF in a new window, which Chrome blocks as a pop-up when the helper clicks.
+// Allow pop-ups for pro.shopdeck.com only (the same as "Always allow" in Chrome's address bar).
+async function allowShopdeckPopups() {
+  if (!chrome.contentSettings || !chrome.contentSettings.popups) return { ok: false, error: "no permission" };
+  const cur = await chrome.contentSettings.popups.get({ primaryUrl: "https://pro.shopdeck.com/" });
+  if (cur.setting !== "allow") {
+    await chrome.contentSettings.popups.set({ primaryPattern: "https://pro.shopdeck.com/*", setting: "allow" });
+  }
+  return { ok: true };
+}
+
+// 2.6 (SnapSTL 0.33.2): Chrome slows background tabs down and freezes them, so a label made in a ShopDeck tab
+// behind SnapSTL's hung. Print label (the SnapSTL page tells us, snapstl_page.js) brings the ShopDeck tab to the
+// front — or opens one — and keeps Chrome from discarding it; when the job is over we go back to SnapSTL's tab.
+const SD_ORDERS = "https://pro.shopdeck.com/orders/process-orders/non-dispatched";
+async function frontShopdeck(jobId, returnTab) {
+  const { sdTab } = await session.get("sdTab");
+  let t = sdTab ? await tab(sdTab) : null;
+  let note = "ShopDeck tab brought to the front";
+  if (!t) {
+    const all = await chrome.tabs.query({ url: "https://pro.shopdeck.com/*" });
+    t = all.find((x) => (x.url || "").includes("/orders/process-orders")) || all[0] || null;
+  }
+  if (!t) {
+    const rt = returnTab ? await tab(returnTab) : null;
+    t = await chrome.tabs.create({ url: SD_ORDERS, active: true, ...(rt ? { windowId: rt.windowId } : {}) });
+    note = "No ShopDeck tab was open — opened Process Orders";
+  }
+  await session.set({ sdTab: t.id, sdReturn: { tabId: returnTab || null, jobId } });
+  await chrome.tabs.update(t.id, { active: true, autoDiscardable: false });
+  await chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
+  if (jobId) postJSON(`/api/helper/shopdeck/${jobId}/alive`, { note }).catch(() => {});
+  return { ok: true };
+}
+
+// The job is over (done, stopped): back to the SnapSTL tab it was started from.
+async function backToSnapstl() {
+  const { sdReturn } = await session.get("sdReturn");
+  if (!sdReturn) return;
+  await session.set({ sdReturn: null });
+  const t = sdReturn.tabId ? await tab(sdReturn.tabId) : null;
+  if (!t) return;
+  await chrome.tabs.update(t.id, { active: true }).catch(() => {});
+  await chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
+}
+
+async function shopdeckTab(tabId) {
+  const { sdTab } = await session.get("sdTab");
+  if (sdTab === tabId) return true;
+  if (sdTab && (await tab(sdTab))) return false;
+  await session.set({ sdTab: tabId });
+  return true;
+}
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   const tabId = sender.tab && sender.tab.id;
@@ -92,10 +152,14 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         return {};
       case "next":
         return await app("/api/helper/next?" + new URLSearchParams({
-          status: (msg.status || "").slice(0, 150), on_page: msg.onPage ? "1" : "0",
+          status: (msg.status || "").slice(0, 150), on_page: msg.onPage ? "1" : "0", design: msg.design || "",
         }));
       case "result": {
         const fd = new FormData();
+        if (msg.model) {  // a name stand (2.4): one OBJ with both colours
+          fd.append("model", new Blob([msg.model], { type: "text/plain" }), "model.obj");
+          return await app(`/api/helper/jobs/${msg.job_id}/result`, { method: "POST", body: fd });
+        }
         fd.append("plate_1", new Blob([msg.plate_1], { type: "text/plain" }), "plate_1.obj");
         fd.append("plate_2", new Blob([msg.plate_2], { type: "text/plain" }), "plate_2.obj");
         if (msg.check) fd.append("check", msg.check);  // license password confirmation (no password inside)
@@ -105,6 +169,29 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         return await postJSON(`/api/helper/jobs/${msg.job_id}/fail`, { error: msg.error });
       case "release":
         return await postJSON(`/api/helper/jobs/${msg.job_id}/release`);
+
+      // ----- from a ShopDeck tab (shopdeck.js) -----
+      case "sd_next": {
+        if (!(await shopdeckTab(tabId))) return { job: null, other_tab: true };
+        const r = await app("/api/helper/shopdeck/next");
+        if (!r.job && !r.login && !r.waiting) await backToSnapstl();
+        return r;
+      }
+      case "sd_alive":
+        return await postJSON(`/api/helper/shopdeck/${msg.job_id}/alive`, { visible: msg.visible, note: msg.note });
+      case "sd_seen":
+        return await postJSON(`/api/helper/shopdeck/${msg.job_id}/seen`, msg.seen);
+      case "sd_step":
+        return await postJSON(`/api/helper/shopdeck/${msg.job_id}/step`, { step: msg.step, ...(msg.data || {}) });
+      case "sd_fail":
+        return await postJSON(`/api/helper/shopdeck/${msg.job_id}/fail`, { error: msg.error });
+      case "sd_popups":
+        return await allowShopdeckPopups();
+      // ----- from the SnapSTL page (snapstl_page.js): Print label / Continue pressed -----
+      case "sd_front":
+        return await frontShopdeck(msg.job_id || null, tabId);
+      case "sd_login":
+        return await postJSON("/api/helper/shopdeck/login", { job_id: msg.job_id || null });
 
       // ----- from the popup -----
       case "popupState": {
@@ -123,7 +210,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         const cfg = await config();
         const [cur] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!cur || !onModelPage(cur.url || "", cfg)) {
-          return { error: "This tab isn't the model page set in SnapSTL. Click 'Open model page' first." };
+          return { error: "This tab isn't one of SnapSTL's model pages. Click 'Open model page' first." };
         }
         await session.set({ activeTab: cur.id });
         return { ok: true };

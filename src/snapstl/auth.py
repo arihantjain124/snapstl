@@ -12,6 +12,7 @@ import json
 import os
 import secrets
 import sys
+import threading
 import time
 
 from .settings import APP_DIR
@@ -21,16 +22,25 @@ COOKIE = "snapstl_session"
 SESSION_DAYS = 30
 
 
+HELP_FILE = APP_DIR / "auth-help.json"  # 0.26: the customer help page (port 8003) has its own password
+HELP_COOKIE = "snapstl_help"           # browsers share cookies across ports: each page needs its own name
+_TL = threading.local()  # Keys points this thread's calls at another password file
+
+
+def _path():
+    return getattr(_TL, "file", None) or AUTH_FILE
+
+
 def _load() -> dict:
     try:
-        return json.loads(AUTH_FILE.read_text())
+        return json.loads(_path().read_text())
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
 
 def _save(d: dict) -> None:
     APP_DIR.mkdir(parents=True, exist_ok=True)
-    fd = os.open(AUTH_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(_path(), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump(d, f)
 
@@ -80,6 +90,40 @@ def valid_cookie(value: str | None) -> bool:
         return hmac.compare_digest(sig, good) and int(exp) > time.time()
     except ValueError:
         return False
+
+
+class Keys:
+    """The same password functions for another password file (the customer help page)."""
+
+    def __init__(self, file, cookie: str) -> None:
+        self.file, self.cookie = file, cookie
+
+    def _with(self, fn, *a):
+        old = getattr(_TL, "file", None)
+        _TL.file = self.file
+        try:
+            return fn(*a)
+        finally:
+            _TL.file = old
+
+    def enabled(self) -> bool:
+        return self._with(enabled)
+
+    def set_password(self, pw: str) -> None:
+        self._with(set_password, pw)
+
+    def check_password(self, pw: str) -> bool:
+        return self._with(check_password, pw)
+
+    def make_cookie(self) -> str:
+        return self._with(make_cookie)
+
+    def valid_cookie(self, value: str | None) -> bool:
+        return self._with(valid_cookie, value)
+
+
+MAIN = Keys(None, COOKIE)       # this app's other computers + the packing page (8002)
+HELP = Keys(HELP_FILE, HELP_COOKIE)
 
 
 def admin() -> None:
