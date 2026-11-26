@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Custom order · Snap Magicians (test)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1F1A14;--cream:#FFF8EC;--amber:#F5A417;--line:#EFE3CF;--muted:#6B5D4B;--soft:#F3EBDD;--tint:#FFE7B8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cream);color:var(--ink);font-family:Inter,system-ui,sans-serif}
+a{color:var(--ink);text-decoration:none}
+button{font-family:inherit;cursor:pointer;color:var(--ink)}
+.bar{background:var(--ink);color:var(--cream);font-size:13px;text-align:center;padding:8px 12px}
+header{background:#fff;border-bottom:1px solid var(--line)}
+.head{max-width:1280px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:12px}
+.logo{display:flex;align-items:center;gap:10px;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px}
+.logo i{width:36px;height:36px;border-radius:10px;background:var(--amber);display:inline-block}
+.bag{margin-left:auto;height:44px;padding:0 18px;border-radius:999px;background:var(--ink);color:var(--cream);font-weight:700;display:flex;align-items:center}
+main{max-width:1280px;margin:0 auto;padding:20px;display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.viewer{flex:999 1 560px;min-width:0;display:flex;flex-direction:column;gap:10px}
+.stage{position:relative;background:var(--soft);border-radius:28px;height:min(560px,70vw);min-height:300px;overflow:hidden;touch-action:none}
+.stage canvas{display:block;width:100%;height:100%}
+.chip{position:absolute;font-size:13px;font-weight:600;padding:6px 12px;border-radius:999px;background:#fff}
+.chip.dark{background:var(--ink);color:var(--cream)}
+.chip.busy{background:var(--tint)}
+.note{margin:0;font-size:14px;color:var(--muted)}
+.panel{flex:1 1 360px;min-width:0;display:flex;flex-direction:column;gap:22px}
+h1{margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(30px,4vw,40px);letter-spacing:-1px;line-height:1.05}
+.label{font-weight:700;font-size:15px;margin-bottom:8px;display:block}
+.label span{font-weight:500}
+input[type=text]{width:100%;height:56px;border-radius:16px;border:2px solid var(--ink);background:#fff;padding:0 18px;font-size:20px;font-weight:600;font-family:inherit}
+.hint{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-top:6px}
+.swatches{display:flex;flex-wrap:wrap;gap:10px}
+.swatches button{width:44px;height:44px;border-radius:999px;border:2px solid #D9CBB5}
+.swatches button[aria-pressed=true]{box-shadow:0 0 0 3px var(--cream),0 0 0 5px var(--ink)}
+.buy{display:flex;gap:12px}
+.qty{display:flex;align-items:center;border:2px solid #E4D6BF;border-radius:999px;background:#fff}
+.qty button{width:44px;height:52px;border:0;background:transparent;font-size:20px;font-weight:700}
+.add{flex:1;height:56px;border-radius:999px;border:0;background:var(--ink);color:var(--cream)!important;font-weight:700;font-size:17px}
+.add:disabled{opacity:.5;cursor:default}
+.facts{background:#fff;border:1px solid var(--line);border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:8px;font-size:14px}
+.facts div{display:flex;justify-content:space-between;gap:12px}.facts span:first-child{color:var(--muted)}
+.error{background:#FDE7E4;color:#8A1C10;border-radius:14px;padding:12px 14px;font-size:14px}
+pre{white-space:pre-wrap;word-break:break-word;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;font-size:12px;margin:0}
+@media (max-width:700px){
+  main{padding:0 0 120px;gap:16px}
+  .viewer{flex-basis:100%}.stage{border-radius:0;height:320px}
+  .note{padding:0 16px}.panel{padding:0 16px}
+  .swatches{flex-wrap:nowrap;overflow-x:auto;padding:4px 2px}.swatches button{flex:none}
+  .buy{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:12px 16px 24px;z-index:5}
+}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+</head>
+<body>
+<div class="bar">Test storefront running on this computer · orders are saved locally, nothing is charged</div>
+<header><div class="head"><a class="logo" href="#"><i aria-hidden="true"></i>Snap Magicians</a><a class="bag" href="#" id="bag">Bag (0)</a></div></header>
+<main>
+  <section class="viewer" aria-label="3D preview">
+    <div class="stage" id="stage">
+      <span class="chip" style="top:14px;left:14px">Live 3D preview</span>
+      <span class="chip dark" style="top:14px;right:14px" id="hintChip">Drag to rotate · Pinch to zoom</span>
+      <span class="chip busy" style="top:56px;left:14px" id="busy" hidden>Building your model…</span>
+    </div>
+    <p class="note">This is the actual model we print, built from your text. It refreshes a moment after you stop typing.</p>
+  </section>
+  <section class="panel" aria-label="Customize">
+    <h1 id="title">Custom order</h1>
+    <div><label class="label" for="text">Your text</label><input id="text" type="text" value="Arihant" autocomplete="off">
+      <div class="hint"><span>One line</span><span id="count"></span></div></div>
+    <div id="colors"></div>
+    <div id="error" class="error" hidden></div>
+    <div class="buy"><div class="qty"><button type="button" id="dec" aria-label="Decrease quantity">−</button><span id="qty">1</span><button type="button" id="inc" aria-label="Increase quantity">+</button></div>
+      <button type="button" class="add" id="add" disabled>Add to bag</button></div>
+    <div class="facts" id="facts"></div>
+    <div id="orderOut" hidden><span class="label">Test order saved (what Snapstl would receive)</span><pre id="orderJson"></pre></div>
+  </section>
+</main>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {STLLoader} from 'three/addons/loaders/STLLoader.js';
+const $=id=>document.getElementById(id);
+const S={cfg:null,product:'organizer',text:'Arihant',colors:{},qty:1,bag:0,result:null,geoms:{},seq:0,timer:null};
+
+// three.js scene, Z up like the print bed
+const stage=$('stage'), renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setClearColor(0xF3EBDD);
+stage.prepend(renderer.domElement);
+const scene=new THREE.Scene(), camera=new THREE.PerspectiveCamera(35,1,1,5000);
+camera.up.set(0,0,1);
+scene.add(new THREE.HemisphereLight(0xffffff,0xb9ad98,1.6));
+const sun=new THREE.DirectionalLight(0xffffff,1.6);sun.position.set(-1,-2,3);scene.add(sun);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;
+const group=new THREE.Group();scene.add(group);
+function resize(){const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
+new ResizeObserver(resize).observe(stage);resize();
+(function loop(){controls.update();renderer.render(scene,camera);requestAnimationFrame(loop)})();
+
+function material(plate,geom){
+  if(!plate.upper_color)return new THREE.MeshStandardMaterial({color:plate.color,roughness:.55});
+  // one-piece two-colour part: faces above the filament change get the upper colour
+  const pos=geom.attributes.position, colors=new Float32Array(pos.count*3);
+  const lo=new THREE.Color(plate.color), hi=new THREE.Color(plate.upper_color);
+  for(let f=0;f<pos.count;f+=3){
+    const z=(pos.getZ(f)+pos.getZ(f+1)+pos.getZ(f+2))/3, c=z>plate.color_change_at+1e-3?hi:lo;
+    for(let v=0;v<3;v++)colors.set([c.r,c.g,c.b],(f+v)*3);
+  }
+  geom.setAttribute('color',new THREE.BufferAttribute(colors,3));
+  return new THREE.MeshStandardMaterial({vertexColors:true,roughness:.55});
+}
+function draw(){
+  group.clear();const r=S.result;if(!r)return;
+  for(const plate of r.plates){
+    const geom=S.geoms[plate.id].clone(), mesh=new THREE.Mesh(geom,material(plate,geom));
+    if(plate.assembly){const m=new THREE.Matrix4();m.set(...plate.assembly.flat());mesh.applyMatrix4(m)}
+    group.add(mesh);
+  }
+  const box=new THREE.Box3().setFromObject(group), c=box.getCenter(new THREE.Vector3()), size=box.getSize(new THREE.Vector3()).length();
+  controls.target.copy(c);camera.position.set(c.x-size*.35,c.y-size*1.25,c.z+size*.55);camera.near=size/100;camera.far=size*20;camera.updateProjectionMatrix();
+}
+const product=()=>S.cfg.products.find(p=>p.key===S.product);
+function renderForm(){
+  const p=product();$('title').textContent=p.label;
+  $('text').maxLength=p.max;$('count').textContent=`${S.text.length} / ${p.max}`;
+  $('colors').replaceChildren(...Object.entries(p.colors).map(([k,c])=>{
+    const wrap=document.createElement('div');wrap.style.marginBottom='18px';
+    wrap.innerHTML=`<span class="label">${c.label}: <span>${S.colors[k]}</span></span>`;
+    const row=document.createElement('div');row.className='swatches';
+    for(const [name,hex] of Object.entries(S.cfg.palette)){const b=document.createElement('button');b.type='button';b.style.background=hex;
+      b.setAttribute('aria-label',name);b.setAttribute('aria-pressed',S.colors[k]===name);
+      b.onclick=()=>{S.colors[k]=name;renderForm();schedule(0)};row.append(b)}
+    wrap.append(row);return wrap}));
+}
+function facts(){
+  const r=S.result;if(!r){$('facts').replaceChildren();return}
+  const base=r.plates[0];const rows=[['Size',base.dimensions.map(n=>n.toFixed(0)).join(' × ')+' mm']];
+  rows.push(['Built in',r.seconds+' s'],['Shipping','Free']);
+  $('facts').innerHTML=rows.map(([a,b])=>`<div><span>${a}</span><span style="font-weight:600">${b}</span></div>`).join('');
+}
+function showError(msg){$('error').hidden=!msg;$('error').textContent=msg||''}
+function schedule(ms=700){clearTimeout(S.timer);S.timer=setTimeout(build,ms)}
+async function build(){
+  const text=S.text.trim();if(!text){showError('Type a name to see your model.');return}
+  const seq=++S.seq;$('busy').hidden=false;$('add').disabled=true;showError('');
+  group.traverse(o=>{if(o.material)o.material.opacity=.45,o.material.transparent=true});
+  try{
+    const res=await fetch('/api/preview',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({product:S.product,text,text_color:S.colors.text||'',base_color:S.colors.base||''})});
+    if(res.status===409){if(seq===S.seq)schedule(800);return}
+    const data=await res.json();if(!res.ok)throw new Error(data.detail||'Could not build the model.');
+    const geoms={};const loader=new STLLoader();
+    await Promise.all(data.plates.map(async p=>{const b=await (await fetch(p.url)).arrayBuffer();const g=loader.parse(b);g.computeVertexNormals();geoms[p.id]=g}));
+    if(seq!==S.seq)return;
+    S.result=data;S.geoms=geoms;draw();facts();$('add').disabled=false;
+  }catch(e){if(seq===S.seq)showError(e.message)}
+  finally{if(seq===S.seq)$('busy').hidden=true}
+}
+$('text').addEventListener('input',e=>{S.text=e.target.value;$('count').textContent=`${S.text.length} / ${product().max}`;schedule()});
+$('inc').onclick=()=>{S.qty++;$('qty').textContent=S.qty};
+$('dec').onclick=()=>{S.qty=Math.max(1,S.qty-1);$('qty').textContent=S.qty};
+$('add').onclick=async()=>{
+  const res=await fetch('/api/test-order',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({product:S.product,text:S.text.trim(),text_color:S.colors.text||'',base_color:S.colors.base||'',quantity:S.qty,preview_key:S.result?.key||''})});
+  const data=await res.json();if(!res.ok){showError(data.detail||'Could not save the order.');return}
+  S.bag+=S.qty;$('bag').textContent=`Bag (${S.bag})`;$('orderOut').hidden=false;$('orderJson').textContent=JSON.stringify(data.order,null,2);
+};
+S.cfg=await (await fetch('/api/config')).json();
+for(const [k,c] of Object.entries(product().colors))S.colors[k]=c.default;
+renderForm();
+if(!S.cfg.renderer)showError(S.cfg.renderer_error||'OpenSCAD is not installed on this computer, so models cannot be built.');
+else schedule(0);
+</script>
+</body>
+</html>
