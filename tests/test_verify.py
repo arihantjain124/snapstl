@@ -232,7 +232,7 @@ def test_staff_names_are_kept_hidden_not_removed(client):
     assert client.post("/api/staff", json={"name": ""}).status_code == 400
     client.post("/api/staff", json={"name": "Ravi K", "hidden": True})
     assert "Ravi K" not in [s["name"] for s in client.get("/api/staff").json()["staff"]]
-    assert {"name": "Ravi K", "hidden": True, "pin_set": False} in client.get("/api/staff?all=1").json()["staff"]
+    assert {"name": "Ravi K", "hidden": True} in client.get("/api/staff?all=1").json()["staff"]
     client.post("/api/staff", json={"name": "Ravi K"})  # added again → shown again
     assert "Ravi K" in [s["name"] for s in client.get("/api/staff").json()["staff"]]
     with db.tx() as con:
@@ -290,43 +290,23 @@ def test_a_letter_fix_plate_merges_with_other_letter_plates_and_splits_back(clie
     assert (b1, fix) in names and (b2, PINK) in names and (b2, merged) not in names
 
 
-def test_checks_are_saved_under_the_person_whose_pin_was_typed(client, bb):
-    """0.25.1: staff PINs. Settings → Staff needs the owner PIN once set; once anyone has a PIN, a check needs a
-    PIN sign-in (a chosen name alone is refused) and is saved under that person."""
-    from snapstl import staff as staff_pins
-
-    staff_pins.reset_owner()
+def test_checks_need_only_the_chosen_name_no_pins(client, bb):
+    """0.36.4: staff PINs removed. A check is saved under the name chosen in Checked by; Settings → Staff adds
+    people with no owner PIN; the PIN endpoints are gone."""
     bid, folder = built_batch(client, "PP")
     for f in (PINK, BASE):
         client.post("/api/makeit/by-hand", json={"batch_id": bid, "file": f})
-    assert client.post("/api/staff/owner-pin", json={"pin": "12a4"}).status_code == 400
-    assert client.post("/api/staff/owner-pin", json={"pin": "9999"}).status_code == 200
-    assert client.post("/api/staff", json={"name": "Meena", "pin": "1111"}).status_code == 400  # owner PIN needed
-    assert client.post("/api/staff", json={"name": "Meena", "pin": "1111", "owner_pin": "9999"}).status_code == 200
-    assert client.post("/api/staff", json={"name": "Ravi", "pin": "1111", "owner_pin": "9999"}).status_code == 400  # taken
-    assert client.post("/api/staff", json={"name": "Ravi", "pin": "2222", "owner_pin": "9999"}).status_code == 200
+    assert client.post("/api/staff", json={"name": "Ravi"}).status_code == 200
     s = client.get("/api/staff").json()
-    assert s["pins_on"] and s["owner_pin_set"] and {x["name"]: x["pin_set"] for x in s["staff"]}["Meena"]
-
+    assert "pins_on" not in s and "Ravi" in {x["name"] for x in s["staff"]}
+    for path in ("/api/staff/owner-pin", "/api/staff/start", "/api/staff/end"):
+        assert client.post(path, json={"pin": "1234"}).status_code in (404, 405)
+    assert "pins_on" not in client.get("/api/makeit").json()
     card = _cards(client)[(bid, PINK)]
-    good = _res(card, lambda i: "good")
-    assert _check(client, bid, PINK, good, staff="Meena").status_code == 403  # a name alone isn't enough now
-    assert client.post("/api/staff/start", json={"pin": "3333"}).status_code == 403
-    tok = client.post("/api/staff/start", json={"pin": "2222"}).json()
-    assert tok["name"] == "Ravi"
-    r = client.post("/api/verify", json={"carrier": {"batch_id": bid, "file": PINK}, "token": tok["token"],
-                                         "staff": "Meena", "results": good})
+    r = _check(client, bid, PINK, _res(card, lambda i: "good"), staff="Ravi")
     assert r.status_code == 200, r.text
     with db.tx() as con:
         assert con.execute("SELECT staff FROM plate_checks WHERE batch_id=? AND plate=?", (bid, PINK)).fetchone()[0] == "Ravi"
-    client.post("/api/staff/end", json={"token": tok["token"]})
-    assert client.post("/api/verify/plate-failed", json={"carrier": {"batch_id": bid, "file": BASE},
-                                                          "token": tok["token"]}).status_code == 403  # signed out
-    with db.tx() as con:  # PINs are stored only as salted hashes
-        assert all("1111" not in (h or "") for (h,) in con.execute("SELECT pin_hash FROM staff"))
-    staff_pins.reset_owner()
-    with db.tx() as con:
-        con.execute("UPDATE staff SET pin_hash=''")
 
 
 def test_a_spoiled_letters_plate_goes_back_before_its_bases_are_printed(client, bb):

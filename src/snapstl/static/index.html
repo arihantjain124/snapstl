@@ -377,7 +377,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   <div class="card">
     <div class="toolbar"><h2 style="margin:0">Print</h2><span class="grow hint" id="mkinfo"></span><button class="small" id="slp_all" title="Queue every waiting plate for slicing, each with the profiles of the printer chosen for it">Slice all waiting</button><button class="small" id="mkplanbtn" title="Plan the night: an overnight base plate for every printer">Before you leave</button><button class="small" id="mkrefresh">Refresh</button><label class="hint" style="display:flex;gap:4px;align-items:center;margin:0" title="A sound and a notice when a printer finishes or fails"><input type="checkbox" id="pralertson"> Alerts</label><button class="small" id="mkbbrefresh" title="Ask every printer (through Bambuddy) to report its status and filament again — e.g. after changing a spool">Refresh from Bambuddy</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
     <div id="mknow"></div><div class="msgs" id="mkmsgs"></div><div class="msgs" id="mknote"></div><div class="hint" id="slp_allmsg"></div>
-    <div id="mkslots"></div><div id="mkmorning"></div><div id="mkplan" hidden></div>
+    <div id="mkmorning"></div><div id="mkplan" hidden></div>
     <div id="mkready"></div>
     <div class="chips" id="mktabs"></div>
     <div class="chips" id="mktabs2" hidden></div>
@@ -414,7 +414,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <div id="mks-done" hidden><p class="hint">Name stand plates printed and not all checked yet, newest first. A whole plate that came out wrong: <b>Whole plate failed…</b> sends it back to print.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Colours</th><th>Plate</th><th>Printer</th><th>Printed</th><th></th></tr></thead><tbody id="mksdone"></tbody></table></div></div>
     </div>
     <div id="mk-verify" class="mkpane" hidden>
-      <p class="hint">One card per name, once its <b>letters and its base are both printed</b>: put them together, look at both, and mark each <b>Good</b> or what is wrong. <b>Confirm – ready to pack</b> sends the order to Completed. Spoiled letters, a spoiled name, a wrong colour or a broken base get a small <b>Fix</b> plate (same size, only what is spoiled) at the top of Bases / Letters. <b>Whole plate failed…</b> sends a whole printed plate back to print. Every check is saved under the person who typed their PIN.</p>
+      <p class="hint">One card per name, once its <b>letters and its base are both printed</b>: put them together, look at both, and mark each <b>Good</b> or what is wrong. <b>Confirm – ready to pack</b> sends the order to Completed. Spoiled letters, a spoiled name, a wrong colour or a broken base get a small <b>Fix</b> plate (same size, only what is spoiled) at the top of Bases / Letters. <b>Whole plate failed…</b> sends a whole printed plate back to print. Every check is saved under the person chosen in <b>Checked by</b>.</p>
       <div class="toolbar" style="margin:0 0 8px" id="vwho"></div>
       <div class="toolbar" style="margin:0 0 8px"><input type="search" id="vq" placeholder="Search name or order" autocomplete="off" style="max-width:240px"><span class="grow"></span><span class="hint" id="vinfo"></span></div>
       <div id="mkverify"></div>
@@ -555,7 +555,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
   <div class="card" id="rolecard">
     <div class="toolbar"><h2 style="margin:0">Printer roles and AMS colours</h2><span class="grow hint" id="rolemsg"></span><button class="small primary" id="rolesave">Save</button></div>
-    <p class="hint">What each printer is for. <b>Bases</b>: stays on white, gets base plates. <b>Letters</b>: keeps the common letter colours in its AMS (the slots below), gets letter plates during the shift — staff watch these. <b>Flex</b>: bases, and letters in the rare colours. <b>Any</b>: no role. Print pre-selects printers by role; at night every printer prints a base plate (Print → <b>Before you leave</b>). A slot that doesn't hold its planned colour shows in red here and on Print. Change roles any time.</p>
+    <p class="hint">What each printer is for. <b>Bases</b>: stays on white, gets base plates. <b>Letters</b>: keeps the common letter colours in its AMS (the slots below), gets letter plates during the shift — staff watch these. <b>Flex</b>: bases, and letters in the rare colours. <b>Any</b>: no role. Print pre-selects printers by role; at night every printer prints a base plate (Print → <b>Before you leave</b>). A slot that doesn't hold its planned colour shows in red here. Change roles any time.</p>
     <div class="toolbar"><label style="margin:0">Shift from <input type="time" id="shstart" style="max-width:120px"></label><label style="margin:0">to <input type="time" id="shend" style="max-width:120px"></label><span class="hint">someone is at the printers — Print plans the night around it</span></div>
     <datalist id="slotcolors"></datalist>
     <div class="tw"><table><thead><tr><th>Printer</th><th>Role</th><th>Slot 1</th><th>Slot 2</th><th>Slot 3</th><th>Slot 4</th><th>Loaded now</th></tr></thead><tbody id="roles"><tr><td colspan="7" class="hint">Loading…</td></tr></tbody></table></div>
@@ -856,13 +856,19 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     </div>
   </div>
 
+  <div class="sec" data-sec="shopdeck" hidden>
+    <p class="intro"><b>Live order status from ShopDeck</b> (its partner API), between reports: orders that ShopDeck shows as printed, packed, shipped, delivered, cancelled or returned move here within minutes. Orders only ever move forward, and only to those statuses — whether an order still needs making, accepting or a new AWB still comes from the report. Names and colours still come from the report (ShopDeck's API doesn't have them). Only this computer holds the connection; the others get the statuses through the shared records.</p>
+    <div class="card"><h2>ShopDeck API</h2><div id="sdbox"><p class="hint">Loading…</p></div><div class="msgs" id="sdmsg"></div></div>
+    <div class="card"><h2>Names and colours before the report (bridge)</h2><p class="hint">A scheduled Claude task reads new orders with their names and colours from ShopDeck (Claude's ShopDeck connector) and drops a file into the folder below; SnapSTL adds only orders it doesn't have yet, still to make, with a complete name (and colour). It never changes an order that is already here — the report and the live status above keep doing that, and the next report always wins.</p><div id="sdbridge"></div></div>
+    <div class="card" id="sdchcard" hidden><h2>Latest status changes</h2><div class="tw"><table><thead><tr><th>Order</th><th>From</th><th>To</th><th>When</th></tr></thead><tbody id="sdch"></tbody></table></div></div>
+  </div>
+
   <div class="sec" data-sec="staff" hidden>
-    <p class="intro">The people who check prints on <b>Print → Verify</b>. Each has a 4-digit <b>PIN</b>: they type it on Verify, so every check is saved under the person who really did it. Names and PINs are shared with every computer (PINs only as a scrambled code). Changes here need the <b>owner PIN</b>.</p>
-    <div class="card"><h2>Owner PIN</h2><div id="stowner"></div></div>
+    <p class="intro">The people who check prints on <b>Print → Verify</b>: they choose their name in <b>Checked by</b>, and every check is saved under it. Shared with every computer.</p>
     <div class="card">
-      <div class="toolbar"><h2 style="margin:0">Staff</h2><span class="grow hint" id="stinfo"></span></div>
-      <div class="toolbar"><input id="stname" placeholder="Name" maxlength="60" style="max-width:200px"><input id="stpin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="PIN (4 digits)" style="max-width:140px"><button class="primary" id="stadd">Add person</button></div>
-      <div class="tw"><table><thead><tr><th>Name</th><th>PIN</th><th></th></tr></thead><tbody id="strows"></tbody></table></div>
+      <div class="toolbar"><h2 style="margin:0">Staff</h2></div>
+      <div class="toolbar"><input id="stname" placeholder="Name" maxlength="60" style="max-width:200px"><button class="primary" id="stadd">Add person</button></div>
+      <div class="tw"><table><thead><tr><th>Name</th><th></th></tr></thead><tbody id="strows"></tbody></table></div>
       <div class="msgs" id="stmsg"></div>
     </div>
   </div>
@@ -997,7 +1003,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <p><b>By product (0.35):</b> <b>Custom Organizer</b> (Bases / Letters, each To print · Printing · Printed) · <b>GTA</b> · <b>Harry Potter</b> · <b>Barbie</b> (To print · Printing · Printed) · <b>Verify</b> and <b>Completed</b> (product chips; search finds any order ID) · <b>Batches</b>. <b>Removed plates</b> is a link under each To print list.</p>
     <p><b>Print time:</b> under the printer picked, <i>≈ 6 h 40 m · ready ~9:15 pm</i> — learned from the prints already done (at 124 %, scaled to the speed chosen), counted from when that printer finishes its current print. A printer uses its own figures from 10 prints of a kind, else its model's, else every printer's; until a product has a few prints it says so. Stats → <b>Print time per letter</b> shows each printer's figures.</p>
     <p><b>Printer roles (0.36, Printers → Printer roles and AMS colours):</b> <b>Bases</b> printers stay on white and get base plates; <b>Letters</b> printers keep the common letter colours in their AMS slots and get letter plates during the shift; <b>Flex</b> takes bases and the rare letter colours; <b>Any</b> = no role. Print pre-selects printers by role and <b>Print next</b> follows it. A slot not holding its planned colour shows in red. Letter colours no Letters printer has loaded are listed on Letters (load them on the Flex printer).</p>
-    <p><b>The shift and the night (0.36):</b> set when someone is at the printers (default 8:00–22:00). Under the time of a base plate: <i>done before 22:00</i>, <i>overnight plate</i>, or in red <i>ends at night, then idle ~6 h</i> — start that one in the evening instead. <b>Before you leave</b> (shown from 4 hours before the shift ends, or press the button) gives every printer — letters printers too — a base plate that finishes around the morning, with <b>Start print</b> once it's free; it says when plates are short (merge bases or Make next batch). In the morning Print lists what printed overnight and which beds to clear.</p>
+    <p><b>The shift and the night (0.36):</b> set when someone is at the printers (default 8:00–22:00). Under the time of a base plate: <i>done before 22:00</i>, <i>overnight plate</i>, or in red <i>ends at night, then idle ~6 h</i> — start that one in the evening instead. <b>Before you leave</b> (press the button on Print; it opens only then) gives every printer — letters printers too — a base plate that finishes around the morning, with <b>Start print</b> once it's free; it says when plates are short (merge bases or Make next batch). In the morning Print lists what printed overnight and which beds to clear.</p>
     <p><b>Merging base plates:</b> tick base plates not started (up to 3 bases) and <b>Merge onto one plate</b> — no scaling; refused when they don't fit on the bed. <b>Available to merge</b> suggests sets that look like they fit, with the time (≈ 8 h or more: a good overnight plate). <b>Split back</b> undoes it before printing. A plate holding a clubbed order whose other names are already made says <i>print this now</i>.</p>
     <p><b>Bambuddy</b>, the open-source print-farm manager, runs on one Windows computer (as a service, with only its slicer service in Docker), for every SnapSTL computer (set up with <code>bambuddy-server.ps1</code>). Each SnapSTL connects to it in <b>Settings → Connections</b> with that computer's address, e.g. <code>http://192.168.1.50:8000</code> — the sidebar's <b>IP address</b> line on the Bambuddy computer shows and copies it. Bambuddy is connected to your Bambu printers and keeps a queue per printer.</p>
     <p>If Bambuddy, Docker, the slicer service or OctoEverywhere stops, open SnapSTL on the Bambuddy computer: <b>Settings → Connections → This Bambuddy computer — external services</b> shows each one. <b>Check now</b> looks again, <b>Start</b> starts whatever is down (choose Yes if Windows asks), each has its own <b>Restart</b>, and <b>Restart all</b> restarts Bambuddy, the slicer and OctoEverywhere (Docker has its own Restart). <b>Keep running</b> (on by default) starts what stopped by itself every minute; it never restarts anything that's running.</p>
@@ -1012,7 +1018,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <li><b>Merge</b> (Letters): tick letter plates of one colour that aren't started — fix plates too — up to 3 names in all, and press <b>Merge onto one plate</b> (other colours can't be ticked; more than 3 names is refused). Under the list, <b>Available to merge</b> suggests plates whose bases are already printed; ticking a plate whose base isn’t printed asks first. Merge runs once per press (a second press is refused). <b>Remove</b> works on every plate, merged and split ones too. The names keep their size (no scaling) and go onto one new plate in the newest batch's <code>Merged/</code> folder; the single plates leave the list. <b>Split back</b> returns them while the merged plate isn't started. <b>Group by colour</b> lists every name plate by colour, so one spool can print them all.</li>
       <li><b>Print label</b> (Completed; Settings → Logistics → Shipping labels): keep ShopDeck's Process Orders open and signed in in Chrome (the Helper brings it to the front while the label is made, then goes back). The SnapSTL Helper finds the order (an expired AWB is regenerated first), changes the courier to the first one offered from the list, waits a minute and presses Label; SnapSTL prints the label only if it matches the order exactly (order, AWB, items, names). A parcel with other products asks whether all items are ready. Sign-in needed → sign in, then <b>Continue</b>. Anything unexpected stops with the reason.</li>
       <li><b>Split</b> (Bases or Letters, not started): choose how many go on each part (e.g. 2 + 1); same size, saved in <code>Split/</code>. Splitting a <b>bases</b> plate splits its letter plates the same way, so the letters of each base part are on their own plate and can be printed once that base is done (a letter plate already started, printed, merged or split is left as it is). <b>Join back</b> on the bases joins those letters back too while nothing is started.</li>
-      <li><b>Verify</b>: one card per name, once its letters and its base are both printed (Bambu reports them printed) — nothing goes straight to packing. Type your <b>PIN</b> once (<b>Done / switch person</b> when you leave; signed out after 30 minutes without a check): every check is saved under you. The owner gives each person a PIN in <b>Settings → Staff</b>; until anyone has a PIN, choose the name instead. Put the letters with their base and mark each: <b>Good</b>, <b>Letter(s) spoiled</b> (tap the spoiled letters on the picture), <b>Whole name spoiled</b>, <b>Wrong colour</b> or <b>Base broken or warped</b>, then <b>Confirm – ready to pack</b> (or <b>Save – send problems for reprint</b>) — a <i>Saving…</i> screen covers the card until it's done (a second press saves nothing twice). Each problem gets a small <b>Fix</b> plate with only what was spoiled, at the same size, at the top of Bases / Letters; it's printed and checked like any plate. <b>Whole plate failed…</b> (on a card, or in Bases → Printed / Letters → Printed) sends a whole printed plate back to print. A name fixed twice before shows a warning to check the model. An order moves to <b>Orders → Printed – pack it</b> only when its base and its name are both checked good; until then Orders shows <i>Printed – waiting for check</i>. Everything printed before 0.24 counts as checked (<i>Before 0.24</i>).</li>
+      <li><b>Verify</b>: one card per name, once its letters and its base are both printed (Bambu reports them printed) — nothing goes straight to packing. Choose your name in <b>Checked by</b> (people are added in <b>Settings → Staff</b>): every check is saved under it. Put the letters with their base and mark each: <b>Good</b>, <b>Letter(s) spoiled</b> (tap the spoiled letters on the picture), <b>Whole name spoiled</b>, <b>Wrong colour</b> or <b>Base broken or warped</b>, then <b>Confirm – ready to pack</b> (or <b>Save – send problems for reprint</b>) — a <i>Saving…</i> screen covers the card until it's done (a second press saves nothing twice). Each problem gets a small <b>Fix</b> plate with only what was spoiled, at the same size, at the top of Bases / Letters; it's printed and checked like any plate. <b>Whole plate failed…</b> (on a card, or in Bases → Printed / Letters → Printed) sends a whole printed plate back to print. A name fixed twice before shows a warning to check the model. An order moves to <b>Orders → Printed – pack it</b> only when its base and its name are both checked good; until then Orders shows <i>Printed – waiting for check</i>. Everything printed before 0.24 counts as checked (<i>Before 0.24</i>).</li>
       <li><b>Completed</b>: names checked good and not shipped yet — colour, order, batch, printer, who checked it and when, and <i>had a fix</i>. Filter by date or search; tick rows and press <b>Packing slip</b> for a printable list. <b>Found a problem</b> (e.g. while packing) makes a fix plate and takes the order back to Printing.</li>
       <li><b>Removed</b>: plates taken off the lists, with <b>Put back</b> and <b>Printed by hand</b> (sends it to Verify). A plate leaves this list once its orders are packed, shipped or cancelled.</li>
       <li><b>Bed clear</b>: SnapSTL never starts a print on a bed that may still hold a finished print. If the printer shows a finished print, <b>Start print</b> asks you to take it off and confirm the bed is empty (this also clears the plate in Bambuddy). If the printer is busy with another print, the plate waits held in its queue — press <b>Start print</b> again once that print is done and the bed is empty.</li>
@@ -1584,7 +1590,7 @@ function mkMergeBar(){const sel=[...MERGESEL.values()],n=sel.reduce((a,r)=>a+(r.
     if(!confirm(`Merge these ${sel.length} plates onto one ${bases?'base':cols[0]} plate?\n\n${sel.map(r=>r.names.join(', ')).join('\n')}\n\nThe single plates leave the list; Split back undoes it before printing.`))return;
     if(early.length&&!confirm(`Base not printed yet for: ${early.map(r=>r.names.join(', ')).join('; ')}\n\nThese letters would wait, printed, until their bases are printed. Merge anyway?`))return;
     MERGING=true;$('mkmergego').disabled=true;$('mknote').innerHTML='<div class="w"><span class="spin" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle"></span> Merging…</div>';
-    try{const r=await post('/api/makeit/merge',{plates:sel.map(p=>({batch_id:p.batch_id,file:p.file})),token:VTOK,staff:VNAME||($('vstaff')?$('vstaff').value:'')});
+    try{const r=await post('/api/makeit/merge',{plates:sel.map(p=>({batch_id:p.batch_id,file:p.file})),staff:$('vstaff')?$('vstaff').value:''});
       MERGESEL.clear();$('mknote').innerHTML=`<div class="ok">Merged: ${esc(r.names)} — ${esc(r.file.split('/').pop())}</div>`}catch(e){$('mknote').innerHTML='';alert(e.message)}await loadMakeIt();MERGING=false;mkRender(true)}}
 let MKBSUB='todo',MKLSUB='todo',MKSSUB='todo';try{MKBSUB=localStorage.getItem('mkbsub')||'todo';MKLSUB=localStorage.getItem('mklsub')||'todo';MKSSUB=localStorage.getItem('mkssub')||'todo'}catch{}
 const mkWhen=t=>t?new Date(t*1000).toLocaleString([], {day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}):'';
@@ -1720,7 +1726,7 @@ function mkRender(force){const editing=!force&&['mkbases','mknames','mkstands'].
   document.querySelectorAll('[data-bmerge]').forEach(x=>x.onclick=async()=>{const s=MK.merge_bases[+x.dataset.bmerge];
     if(!confirm(`Merge ${s.plates.length} base plates onto one plate (${s.names} bases)?\n\n${s.plates.map(p=>p.names.join(', ')).join('\n')}\n\nNo scaling — refused if they don't fit. Split back undoes it before printing.`))return;
     if(MERGING)return;MERGING=true;document.querySelectorAll('[data-bmerge]').forEach(b=>b.disabled=true);
-    try{const r=await post('/api/makeit/merge',{plates:s.plates.map(p=>({batch_id:p.batch_id,file:p.file})),token:VTOK,staff:VNAME||($('vstaff')?$('vstaff').value:'')});$('mknote').innerHTML=`<div class="ok">Merged: ${esc(r.names)} — ${esc(r.file.split('/').pop())}</div>`}catch(e){alert(e.message)}await loadMakeIt();MERGING=false;mkRender(true)});
+    try{const r=await post('/api/makeit/merge',{plates:s.plates.map(p=>({batch_id:p.batch_id,file:p.file})),staff:$('vstaff')?$('vstaff').value:''});$('mknote').innerHTML=`<div class="ok">Merged: ${esc(r.names)} — ${esc(r.file.split('/').pop())}</div>`}catch(e){alert(e.message)}await loadMakeIt();MERGING=false;mkRender(true)});
   const dp=MK.duplicates||[];$('mkdupes').innerHTML=dp.length?`<div class="msgs"><div class="e"><b>Same names on two plates</b> (merge pressed twice): ${dp.map(d=>`<b>${esc(d.file.split('/').pop())}</b> is a copy of ${esc(d.of.file.split('/').pop())} — press <b>Remove</b> on it`).join('; ')}. Don't print it.</div></div>`:'';
   $('mkmerge').innerHTML=(MK.merge||[]).map((s,i)=>`<div class="msgs"><div class="w" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>${sw(s.color)} · ${s.plates.length} plates with room — ${s.plates.map(p=>`<b>${esc(p.names.join(', '))}</b> <span class="hint">(${esc(p.batch||'')})</span>`).join(' + ')}</span><span class="grow"></span><button class="small primary" data-merge="${i}" ${MERGING?'disabled':''} title="Put these ${s.names} names on one ${esc(s.color)} plate (same size, no scaling)">Merge onto one plate</button></div></div>`).join('');
   vRender(force);cRender();
@@ -1729,7 +1735,7 @@ function mkRender(force){const editing=!force&&['mkbases','mknames','mkstands'].
   document.querySelectorAll('[data-merge]').forEach(x=>x.onclick=async()=>{const s=MK.merge[+x.dataset.merge];
     if(!confirm(`Merge ${s.plates.length} ${s.color} plates onto one plate?\n\n${s.plates.map(p=>p.names.join(', ')).join('\n')}\n\nThe single plates leave the list; Split back undoes it before printing.`))return;
     if(MERGING)return;MERGING=true;document.querySelectorAll('[data-merge]').forEach(b=>b.disabled=true);
-    try{const r=await post('/api/makeit/merge',{plates:s.plates.map(p=>({batch_id:p.batch_id,file:p.file})),token:VTOK,staff:VNAME||($('vstaff')?$('vstaff').value:'')});$('mknote').innerHTML=`<div class="ok">Merged: ${esc(r.names)} — ${esc(r.file.split('/').pop())}</div>`}catch(e){alert(e.message)}await loadMakeIt();MERGING=false;mkRender(true)});
+    try{const r=await post('/api/makeit/merge',{plates:s.plates.map(p=>({batch_id:p.batch_id,file:p.file})),staff:$('vstaff')?$('vstaff').value:''});$('mknote').innerHTML=`<div class="ok">Merged: ${esc(r.names)} — ${esc(r.file.split('/').pop())}</div>`}catch(e){alert(e.message)}await loadMakeIt();MERGING=false;mkRender(true)});
   document.querySelectorAll('[data-mksplit]').forEach(x=>x.onclick=async()=>{const r=find(x.dataset.mksplit);
     if(!confirm('Split this merged plate back into its single plates?'))return;
     try{await post('/api/makeit/split',{batch_id:r.batch_id,file:r.file});delete MKSEL[x.dataset.mksplit]}catch(e){alert(e.message)}loadMakeIt()});
@@ -1770,7 +1776,6 @@ function mkRender(force){const editing=!force&&['mkbases','mknames','mkstands'].
       else if(/anyway|filament|warn/i.test(e.message)&&confirm(e.message+'\n\nStart anyway?')){try{await sentOk({...body,force:true})}catch(e2){alert(e2.message)}}else alert(e.message)}
     document.activeElement&&document.activeElement.blur();await loadMakeIt();MKGOING.delete(x.dataset.mkstart);mkRender(true)})}
 // ---------- Before you leave / morning (0.36): every printer prints a base plate through the night ----------
-const mkPlanTime=()=>{const T=shiftTimes(),t=Date.now();return !T.night&&t>=T.end-4*36e5};  // from 4 h before the shift ends
 let PLANSTART={};
 function mkPlan(){if(!MK)return;const T=shiftTimes(),now=Date.now(),back=T.night?T.nextStart:T.startAfter,endAt=T.night?now:T.end;
   let free=MK.bases.filter(r=>!r.job_active&&!(r.job&&['sent','printing','queued','slicing','uploading'].includes(r.job.state)));
@@ -1791,10 +1796,9 @@ function mkPlan(){if(!MK)return;const T=shiftTimes(),now=Date.now(),back=T.night
     ${short?`<div class="msgs"><div class="e">${short} printer${short>1?'s':''} without an overnight plate — merge bases (<b>Bases → Available to merge</b>, ${(MK.merge_bases||[]).length} set${(MK.merge_bases||[]).length===1?'':'s'}) or press <b>Make next batch</b> on Pending Orders.</div></div>`:''}
     <div class="hint" style="margin-bottom:4px">${n3} base plate${n3===1?'':'s'} with 3 bases ready · plates picked to finish around ${esc(T.sh.start)} (the longest that fit the night)</div>
     <div class="tw"><table><thead><tr><th>Printer</th><th>Now</th><th>Overnight plate</th><th></th></tr></thead><tbody>${rows.join('')||'<tr><td colspan="4" class="empty">No printers connected</td></tr>'}</tbody></table></div></div>`;
-  $('mkplanx').onclick=()=>{$('mkplan').hidden=true;$('mkplan').dataset.closed='1'};
+  $('mkplanx').onclick=()=>{$('mkplan').hidden=true};
   document.querySelectorAll('[data-planstart]').forEach(b=>b.onclick=()=>{const k=b.dataset.planstart,r=MK.bases.find(y=>mkKey(y)===k);if(r)startOn(r,PLANSTART[k])})}
-$('mkplanbtn').onclick=()=>{$('mkplan').dataset.closed='';if(!$('mkplan').hidden){$('mkplan').hidden=true;return}mkPlan()};
-const _mkPlanAuto=mkPlan;mkPlan=function(){if($('mkplan').dataset.closed==='1'&&$('mkplan').hidden)return;_mkPlanAuto()};
+$('mkplanbtn').onclick=()=>{if(!$('mkplan').hidden){$('mkplan').hidden=true;return}mkPlan()};
 function mkMorning(){if(!MK)return;const T=shiftTimes(),t=Date.now();
   if(T.night||t>T.start+3*36e5){$('mkmorning').innerHTML='';return}
   const done=[...(MK.printed_bases||[]),...(MK.printed_letters||[]),...(MK.printed_stands||[])].filter(r=>r.done_at&&r.done_at*1000>=T.prevEnd);
@@ -1837,26 +1841,14 @@ async function watchPrinters(){if(document.hidden&&PRSTATE)return;let r;try{r=aw
       try{if(window.Notification&&Notification.permission==='granted')new Notification('SnapSTL',{body:text})}catch{}
       if(tab==='makeit')loadMakeIt()}}
   PRSTATE=now}
-// ---------- Print → Verify (0.25.1: one card per name, saved under the person whose PIN was typed) ----------
+// ---------- Print → Verify (one card per name, saved under the person chosen in Checked by) ----------
 const VSEL={};const VRES={names:[['good','Good'],['letters','Letter(s) spoiled'],['name','Whole name spoiled'],['colour','Wrong colour']],bases:[['good','Good'],['base','Base broken or warped']],stands:[['good','Good'],['stand','Stand spoiled — print it again']]};
 const vKey=i=>i.batch_id+'|'+i.plate+'|'+i.idx;
-let VTOK='',VNAME='';try{VTOK=localStorage.getItem('vtok')||'';VNAME=localStorage.getItem('vname')||''}catch{}
-const vKeep=()=>{try{localStorage.setItem('vtok',VTOK);localStorage.setItem('vname',VNAME)}catch{}};
-// who a check (or a merge, or Found a problem) is saved under: the PIN's person once PINs are in use, else the chosen name
-function vAuth(){if(MK&&MK.pins_on){if(!VTOK){alert('Type your PIN first (Print → Verify).');mkShow('verify');setTimeout(()=>$('vpin')&&$('vpin').focus(),50);return null}return {token:VTOK,staff:VNAME}}
-  const n=$('vstaff')?$('vstaff').value:'';if(!n){alert('Choose who is checking first (Print → Verify → Checked by).');mkShow('verify');return null}return {staff:n}}
-// a PIN sign-in that expired (30 minutes without a check): ask again
-function vExpired(e){if(/PIN again|signed out/i.test(e.message)){VTOK='';VNAME='';vKeep();vWho();alert(e.message);return true}return false}
-function vWho(){const box=$('vwho');
-  if(MK&&MK.pins_on){
-    box.innerHTML=VTOK?`<span>Checking now: <b>${esc(VNAME)}</b></span><button class="small" id="vdone">Done / switch person</button><span class="hint">Every check is saved under ${esc(VNAME)} · signed out after 30 minutes without a check</span>`
-      :`<label style="margin:0" for="vpin">Type your PIN to start checking</label><input id="vpin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" style="max-width:100px"><button class="primary small" id="vstart">Start</button><span class="hint">No PIN yet? Ask the owner (Settings → Staff).</span>`;
-    if($('vdone'))$('vdone').onclick=async()=>{try{await post('/api/staff/end',{token:VTOK})}catch{}VTOK='';VNAME='';vKeep();vWho()};
-    if($('vstart')){const go=async()=>{try{const r=await post('/api/staff/start',{pin:$('vpin').value.trim()});VTOK=r.token;VNAME=r.name;vKeep();vWho()}catch(e){alert(e.message);$('vpin').value='';$('vpin').focus()}};
-      $('vstart').onclick=go;$('vpin').onkeydown=e=>{if(e.key==='Enter')go()}}
-  }else{
+// who a check (or a merge, or a label) is saved under: the name chosen in Checked by
+function vAuth(){const n=$('vstaff')?$('vstaff').value:'';if(!n){alert('Choose who is checking first (Print → Verify → Checked by).');mkShow('verify');return null}return {staff:n}}
+function vWho(){const box=$('vwho');{
     const cur=(()=>{try{return localStorage.getItem('vstaff')||''}catch{return ''}})(),L=(MK&&MK.staff)||[];
-    box.innerHTML=`<label style="margin:0" for="vstaff">Checked by</label><select id="vstaff" style="max-width:220px"><option value="">— who is checking? —</option>${L.map(n=>`<option ${n===cur?'selected':''}>${esc(n)}</option>`).join('')}</select><span class="hint">Give everyone a PIN in <a href="#" data-go="settings:staff">Settings → Staff</a>, so each check is saved under the right person.</span>`;
+    box.innerHTML=`<label style="margin:0" for="vstaff">Checked by</label><select id="vstaff" style="max-width:220px"><option value="">— who is checking? —</option>${L.map(n=>`<option ${n===cur?'selected':''}>${esc(n)}</option>`).join('')}</select><span class="hint">Add or hide people in <a href="#" data-go="settings:staff">Settings → Staff</a>.</span>`;
     $('vstaff').onchange=()=>{try{localStorage.setItem('vstaff',$('vstaff').value)}catch{}}}}
 function letterSVG(pcs,picked){if(!pcs.length)return '';let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;for(const p of pcs)for(const r of p.rings)for(const [x,y] of r){x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y)}
   return `<svg viewBox="${x0-3} ${-y1-3} ${x1-x0+6} ${y1-y0+6}" style="width:100%;max-width:420px;height:90px;cursor:pointer">${pcs.map(p=>`<path data-vpiece="${p.n}" d="${p.rings.map(r=>'M'+r.map(([x,y])=>`${x},${-y}`).join('L')+'Z').join('')}" fill="${picked.has(p.n)?'var(--err)':'var(--chip)'}" fill-rule="evenodd" stroke="var(--text)" stroke-width="0.6"><title>${esc(p.label)}</title></path>`).join('')}</svg>`}
@@ -1875,7 +1867,7 @@ async function vPlateFailed(key){const [bid,...f]=key.split('|'),file=f.join('|'
   if(!confirm(`The whole plate ${file.split('/').pop()} failed?\n\nEverything on it that isn't checked yet goes back to print: the plate returns to its list.`))return;
   $('mknote').innerHTML='<div class="w"><span class="spin" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle"></span> Sending the plate back to print…</div>';
   try{await post('/api/verify/plate-failed',{carrier:{batch_id:+bid,file},...who});$('mknote').innerHTML=`<div class="w">${esc(file.split('/').pop())}: back to its list to print again.</div>`}
-  catch(e){$('mknote').innerHTML='';if(!vExpired(e))alert(e.message)}loadMakeIt()}
+  catch(e){$('mknote').innerHTML='';alert(e.message)}loadMakeIt()}
 let VBUSY=false;  // a check is being saved: keep its card (and the saving screen) until it's done
 function vRender(force){if(VBUSY||(!force&&$('mkverify').contains(document.activeElement)))return;vWho();
   const all=MK.verify||[],q=$('vq').value.trim().toLowerCase(),L=all.filter(c=>(!MKVPROD||c.product===MKVPROD)&&(!q||`${c.name} ${c.order_id} ${c.batch}`.toLowerCase().includes(q)));
@@ -1904,7 +1896,7 @@ function vRender(force){if(VBUSY||(!force&&$('mkverify').contains(document.activ
     try{const r=await post('/api/verify',{results,...who});
       for(const i of c.items)delete VSEL[vKey(i)];
       $('mknote').innerHTML=r.fixes.length?`<div class="w">${esc(c.name)}: fix plate${r.fixes.length>1?'s':''} made — ${r.fixes.map(f=>esc(f.split('/').pop())).join(', ')} — at the top of Bases / Letters.</div>`:`<div class="ok">${esc(c.name)} checked by ${esc(who.staff)}: ready to pack (Completed).</div>`}
-    catch(e){if(/already checked/i.test(e.message)){for(const i of c.items)delete VSEL[vKey(i)];$('mknote').innerHTML=`<div class="w">${esc(e.message)}</div>`}else if(!vExpired(e))alert(e.message)}
+    catch(e){if(/already checked/i.test(e.message)){for(const i of c.items)delete VSEL[vKey(i)];$('mknote').innerHTML=`<div class="w">${esc(e.message)}</div>`}else alert(e.message)}
     finally{VBUSY=false}loadMakeIt()};
   document.querySelectorAll('[data-vsave]').forEach(x=>x.onclick=()=>submit(+x.dataset.vsave))}
 $('vq').oninput=()=>MK&&vRender(true);
@@ -1953,12 +1945,12 @@ function lbWire(){
     const what=p.clubbed?`one label for clubbed order ${p.key} (${(p.names||[]).join(', ')})`:`the label for ${oid}`;
     if((p.others||[]).length){if(!confirm(`This parcel also holds:\n\n${p.others.map(x=>`• ${x.quantity} × ${x.product}`).join('\n')}\n\nAre ALL of these ready and going into this parcel? Only then press OK — the label is made on ShopDeck.`))return;ready=true}
     else if(!confirm(`Print ${what}?\n\nThe courier is changed on ShopDeck first (new AWB), then the label is printed on ${LB.printer}.`))return;
-    b.disabled=true;try{const r=await post('/api/labels',{order_ids:[oid],items_ready:ready,...who});lbFront(r.jobs&&r.jobs[0]&&r.jobs[0].id)}catch(e){if(!vExpired(e))alert(e.message)}lbLoad()});
+    b.disabled=true;try{const r=await post('/api/labels',{order_ids:[oid],items_ready:ready,...who});lbFront(r.jobs&&r.jobs[0]&&r.jobs[0].id)}catch(e){alert(e.message)}lbLoad()});
   document.querySelectorAll('[data-lbgo]').forEach(b=>b.onclick=async()=>{try{await post(`/api/labels/${b.dataset.lbgo}/continue`);lbFront(b.dataset.lbgo)}catch(e){alert(e.message)}lbLoad()});
   document.querySelectorAll('[data-lbtrace]').forEach(b=>b.onclick=()=>lbTrace(b.dataset.lbtrace));
   document.querySelectorAll('[data-lbpack]').forEach(b=>b.onclick=async()=>{const who=vAuth();if(!who)return;
     if(!confirm('Get this label from ShopDeck\'s Pack section?\n\nNo courier change: the order is found in Pack, its AWB must be the new one, then the label is downloaded, checked and printed.'))return;
-    b.disabled=true;try{await post(`/api/labels/${b.dataset.lbpack}/from-pack`,who);lbFront(b.dataset.lbpack)}catch(e){if(!vExpired(e))alert(e.message)}lbLoad()});
+    b.disabled=true;try{await post(`/api/labels/${b.dataset.lbpack}/from-pack`,who);lbFront(b.dataset.lbpack)}catch(e){alert(e.message)}lbLoad()});
   document.querySelectorAll('[data-lbstop]').forEach(b=>b.onclick=async()=>{if(!confirm('Stop this label? Nothing is undone on ShopDeck.'))return;try{await post(`/api/labels/${b.dataset.lbstop}/cancel`)}catch(e){alert(e.message)}lbLoad()});
   document.querySelectorAll('[data-lbre]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await post(`/api/labels/${b.dataset.lbre}/reprint`)}catch(e){alert(e.message)}lbLoad()})}
 const CSEL=new Set();let CPICK=null;  // Completed → Some letters spoiled: {order_id, item, pcs, picked}
@@ -2021,10 +2013,7 @@ async function loadMakeIt(){let r;try{r=await api('/api/makeit')}catch(e){$('mkm
   $('mknow').innerHTML=r.printers.length?`<div class="mknow"><b>Free for the next print:</b> ${nw.free.length?nw.free.map(p=>`<span class="nchip" title="${esc(p.spools.map(s=>s.color).filter(Boolean).join(', ')||'no filament reported')}">${esc(p.name)}${rtag(mkPrinter(p.id).role)} ${p.spools.slice(0,4).map(s=>`<span class="swatch" style="background:${esc(hx(s))}"></span>`).join('')}${(()=>{const x=pickFor(p.id);if(!x)return ' <span class="hint">nothing for it</span>';const c=x.choices.find(y=>y.id===p.id),m=c&&c.est?c.est.min:null;return ` <span class="hint">next: ${x.kind==='bases'?'Bases':x.kind==='stands'?'Stand':'Letters '+esc(x.colors[0]||'')} · ${esc(x.names.slice(0,3).join(', '))}${m?` · ≈ ${mkDur(m)}, done ~${mkClock(Date.now()+m*60000)}`:''}</span>`})()} <button class="small primary" data-pnext="${p.id}" title="Pick the best plate for this printer (its role, the filament loaded) and start it">Print next</button></span>`).join(''):'<span class="hint">none right now</span>'}${nw.clear.length?` <span class="pill warn">Bed to clear: ${nw.clear.map(esc).join(', ')}</span>`:''} <span class="hint">· ${nw.busy} busy${nw.offline?` · ${nw.offline} offline`:''}</span></div>`
     +((nw.printing||[]).length?`<div class="mknow"><b>Printing:</b> ${nw.printing.map(p=>`<span class="nchip" style="flex-direction:column;align-items:flex-start;border-radius:8px;padding:3px 8px"><span>${esc(p.name)} · ${Math.round(p.progress||0)}%</span>${p.remaining?`<b style="font-size:12px">ready at ${finishAt(p.remaining)}</b>`:''}</span>`).join('')}</div>`:''):'';
   document.querySelectorAll('[data-pnext]').forEach(x=>x.onclick=()=>printNext(+x.dataset.pnext));
-  // 0.36: AMS slots not loaded as planned
-  const iss=r.printers.filter(p=>(p.slot_issues||[]).length);
-  $('mkslots').innerHTML=iss.length?`<div class="msgs">${iss.map(p=>`<div class="e"><b>${esc(p.name)}</b>${rtag(p.role)}: ${p.slot_issues.map(esc).join('; ')} <a href="#" data-go="printers">Printer roles</a></div>`).join('')}</div>`:'';
-  mkMorning();if(!$('mkplan').hidden||mkPlanTime())mkPlan();
+  mkMorning();if(!$('mkplan').hidden)mkPlan();
   $('mkinfo').innerHTML=`${r.printers.length} printer${r.printers.length===1?'':'s'} · ${busy} printing${clear?` · <a href="#" data-go="printers">${clear} waiting for the bed to be cleared</a>`:''}`;
   mkShow(MKTAB);mkRender();
   // a plate on its way to a printer: refresh every 5 s so the progress bar moves (else once a minute)
@@ -2355,11 +2344,11 @@ $('helpsave').onclick=async()=>{const b=$('helpsave');b.disabled=true;try{await 
 $('portalsave').onclick=async()=>{const b=$('portalsave');b.disabled=true;try{await post('/api/portal',{enabled:$('lan').checked,password:$('portalpw').value});$('portalpw').value='';await loadPortal()}catch(e){$('portalinfo').textContent=e.message;$('portalinfo').style.color='var(--err)'}finally{b.disabled=false}};
 
 // ---------- settings sections ----------
-const SETSECS=[['setup','Setup'],['product','Product'],['stands','Name stands'],['plates','Plates'],['folders','Folders'],['connections','Connections'],['maintenance','Maintenance'],['logistics','Logistics'],['staff','Staff'],['usage','Usage']];
+const SETSECS=[['setup','Setup'],['product','Product'],['stands','Name stands'],['plates','Plates'],['folders','Folders'],['connections','Connections'],['shopdeck','ShopDeck'],['maintenance','Maintenance'],['logistics','Logistics'],['staff','Staff'],['usage','Usage']];
 let SETSEC='setup';try{SETSEC=localStorage.getItem('setsec')||'setup'}catch{}
 function setSec(sec){if(!SETSECS.some(x=>x[0]===sec))sec='setup';SETSEC=sec;try{localStorage.setItem('setsec',sec)}catch{}
   document.querySelectorAll('#t-settings [data-sec]').forEach(d=>d.hidden=d.dataset.sec!==sec);
-  $('savebar').hidden=!['product','stands','plates','folders','logistics'].includes(sec);if(sec==='usage')loadUsage();if(sec==='folders')loadReportImport();if(sec==='staff')loadStaff();
+  $('savebar').hidden=!['product','stands','plates','folders','logistics'].includes(sec);if(sec==='usage')loadUsage();if(sec==='folders')loadReportImport();if(sec==='staff')loadStaff();if(sec==='shopdeck')loadShopDeck();
   $('setchips').innerHTML=SETSECS.map(([k,l])=>`<button data-ss="${k}" class="${k===sec?'on':''}">${l}</button>`).join('');
   document.querySelectorAll('[data-ss]').forEach(b=>b.onclick=()=>setSec(b.dataset.ss))}
 // ---------- Settings → Folders: reports from Downloads (0.26) ----------
@@ -2398,26 +2387,41 @@ async function loadStats(){loadPrintTimes();let r;try{r=await api('/api/stats?da
   if($('stsettarget'))$('stsettarget').onclick=async e=>{e.preventDefault();const v=prompt('How many orders should be made per day? (0 = no target)',t.target||'');if(v===null)return;
     try{await post('/api/stats/target',{target:+v||0});loadStats()}catch(err){alert(err.message)}}}
 $('stdays').onchange=loadStats;$('strefresh').onclick=loadStats;
-// ---------- Settings → Staff (0.25.1): people, their PINs, the owner PIN ----------
-let STAFF=null,OWNERPIN='';
+// ---------- Settings → ShopDeck (0.37): the partner API, live order status ----------
+const sdMsg=(m,bad)=>{$('sdmsg').innerHTML=m?`<div class="${bad?'e':'o'}">${esc(m)}</div>`:''};
+const sdWhen=t=>t?new Date(typeof t==='number'?t*1000:t).toLocaleString([], {day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}):'';
+async function loadShopDeck(){let s;try{s=await api('/api/shopdeck')}catch(e){sdMsg(e.message,true);return}
+  const L=s.last||{},local=META&&META.local;
+  const last=L.at?(L.ok?`Last checked ${sdWhen(L.at)}: ${L.seen} order item${L.seen===1?'':'s'} on ShopDeck (last ${L.days} days), ${L.known} known here, ${L.changed} moved on.`:`<span style="color:var(--err)">Last check ${sdWhen(L.at)} failed: ${esc(L.error||'')}</span>`):'Not checked yet.';
+  $('sdbox').innerHTML=`<label>App ID <span class="hint">— ShopDeck partner portal → Apps → SnapSTL</span></label>
+    <div class="toolbar"><input id="sdapp" value="${esc(s.app_id)}" maxlength="64" placeholder="24 letters and digits" style="max-width:300px" ${local?'':'disabled'}><button id="sdappsave" ${local?'':'disabled'}>Save App ID</button></div>
+    <p class="hint">The app's redirection URL on ShopDeck must be <code>${esc(s.redirect_url)}</code></p>
+    ${s.connected?`<p><span class="pill ok">Connected</span> since ${esc(sdWhen(s.connected_at))}${s.expires_at?` · key valid until ${esc(sdWhen(s.expires_at))} (renewed by itself)`:''}${(s.scope||[]).length?` · <span class="hint">${esc(s.scope.join(', '))}</span>`:''}</p>
+      <p class="hint">${last}</p>
+      <div class="toolbar"><button id="sdnow">Check now</button><label class="hint" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="sdapply" ${s.apply_status?'checked':''}> Move orders to ShopDeck's status</label><span class="grow"></span><button id="sdoff">Disconnect</button></div>`
+    :`<p><span class="pill warn">Not connected</span></p>${s.app_id?`<p class="hint">Press Connect, allow SnapSTL on ShopDeck's page (sign in there if it asks); it comes back here by itself.</p><div class="toolbar"><a class="btn primary" id="sdconnect" href="/api/shopdeck/connect">Connect ShopDeck</a></div>`:'<p class="hint">Save the App ID first.</p>'}`}
+    ${s.last_error?`<div class="msgs"><div class="e">${esc(s.last_error)}</div></div>`:''}`;
+  const B=s.bridge||{files:[]};
+  $('sdbridge').innerHTML=`<p class="hint">Folder: <code>${esc(B.folder||'')}</code></p>`+(B.files.length?`<div class="tw"><table><thead><tr><th>File</th><th>When</th><th>Result</th></tr></thead><tbody>${B.files.map(f=>`<tr><td><code>${esc(f.file)}</code></td><td>${esc(sdWhen(f.at))}</td><td>${f.ok?`<b>${f.new}</b> new (${f.to_print} ready, ${f.check} to check) · ${f.known} already here${f.left?` · ${f.left} left for the report`:''}`:`<span style="color:var(--err)">${esc(f.error||'')}</span>`}</td></tr>`).join('')}</tbody></table></div>`:'<p class="hint">No bridge file since SnapSTL started.</p>');
+  $('sdchcard').hidden=!(s.changes||[]).length;
+  $('sdch').innerHTML=(s.changes||[]).map(c=>`<tr><td><code>${esc(c.order_id)}</code></td><td>${esc(c.from||'')}</td><td><b>${esc(c.to)}</b></td><td>${esc(sdWhen(c.at))}</td></tr>`).join('');
+  if($('sdappsave'))$('sdappsave').onclick=async()=>{try{await post('/api/shopdeck',{app_id:$('sdapp').value.trim()});sdMsg('App ID saved');loadShopDeck()}catch(e){sdMsg(e.message,true)}};
+  if($('sdapply'))$('sdapply').onchange=async()=>{try{await post('/api/shopdeck',{apply_status:$('sdapply').checked})}catch(e){sdMsg(e.message,true)}};
+  if($('sdnow'))$('sdnow').onclick=async()=>{const b=$('sdnow');b.disabled=true;b.textContent='Checking…';try{await post('/api/shopdeck/check-now',{});sdMsg('')}catch(e){sdMsg(e.message,true)}loadShopDeck()};
+  if($('sdoff'))$('sdoff').onclick=async()=>{if(!confirm('Disconnect ShopDeck? Statuses then come only from reports until you connect again.'))return;try{await post('/api/shopdeck/disconnect',{});loadShopDeck()}catch(e){sdMsg(e.message,true)}}}
+
+// ---------- Settings → Staff: the people who check prints ----------
+let STAFF=null;
 const stMsg=(m,bad)=>{$('stmsg').innerHTML=`<div class="${bad?'e':'o'}">${esc(m)}</div>`};
-async function stPost(b){if(STAFF&&STAFF.owner_pin_set&&!OWNERPIN){const p=prompt('Owner PIN:');if(!p)return false;OWNERPIN=p.trim()}
-  try{await post('/api/staff',{...b,owner_pin:OWNERPIN});return true}catch(e){if(/owner PIN/i.test(e.message))OWNERPIN='';stMsg(e.message,true);return false}}
+async function stPost(b){try{await post('/api/staff',b);return true}catch(e){stMsg(e.message,true);return false}}
 async function loadStaff(){try{STAFF=await api('/api/staff?all=1')}catch(e){stMsg(e.message,true);return}
-  $('stowner').innerHTML=STAFF.owner_pin_set?`<p class="hint">Set. Adding people and setting PINs asks for it. Forgot it? On the SnapSTL computer run <code>uv run snapstl-admin reset-owner-pin</code> in the SnapSTL folder, then set a new one here.</p>
-    <div class="toolbar"><input id="stoold" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="Current owner PIN" style="max-width:170px"><input id="stonew" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="New owner PIN" style="max-width:170px"><button id="stoset">Change owner PIN</button></div>`
-    :`<p class="hint">Not set yet. Set it first, so only you can add people and set their PINs.</p><div class="toolbar"><input id="stonew" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="Owner PIN (4 digits)" style="max-width:190px"><button class="primary" id="stoset">Set owner PIN</button></div>`;
-  $('stoset').onclick=async()=>{const pin=$('stonew').value.trim();try{await post('/api/staff/owner-pin',{pin,old_pin:$('stoold')?$('stoold').value.trim():''});OWNERPIN=pin;stMsg('Owner PIN saved');loadStaff()}catch(e){stMsg(e.message,true)}};
   const L=STAFF.staff;
-  $('stinfo').textContent=STAFF.pins_on?'PINs in use: a check needs the person\'s PIN':'No PINs yet: Verify lets anyone pick a name until the first PIN is set';
-  $('strows').innerHTML=L.length?L.map(s=>`<tr><td>${esc(s.name)}${s.hidden?' <span class="pill">hidden</span>':''}</td><td>${s.pin_set?'<span class="pill ok">set</span>':'<span class="pill warn">no PIN</span>'}</td>
-    <td style="white-space:nowrap;text-align:right"><button class="small" data-stpin="${esc(s.name)}">${s.pin_set?'Change PIN':'Set PIN'}</button> <button class="small" data-sthide="${esc(s.name)}" data-h="${s.hidden?0:1}" title="${s.hidden?'Show again':'Hide: no longer checks prints (old checks keep the name)'}">${s.hidden?'Show':'Hide'}</button></td></tr>`).join('')
-    :'<tr><td colspan="3" class="empty">Nobody yet — add the people who check prints</td></tr>';
-  document.querySelectorAll('[data-stpin]').forEach(x=>x.onclick=async()=>{const n=x.dataset.stpin,p=prompt(`New 4-digit PIN for ${n}:`);if(!p)return;
-    if(await stPost({name:n,pin:p.trim()})){stMsg(`PIN saved for ${n}`);loadStaff()}});
+  $('strows').innerHTML=L.length?L.map(s=>`<tr><td>${esc(s.name)}${s.hidden?' <span class="pill">hidden</span>':''}</td>
+    <td style="white-space:nowrap;text-align:right"><button class="small" data-sthide="${esc(s.name)}" data-h="${s.hidden?0:1}" title="${s.hidden?'Show again':'Hide: no longer checks prints (old checks keep the name)'}">${s.hidden?'Show':'Hide'}</button></td></tr>`).join('')
+    :'<tr><td colspan="2" class="empty">Nobody yet — add the people who check prints</td></tr>';
   document.querySelectorAll('[data-sthide]').forEach(x=>x.onclick=async()=>{if(await stPost({name:x.dataset.sthide,hidden:x.dataset.h==='1'})){loadStaff()}})}
-$('stadd').onclick=async()=>{const n=$('stname').value.trim(),p=$('stpin').value.trim();if(!n){stMsg('Type the name first',true);return}
-  if(await stPost(p?{name:n,pin:p}:{name:n})){$('stname').value='';$('stpin').value='';stMsg(`${n} added`+(p?'':' — set a PIN too'));loadStaff()}};
+$('stadd').onclick=async()=>{const n=$('stname').value.trim();if(!n){stMsg('Type the name first',true);return}
+  if(await stPost({name:n})){$('stname').value='';stMsg(`${n} added`);loadStaff()}};
 // ---------- setup checklist ----------
 function jump(id){const el=$(id);const sec=el&&el.closest('[data-sec]');if(sec)setSec(sec.dataset.sec);if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.classList.add('flash');setTimeout(()=>el.classList.remove('flash'),1600)}}
 async function loadSetup(){if(!META.local){$('setupcard').hidden=true;$('sharedcard').hidden=true;return}
@@ -2833,7 +2837,8 @@ $('dcsv').onclick=()=>use('download_csv');
   if(META.os==='windows')document.body.classList.add('win');
   $('pcname').textContent=META.computer.name+(META.shared_records?' · shared records':'');$('resetsharedl').hidden=!META.shared_records;$('dbshared').hidden=!META.shared_records;$('dblocal').hidden=!!META.shared_records;show(t);refresh();loadHealth();setInterval(refresh,2000);
   if(META.local){loadUpdates(1);setInterval(()=>loadUpdates(1),6*3600*1000)}
-  watchPrinters();setInterval(watchPrinters,30000);setInterval(()=>{if(tab==='makeit'&&!document.hidden&&!VBUSY)loadMakeIt()},60000)})();
+  watchPrinters();setInterval(watchPrinters,30000);setInterval(()=>{if(tab==='makeit'&&!document.hidden&&!VBUSY)loadMakeIt()},60000);
+  if(location.hash.startsWith('#settings:')){show('settings');setSec(location.hash.slice(10));history.replaceState(null,'',location.pathname)}})();
 </script>
 </body>
 </html>

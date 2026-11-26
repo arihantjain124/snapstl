@@ -268,6 +268,9 @@ CREATE TRIGGER IF NOT EXISTS orders_outbox_ins AFTER INSERT ON orders
   BEGIN INSERT OR REPLACE INTO sync_outbox(order_id, queued_at) VALUES (NEW.order_id, {_NOW}); END;
 CREATE TRIGGER IF NOT EXISTS batches_unsynced AFTER UPDATE OF status, summary, out_dir, order_ids ON batches
   BEGIN UPDATE batches SET synced = 0 WHERE id = NEW.id; END;
+-- 0.37: what the ShopDeck API last said about each order item (shopdeck.py); this computer only
+CREATE TABLE IF NOT EXISTS shopdeck_live (order_id TEXT PRIMARY KEY, status TEXT, awb_no TEXT, courier TEXT,
+    clubbed_id TEXT, label TEXT, sd_updated_at TEXT, seen_at REAL);
 """
 
 
@@ -298,7 +301,7 @@ def _upgrade_stamps(con) -> None:
 # columns of tables made in POST_SCHEMA
 LATE_MIGRATIONS = [
     ("print_jobs", "started_at", "REAL"),  # 0.26: when Bambuddy said it is printing (Stats: hours printing)
-    ("staff", "pin_hash", "TEXT"),         # 0.25.1: salted hash of the person's 4-digit PIN (staff.py)
+    ("staff", "pin_hash", "TEXT"),         # 0.25.1 staff PINs, unused since 0.36.4 (kept: shared column)
     ("staff", "pin_changed", "REAL"),
     ("label_jobs", "regen_at", "REAL"),       # 0.36.2: when Regenerate (Expired AWB) was confirmed
     ("label_jobs", "pack_tries", "INTEGER"),  # 0.36.2: how often the label was fetched again from Pack

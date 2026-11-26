@@ -127,16 +127,10 @@ HELP = Keys(HELP_FILE, HELP_COOKIE)
 
 
 def admin() -> None:
-    """CLI: snapstl-admin set-password [password] | reset-owner-pin"""
+    """CLI: snapstl-admin set-password [password]"""
     args = sys.argv[1:]
-    if args and args[0] == "reset-owner-pin":  # forgotten owner PIN (Settings → Staff): set a new one there
-        from . import staff
-
-        staff.reset_owner()
-        print("Owner PIN removed. Set a new one in Settings → Staff.")
-        return
     if not args or args[0] != "set-password":
-        print("usage: snapstl-admin set-password [password] | reset-owner-pin")
+        print("usage: snapstl-admin set-password [password]")
         raise SystemExit(2)
     if len(args) > 1:
         pw = args[1]

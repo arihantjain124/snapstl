@@ -145,9 +145,9 @@ Snapstl/
 │   ├── orders.py             `Order` dataclass (one organizer copy inside a batch)
 │   ├── maintenance.py        backups, clean-up (keeps made orders), reset
 │   ├── auth.py               portal password (other computers) + signed session cookie; `snapstl-admin`
-│   ├── staff.py              staff PINs + owner PIN (Print → Verify, Settings → Staff; 0.25.1)
 │   ├── stats.py              Stats page: made per day, backlog, printers, checkers (0.26)
 │   ├── reportwatch.py        imports a new report saved in Downloads by itself (0.26)
+│   ├── shopdeck.py           ShopDeck partner API: connect (OAuth), key renewal, live order status (0.37)
 │   ├── spares.py             spare name pieces in stock, matched to new orders, shared (0.28)
 │   ├── products.py           which SKU is which product (organizer, name stands), what can be made / shared (0.29)
 │   ├── stands.py             name stand plates: size table, 3 per plate, two-part two-filament .3mf (0.31)
@@ -322,10 +322,10 @@ speed. `/api/stats/print-times` for Stats.
 **Printer roles, AMS slot plan, shift (0.36, owner)** — `farm.json`: `role_by_printer` (bases | letters | flex | any),
 `slots_by_printer` (planned colour per AMS slot 1–4), `shift` {start, end}; set on Printers → Printer roles
 (`/api/farm/roles`). `farm.describe_roles` adds role, slot plan and `slot_issues` (planned colour not loaded, via
-`color_match`) to each printer on Print. `makeit.choose` pre-selects only printers whose role takes the kind
+`color_match`) to each printer on Printers → Printer roles (0.36.4: no banner on Print). `makeit.choose` pre-selects only printers whose role takes the kind
 (`ROLE_RANK`: bases → Bases, Any, Flex; letters → Letters, Any, Flex), in that order; no role set = as before. The
 page: Print next skips letters on Bases printers and bases on Letters printers during the shift (at night: bases
-only, everywhere); fit tags from the estimate and the shift; **Before you leave** greedily gives each printer free
+only, everywhere); fit tags from the estimate and the shift; **Before you leave** (opens only on its button, 0.36.4) greedily gives each printer free
 before the shift ends the base plate whose estimate ends closest after the next start (fewest bases last); a
 morning list from done plates since the shift ended. Nothing starts without a person's Start print.
 
@@ -776,6 +776,33 @@ snapstl.server:app --port 8320`.
   while offline and are sent later.
 
 ---
+
+## ShopDeck partner API (0.37, `shopdeck.py`)
+
+Settings → ShopDeck: the App ID (partner portal → Apps; its redirection URL must be
+`http://127.0.0.1:<PORT>/api/shopdeck/callback`) → **Connect ShopDeck** → ShopDeck's consent screen → back to
+`/api/shopdeck/callback` with a code and the `state` SnapSTL made (checked, 30 minutes, once) → access key (90 days)
++ refresh token (180 days, one use), kept only in `shopdeck.json` (mode 600) on this computer and renewed 30 days
+before expiry; a dead refresh token disconnects and asks to Connect again. `POLLER` (every `poll_s`, default 300 s;
+every 6th time 35 days back, else 7) reads GET /orders in 7-day windows, 100 a page, into `shopdeck_live` (local,
+never shared) and, unless switched off, moves orders SnapSTL knows **forward only** (`forward`, `_RANK`) to the
+statuses the API names without doubt (`STATUS`: printed → PACK, packed → HANDOVER, dispatched → IN-TRANSIT,
+delivered, cancel_*, rto_*). `created` / `enqueued` are never applied — the warehouse showed ShopDeck uses `created`
+for PRINT, AWB EXPIRED and ACCEPTANCE PENDING alike (2026-11-26). The change goes through `ingest.live_status`: the
+report's stamp rule (`@<IST today>|<IST today>|<now>`), `status_state` and `_status_flags`, so the shared records,
+the tabs and the flags behave exactly as for a report. The API has no customisation, courier change or Regenerate.
+
+**Customisation bridge (0.37.1)** until ShopDeck's API has the customisation: a Claude scheduled task (on the
+owner's computer, "SnapSTL – ShopDeck orders bridge") queries ShopDeck's warehouse through Claude's ShopDeck
+connector and writes `shopdeck-bridge-<time>.csv` (report-shaped, first line contains `SnapSTL bridge`) into
+`<APP_DIR>/bridge-inbox`. `reportwatch.import_bridge` (every minute) imports it only after a sync worked, only if
+under 2 hours old, then files it in `done/` or `rejected/`. A file with the mark is always read by
+`ingest.ingest_bridge`, however it arrives (also Orders → Upload report): it **adds** orders SnapSTL doesn't have,
+still to make, with a complete customisation (name; organizer also colour) and nothing else — an order already here
+is never touched; no `files` row (not a report upload), no report rows / shop lines; status stamp
+`BRIDGE_STAMP` (`@0000-00-00|…`), the lowest there is, so any report, the API and the shared records' status rule
+always override it and the report freshness (`logistics_api.meta`) ignores it. New orders reach the shared records
+like a report's (offer: existing records keep their state and first values).
 
 ## Shipping labels from ShopDeck (0.33, `labels.py`, `helper/shopdeck.js`)
 

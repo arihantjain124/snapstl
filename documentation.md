@@ -786,3 +786,34 @@ English hard — the language help was skipped by the owner).
 - Create batch downloads and builds by itself like Make next batch. Build together merges small batches waiting with
   their models ready into one batch per product (fuller plates, nothing downloaded again).
 
+### 2026-11-26: 0.36.4 Less on Print: no AMS banners, no staff PINs, Before you leave on its button
+- Owner: the red AMS-slot banners on Print (slot n should be X — Y is loaded) were distracting → removed from Print;
+  Printers → Printer roles still marks a slot that doesn't hold its planned colour.
+- Owner: remove the staff PIN check everywhere → Verify always uses **Checked by** (choose the name); Settings → Staff
+  only adds and hides people; the owner PIN, PIN sign-in and `snapstl-admin reset-owner-pin` are gone. The app's own
+  login already guards it. The `pin_hash` column stays (shared with other computers), unused.
+- Owner: Before you leave opened by itself every few minutes (from 4 h before the shift ends) → it opens only when
+  its button is pressed, and stays until Hide or the button again.
+
+### 2026-11-26: 0.37.0 ShopDeck API — connect and live order status
+- ShopDeck published a partner API (OAuth; orders: list, note, accept, print, pack, manifest, cancel; catalogue;
+  coupons). Missing for us: the customisation (name, colour), a courier change and Regenerate AWB — the owner has
+  asked ShopDeck for them (mail, 2026-11-26). The owner's app "SnapSTL" was made on the partner portal (read orders,
+  create/update orders, read customers; redirect to this computer's port 8317).
+- The ShopDeck MCP connector (Claude only, not callable by SnapSTL) is ShopDeck's analytics warehouse, ~10 minutes
+  behind; it has the customisation. Comparing our last report with it: ShopDeck says `created` for PRINT, AWB
+  EXPIRED and ACCEPTANCE PENDING alike; printed = PACK, dispatched = IN TRANSIT, cancel_initiated = CANCELLED
+  INITIATED. So the API only moves orders forward to Pack / Handover / Shipped / Delivered / Cancelled / RTO.
+- Built: Settings → ShopDeck (App ID, Connect, key renewal, Check now, switch, the latest changes); the poller
+  every 5 minutes. Checked against ShopDeck's sandbox. One computer holds the key (owner: the label computer).
+- Next (owner to decide): labels through the API for orders already on Bluedart Air; accept / pack / manifest;
+  a bridge for the customisation until ShopDeck adds it.
+
+### 2026-11-27: 0.37.1 Names and colours before the report (ShopDeck bridge)
+- Test run (26–27 Nov): the ShopDeck connector gave 69 to-make orders of 26 Nov with their customisation, before
+  the report. When the report came, all 69 matched it exactly (name, colour, SKU, quantity, clubbed ID).
+- Built, with the owner's rule "it must not break anything / get out of sync": bridge files are imported as new
+  orders only — known orders are never touched, the lowest status stamp so every report and the API override it,
+  no report-upload record, no report rows / shop lines, only after a working sync, only files under 2 hours old,
+  only files marked as bridge files; incomplete customisation or not-to-make rows are left for the report.
+- The Claude task "SnapSTL – ShopDeck orders bridge" writes the files (manual only until the owner sets a schedule).

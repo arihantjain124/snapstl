@@ -147,12 +147,8 @@ def _stand_fit(pl: dict, p: dict) -> tuple:
 
 
 def _verify() -> dict:
-    from . import staff
-
     v = verify.name_cards()
-    with db.tx() as con:
-        on = staff.pins_on(con)
-    return {"verify": v["cards"], "verify_waiting_other": v["waiting_other"], "pins_on": on}
+    return {"verify": v["cards"], "verify_waiting_other": v["waiting_other"]}
 
 
 def printers_now(prs: list[dict], active_jobs: dict[int, int]) -> dict:

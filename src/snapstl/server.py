@@ -27,7 +27,6 @@ from . import (archive, auth, bambuddy_host, cache, computer, config, db, extras
 from . import clubbed, labels
 from .ingest import add_adhoc, ingest, reset_to_ready, set_name, set_printed
 from . import batches as B
-from . import staff as staff_pins
 from . import maintenance as M
 from .batches import DOWNLOADER, MANAGER, compartments_for
 from .scaling import pick_band
@@ -95,6 +94,8 @@ async def _lifespan(_app):
     archive.CLEANER.start()  # once a day: old batch folders / unused models → Recycle Bin
     from .reportwatch import WATCHER
     WATCHER.start()  # a new report in Downloads is imported by itself (Settings: report_import)
+    from . import shopdeck
+    shopdeck.POLLER.start()  # 0.37: live order status from the ShopDeck API, once connected in Settings
     bambuddy_host.start_watch()  # Bambuddy computer: Keep running (starts Bambuddy / Docker when they stop)
     yield
     from .logistics import stop as stop_logistics
@@ -173,7 +174,7 @@ async def access_control(request: Request, call_next):
 # Work that may go on without the shared records: connecting them, settings, the helper's running downloads
 WITHOUT_SHARED = ("/api/shared-records", "/api/sync", "/api/settings", "/api/helper/", "/api/update",
                   "/api/login", "/api/logout", "/api/portal", "/api/help-portal", "/api/maintenance/backup", "/api/farm/connect",
-                  "/api/bambuddy-host")
+                  "/api/bambuddy-host", "/api/shopdeck")
 
 
 async def _needs_shared(request: Request, call_next):
@@ -945,6 +946,69 @@ async def helper_ping(req: Request):
     return {"paused": DOWNLOADER.paused}
 
 
+# ---------------- ShopDeck API (0.37, shopdeck.py): connect, live order status ----------------
+@app.get("/api/shopdeck")
+def shopdeck_status():
+    from . import shopdeck
+
+    return shopdeck.status()
+
+
+@app.post("/api/shopdeck")
+async def shopdeck_config(req: Request):
+    """Settings → ShopDeck: {app_id?, apply_status?, poll_s?}."""
+    from . import shopdeck
+
+    b = await req.json()
+    try:
+        shopdeck.set_config(app_id=b.get("app_id"), apply_status=b.get("apply_status"), poll_s=b.get("poll_s"))
+    except shopdeck.ShopDeckError as e:
+        raise HTTPException(400, str(e)) from e
+    return shopdeck.status()
+
+
+@app.get("/api/shopdeck/connect")
+def shopdeck_connect():
+    """Connect ShopDeck: off to ShopDeck's consent screen (it comes back to /api/shopdeck/callback)."""
+    from . import shopdeck
+
+    try:
+        return RedirectResponse(shopdeck.connect_url(), status_code=303)
+    except shopdeck.ShopDeckError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/shopdeck/callback")
+def shopdeck_callback(code: str = "", state: str = ""):
+    from . import shopdeck
+
+    try:
+        shopdeck.callback(code, state)
+    except shopdeck.ShopDeckError as e:
+        shopdeck._update(last_error=str(e)[:300])
+        return RedirectResponse("/#settings:shopdeck", status_code=303)
+    shopdeck.POLLER.kick()
+    return RedirectResponse("/#settings:shopdeck", status_code=303)
+
+
+@app.post("/api/shopdeck/disconnect")
+def shopdeck_disconnect():
+    from . import shopdeck
+
+    shopdeck.disconnect()
+    return shopdeck.status()
+
+
+@app.post("/api/shopdeck/check-now")
+async def shopdeck_check_now():
+    from . import shopdeck
+
+    if not shopdeck.connected():
+        raise HTTPException(400, "ShopDeck isn't connected")
+    await run_in_threadpool(shopdeck.POLLER.once)
+    return shopdeck.status()
+
+
 # ---------------- shipping labels (0.33, labels.py; the helper's ShopDeck page: helper/shopdeck.js) ----------------
 def _label_call(fn, *a):
     try:
@@ -1001,10 +1065,7 @@ def labels_state(ids: str = ""):
 async def labels_request(req: Request):
     """Print label ({order_ids, items_ready, staff/token}): one parcel per order (its clubbed order)."""
     b = await req.json()
-    try:
-        who = staff_pins.checker(str(b.get("token") or ""), str(b.get("staff") or ""))
-    except ValueError:
-        who = str(b.get("staff") or "")
+    who = str(b.get("staff") or "")
     jobs = _label_call(labels.request, [str(x) for x in b.get("order_ids") or []][:50], who,
                        bool(b.get("items_ready")), SETTINGS)
     with db.tx() as con:
@@ -1031,10 +1092,7 @@ async def labels_from_pack(job_id: int, req: Request):
     except ValueError:
         b = {}
     b = b if isinstance(b, dict) else {}
-    try:
-        who = staff_pins.checker(str(b.get("token") or ""), str(b.get("staff") or ""))
-    except ValueError:
-        who = str(b.get("staff") or "")
+    who = str(b.get("staff") or "")
     return _label_call(labels.from_pack, job_id, who[:60])
 
 
@@ -1746,10 +1804,7 @@ async def makeit_merge(req: Request):
     """Names → Merge: same-colour plates not started (≤ 3 names) onto one plate."""
     b = await req.json()
     try:
-        try:  # who merged (the activity log); merging doesn't need a PIN
-            who = staff_pins.checker(str(b.get("token") or ""), str(b.get("staff") or ""))
-        except ValueError:
-            who = ""
+        who = str(b.get("staff") or "")  # who merged (the activity log)
         return await run_in_threadpool(extras.merge, list(b.get("plates") or []), who)
     except extras.ExtraError as e:
         raise HTTPException(409, str(e)) from e
@@ -1860,58 +1915,28 @@ async def stats_target(req: Request):
 
 @app.get("/api/staff")
 def staff_get(all: int = 0):
-    """Settings → Staff and Print → Verify: the people, who has a PIN, whether PINs are in use."""
+    """Settings → Staff and Print → Verify: the people who check prints."""
     with db.tx() as con:
-        rows = db.rows(con, "SELECT name, hidden, COALESCE(pin_hash,'')<>'' AS pin FROM staff ORDER BY name COLLATE NOCASE")
-        on = staff_pins.pins_on(con)
-    return {"staff": [{"name": r["name"], "hidden": bool(r["hidden"]), "pin_set": bool(r["pin"])} for r in rows
-                      if all or not r["hidden"]],
-            "pins_on": on, "owner_pin_set": staff_pins.owner_set()}
+        rows = db.rows(con, "SELECT name, hidden FROM staff ORDER BY name COLLATE NOCASE")
+    return {"staff": [{"name": r["name"], "hidden": bool(r["hidden"])} for r in rows if all or not r["hidden"]]}
 
 
 @app.post("/api/staff")
 async def staff_post(req: Request):
-    """Settings → Staff (owner PIN once set): add a person ({name}), hide / show one ({name, hidden}), set or
-    clear their PIN ({name, pin} / {name, clear_pin}). Every change: {owner_pin}."""
+    """Settings → Staff: add a person ({name}), hide / show one ({name, hidden})."""
     b = await req.json()
     try:
-        staff_pins.require_owner(str(b.get("owner_pin") or ""))
         with db.tx() as con:
             name = str(b.get("name") or "")
             if "hidden" in b:
                 verify.hide_staff(con, name, bool(b.get("hidden")))
-            elif b.get("clear_pin"):
-                staff_pins.clear_pin(con, name)
-            else:  # add (or show again), with a PIN if one is given; an existing person: just the new PIN
-                if "pin" not in b or not con.execute("SELECT 1 FROM staff WHERE name=?", (name,)).fetchone():
-                    name = verify.add_staff(con, name)
-                if "pin" in b:
-                    staff_pins.set_pin(con, name, str(b.get("pin") or ""))
+            else:
+                name = verify.add_staff(con, name)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     sync.LOOP.kick()
     return {"name": name}
 
-
-@app.post("/api/staff/owner-pin")
-async def staff_owner_pin(req: Request):
-    """Set the owner PIN ({pin}) or change it ({pin, old_pin}); it guards Settings → Staff on this computer."""
-    b = await req.json()
-    try:
-        staff_pins.set_owner(str(b.get("pin") or ""), str(b.get("old_pin") or ""))
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-    return {"ok": True}
-
-
-@app.post("/api/staff/start")
-async def staff_start(req: Request):
-    """Print → Verify: {pin} → {name, token}: checks are saved under this person until Done or 30 idle minutes."""
-    b = await req.json()
-    try:
-        return staff_pins.start(str(b.get("pin") or ""))
-    except ValueError as e:
-        raise HTTPException(403, str(e)) from e
 
 
 @app.post("/api/verify/plate-failed")
@@ -1927,18 +1952,10 @@ async def verify_plate_failed(req: Request):
     return out
 
 
-@app.post("/api/staff/end")
-async def staff_end(req: Request):
-    staff_pins.end(str((await req.json()).get("token") or ""))
-    return {"ok": True}
-
 
 def _checker(b: dict) -> str:
-    """Who a check or merge is saved under (the PIN's person once PINs are in use)."""
-    try:
-        return staff_pins.checker(str(b.get("token") or ""), str(b.get("staff") or ""))
-    except ValueError as e:
-        raise HTTPException(403, str(e)) from e
+    """Who a check is saved under: the name chosen in Verify → Checked by."""
+    return str(b.get("staff") or "")
 
 
 @app.post("/api/makeit/reprint")

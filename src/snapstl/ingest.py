@@ -232,6 +232,19 @@ def file_as_of(table: list[list[str]], header_row: int) -> str:
     return best
 
 
+# 0.37.1: a bridge file (orders read from ShopDeck's warehouse through Claude's ShopDeck connector, made by a
+# scheduled Claude task, see bridge.py) only ADDS orders SnapSTL doesn't know yet, with the customisation, so they
+# can be made before the next report. Its stamp is the lowest a status can have, so any report or the ShopDeck API
+# overrides it; it never changes an order that is already here, never goes to the shared report rows / shop lines,
+# and isn't listed as a report upload.
+BRIDGE_MARK = "SnapSTL bridge"
+BRIDGE_STAMP = f"@{_NO_DATE}|{_NO_DATE}|{_NO_DATE}T00:00:00.000000Z"
+
+
+def is_bridge(table: list[list[str]], header_row: int) -> bool:
+    return any(BRIDGE_MARK.lower() in (c or "").lower() for r in table[:header_row] for c in r)
+
+
 def status_stamp(event_date: str, report_date: str, uploaded: str) -> str:
     return f"{db.STAMP}{report_date or _NO_DATE}|{event_date or _NO_DATE}|{uploaded}"
 
@@ -241,6 +254,8 @@ def ingest(data: bytes, filename: str, db_path: Path | None = None) -> IngestSum
     sha = hashlib.sha256(data).hexdigest()
     table = read_table(data, filename)
     h = find_header(table)
+    if is_bridge(table, h):  # however it arrives (also Orders → Upload report): new orders only
+        return ingest_bridge(table, h, filename, db_path)
     header = [c.strip() for c in table[h]]
     ix = {name: i for i, name in enumerate(header)}
 
@@ -293,6 +308,46 @@ def ingest(data: bytes, filename: str, db_path: Path | None = None) -> IngestSum
             "INSERT INTO files(filename,sha256,ingested_at,summary) VALUES (?,?,?,?)",
             (filename, sha, db.now(), json.dumps(s.__dict__)),
         )
+    return s
+
+
+def ingest_bridge(table: list[list[str]], h: int, filename: str, db_path: Path | None = None) -> IngestSummary:
+    """A bridge file (see BRIDGE_MARK): only orders SnapSTL doesn't have yet, still to make, with a complete
+    customisation (a name; an organizer also a colour) are added — everything else is left to the report."""
+    header = [c.strip() for c in table[h]]
+    ix = {name: i for i, name in enumerate(header)}
+
+    def get(r, col):
+        i = ix.get(col)
+        return r[i].strip() if i is not None and i < len(r) else ""
+
+    s = IngestSummary(filename=filename)
+    body = [r for r in table[h + 1:] if any(c.strip() for c in r)]
+    s.rows_total = len(body)
+    with db.tx(db_path) as con:
+        for r in body:
+            prod = products.by_sku(get(r, "SKU Code"))
+            oid = get(r, "Order ID")
+            if prod is None or get(r, "SKU Code").lower() == ADHOC_SKU.lower() or not oid:
+                continue
+            s.sku_rows += 1
+            st = get(r, "Order Status").upper()
+            cust = parse_customisation(get(r, "Product Customisation"))
+            name = next((cust[k] for k in products.NAME_FIELDS[prod.kind] if cust.get(k)), "")
+            color = cust.get("color", "") or cust.get("colour", "")
+            if con.execute("SELECT 1 FROM orders WHERE order_id=?", (oid,)).fetchone():
+                s.unchanged += 1  # already here: the report and the API keep it up to date
+                continue
+            if not to_make(st) or not name or (prod.kind == "organizer" and not color):
+                s.warnings.append(f"{oid}: left for the report ({'not to make' if not to_make(st) else 'customisation incomplete'})")
+                continue
+            s.by_product[prod.key] = s.by_product.get(prod.key, 0) + 1
+            _upsert(con, s, filename, {
+                "sku": products.canonical_sku(get(r, "SKU Code")), "product": prod, "order_id": oid,
+                "clubbed_id": get(r, "Clubbed Order ID"), "order_date": _iso_date(get(r, "Order Creation Date")),
+                "source_status": st, "quantity": _qty(get(r, "Quantity")), "cust": cust,
+                "customer_name": get(r, "Customer Name"), "phone": "", "address": "", "status_at": BRIDGE_STAMP,
+            })
     return s
 
 
@@ -384,6 +439,20 @@ def _upsert(con, s: IngestSummary, filename: str, o: dict) -> None:
         s.updated += 1
     else:
         s.unchanged += 1
+
+
+def live_status(con, cur: dict, new: str, stamp: str) -> bool:
+    """0.37: a status read from the ShopDeck API (shopdeck.py) for an order SnapSTL knows, applied like a report's
+    — only if its stamp is at least as new, through the same state rule and flags. True when applied."""
+    if (cur.get("status_at") or "") > stamp:
+        return False
+    s = IngestSummary(filename="ShopDeck API")
+    state = status_state(cur["state"], cur["source_status"], new,
+                         "needs_review" if cur.get("review_reason") else "ready", bool(cur.get("batch_id")))
+    _status_flags(con, s, cur, new)
+    con.execute("UPDATE orders SET source_status=?, status_at=?, state=?, updated_at=? WHERE order_id=?",
+                (new, stamp, state, db.now(), cur["order_id"]))
+    return True
 
 
 # ---------------- webstore status changes (0.23) ----------------

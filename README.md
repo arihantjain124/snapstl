@@ -373,8 +373,8 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   Search by name, order ID or batch.
 - **Verify** (0.25.1): one card per name, once its letters **and** its base are printed — put them together,
   mark each part, then **Confirm – ready to pack** (or **Save – send problems for reprint**). A *Saving…* screen
-  covers the card until it's done; pressing again saves nothing twice. People type their **PIN** once (Done /
-  switch person; signed out after 30 minutes without a check) and every check is saved under them. **Whole
+  covers the card until it's done; pressing again saves nothing twice. People choose their name in **Checked by** and
+  every check is saved under it. **Whole
   plate failed…** is on each card and in Bases → Printed / Letters → Printed (a letters plate can be sent back
   before its bases are printed).
 - **Merge** (Letters): tick letter plates of one colour (fix plates too), not started, up to 3 names, then
@@ -412,9 +412,15 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
 - **Slicing → Letters** (0.27): per printer, a Letters process profile and speed. Letter plates slice and print with
   them; bases use the printer's own profiles. Once any printer has a Letters profile, letters go only to those
   printers (e.g. the P1S with colours in the AMS) — Print and Print next pick it by themselves.
-- **Settings → Staff**: the owner PIN (set it first; forgotten: `uv run snapstl-admin reset-owner-pin` on that
-  computer), the people who check prints and their 4-digit PINs (shared with every computer, stored only as a
-  scrambled code). Until anyone has a PIN, Verify lets people pick their name as before.
+- **Settings → ShopDeck** (0.37): paste the App ID from ShopDeck's partner portal (Apps → SnapSTL), press **Connect
+  ShopDeck** and allow it on ShopDeck's page. Every 5 minutes orders that ShopDeck shows as printed, packed, shipped,
+  delivered, cancelled or returned move forward here (never backward). Names, colours, AWB EXPIRED and Acceptance
+  pending still come from the report. Only the connected computer holds the key; it renews itself.
+  **Names and colours before the report** (0.37.1): a scheduled Claude task drops new orders with their names and
+  colours from ShopDeck into SnapSTL's `bridge-inbox` folder; SnapSTL adds only orders it doesn't have yet (still to
+  make, name and colour complete) and never changes one that is already here — the next report always wins.
+- **Settings → Staff**: the people who check prints (shared with every computer); add or hide them. No PINs
+  (removed in 0.36.4).
 - **Completed**: printed plates. **Reprint** is there only for a print that failed: it asks first,
   then the plate goes back to Bases or Names.
 - **Removed**: plates you took off Bases or Names with **Remove** (for example printed by hand).

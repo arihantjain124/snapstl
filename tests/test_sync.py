@@ -759,7 +759,6 @@ def test_older_snapstl_cannot_write_after_the_upgrade(two, monkeypatch):
 
 def test_print_checks_and_staff_reach_every_computer(two):
     """0.24: who checked a print (and the staff list) is shared; a hidden name stays hidden everywhere."""
-    from snapstl import staff as staff_pins
     from snapstl import verify
 
     pc = two
@@ -791,19 +790,6 @@ def test_print_checks_and_staff_reach_every_computer(two):
         ok(sync.sync_now())
         with db.tx() as con:
             assert verify.staff_names(con) == ["Meena"]
-            staff_pins.set_pin(con, "Meena", "4826")  # 0.25.1: a PIN set on one computer works on the others
-        ok(sync.sync_now())
-    with pc("B"):
-        ok(sync.sync_now())
-        assert staff_pins.start("4826")["name"] == "Meena"
-        with db.tx() as con:
-            staff_pins.set_pin(con, "Meena", "5937")  # changed again: the newest PIN wins everywhere
-        ok(sync.sync_now())
-    with pc("A"):
-        ok(sync.sync_now())
-        assert staff_pins.start("5937")["name"] == "Meena"
-        with pytest.raises(staff_pins.PinError):
-            staff_pins.start("4826")
     with sync._remote() as rc:  # never deleted
         import psycopg
         with pytest.raises(psycopg.Error):
