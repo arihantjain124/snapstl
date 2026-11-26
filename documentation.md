@@ -754,6 +754,12 @@ English hard — the language help was skipped by the owner).
   every printer (letters printers too) that ends around the morning, with Start print once it's free, and how many
   plates are short. Morning: what printed overnight and which beds to clear.
 
+### 2026-11-26: 0.36.3 Labels: Print ▾ in Pack opens (Helper 2.7.1)
+- First real try (owner): "Expected one label option under Print ▾ in Pack, found 0 (menu: nothing opened)". The menu
+  has Label and Invoice; the helper only sent a click. It now sends the whole press (pointer-down … click), then a
+  second click, then hover, and judges the menu items by their box on screen. Checked on a stand-in page with menus
+  that open on pointer-down, on click, on hover, and on pointer-down closing again on click.
+
 ### 2026-11-26: 0.36.2 Labels: Re-Generate AWB confirmed; an old label is fetched again from Pack (Helper 2.7)
 - Owner: two labels stopped at ShopDeck's "Re-Generate AWB — New AWB for this order will be created" box (jobs 34,
   38), one printed nothing because the PDF still had the AWB from before the courier change (job 37: Label pressed

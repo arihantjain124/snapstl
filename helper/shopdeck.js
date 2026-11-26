@@ -319,12 +319,33 @@
     if (s.awb !== job.new_awb) throw new Error(`The AWB in Pack is ${s.awb || "unreadable"}, expected ${job.new_awb}`);
     const pb = rowPrint();
     if (!pb) throw new Error("Can't find the order's Print ▾ button in Pack");
-    const before = new Set(leaves(document.body));
-    pb.click();
-    const opts = await until(() => {
-      const fresh = leaves(document.body).filter((e) => !before.has(e) && txt(e));
-      return fresh.length ? fresh : null;
-    }, 5000);
+    // 2.7.1 (2.7.0 found "nothing opened": only a click was sent): the whole press (pointer-down … click), then a
+    // second click, then hover; the menu's items are judged by their box on screen (pop-ups may be fixed)
+    const seen = (e) => {
+      const r = e.getBoundingClientRect(), cs = getComputedStyle(e);
+      return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && cs.display !== "none" && Number(cs.opacity || 1) > 0;
+    };
+    const onScreen = () => [...document.body.querySelectorAll("*")].filter((e) => e.childElementCount === 0 && txt(e) && seen(e));
+    const before = new Set(onScreen());
+    const press = (e) => {
+      const o = { bubbles: true, cancelable: true, view: window, button: 0, buttons: 1 };
+      e.dispatchEvent(new PointerEvent("pointerdown", { ...o, pointerType: "mouse" }));
+      e.dispatchEvent(new MouseEvent("mousedown", o));
+      e.dispatchEvent(new PointerEvent("pointerup", { ...o, pointerType: "mouse", buttons: 0 }));
+      e.dispatchEvent(new MouseEvent("mouseup", { ...o, buttons: 0 }));
+      e.dispatchEvent(new MouseEvent("click", { ...o, buttons: 0 }));
+    };
+    const fresh = () => { const f = onScreen().filter((e) => !before.has(e)); return f.length ? f : null; };
+    press(pb);
+    let opts = await until(fresh, 3000);
+    if (!opts) {  // opened on pointer-down and closed again by the click: one more click opens it
+      pb.click();
+      opts = await until(fresh, 2000);
+    }
+    if (!opts) {  // a menu that opens on hover
+      for (const t of ["pointerover", "pointerenter", "mouseover", "mouseenter"]) pb.dispatchEvent(new MouseEvent(t, { bubbles: true, view: window }));
+      opts = await until(fresh, 3000);
+    }
     const texts = [...new Set((opts || []).map(txt))].slice(0, 20);
     const hits = (opts || []).filter((e) => LABEL_OPTION.test(txt(e)));
     if (hits.length !== 1) {
