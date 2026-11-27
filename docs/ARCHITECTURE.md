@@ -785,6 +785,18 @@ snapstl.server:app --port 8320`.
 
 ---
 
+## MakerWorld busy (0.43.1, helper 2.7.2)
+
+MakerWorld sometimes answers Generate with "Sorry, it seems that the server is experiencing some issues. Please try
+again later." The helper (2.7.2) reads every message that appears after it pressed Generate ([role=alert],
+[role=status], toast / snackbar / notification / message elements; ones already on the page are ignored): words like
+"try again / experiencing / server / busy" → `MakerWorld busy: …`, any other fail / error / invalid / sorry →
+`MakerWorld: …`. After a busy, a time-out or a missing control it closes the messages, waits (60 s busy, 10 s else)
+and reloads the page. The app (`batches.store_busy`): a busy name goes back to the queue without using up a try,
+and the next name waits 1, 2, 4, 8, 10 minutes for busies in a row (`BUSY_WAIT_S`; reset by a download done); the
+download queue, the batch row and the sidebar say "MakerWorld busy … next name at HH:MM". Real failures still stop
+after `MAX_ATTEMPTS`.
+
 ## The day plan (0.43, `today.plan`)
 
 `LEAVE_MIN` = 30: no day plate runs after 21:30 (owner: every printer free 21:30–22:00 for its night plate);
@@ -885,7 +897,9 @@ like a report's (offer: existing records keep their state and first values).
 Print → **Completed** (0.40: only names still waiting for a label; printed ones are on **Label printed**,
 split client-side by `tab` = `ship_it`; **Printed outside** = Label Generated with `label_by` "Printed outside
 SnapSTL · <staff>", Undo there for 7 days; `verify.doubt`: such a mark over 6 h old that the ShopDeck API, seen
-after it, still shows `created`/`enqueued` is listed in Completed again with a warning — nothing is changed) → **Print label** (Settings → Logistics → **Shipping labels**, off by default). SnapSTL decides,
+after it, still shows `created`/`enqueued` is listed in Completed again with a warning — nothing is changed;
+0.43.1: **Reprint label** = `labels.reprint_order`: the newest done job with a saved PDF whose parcel holds the order,
+printed again — no ShopDeck step) → **Print label** (Settings → Logistics → **Shipping labels**, off by default). SnapSTL decides,
 the SnapSTL Helper only operates ShopDeck's Process Orders page in the person's own signed-in Chrome.
 
 * **Parcel** (`labels.parcel`): the report lines kept on this computer (`shop_lines`) — a single order, or every

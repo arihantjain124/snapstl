@@ -31,6 +31,10 @@ from .settings import Settings, load_settings
 
 CLAIM_TIMEOUT_S = 6 * 60
 MAX_ATTEMPTS = 3
+# 0.43.1: MakerWorld's own "server is experiencing some issues / try again later" (helper 2.7.2 reports it as
+# "MakerWorld busy: …"): not the name's fault — the try isn't counted, the next name waits 1, 2, 4 … 10 minutes
+BUSY = "MakerWorld busy"
+BUSY_WAIT_S = (60, 120, 240, 480, 600)
 NO_PASSWORD = ("Add the license password for this model first (Settings → MakerWorld model → License password). "
                "SnapSTL only downloads with the password so models come without MakerWorld's watermark.")
 # Batch lifecycle:
@@ -615,6 +619,7 @@ def store_result(job_id: int, plate_1: bytes, plate_2: bytes, check: dict | None
     DOWNLOADER.done_count += 1
     DOWNLOADER.current = None
     DOWNLOADER.next_after = time.time() + DOWNLOADER.pause_s
+    DOWNLOADER.busy_streak, DOWNLOADER.busy_until = 0, 0.0
     MANAGER.wake()
     return {"base": [round(v, 1) for v in dims(base)], "name": [round(v, 1) for v in dims(name)]}
 
@@ -656,11 +661,14 @@ def store_stand_result(job_id: int, obj_text: str) -> dict:
     DOWNLOADER.done_count += 1
     DOWNLOADER.current = None
     DOWNLOADER.next_after = time.time() + DOWNLOADER.pause_s
+    DOWNLOADER.busy_streak, DOWNLOADER.busy_until = 0, 0.0
     MANAGER.wake()
     return {"block": [round(v, 1) for v in dims(block)], "letters": [round(v, 1) for v in dims(letters)]}
 
 
 def store_failure(job_id: int, error: str) -> None:
+    if error.startswith(BUSY):
+        return store_busy(job_id, error)
     with db.tx() as con:
         d = con.execute("SELECT attempts FROM downloads WHERE id=?", (job_id,)).fetchone()
         if d is None:
@@ -670,6 +678,24 @@ def store_failure(job_id: int, error: str) -> None:
         DOWNLOADER.next_after = time.time() + DOWNLOADER.pause_s * max(1, d["attempts"])
         con.execute("UPDATE downloads SET state=?, error=?, updated_at=? WHERE id=?",
                     (state, error[:500], db.now(), job_id))
+    MANAGER.wake()
+
+
+def store_busy(job_id: int, error: str) -> None:
+    """MakerWorld itself is busy: the name goes back in the queue without using up a try; the next name waits
+    longer each time in a row (BUSY_WAIT_S), and the download queue says so."""
+    with db.tx() as con:
+        if con.execute("SELECT 1 FROM downloads WHERE id=?", (job_id,)).fetchone() is None:
+            raise KeyError(job_id)
+        con.execute("UPDATE downloads SET state='queued', attempts=CASE WHEN attempts>0 THEN attempts-1 ELSE 0 END, "
+                    "error=?, updated_at=? WHERE id=?", (error[:500], db.now(), job_id))
+        wait = BUSY_WAIT_S[min(DOWNLOADER.busy_streak, len(BUSY_WAIT_S) - 1)]
+        DOWNLOADER.busy_streak += 1
+        DOWNLOADER.busy_until = time.time() + wait
+        DOWNLOADER.next_after = max(DOWNLOADER.next_after, DOWNLOADER.busy_until)
+        if DOWNLOADER.busy_streak in (1, 5) or DOWNLOADER.busy_streak % 10 == 0:
+            db.add_activity(con, "download", f"MakerWorld busy ({DOWNLOADER.busy_streak}× in a row) — downloads "
+                                             f"wait {wait // 60} min and carry on by themselves")
     MANAGER.wake()
 
 
@@ -709,6 +735,8 @@ class Downloader:
         self.last_seen = 0.0
         self.claimed_at = 0.0
         self.on_page = False  # helper's tab is on the configured MakerWorld model page
+        self.busy_streak = 0     # 0.43.1: MakerWorld busy this many times in a row
+        self.busy_until = 0.0    # … and the next name waits until then
 
     def start(self) -> None:
         # resume: anything that was mid-download when SnapSTL stopped goes back in the queue
@@ -736,7 +764,9 @@ class Downloader:
         return {"status": self.status if self.online else "Helper not connected", "paused": self.paused,
                 "current": self.current, "done": self.done_count, "online": self.online,
                 "on_page": self.online and self.on_page,
-                "last_seen": self.last_seen}
+                "last_seen": self.last_seen,
+                "busy_until": self.busy_until if self.busy_until > time.time() else None,
+                "busy_streak": self.busy_streak}
 
 
 def _organizer_design() -> str:

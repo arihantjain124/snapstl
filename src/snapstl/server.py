@@ -1254,6 +1254,12 @@ async def labels_reprint(job_id: int):
     return await run_in_threadpool(_label_call, labels.reprint, job_id)
 
 
+@app.post("/api/labels/reprint-order")
+async def labels_reprint_order(req: Request):
+    """Print → Label printed → Reprint label (0.43.1): {order_id} — the label SnapSTL saved, printed again."""
+    return await run_in_threadpool(_label_call, labels.reprint_order, str((await req.json()).get("order_id") or ""))
+
+
 @app.get("/api/labels/printers")
 def labels_printers():
     return {"printers": platform_os.printers(), "tool": platform_os.pdf_printer_tool(SETTINGS.labels.sumatra_path)}

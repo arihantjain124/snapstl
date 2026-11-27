@@ -418,6 +418,10 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   letters printers get letters in the day and a base plate at night; X1 gets name stands first. From 20:00 small
   base plates are merged into night plates by themselves; from 21:00 every free printer gets its night plate.
   Below: prints to check, labels to make (opens Print → Completed), and when each printer is free next.
+- **MakerWorld busy** (0.43.1, helper 2.7.2): when MakerWorld says "the server is experiencing some issues", the
+  helper notices at once (it used to wait 3 minutes), waits a minute, reloads the page and carries on; the name
+  doesn't use up its 3 tries, and the queue waits a little longer each time MakerWorld stays busy (up to 10 minutes).
+  Print → Batches shows "MakerWorld busy — next name at …". The helper reloads itself after the update.
 - **Day plan** (0.43, Today's work): every printer's day at a glance — what it prints now, the next plates
   (sized so day plates end by 21:30) and its night plate (an A1 may start its night plate from ~20:00). When the
   plan needs more base plates than are ready, **Make next batch** is offered there; letter merges (day) and 3-base
@@ -441,7 +445,8 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   label moves the name to **Label printed** (with when and how: SnapSTL, on ShopDeck, or Printed outside).
   **Printed outside** on a Completed name: the label was made somewhere else — it moves to Label printed; **Undo**
   there for 7 days. A Printed outside mark that ShopDeck still shows unlabelled 6 hours later comes back to
-  Completed with a warning.
+  Completed with a warning. **Reprint label** (0.43.1) prints the label SnapSTL saved once more (lost, stuck on the
+  wrong parcel, printer jam) — nothing changes on ShopDeck; a label made outside SnapSTL is reprinted on ShopDeck.
 - **Merging** (0.40): any plate not started can be merged — split parts and merged plates too — bases with bases,
   letters with letters of the same colour (up to 3). Split back undoes one merge at a time.
 - **Settings → ShopDeck** (0.37): paste the App ID from ShopDeck's partner portal (Apps → SnapSTL), press **Connect

@@ -762,6 +762,22 @@ def reprint(job_id: int) -> dict:
         return _job(con, job_id)
 
 
+def reprint_order(order_id: str) -> dict:
+    """Print label → Label printed → Reprint label (0.43.1): the newest label SnapSTL saved for this order's parcel
+    printed again (wrongly stuck, lost, a printer jam). Nothing changes on ShopDeck."""
+    with db.tx() as con:
+        rows = con.execute("SELECT id, expected, pdf FROM label_jobs WHERE state='done' AND pdf IS NOT NULL "
+                           "AND expected LIKE ? ORDER BY id DESC", (f"%{order_id}%",)).fetchall()
+    for jid, exp, pdf in rows:
+        lines = json.loads(exp or "{}").get("lines", [])
+        if any(x.get("order_id") == order_id for x in lines):
+            if not Path(pdf).is_file():
+                raise LabelError("The saved label file is gone — print it again from ShopDeck (Pack → Label)")
+            return reprint(int(jid))
+    raise LabelError("SnapSTL has no saved label for this order (it was made outside SnapSTL) — print it again "
+                     "from ShopDeck (Pack → Label)")
+
+
 class Watcher:
     """Waits for the label PDF of a pressed job (one thread, woken by `kick`)."""
 

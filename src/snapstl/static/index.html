@@ -427,7 +427,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <div class="tw"><table><thead><tr><th><input type="checkbox" id="call" title="Tick all shown"></th><th>Name</th><th>Order</th><th>Batch</th><th>Printer</th><th>Checked by</th><th>When</th><th>Label</th><th></th><th></th></tr></thead><tbody id="mkdone"></tbody></table></div>
     </div>
     <div id="mk-labelled" class="mkpane" hidden>
-      <p class="hint">Names whose label is printed, newest first: printed by SnapSTL, on ShopDeck (seen through the ShopDeck connection), or marked <b>Printed outside</b>. A wrong <b>Printed outside</b> mark can be undone here for 7 days — the name goes back to Completed.</p>
+      <p class="hint">Names whose label is printed, newest first: printed by SnapSTL, on ShopDeck (seen through the ShopDeck connection), or marked <b>Printed outside</b>. A wrong <b>Printed outside</b> mark can be undone here for 7 days — the name goes back to Completed. <b>Reprint label</b> prints the label SnapSTL saved once more (lost, stuck on the wrong parcel, printer jam) — nothing changes on ShopDeck; a label made outside SnapSTL is printed again on ShopDeck (Pack → Label).</p>
       <div class="toolbar" style="margin:0 0 6px"><select id="ldays" style="max-width:160px"><option value="1">Today</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option><option value="0">All</option></select><input id="lsearch" placeholder="Search name or order" style="max-width:220px"></div>
       <div class="tw"><table><thead><tr><th>Name</th><th>Order</th><th>Checked by</th><th>Label printed</th><th>How</th><th></th></tr></thead><tbody id="mklabelled"></tbody></table></div>
     </div>
@@ -1422,7 +1422,7 @@ function bRender(){const r=BDATA;if(!r)return;const all=r.batches;mkReady();if(M
   bWire();
   document.querySelectorAll('[data-bfocus]').forEach(x=>x.onclick=()=>{const [id,k]=x.dataset.bfocus.split('|');BFOCUS[id]=BFOCUS[id]===k?null:k;bRender()})}
 function bRow(b,showPc){const st=BST[b.status]||[b.status,''];const p=b.progress;const finished=b.status.startsWith('done');
-    const models=p?`<div class="hint">Models ${p.ready}/${p.models}${p.failed?` <span class="reason">${p.failed} failed</span>`:''}</div><div class="bar" style="margin-top:4px"><i style="width:${p.models?100*p.ready/p.models:0}%"></i></div>`:'';
+    const models=p?`<div class="hint">Models ${p.ready}/${p.models}${p.failed?` <span class="reason">${p.failed} failed</span>`:''}</div>${DLBUSY&&p.ready<p.models?`<div class="pill warn" title="MakerWorld shows 'server is experiencing some issues' — the names wait and are tried again by themselves">${esc(busyWords(DLBUSY))}</div>`:''}<div class="bar" style="margin-top:4px"><i style="width:${p.models?100*p.ready/p.models:0}%"></i></div>`:'';
     const acts=[`<button class="small" data-b="${b.id}">Open</button>`];
     const pc=`<td class="bpc" ${showPc?'':'hidden'}>${esc(b.computer||'—')}${b.mine?' <span class="pill ok">this one</span>':''}</td>`;
     const ns=bNames(b),many=ns.length>8,open=BOPEN.has(b.id);
@@ -1488,8 +1488,10 @@ async function openBatchDetail(id,quiet){const changed=openBatch!==id;openBatch=
   if(!b.mine)document.querySelectorAll('.plate[data-file]').forEach(a=>{a.removeAttribute('href');a.onclick=e=>e.preventDefault()});
   if(!quiet)$('bdetail').scrollIntoView({behavior:'smooth'})}
 const DST={claimed:['Generating','info'],queued:['Waiting',''],failed:['Failed','err'],done:['Done','ok']};
-async function loadQueue(){const r=await api('/api/downloads');const d=r.downloader;
-  $('dlsession').textContent=d.online?`Helper: ${d.status}`:'Helper not connected';
+// 0.43.1: MakerWorld busy ("server is experiencing some issues"): downloads wait and carry on by themselves
+let DLBUSY=null;const busyWords=d=>d&&d.busy_until?`MakerWorld busy (${d.busy_streak}× in a row) — next name at ${new Date(d.busy_until*1000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}, by itself`:'';
+async function loadQueue(){const r=await api('/api/downloads');const d=r.downloader;DLBUSY=d.busy_until?d:null;
+  $('dlsession').textContent=busyWords(d)||(d.online?`Helper: ${d.status}`:'Helper not connected');
   $('qpause').textContent=d.paused?'Resume':'Pause';$('qpause').dataset.paused=d.paused?'1':'0';
   const f=r.folder;$('dlfolder').innerHTML=`Folder: <code>${esc(f.path)}</code> · ${f.models} model${f.models===1?'':'s'} · ${(f.bytes/1048576).toFixed(1)} MB`;$('dlfinder').hidden=!META.local;
   $('dlq').innerHTML=r.items.length?r.items.map(x=>{const st=DST[x.state]||[x.state,''];return `<tr><td>${x.id}</td><td>${esc(x.name)}</td><td>${x.compartments}</td><td>${x.batch_id?'#'+x.batch_id:'—'}</td><td><span class="pill ${st[1]}">${st[0]}</span></td><td>${x.watermark===1?'<span class="pill err">Found</span>':x.watermark===0?'<span class="pill ok">None</span>':'—'}</td><td>${x.attempts}</td><td class="hint">${esc(x.error||'')}</td></tr>`}).join(''):'<tr><td colspan="8" class="empty">Nothing queued — on Batches press Queue download</td></tr>'}
@@ -2003,9 +2005,14 @@ function lRender(){if(!MK||!$('mklabelled'))return;const days=+$('ldays').value,
   const L=(MK.labelled||[]).filter(r=>(!MKVPROD||r.product===MKVPROD)&&(!since||(r.label_at||r.checked_at||r.made_at||0)>=since)&&(!q||(r.name||'').toLowerCase().includes(q)||(r.order_id||'').toLowerCase().includes(q)))
     .sort((a,b)=>(b.label_at||b.checked_at||0)-(a.label_at||a.checked_at||0));
   $('mklabelled').innerHTML=L.length?L.map(r=>{const undo=(r.label_by||'').startsWith(OUTSIDE)&&r.label_at&&Date.now()/1000-r.label_at<7*86400;
-    return `<tr><td><b>${esc(r.name)}</b> ${sw(r.color)}${r.quantity>1?` <span class="pill">×${r.quantity}</span>`:''}</td><td class="fn" style="font-size:12px">${esc(r.order_id)}</td><td>${esc(r.checked_by||'')}</td><td class="hint">${r.label_at?new Date(r.label_at*1000).toLocaleString():'—'}</td><td>${lHow(r)}</td><td>${undo?`<button class="small" data-lundo="${esc(r.order_id)}" title="The label was not printed: back to Completed">Undo</button>`:''}</td></tr>`}).join('')
+    return `<tr><td><b>${esc(r.name)}</b> ${sw(r.color)}${r.quantity>1?` <span class="pill">×${r.quantity}</span>`:''}</td><td class="fn" style="font-size:12px">${esc(r.order_id)}</td><td>${esc(r.checked_by||'')}</td><td class="hint">${r.label_at?new Date(r.label_at*1000).toLocaleString():'—'}</td><td>${lHow(r)}</td><td style="white-space:nowrap"><button class="small" data-lreprint="${esc(r.order_id)}" title="Print the same label again (lost, stuck on the wrong parcel, printer jam) — nothing changes on ShopDeck">Reprint label</button>${undo?` <button class="small" data-lundo="${esc(r.order_id)}" title="The label was not printed: back to Completed">Undo</button>`:''}</td></tr>`}).join('')
     :'<tr><td colspan="6" class="empty">No labels printed in this period</td></tr>';
-  document.querySelectorAll('#mklabelled [data-lundo]').forEach(b=>b.onclick=()=>labelUndo(b.dataset.lundo,b))}
+  document.querySelectorAll('#mklabelled [data-lundo]').forEach(b=>b.onclick=()=>labelUndo(b.dataset.lundo,b));
+  document.querySelectorAll('#mklabelled [data-lreprint]').forEach(b=>b.onclick=async()=>{const r=(MK.labelled||[]).find(o=>o.order_id===b.dataset.lreprint);
+    if(!confirm(`Print the label for ${r?r.name+' ('+r.order_id+')':b.dataset.lreprint} again?
+
+The same label SnapSTL saved is printed again on the label printer — nothing changes on ShopDeck. Use it only for this parcel; throw away a wrong or spoiled copy.`))return;
+    b.disabled=true;try{await post('/api/labels/reprint-order',{order_id:b.dataset.lreprint});b.textContent='Printed again'}catch(e){alert(e.message);b.disabled=false}})}
 $('ldays').onchange=()=>MK&&lRender();$('lsearch').oninput=()=>MK&&lRender();
 $('cdays').onchange=()=>MK&&cRender();$('csearch').oninput=()=>MK&&cRender();
 $('call').onchange=()=>{for(const r of cRows())$('call').checked?CSEL.add(r.order_id):CSEL.delete(r.order_id);cRender()};
@@ -2734,10 +2741,10 @@ function showShared(sh){if(!sh)return;const off=sh.required&&!sh.online;document
 async function refresh(){try{const st=await api('/api/state');showShared(st.shared);if(tab==='settings'&&st.sync&&st.sync.enabled)showSync(st.sync);
   const q=st.queue||{};const pending=(q.queued||0)+(q.claimed||0);
   $('status').textContent=st.building?`Building batch #${st.building}…`:pending?`${pending} model(s) to download`:'';
-  const d=st.downloader;
+  const d=st.downloader;DLBUSY=d.busy_until?d:null;
   const offPage=d.online&&!d.on_page;
   const dlText=d.paused?'Downloads paused':!d.online?(pending?'Helper not connected — open the MakerWorld tab':'Helper not connected'):offPage?'Helper tab is not on the model page':d.status||'Helper ready';
-  $('dl').textContent=d.paused?'paused':!d.online?'not connected':offPage?'wrong page':/security check/i.test(d.status||'')?'security check':d.current?'downloading':'ready';$('hhelper').title=dlText+(d.status&&d.status!==dlText?' · '+d.status:'');
+  $('dl').textContent=d.paused?'paused':d.busy_until?'MakerWorld busy':!d.online?'not connected':offPage?'wrong page':/security check/i.test(d.status||'')?'security check':d.current?'downloading':'ready';$('hhelper').title=dlText+(d.status&&d.status!==dlText?' · '+d.status:'');
   $('hdot').className='d '+((!d.online||offPage)&&pending?'err':offPage?'warn':/security check/i.test(d.status||'')?'err':d.current?'info':d.paused?'warn':d.online?'ok':'');
   $('helperinfo').textContent=!d.online?'Helper not connected — open the MakerWorld model page in Chrome (with the helper installed).':offPage?'Helper connected, but its tab is not on the model page — click the helper icon → Open model page.':`Helper ready on the model page · ${d.status}`;
   $('dlpause').textContent=d.paused?'Resume downloads':'Pause downloads';$('dlpause').dataset.paused=d.paused?'1':'0';

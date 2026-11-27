@@ -872,3 +872,13 @@ English hard — the language help was skipped by the owner).
   offers Make next batch when the plan needs more bases than are ready, letter merges and 3-base night merges, and
   asks before a split. Splits put Express names and clubbed orders first; split leftovers are started next.
 - Breaks (30 + 15 min, no fixed time): not planned — the 15 minutes to take a plate off covers short gaps.
+
+### 2026-11-28: 0.43.1 MakerWorld busy (helper 2.7.2)
+- Owner: downloads got stuck on MakerWorld's "Sorry, it seems that the server is experiencing some issues. Please try
+  again later." several times. Cause: the helper only knew messages with fail / error / invalid, so it waited the
+  full 3 minutes per try, used up the name's 3 tries, and the page often stayed broken for the next names.
+- Now the helper sees the message at once, waits a minute and reloads the page; the app gives the try back and
+  spaces the next names out (1 → 10 minutes while MakerWorld stays busy), and says so on Print → Batches.
+- Owner: a **Reprint label** button on Print → Label printed, to be safe with a wrongly stuck or missed label: it
+  prints the label SnapSTL saved again (nothing changes on ShopDeck); a label made outside SnapSTL has no saved file —
+  the button says to print it again on ShopDeck.

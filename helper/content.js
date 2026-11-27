@@ -83,12 +83,29 @@
     item.click(); await sleep(250);
     if (combo().innerText.trim() !== value) throw new Error(`Couldn't select ${value} for ${label}`);
   }
+  // MakerWorld's red messages (2.7.2: also "Sorry, it seems that the server is experiencing some issues. Please try
+  // again later." — it has none of the old words, so the helper used to wait the full 3 minutes on it)
+  const TOASTS = "[role=alert],[role=status],[class*=toast i],[class*=snackbar i],[class*=notification i],[class*=message i]";
+  const BUSY_WORDS = /try again|experiencing|server|busy|too many|overload|later/i;
+  const toastTexts = () => [...document.querySelectorAll(TOASTS)].filter((a) => a.offsetParent)
+    .map((a) => (a.innerText || "").trim()).filter((t) => t && t.length < 300);
+  let shownBefore = new Set();  // messages already on the page when Generate was pressed: never counted
+  const armToasts = () => { shownBefore = new Set(toastTexts()); };
   function errorToast() {
-    for (const a of document.querySelectorAll("[role=alert]")) {
-      const t = a.innerText.trim();
-      if (/fail|error|invalid/i.test(t)) return t;
+    for (const t of toastTexts()) {
+      if (shownBefore.has(t)) continue;
+      if (/fail|error|invalid|sorry/i.test(t) || BUSY_WORDS.test(t)) return t;
     }
     return "";
+  }
+  function toastError(t) {  // "MakerWorld busy: …" doesn't use up the name's tries in the app (0.43.1)
+    return new Error(BUSY_WORDS.test(t) ? `MakerWorld busy: ${t}` : `MakerWorld: ${t}`);
+  }
+  function closeToasts() {
+    for (const a of document.querySelectorAll(TOASTS)) {
+      const x = a.querySelector("button,[aria-label*=close i],[class*=close i]");
+      if (x) { try { x.click(); } catch { /* gone already */ } }
+    }
   }
 
   async function waitWhileBlocked(say) {
@@ -124,6 +141,7 @@
     gen = generateButton();
     if (!gen) throw new Error("The Generate button isn't available");
     captured = {};
+    armToasts();
     gen.click();
     const end = Date.now() + GENERATE_TIMEOUT_MS;
     let lastPing = Date.now();
@@ -132,7 +150,7 @@
       if (Date.now() - lastPing > 5000) { await say(`Generating ${job.name} (${job.product})`); lastPing = Date.now(); }
       if (blocked()) await waitWhileBlocked(say);
       const err = errorToast();
-      if (err) throw new Error(`MakerWorld: ${err}`);
+      if (err) throw toastError(err);
       await sleep(500);
     }
     throw new Error("Timed out waiting for MakerWorld to generate the model");
@@ -173,6 +191,7 @@
     if (!gen) throw new Error("The Generate button isn't available");
     captured = {};
     window.postMessage({ __snapstlArm: true }, location.origin);  // re-arm (60 s window)
+    armToasts();
     gen.click();
     await sleep(300);
     const keptAfter = valueOf(PASSWORD) === pw;
@@ -192,7 +211,7 @@
       if (Date.now() - lastPing > 5000) { await say(`Generating ${p.name} (${p.compartments} compartments)`); lastPing = Date.now(); }
       if (blocked()) await waitWhileBlocked(say);
       const err = errorToast();
-      if (err) throw new Error(`MakerWorld: ${err}`);
+      if (err) throw toastError(err);
       await sleep(500);
     }
     window.postMessage({ __snapstlDisarm: true }, location.origin);
@@ -250,8 +269,23 @@
           if (!onModelPage(cfg)) {
             await bg("release", { job_id: job.job_id }); // user navigated away mid-name: back to the queue
           } else {
-            await bg("fail", { job_id: job.job_id, error: String(e.message || e) });
-            await say(`Failed ${job.name}: ${e.message || e}`);
+            const msg = String(e.message || e);
+            await bg("fail", { job_id: job.job_id, error: msg });
+            await say(`Failed ${job.name}: ${msg}`);
+            // 2.7.2: MakerWorld busy, stuck or half-loaded — wait, then reload the page so the next name
+            // starts on a clean page (the name itself goes back to the queue in the app)
+            const busy = msg.startsWith("MakerWorld busy");
+            if (busy || /Timed out waiting|Can't find|isn't available/.test(msg)) {
+              closeToasts();
+              const wait = busy ? 60 : 10;
+              await say(busy ? `MakerWorld busy — reloading the page in ${wait} s, then carrying on`
+                             : `Reloading the MakerWorld page in ${wait} s, then carrying on`);
+              await bg("working", { job_id: null });
+              await sleep(wait * 1000);
+              location.reload();
+              await sleep(20000);
+              continue;
+            }
           }
         }
         await bg("working", { job_id: null });
