@@ -357,7 +357,9 @@ MERGEABLE = (None, "reprint", "unmerged")  # not started (or back in the list af
 @_one_at_a_time
 def merge(plates: list[dict], staff: str = "") -> dict:
     """Merge letter plates [{batch_id, file}] of one colour (≤ 3 names in all; letter fix plates too) onto one plate.
-    0.35 (owner): base plates too — up to 3 bases, no extra scaling; refused when they don't fit on the bed."""
+    0.35 (owner): base plates too — up to 3 bases, no extra scaling; refused when they don't fit on the bed.
+    0.40 (owner): any plate not started — a batch's own plate, a fix plate, a split part or a merged plate (merged
+    again: Split back returns it as it was) — bases with bases, letters with letters of the same colour."""
     from .makeit import _batch_orders, plate_order_ids
 
     if len(plates) < 2:
@@ -372,10 +374,10 @@ def merge(plates: list[dict], staff: str = "") -> dict:
             if pl is None:
                 fix = con.execute("SELECT * FROM extra_plates WHERE batch_id=? AND file=? AND state='active'",
                                   (b["id"], p["file"])).fetchone()
-            if fix is not None and (fix["kind"] != "fix" or fix["part"] not in ("names", "bases")):
+            if fix is not None and (fix["kind"] not in ("fix", "divided", "merged") or fix["part"] not in ("names", "bases")):
                 fix = None
             if (pl is None or pl["kind"] not in ("names", "bases")) and fix is None:
-                raise ExtraError("Only letter plates and base plates (and their fix plates) can be merged")
+                raise ExtraError("Only letter plates and base plates can be merged")
             kinds.add(pl["kind"] if pl else fix["part"])
             if len(kinds) > 1:
                 raise ExtraError("Merge base plates with base plates and letter plates with letter plates")
@@ -393,8 +395,8 @@ def merge(plates: list[dict], staff: str = "") -> dict:
                 ids = {i.get("order_id") for i in fitems}
                 path = Path(b.get("out_dir") or "") / file
                 if not path.is_file():
-                    raise ExtraError(f"The fix plate file is gone ({Path(file).name})")
-                for o in read_3mf(path):  # the fix plate's pieces as they are (already cut and scaled)
+                    raise ExtraError(f"The plate file is gone ({Path(file).name})")
+                for o in read_3mf(path):  # the plate's pieces as they are (fix / split / merged: already cut and scaled)
                     if any(f"· {oid}" in o.name for oid in ids):
                         parts.append(make_part(o.name, trimesh.Trimesh(np.asarray(o.vertices), np.asarray(o.faces),
                                                                        process=True)))
@@ -447,7 +449,7 @@ def split(batch_id: int, file: str) -> dict:
                         (batch_id, file)).fetchone()
         if x is None:
             raise ExtraError("Not a merged plate")
-        if _latest_state(con, batch_id, file) not in (None, "failed", "cancelled", "removed"):
+        if _latest_state(con, batch_id, file) not in MERGEABLE + ("failed", "cancelled", "removed"):
             raise ExtraError("This merged plate is started or printed — it can't be split back")
         con.execute("UPDATE extra_plates SET state='split' WHERE id=?", (x["id"],))
         now = db.now()
@@ -577,7 +579,7 @@ def join(batch_id: int, file: str) -> dict:
                                               "AND state='active'", (batch_id,))
                  if json.loads(p["items"])[0].get("src") == src]
         for p in parts:
-            if _latest_state(con, batch_id, p["file"]) not in (None, "failed", "cancelled", "removed"):
+            if _latest_state(con, batch_id, p["file"]) not in MERGEABLE + ("failed", "cancelled", "removed"):
                 raise ExtraError(f"{Path(p['file']).name} is started or printed — the plate can't be joined back")
         for p in parts:
             con.execute("UPDATE extra_plates SET state='joined' WHERE id=?", (p["id"],))
@@ -595,7 +597,7 @@ def join(batch_id: int, file: str) -> dict:
                 if its and its[0].get("follows") == src:
                     followers.setdefault(its[0].get("src"), []).append(dict(p))
             for lsrc, lparts in followers.items():
-                if any(_latest_state(con, batch_id, p["file"]) not in (None, "failed", "cancelled", "removed")
+                if any(_latest_state(con, batch_id, p["file"]) not in MERGEABLE + ("failed", "cancelled", "removed")
                        for p in lparts):
                     continue  # a letter part is already printing or printed: keep the letter split
                 for p in lparts:
@@ -611,10 +613,11 @@ def join(batch_id: int, file: str) -> dict:
 
 
 def suggestions(names_rows: list[dict]) -> list[dict]:
-    """Merge ideas for Print → Names: same-colour plates not started, ≤ 3 names in all (fewest names first)."""
+    """Merge ideas for Print → Names: same-colour plates not started, ≤ 3 names in all (fewest names first).
+    0.40: fix plates, split parts and merged plates too."""
     by: dict[str, list[dict]] = {}
     for r in names_rows:
-        if r.get("extra") or r.get("job_active") or r.get("done"):
+        if r.get("job_active") or r.get("done"):
             continue
         if ((r.get("job") or {}).get("state")) not in MERGEABLE:
             continue
@@ -657,12 +660,13 @@ def _fits(rows: list[dict]) -> bool:
 
 def base_suggestions(base_rows: list[dict], est: dict | None = None) -> list[dict]:
     """Merge ideas for Print → Bases (0.35): base plates not started with 1–2 bases, sets of up to 3 bases that
-    look like they fit on one plate (most bases per plate first), with ≈ print time (overnight ≥ 8 h)."""
+    look like they fit on one plate (most bases per plate first), with ≈ print time (overnight ≥ 8 h).
+    0.40: fix plates, split parts and merged plates too."""
     from . import estimate
 
     cand = []
     for r in base_rows:
-        if r.get("extra") or r.get("job_active") or r.get("done"):
+        if r.get("job_active") or r.get("done"):
             continue
         if ((r.get("job") or {}).get("state")) not in MERGEABLE:
             continue

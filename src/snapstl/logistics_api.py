@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta
 from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from . import db, sync, tabs
+from . import db, sync, tabs, verify
 from .ingest import SKU, reset_to_ready, set_name
 
 BY = "logistics"
@@ -310,7 +310,13 @@ async def _body(req: Request) -> dict:
 async def label(order_id: str, req: Request):
     """Label Generated (the label was made on the website) → Label done – ship it; `undo` takes it back.
     One label covers a clubbed group: every order of it must be printed first."""
-    undo = bool((await _body(req)).get("undo"))
+    body = await _body(req)
+    undo = bool(body.get("undo"))
+    # 0.40: Print → Completed → "Label printed outside SnapSTL" (the label was made somewhere else)
+    by = BY
+    if body.get("outside"):
+        staff = str(body.get("staff") or "").strip()[:60]
+        by = verify.OUTSIDE + (f" · {staff}" if staff else "")
     with db.tx() as con:
         o = _order(con, order_id)
         grp = _group(con, o)
@@ -330,8 +336,8 @@ async def label(order_id: str, req: Request):
             now = db.now()
             for g in grp:
                 if tabs.tab_of(g) == "pack_it":
-                    db.set_group(con, g["order_id"], "label", label_at=now, label_by=BY)
-    return _done("label_undo" if undo else "label_generated")
+                    db.set_group(con, g["order_id"], "label", label_at=now, label_by=by)
+    return _done("label_undo" if undo else "label_outside" if body.get("outside") else "label_generated")
 
 
 async def express(order_id: str, req: Request):

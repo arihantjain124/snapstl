@@ -837,3 +837,13 @@ English hard — the language help was skipped by the owner).
   (Print stays for the owner); night plates got ready from 20:00. Hindi with an English switch (the person at the
   printers reads little English). Removed (owner: confusing): Before you leave, Good morning, the night pills on
   Print. Print's time estimate is now rough per piece, not per letter (owner: per letter was wrong).
+
+### 2026-11-28: 0.40.0 English board, labels waiting / printed, merge any plate
+- Owner: staff said Hindi isn't needed — the board is English only (the switch is gone).
+- Labels: the board's labels button opens Print → Completed. Completed lists only names waiting for their label;
+  printed ones move to a new **Label printed** tab. New **Printed outside** mark per name (the label was made on the
+  ShopDeck website or elsewhere), with Undo for 7 days; a mark the ShopDeck API still shows unlabelled after 6 hours
+  is listed in Completed again with a warning (the data is not changed).
+- Merging: split parts, merged plates (merged again) and fix plates merge too — bases with bases, letters with
+  letters of one colour (owner: same colour). Split back undoes one step at a time; Split back / Join back also
+  work on a plate that came back to its list.

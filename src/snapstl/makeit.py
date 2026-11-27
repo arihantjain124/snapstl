@@ -260,7 +260,8 @@ def board(prs: list[dict] | None = None) -> dict:
             p = {"kind": x["part"], "file": x["file"],
                  "colors": [x["color"]] if x["part"] == "names" else ((x["color"] or "").split("+")
                                                                         if x["part"] == farm.STANDS else []),
-                 "names": [i.get("name") + (f" ({i['letters']})" if i.get("letters") else "") for i in x["items"]]}
+                 "names": [i.get("name") + (f" ({i['letters']})" if i.get("letters") else "") for i in x["items"]],
+                 "preview": x.get("preview")}  # 0.40: the footprints, for merge ideas
             add(b, json.loads(b.get("summary") or "{}"), p, [i.get("order_id") for i in x["items"]], x["kind"])
         # 0.35: the product of every plate / card (Print → Custom Organizer · GTA · …), and clubbed orders whose
         # other names are already made (their plates first: one parcel waits for them)

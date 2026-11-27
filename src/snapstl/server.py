@@ -948,7 +948,7 @@ async def helper_ping(req: Request):
     return {"paused": DOWNLOADER.paused}
 
 
-# ---------------- आज का काम / Today (0.39, today.py): what to do next at the printers ----------------
+# ---------------- Today's work (0.39, today.py): what to do next at the printers ----------------
 @app.get("/api/today")
 def today_board():
     from . import tabs, today

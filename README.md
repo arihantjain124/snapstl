@@ -412,12 +412,19 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
 - **Slicing → Letters** (0.27): per printer, a Letters process profile and speed. Letter plates slice and print with
   them; bases use the printer's own profiles. Once any printer has a Letters profile, letters go only to those
   printers (e.g. the P1S with colours in the AMS) — Print and Print next pick it by themselves.
-- **आज का काम / Today** (0.39, first page): for the person at the printers, in Hindi (English switch). It lists,
-  top to bottom, which printer to clear and which plate to start, with one **शुरू करें / Start** button. Base plates
+- **Today's work** (0.39, first page; English only since 0.40): for the person at the printers. It lists,
+  top to bottom, which printer to clear and which plate to start, with one **Start** button. Base plates
   are sized to end while someone is there (about 2 bases in the day, 3 at night — a bigger plate is split by itself);
   letters printers get letters in the day and a base plate at night; X1 gets name stands first. From 20:00 small
   base plates are merged into night plates by themselves; from 21:00 every free printer gets its night plate.
-  Below: prints to check, labels to make, and when each printer is free next.
+  Below: prints to check, labels to make (opens Print → Completed), and when each printer is free next.
+- **Print → Completed / Label printed** (0.40): Completed lists only the names still waiting for their label. A printed
+  label moves the name to **Label printed** (with when and how: SnapSTL, on ShopDeck, or Printed outside).
+  **Printed outside** on a Completed name: the label was made somewhere else — it moves to Label printed; **Undo**
+  there for 7 days. A Printed outside mark that ShopDeck still shows unlabelled 6 hours later comes back to
+  Completed with a warning.
+- **Merging** (0.40): any plate not started can be merged — split parts and merged plates too — bases with bases,
+  letters with letters of the same colour (up to 3). Split back undoes one merge at a time.
 - **Settings → ShopDeck** (0.37): paste the App ID from ShopDeck's partner portal (Apps → SnapSTL), press **Connect
   ShopDeck** and allow it on ShopDeck's page. Every 5 minutes orders that ShopDeck shows as printed, packed, shipped,
   delivered, cancelled or returned move forward here (never backward). Names, colours, AWB EXPIRED and Acceptance

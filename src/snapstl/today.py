@@ -1,4 +1,4 @@
-"""आज का काम / Today (0.39, owner): one page that tells the person at the printers what to do next.
+"""Today's work (0.39, owner; English only since 0.40): one page that tells the person at the printers what to do next.
 
 The day rhythm (agreed 2026-11-27): a plate should end while someone is there (the shift, default 08:00–22:00),
 and every printer gets a long base plate for the night. Times are rough, per piece, measured from the prints
@@ -274,7 +274,7 @@ def start(mk_prs: list[dict], batch_id: int, file: str, printer_id: int, split: 
                                  "the plate, then confirm.")
     parts = None
     if split and len(split) >= 2:
-        res = extras.divide(batch_id, file, [int(x) for x in split], staff="आज का काम")
+        res = extras.divide(batch_id, file, [int(x) for x in split], staff="Today's work")
         file, parts = res["files"][0], res["files"]
     out = makeit.start_print(batch_id, file, int(printer_id), {}, mk_prs, bed_clear=bed_clear)
     return {**out, "file": file, "split": parts}
@@ -323,7 +323,7 @@ class NightPrep:
                 continue
             try:
                 r = extras.merge([{"batch_id": x["batch_id"], "file": x["file"]} for x in s["plates"]],
-                                 staff="आज का काम")
+                                 staff="Today's work")
                 done.append(r.get("file") or "")
                 have += 1
             except extras.ExtraError:

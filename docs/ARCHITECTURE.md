@@ -148,7 +148,7 @@ Snapstl/
 │   ├── stats.py              Stats page: made per day, backlog, printers, checkers (0.26)
 │   ├── reportwatch.py        imports a new report saved in Downloads by itself (0.26)
 │   ├── shopdeck.py           ShopDeck partner API: connect (OAuth), key renewal, live order status (0.37)
-│   ├── today.py              आज का काम / Today: the staff board, plates sized to the shift, night plates (0.39)
+│   ├── today.py              Today's work: the staff board, plates sized to the shift, night plates (0.39)
 │   ├── spares.py             spare name pieces in stock, matched to new orders, shared (0.28)
 │   ├── products.py           which SKU is which product (organizer, name stands), what can be made / shared (0.29)
 │   ├── stands.py             name stand plates: size table, 3 per plate, two-part two-filament .3mf (0.31)
@@ -334,6 +334,12 @@ morning list from done plates since the shift ended. Nothing starts without a pe
 scaling, `_write` refuses what doesn't fit; plates of one kind only. `extras.base_suggestions`: base plates not
 started with 1–2 bases, sets that pass a cautious strip check (`_fits`: from each plate's preview footprints) with ≈
 time. `makeit.board` puts plates holding a clubbed order whose other names are made (`club_wait`) after Express.
+0.40 (owner): any plate not started merges — a batch's own, a fix plate, a split part (`divided`) or a merged plate
+again — bases with bases, letters with letters of one colour. Extra plates are read from their 3MF (pieces named
+`… · <order id>`); the sources get print job `merged`, so Split back (`unmerged`) returns exactly the plates merged
+(a merged plate comes back as it was and can be split back in turn); `verify.carrier_of` takes the newest active
+extra plate holding an item. Merge ideas (both kinds) include extra plates; extra rows carry their `preview` for
+`_fits`. Split back / Join back accept a plate back in its list (`unmerged`, `reprint`).
 
 **Clubbed orders made together (0.34, `clubbed.py`)** — `create_batch` runs `clubbed.whole` first: every other name
 of a ticked clubbed order that is to make (same product) joins the batch; while any name of it is in check_name the
@@ -778,9 +784,9 @@ snapstl.server:app --port 8320`.
 
 ---
 
-## आज का काम / Today (0.39, `today.py`)
+## Today's work (0.39, `today.py`)
 
-The first page, for the person at the printers (Hindi, English switch; the strings live in `TD` in index.html).
+The first page, for the person at the printers (English only since 0.40; the strings live in `TD.en` in index.html).
 `GET /api/today` = `today.build(makeit_board())`: for every free printer (connected, not printing, no SnapSTL job
 waiting; `bed` = clear / check) one task in Print's own plate order. Name stands go to Flex first, then Letters
 printers; letter plates to Letters (then Flex, Any) printers by colour fit (`makeit.choose`), in the day only and
@@ -832,7 +838,10 @@ like a report's (offer: existing records keep their state and first values).
 
 ## Shipping labels from ShopDeck (0.33, `labels.py`, `helper/shopdeck.js`)
 
-Print → **Completed** → **Print label** (Settings → Logistics → **Shipping labels**, off by default). SnapSTL decides,
+Print → **Completed** (0.40: only names still waiting for a label; printed ones are on **Label printed**,
+split client-side by `tab` = `ship_it`; **Printed outside** = Label Generated with `label_by` "Printed outside
+SnapSTL · <staff>", Undo there for 7 days; `verify.doubt`: such a mark over 6 h old that the ShopDeck API, seen
+after it, still shows `created`/`enqueued` is listed in Completed again with a warning — nothing is changed) → **Print label** (Settings → Logistics → **Shipping labels**, off by default). SnapSTL decides,
 the SnapSTL Helper only operates ShopDeck's Process Orders page in the person's own signed-in Chrome.
 
 * **Parcel** (`labels.parcel`): the report lines kept on this computer (`shop_lines`) — a single order, or every

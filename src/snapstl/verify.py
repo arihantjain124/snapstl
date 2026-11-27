@@ -35,6 +35,8 @@ RESULTS = {
     "plate_failed": "Whole plate failed",
 }
 FIX_RESULTS = ("letters", "name", "colour", "base", "stand")  # a small fix plate is made for these
+OUTSIDE = "Printed outside SnapSTL"  # label_by of Completed → Label printed outside SnapSTL (0.40)
+DOUBT_AFTER_S = 6 * 3600  # an outside mark ShopDeck still shows unlabelled after this long comes back with a warning
 COMPLETE = ({"bases", "names"}, {"stands"})  # the parts that make one order: an organizer, a name stand (0.32)
 NOT_STARTED = ("removed", "merged", "unmerged", "divided")      # print job states that don't mean "a print started"
 MAX_FIXES_WARN = 2                                   # a third fix of one item: check the model
@@ -473,13 +475,16 @@ def completed(limit: int = 500) -> list[dict]:
 
     with db.tx() as con:
         rs = db.rows(con, f"SELECT order_id, name, color, quantity, checked_at, checked_by, made_at, batch_label, "
-                          f"batch_id, express_by, {TAB_SQL} AS tab FROM orders WHERE state='bundled' AND made_at IS NOT NULL "
+                          f"batch_id, express_by, label_at, label_by, {TAB_SQL} AS tab FROM orders WHERE state='bundled' AND made_at IS NOT NULL "
                           f"AND {TAB_SQL} IN ('pack_it', 'ship_it') ORDER BY COALESCE(checked_at, made_at) DESC LIMIT ?",
                      limit)
         ids = [r["order_id"] for r in rs]
         extra: dict[str, dict] = {}
+        live: dict[str, tuple] = {}
         if ids:
             q = ",".join("?" * len(ids))
+            live = {r[0]: (r[1], r[2]) for r in con.execute(
+                f"SELECT order_id, status, seen_at FROM shopdeck_live WHERE order_id IN ({q})", ids)}
             for c in db.rows(con, f"SELECT order_id, batch_id, plate, idx, part, result, printer, at FROM plate_checks "
                                   f"WHERE order_id IN ({q}) ORDER BY at", *ids):
                 e = extra.setdefault(c["order_id"], {"fixes": 0, "printer": "", "items": {}})
@@ -495,7 +500,18 @@ def completed(limit: int = 500) -> list[dict]:
         r["had_fix"] = e.get("fixes", 0)
         r["printer"] = e.get("printer", "")
         r["items"] = list((e.get("items") or {}).values())  # for "Found a problem"
+        r["label_doubt"] = doubt(r, live.get(r["order_id"]))
     return rs
+
+
+def doubt(r: dict, live: tuple | None, now: float | None = None) -> bool:
+    """0.40: marked "label printed outside SnapSTL" over 6 h ago, yet ShopDeck (seen after the mark) still shows no
+    label — shown in Completed again with a warning. Nothing is changed: the person decides (Undo or leave it)."""
+    at = r.get("label_at")
+    if r.get("tab") != "ship_it" or not at or not str(r.get("label_by") or "").startswith(OUTSIDE) or not live:
+        return False
+    status, seen = live
+    return (now or db.now()) - at > DOUBT_AFTER_S and (seen or 0) > at and status in ("created", "enqueued")
 
 
 def _items_of(con, batch_id: int) -> tuple[dict[tuple, dict], dict[str, str]]:

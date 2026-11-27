@@ -233,7 +233,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 <aside class="side">
   <h1>SnapSTL<small>Name organizer plates</small><small id="pcname" class="pc"></small></h1>
   <nav id="tabs">
-    <button data-t="today"><span class="ic">★</span>आज का काम</button>
+    <button data-t="today"><span class="ic">★</span>Today's work</button>
     <button data-t="orders" class="on"><span class="ic">▤</span>Pending Orders</button>
     <button data-t="history"><span class="ic">◷</span>Order History</button>
     <button data-t="makeit"><span class="ic">⚒</span>Print</button>
@@ -386,7 +386,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <p class="hint">Base plates of your built batches, printed in white. A printer is pre-selected — the next <b>available</b> one whose loaded filament is closest to white, with the most left — and under it the <b>filament slot</b> it prints from (✓ same colour, ≈ close). You can pick any printer and any loaded slot. <b>Slice</b> shows if the plate is sliced for that printer's model. <b>Options</b> start from the printer's print defaults (Slicing); change them for one plate here. Nothing prints until you press <b>Start print</b>.</p>
       <div class="toolbar" style="margin:0 0 6px"><div class="chips" id="mkbsub" style="margin:0"></div><span class="grow"></span><input type="search" id="mkbq" placeholder="Search name, order or batch" autocomplete="off" style="max-width:240px"></div>
       <div id="mkb-todo"><div class="dlabelbar" id="mkbmergebar" hidden></div><div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mkbases"></tbody></table></div>
-        <div id="mkbmergewrap" hidden style="margin-top:14px"><h3 style="margin:0 0 4px">Available to merge</h3><p class="hint" style="margin:0 0 6px">Base plates not started with room for more, in sets of up to 3 bases that look like they fit on one plate (Merge checks it for real — no scaling). A 3-base plate takes about 10 hours: a good overnight plate.</p><div id="mkbmerge"></div></div>
+        <div id="mkbmergewrap" hidden style="margin-top:14px"><h3 style="margin:0 0 4px">Available to merge</h3><p class="hint" style="margin:0 0 6px">Base plates not started with room for more (split parts, merged and fix plates too), in sets of up to 3 bases that look like they fit on one plate (Merge checks it for real — no scaling). A 3-base plate takes about 10 hours: a good overnight plate.</p><div id="mkbmerge"></div></div>
         <p class="hint"><a href="#" data-mkremoved>Removed plates</a></p></div>
       <div id="mkb-run" hidden><p class="hint">Base plates on their way to a printer or printing now. When the print is done the plate moves to <b>Printed</b>.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Status</th></tr></thead><tbody id="mkbrun"></tbody></table></div></div>
       <div id="mkb-done" hidden><p class="hint">Base plates already printed whose names are still being made, newest first. <b>Letters</b> says how many of their letters are printed.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Plate</th><th>Printer</th><th>Printed</th><th>Letters</th><th></th></tr></thead><tbody id="mkbdone"></tbody></table></div></div>
@@ -400,7 +400,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <div class="dlabelbar" id="mkmergebar" hidden></div>
       <div class="toolbar" style="margin:0 0 6px"><label class="hint" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="mkbycolor"> Group by colour (load one spool, print every plate of that colour)</label></div>
       <div class="tw"><table class="mktable"><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Slice</th><th>Options</th><th>Status</th><th></th></tr></thead><tbody id="mknames"></tbody></table></div>
-      <div id="mkmergewrap" hidden style="margin-top:14px"><h3 style="margin:0 0 4px">Available to merge</h3><p class="hint" style="margin:0 0 6px">Letter plates of one colour <b>whose bases are already printed</b>, that fit on one plate (up to 3 names). Check the names before you merge — the single plates leave the list. Press once and wait for “Merged”.</p><div id="mkmerge"></div></div>
+      <div id="mkmergewrap" hidden style="margin-top:14px"><h3 style="margin:0 0 4px">Available to merge</h3><p class="hint" style="margin:0 0 6px">Letter plates of one colour (split parts, merged and fix plates too) <b>whose bases are already printed</b>, that fit on one plate (up to 3 names). Check the names before you merge — the single plates leave the list. Press once and wait for “Merged”.</p><div id="mkmerge"></div></div>
       <p class="hint"><a href="#" data-mkremoved>Removed plates</a></p>
       </div>
       <div id="mkl-run" hidden><p class="hint">Letter plates on their way to a printer or printing now. When the print is done the plate moves to <b>Printed</b>.</p><div class="tw"><table><thead><tr><th>Batch</th><th>Colour</th><th>Plate</th><th>Printer</th><th>Status</th></tr></thead><tbody id="mklrun"></tbody></table></div></div>
@@ -421,10 +421,15 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
       <div id="mkverify"></div>
     </div>
     <div id="mk-completed" class="mkpane" hidden>
-      <p class="hint">Names checked good and not shipped yet, with who checked them. <b>Print label</b> (when shipping labels are on in Settings → Logistics) changes the courier on ShopDeck, gets the new label and prints it — keep ShopDeck's Process Orders open in Chrome. Tick rows and press <b>Packing slip</b> to print a list for packing. <b>Found a problem</b> (e.g. noticed while packing) makes a fix plate and takes the order back to Printing.</p>
+      <p class="hint">Names checked good <b>waiting for their label</b>, with who checked them (a printed label moves the name to <b>Label printed</b>). <b>Printed outside</b>: the label was made somewhere else (ShopDeck website, phone) — the name moves to Label printed; Undo there for 7 days. <b>Print label</b> (when shipping labels are on in Settings → Logistics) changes the courier on ShopDeck, gets the new label and prints it — keep ShopDeck's Process Orders open in Chrome. Tick rows and press <b>Packing slip</b> to print a list for packing. <b>Found a problem</b> (e.g. noticed while packing) makes a fix plate and takes the order back to Printing.</p>
       <div class="toolbar" style="margin:0 0 6px"><select id="cdays" style="max-width:160px"><option value="1">Today</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option><option value="0">All</option></select><input id="csearch" placeholder="Search name or order" style="max-width:220px"><span class="grow"></span><button class="small" id="cslip">Packing slip</button></div>
       <div class="msgs" id="lbmsg"></div>
-      <div class="tw"><table><thead><tr><th><input type="checkbox" id="call" title="Tick all shown"></th><th>Name</th><th>Order</th><th>Batch</th><th>Printer</th><th>Checked by</th><th>When</th><th>Label</th><th></th></tr></thead><tbody id="mkdone"></tbody></table></div>
+      <div class="tw"><table><thead><tr><th><input type="checkbox" id="call" title="Tick all shown"></th><th>Name</th><th>Order</th><th>Batch</th><th>Printer</th><th>Checked by</th><th>When</th><th>Label</th><th></th><th></th></tr></thead><tbody id="mkdone"></tbody></table></div>
+    </div>
+    <div id="mk-labelled" class="mkpane" hidden>
+      <p class="hint">Names whose label is printed, newest first: printed by SnapSTL, on ShopDeck (seen through the ShopDeck connection), or marked <b>Printed outside</b>. A wrong <b>Printed outside</b> mark can be undone here for 7 days — the name goes back to Completed.</p>
+      <div class="toolbar" style="margin:0 0 6px"><select id="ldays" style="max-width:160px"><option value="1">Today</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option><option value="0">All</option></select><input id="lsearch" placeholder="Search name or order" style="max-width:220px"></div>
+      <div class="tw"><table><thead><tr><th>Name</th><th>Order</th><th>Checked by</th><th>Label printed</th><th>How</th><th></th></tr></thead><tbody id="mklabelled"></tbody></table></div>
     </div>
     <div id="mk-removed" class="mkpane" hidden>
       <p class="hint" id="mkrmback"><a href="#" data-mkback2>← Back to To print</a></p><p class="hint">Plates taken off To print. Nothing was deleted — <b>Put back</b> returns a plate to its list; <b>Printed by hand</b> sends it to Verify. A plate leaves this list once its orders are packed, shipped or cancelled.</p>
@@ -556,7 +561,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
   <div class="card" id="rolecard">
     <div class="toolbar"><h2 style="margin:0">Printer roles and AMS colours</h2><span class="grow hint" id="rolemsg"></span><button class="small primary" id="rolesave">Save</button></div>
-    <p class="hint">What each printer is for. <b>Bases</b>: stays on white, gets base plates. <b>Letters</b>: keeps the common letter colours in its AMS (the slots below), gets letter plates during the shift — staff watch these. <b>Flex</b>: bases, and letters in the rare colours. <b>Any</b>: no role. Print pre-selects printers by role; at night every printer prints a base plate (<b>आज का काम</b> gives it). A slot that doesn't hold its planned colour shows in red here. Change roles any time.</p>
+    <p class="hint">What each printer is for. <b>Bases</b>: stays on white, gets base plates. <b>Letters</b>: keeps the common letter colours in its AMS (the slots below), gets letter plates during the shift — staff watch these. <b>Flex</b>: bases, and letters in the rare colours. <b>Any</b>: no role. Print pre-selects printers by role; at night every printer prints a base plate (<b>Today's work</b> gives it). A slot that doesn't hold its planned colour shows in red here. Change roles any time.</p>
     <div class="toolbar"><label style="margin:0">Shift from <input type="time" id="shstart" style="max-width:120px"></label><label style="margin:0">to <input type="time" id="shend" style="max-width:120px"></label><span class="hint">someone is at the printers — Print plans the night around it</span></div>
     <datalist id="slotcolors"></datalist>
     <div class="tw"><table><thead><tr><th>Printer</th><th>Role</th><th>Slot 1</th><th>Slot 2</th><th>Slot 3</th><th>Slot 4</th><th>Loaded now</th></tr></thead><tbody id="roles"><tr><td colspan="7" class="hint">Loading…</td></tr></tbody></table></div>
@@ -912,8 +917,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 
 <section id="t-today" hidden>
   <div class="card">
-    <div class="toolbar"><h2 style="margin:0" id="tdtitle">आज का काम</h2><span class="pill info" id="tdphase"></span><span class="grow hint" id="tdclock"></span>
-      <div class="seg"><button class="small" data-tdlang="hi">हिंदी</button><button class="small" data-tdlang="en">English</button></div>
+    <div class="toolbar"><h2 style="margin:0" id="tdtitle">Today's work</h2><span class="pill info" id="tdphase"></span><span class="grow hint" id="tdclock"></span>
       <button class="small" id="tdrefresh"></button></div>
     <p class="tdphase" id="tdphasetext"></p>
     <div id="tdnight"></div>
@@ -1021,8 +1025,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <p><b>By product (0.35):</b> <b>Custom Organizer</b> (Bases / Letters, each To print · Printing · Printed) · <b>GTA</b> · <b>Harry Potter</b> · <b>Barbie</b> (To print · Printing · Printed) · <b>Verify</b> and <b>Completed</b> (product chips; search finds any order ID) · <b>Batches</b>. <b>Removed plates</b> is a link under each To print list.</p>
     <p><b>Print time:</b> under the printer picked, <i>≈ 6 h 40 m · ready ~9:15 pm</i> — learned from the prints already done (at 124 %, scaled to the speed chosen), counted from when that printer finishes its current print. A printer uses its own figures from 10 prints of a kind, else its model's, else every printer's; until a product has a few prints it says so. Stats → <b>Print time per letter</b> shows each printer's figures.</p>
     <p><b>Printer roles (0.36, Printers → Printer roles and AMS colours):</b> <b>Bases</b> printers stay on white and get base plates; <b>Letters</b> printers keep the common letter colours in their AMS slots and get letter plates during the shift; <b>Flex</b> takes bases and the rare letter colours; <b>Any</b> = no role. Print pre-selects printers by role and <b>Print next</b> follows it. A slot not holding its planned colour shows in red. Letter colours no Letters printer has loaded are listed on Letters (load them on the Flex printer).</p>
-    <p><b>आज का काम / Today (0.39):</b> the first page, for the person at the printers (Hindi, with an English switch). It lists what to do now, top to bottom: which printer to clear and which plate to start, with one <b>Start</b> button. Base plates are sized so they end while someone is here (the shift, Printers → Printer roles, default 8:00–22:00): about 2 bases in the day, 3 at night; a bigger plate is split by itself. Letters printers get letter plates in the day and a base plate at night; X1 (Flex) gets name stands first. From 2 hours before the shift ends, small base plates are merged into 3-base night plates by themselves; in the last hour every free printer gets its night plate. Times are rough, per piece (≈3.3 h per base on P1S, ≈4 h on A1, from the prints of the last 30 days).</p>
-    <p><b>Merging base plates:</b> tick base plates not started (up to 3 bases) and <b>Merge onto one plate</b> — no scaling; refused when they don't fit on the bed. <b>Available to merge</b> suggests sets that look like they fit, with the time (≈ 8 h or more: a good overnight plate). <b>Split back</b> undoes it before printing. A plate holding a clubbed order whose other names are already made says <i>print this now</i>.</p>
+    <p><b>Today's work (0.39):</b> the first page, for the person at the printers. It lists what to do now, top to bottom: which printer to clear and which plate to start, with one <b>Start</b> button. Base plates are sized so they end while someone is here (the shift, Printers → Printer roles, default 8:00–22:00): about 2 bases in the day, 3 at night; a bigger plate is split by itself. Letters printers get letter plates in the day and a base plate at night; X1 (Flex) gets name stands first. From 2 hours before the shift ends, small base plates are merged into 3-base night plates by themselves; in the last hour every free printer gets its night plate. Times are rough, per piece (≈3.3 h per base on P1S, ≈4 h on A1, from the prints of the last 30 days).</p>
+    <p><b>Merging base plates:</b> tick base plates not started (up to 3 bases) — any kind: a batch's own, a split part, a merged or a fix plate (0.40) and <b>Merge onto one plate</b> — no scaling; refused when they don't fit on the bed. <b>Available to merge</b> suggests sets that look like they fit, with the time (≈ 8 h or more: a good overnight plate). <b>Split back</b> undoes it before printing. A plate holding a clubbed order whose other names are already made says <i>print this now</i>.</p>
     <p><b>Bambuddy</b>, the open-source print-farm manager, runs on one Windows computer (as a service, with only its slicer service in Docker), for every SnapSTL computer (set up with <code>bambuddy-server.ps1</code>). Each SnapSTL connects to it in <b>Settings → Connections</b> with that computer's address, e.g. <code>http://192.168.1.50:8000</code> — the sidebar's <b>IP address</b> line on the Bambuddy computer shows and copies it. Bambuddy is connected to your Bambu printers and keeps a queue per printer.</p>
     <p>If Bambuddy, Docker, the slicer service or OctoEverywhere stops, open SnapSTL on the Bambuddy computer: <b>Settings → Connections → This Bambuddy computer — external services</b> shows each one. <b>Check now</b> looks again, <b>Start</b> starts whatever is down (choose Yes if Windows asks), each has its own <b>Restart</b>, and <b>Restart all</b> restarts Bambuddy, the slicer and OctoEverywhere (Docker has its own Restart). <b>Keep running</b> (on by default) starts what stopped by itself every minute; it never restarts anything that's running.</p>
     <ol>
@@ -1033,7 +1037,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     </ol>
     <p><b>Print</b> (sidebar) shows on top the printers <b>free for the next print</b> (with the colours loaded) and beds to clear, and has <b>Refresh from Bambuddy</b>. It has five lists. <b>Bases</b>: <i>To print</i> — every base plate still to print, with the next <b>available</b> printer and its best-matching filament slot already chosen; <i>Printed</i> — base plates printed whose letters aren't all printed yet. <b>Letters</b> (the names): every letter plate with its colour, first those whose <b>base is printed</b> (print these now), then those whose base is still to print; a printer and the slot closest to that colour are pre-selected. Both lists have a search (name, order ID or batch). Any printer and any loaded slot can be chosen — the slot is what the print uses. <b>Fix</b> plates (only what was spoiled) are listed first.</p>
     <ul>
-      <li><b>Merge</b> (Letters): tick letter plates of one colour that aren't started — fix plates too — up to 3 names in all, and press <b>Merge onto one plate</b> (other colours can't be ticked; more than 3 names is refused). Under the list, <b>Available to merge</b> suggests plates whose bases are already printed; ticking a plate whose base isn’t printed asks first. Merge runs once per press (a second press is refused). <b>Remove</b> works on every plate, merged and split ones too. The names keep their size (no scaling) and go onto one new plate in the newest batch's <code>Merged/</code> folder; the single plates leave the list. <b>Split back</b> returns them while the merged plate isn't started. <b>Group by colour</b> lists every name plate by colour, so one spool can print them all.</li>
+      <li><b>Merge</b> (Letters): tick letter plates of one colour that aren't started — fix plates, split parts and merged plates too (a merged plate merged again: Split back returns it as it was) — up to 3 names in all, and press <b>Merge onto one plate</b> (other colours can't be ticked; more than 3 names is refused). Under the list, <b>Available to merge</b> suggests plates whose bases are already printed; ticking a plate whose base isn’t printed asks first. Merge runs once per press (a second press is refused). <b>Remove</b> works on every plate, merged and split ones too. The names keep their size (no scaling) and go onto one new plate in the newest batch's <code>Merged/</code> folder; the single plates leave the list. <b>Split back</b> returns them while the merged plate isn't started. <b>Group by colour</b> lists every name plate by colour, so one spool can print them all.</li>
       <li><b>Print label</b> (Completed; Settings → Logistics → Shipping labels): keep ShopDeck's Process Orders open and signed in in Chrome (the Helper brings it to the front while the label is made, then goes back). The SnapSTL Helper finds the order (an expired AWB is regenerated first), changes the courier to the first one offered from the list, waits a minute and presses Label; SnapSTL prints the label only if it matches the order exactly (order, AWB, items, names). A parcel with other products asks whether all items are ready. Sign-in needed → sign in, then <b>Continue</b>. Anything unexpected stops with the reason.</li>
       <li><b>Split</b> (Bases or Letters, not started): choose how many go on each part (e.g. 2 + 1); same size, saved in <code>Split/</code>. Splitting a <b>bases</b> plate splits its letter plates the same way, so the letters of each base part are on their own plate and can be printed once that base is done (a letter plate already started, printed, merged or split is left as it is). <b>Join back</b> on the bases joins those letters back too while nothing is started.</li>
       <li><b>Verify</b>: one card per name, once its letters and its base are both printed (Bambu reports them printed) — nothing goes straight to packing. Choose your name in <b>Checked by</b> (people are added in <b>Settings → Staff</b>): every check is saved under it. Put the letters with their base and mark each: <b>Good</b>, <b>Letter(s) spoiled</b> (tap the spoiled letters on the picture), <b>Whole name spoiled</b>, <b>Wrong colour</b> or <b>Base broken or warped</b>, then <b>Confirm – ready to pack</b> (or <b>Save – send problems for reprint</b>) — a <i>Saving…</i> screen covers the card until it's done (a second press saves nothing twice). Each problem gets a small <b>Fix</b> plate with only what was spoiled, at the same size, at the top of Bases / Letters; it's printed and checked like any plate. <b>Whole plate failed…</b> (on a card, or in Bases → Printed / Letters → Printed) sends a whole printed plate back to print. A name fixed twice before shows a warning to check the model. An order moves to <b>Orders → Printed – pack it</b> only when its base and its name are both checked good; until then Orders shows <i>Printed – waiting for check</i>. Everything printed before 0.24 counts as checked (<i>Before 0.24</i>).</li>
@@ -1534,7 +1538,7 @@ const setVal=v=>v!==''&&v!=null;
 
 // ---------- Print: Bases / Names / Completed / Removed ----------
 let MK=null,MKTAB='bases',MKFAST=null;const MKGOING=new Set();/* plates whose Start print is being sent */const MKSEL={};const OPTLBL={bed_levelling:'Bed levelling',flow_cali:'Flow calibration',timelapse:'Timelapse'};
-const MKPANES=['bases','names','stands','verify','completed','removed','batches'];
+const MKPANES=['bases','names','stands','verify','completed','labelled','removed','batches'];
 // 0.35 (owner): Print by product — Custom Organizer (Bases / Letters) · GTA · Harry Potter · Barbie · Verify · Completed · Batches
 let MKORG='bases',MKPROD='gta',MKVPROD='';try{MKORG=localStorage.getItem('mkorg')||'bases';MKPROD=localStorage.getItem('mkprod')||'gta';MKVPROD=localStorage.getItem('mkvprod')||''}catch{}
 const mkStandProducts=()=>(PRODUCTS||[]).filter(p=>p.kind==='stand');
@@ -1554,18 +1558,18 @@ function mkShow(t){MKTAB=t;if(t==='bases'||t==='names')MKORG=t;try{localStorage.
   for(const k of MKPANES)$('mk-'+k).hidden=k!==t;if(t==='batches'){loadBatches();loadQueue()}mkChips();if(MK&&t==='stands')mkRender(true)}
 function mkChips(){if(!MK)return;const st=MK.stands||[],sp=mkStandProducts(),nb=MK.bases.length,nn=MK.names.length;
   const act=BDATA?BDATA.batches.filter(b=>!b.archived_at).length:'…';
-  const top=[['org','Custom Organizer',nb+nn],...sp.map(p=>['p:'+p.key,p.label,st.filter(r=>r.product===p.key).length]),['verify','Verify',MK.verify.length],['completed','Completed',MK.completed.length],['batches','Batches',act]];
+  const top=[['org','Custom Organizer',nb+nn],...sp.map(p=>['p:'+p.key,p.label,st.filter(r=>r.product===p.key).length]),['verify','Verify',MK.verify.length],['completed','Completed',MK.completed.length],['labelled','Label printed',(MK.labelled||[]).length],['batches','Batches',act]];
   const cur=['bases','names','removed'].includes(MKTAB)?'org':MKTAB==='stands'?'p:'+MKPROD:MKTAB;
   $('mktabs').innerHTML=top.map(([k,l,n])=>`<button data-mk="${k}" class="${cur===k?'on':''}"${k==='verify'&&MK.verify.length?' style="border-color:var(--warn);color:var(--warn)"':''}>${esc(l)} · ${n}</button>`).join('');
   let sub='';
   if(['bases','names'].includes(MKTAB))sub=[['bases','Bases',nb],['names','Letters',nn]].map(([k,l,n])=>`<button data-mk2="${k}" class="${MKTAB===k?'on':''}">${l} · ${n}</button>`).join('');
-  else if(['verify','completed'].includes(MKTAB)){const L=MKTAB==='verify'?MK.verify:MK.completed;
+  else if(['verify','completed','labelled'].includes(MKTAB)){const L=MKTAB==='verify'?MK.verify:MKTAB==='labelled'?(MK.labelled||[]):MK.completed;
     sub=[['','All'],['organizer','Custom Organizer'],...sp.map(p=>[p.key,p.label])].map(([k,l])=>`<button data-mkv="${k}" class="${MKVPROD===k?'on':''}">${esc(l)} · ${k?L.filter(c=>c.product===k).length:L.length}</button>`).join('')}
   $('mktabs2').innerHTML=sub;$('mktabs2').hidden=!sub;
   document.querySelectorAll('[data-mk]').forEach(b=>b.onclick=()=>{const k=b.dataset.mk;
     if(k==='org')mkShow(MKORG);else if(k.startsWith('p:')){MKPROD=k.slice(2);try{localStorage.setItem('mkprod',MKPROD)}catch{}mkShow('stands')}else mkShow(k)});
   document.querySelectorAll('[data-mk2]').forEach(b=>b.onclick=()=>mkShow(b.dataset.mk2));
-  document.querySelectorAll('[data-mkv]').forEach(b=>b.onclick=()=>{MKVPROD=b.dataset.mkv;try{localStorage.setItem('mkvprod',MKVPROD)}catch{}mkChips();vRender(true);cRender()});
+  document.querySelectorAll('[data-mkv]').forEach(b=>b.onclick=()=>{MKVPROD=b.dataset.mkv;try{localStorage.setItem('mkvprod',MKVPROD)}catch{}mkChips();vRender(true);cRender();lRender()});
   document.querySelectorAll('[data-mkremoved]').forEach(a=>a.onclick=e=>{e.preventDefault();mkShow('removed')});
   document.querySelectorAll('[data-mkback2]').forEach(a=>a.onclick=e=>{e.preventDefault();mkShow(MKORG)})}
 // Getting ready (0.35; 0.36.1: one compact panel) — batches still downloading / building, at the top of Print.
@@ -1596,7 +1600,7 @@ function mkReady(){if(!BDATA||!$('mkready'))return;const L=BDATA.batches.filter(
 const mkKey=r=>r.batch_id+'|'+r.file;
 // Letters → Merge (0.25.1): tick letter plates of one colour (fix plates too), not started, up to 3 names in all
 const MERGESEL=new Map(),MAXMERGE=3;
-const canMerge=r=>['names','bases'].includes(r.kind)&&!r.job_active&&r.extra!=='merged'&&(!r.job||['reprint','unmerged'].includes(r.job.state));
+const canMerge=r=>['names','bases'].includes(r.kind)&&!r.job_active&&(!r.job||['reprint','unmerged'].includes(r.job.state));  // 0.40: split, merged and fix plates too
 let MERGING=false;  // 0.28: a merge is being saved — every Merge button stays off until the page reloads
 function mkMergeBar(){const sel=[...MERGESEL.values()],n=sel.reduce((a,r)=>a+(r.open_items||[]).length,0),bases=sel.length&&sel[0].kind==='bases',cols=bases?['']:[...new Set(sel.map(r=>(r.colors[0]||'').toLowerCase()))];
   const word=bases?'base':'name';
@@ -1742,7 +1746,7 @@ function mkRender(force){const editing=!force&&['mkbases','mknames','mkstands'].
     try{const r=await post('/api/makeit/merge',{plates:s.plates.map(p=>({batch_id:p.batch_id,file:p.file})),staff:$('vstaff')?$('vstaff').value:''});$('mknote').innerHTML=`<div class="ok">Merged: ${esc(r.names)} — ${esc(r.file.split('/').pop())}</div>`}catch(e){alert(e.message)}await loadMakeIt();MERGING=false;mkRender(true)});
   const dp=MK.duplicates||[];$('mkdupes').innerHTML=dp.length?`<div class="msgs"><div class="e"><b>Same names on two plates</b> (merge pressed twice): ${dp.map(d=>`<b>${esc(d.file.split('/').pop())}</b> is a copy of ${esc(d.of.file.split('/').pop())} — press <b>Remove</b> on it`).join('; ')}. Don't print it.</div></div>`:'';
   $('mkmerge').innerHTML=(MK.merge||[]).map((s,i)=>`<div class="msgs"><div class="w" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>${sw(s.color)} · ${s.plates.length} plates with room — ${s.plates.map(p=>`<b>${esc(p.names.join(', '))}</b> <span class="hint">(${esc(p.batch||'')})</span>`).join(' + ')}</span><span class="grow"></span><button class="small primary" data-merge="${i}" ${MERGING?'disabled':''} title="Put these ${s.names} names on one ${esc(s.color)} plate (same size, no scaling)">Merge onto one plate</button></div></div>`).join('');
-  vRender(force);cRender();
+  vRender(force);cRender();lRender();
   $('mkremoved').innerHTML=MK.removed.length?MK.removed.map(r=>`<tr><td class="hint">${esc(r.batch)}</td><td>${plateCell(r)}</td><td class="hint">${r.removed_at?new Date(r.removed_at*1000).toLocaleString():''}</td><td style="white-space:nowrap"><button class="small" data-mkback="${esc(mkKey(r))}">Put back</button> <button class="small" data-mkhand="${esc(mkKey(r))}" title="Printed outside SnapSTL: check it on Verify">Printed by hand</button>${r.kind==='bases'?` <button class="small" data-mkspare="${esc(mkKey(r))}" title="This bases plate was printed anyway: keep the bases in stock (Orders → Spare pieces)">Add to spare pieces</button>`:''}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">Nothing removed</td></tr>';
   const all=[...MK.bases,...MK.names,...(MK.stands||[]),...MK.removed],find=k=>all.find(r=>mkKey(r)===k);
   document.querySelectorAll('[data-merge]').forEach(x=>x.onclick=async()=>{const s=MK.merge[+x.dataset.merge];
@@ -1939,14 +1943,16 @@ function cRows(){const days=+$('cdays').value,q=$('csearch').value.trim().toLowe
   return (MK.completed||[]).filter(r=>(!MKVPROD||r.product===MKVPROD)&&(!since||(r.checked_at||r.made_at||0)>=since)&&(!q||(r.name||'').toLowerCase().includes(q)||(r.order_id||'').toLowerCase().includes(q)))}
 function cRender(){const L=cRows();
   $('mkdone').innerHTML=L.length?L.map(r=>`<tr><td><input type="checkbox" data-csel="${esc(r.order_id)}" ${CSEL.has(r.order_id)?'checked':''}></td><td><b>${esc(r.name)}</b> ${sw(r.color)}${r.quantity>1?` <span class="pill">×${r.quantity}</span>`:''}${r.had_fix?' <span class="pill warn" title="A part was printed again before it was good">had a fix</span>':''}</td>
-    <td class="fn" style="font-size:12px">${esc(r.order_id)}${r.tab==='ship_it'?' <span class="pill ok">label done</span>':''}</td><td class="hint">${esc(r.batch_label||'')}</td><td class="hint">${esc(r.printer||'')}</td><td>${esc(r.checked_by||'')}</td>
+    <td class="fn" style="font-size:12px">${esc(r.order_id)}${r.label_doubt?`<div class="pill err" title="Marked printed outside SnapSTL, but ShopDeck still shows no label">Marked printed outside ${esc(mkWhen(r.label_at))} — ShopDeck still shows no label</div>`:''}</td><td class="hint">${esc(r.batch_label||'')}</td><td class="hint">${esc(r.printer||'')}</td><td>${esc(r.checked_by||'')}</td>
     <td class="hint">${r.checked_at?new Date(r.checked_at*1000).toLocaleString():''}</td>
-    <td data-lbcell="${esc(r.order_id)}">${lbCell(r)}</td>
+    <td data-lbcell="${esc(r.order_id)}">${lbCell(r)}</td><td style="white-space:nowrap">${r.label_doubt?`<button class="small" data-lundo="${esc(r.order_id)}" title="The label was not printed: back to waiting for its label">Undo the mark</button>`:`<button class="small" data-coutside="${esc(r.order_id)}" title="The label was made outside SnapSTL (ShopDeck website, phone…): move it to Label printed">Printed outside</button>`}</td>
     <td><select data-cprob="${esc(r.order_id)}" style="max-width:170px" title="Until it is shipped: make a fix plate and take the order back to Printing"><option value="">Reprint / problem…</option>${Object.entries((r.items||[]).some(i=>i.part==='stands')?{stand:'Reprint the stand'}:CPROB).map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></td></tr>`
-    +(CPICK&&CPICK.order_id===r.order_id?`<tr><td></td><td colspan="8"><div class="hint" style="margin:4px 0">${esc(r.name)}: tap the spoiled letters (red = print again):</div><div id="cpcs">${CPICK.pcs?letterSVG(CPICK.pcs,CPICK.picked):'<span class="hint">Loading letters…</span>'}</div><div class="toolbar" style="margin:6px 0"><button class="primary small" id="cpickgo">Make the fix plate</button><button class="small" id="cpickno">Cancel</button></div></td></tr>`:'')).join(''):'<tr><td colspan="9" class="empty">Nothing checked yet in this period</td></tr>';
+    +(CPICK&&CPICK.order_id===r.order_id?`<tr><td></td><td colspan="9"><div class="hint" style="margin:4px 0">${esc(r.name)}: tap the spoiled letters (red = print again):</div><div id="cpcs">${CPICK.pcs?letterSVG(CPICK.pcs,CPICK.picked):'<span class="hint">Loading letters…</span>'}</div><div class="toolbar" style="margin:6px 0"><button class="primary small" id="cpickgo">Make the fix plate</button><button class="small" id="cpickno">Cancel</button></div></td></tr>`:'')).join(''):'<tr><td colspan="10" class="empty">No names waiting for a label in this period</td></tr>';
   lbWire();lbLoad(L.map(r=>r.order_id));
   $('call').checked=L.length>0&&L.every(r=>CSEL.has(r.order_id));
   document.querySelectorAll('[data-csel]').forEach(x=>x.onchange=()=>{x.checked?CSEL.add(x.dataset.csel):CSEL.delete(x.dataset.csel)});
+  document.querySelectorAll('[data-coutside]').forEach(b=>b.onclick=()=>labelOutside(b.dataset.coutside,b));
+  document.querySelectorAll('#mkdone [data-lundo]').forEach(b=>b.onclick=()=>labelUndo(b.dataset.lundo,b));
   const cFix=async(r,results,what)=>{const who=vAuth();if(!who)return false;
     if(!confirm(`${r.name}: ${what}?\n\nA fix plate is made and the order goes back to Printing until it is checked good again.`))return false;
     $('mknote').innerHTML='<div class="w"><span class="spin" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle"></span> Making the fix plate…</div>';
@@ -1967,6 +1973,23 @@ function cRender(){const L=cRows();
     $('cpcs').onclick=e=>{const t=e.target.closest('[data-vpiece]');if(!t)return;const n=+t.dataset.vpiece;CPICK.picked.has(n)?CPICK.picked.delete(n):CPICK.picked.add(n);cRender()};
     $('cpickgo').onclick=async()=>{if(!CPICK.picked.size){alert('Tap the spoiled letters first');return}const r=MK.completed.find(o=>o.order_id===CPICK.order_id);
       $('cpickgo').disabled=true;if(!await cFix(r,[{...CPICK.item,result:'letters',pieces:[...CPICK.picked]}],`Reprint ${CPICK.picked.size} letter${CPICK.picked.size>1?'s':''}`))$('cpickgo').disabled=false}}}
+// 0.40: the label was made outside SnapSTL / undo that mark (same as Label Generated on the Pack page)
+async function labelOutside(oid,b){const r=(MK.completed||[]).find(o=>o.order_id===oid);if(!r)return;
+  if(!confirm(`Label for ${r.name} (${oid}) already printed outside SnapSTL?\n\nIt moves to Label printed and leaves this list. Press OK only if the label is really printed — a clubbed order counts for all its names.`))return;
+  b.disabled=true;try{await post(`/api/logistics/order/${encodeURIComponent(oid)}/label`,{outside:true,staff:$('vstaff')?$('vstaff').value:''})}catch(e){alert(e.message)}loadMakeIt()}
+async function labelUndo(oid,b){const r=[...(MK.labelled||[]),...(MK.completed||[])].find(o=>o.order_id===oid);
+  if(!confirm(`Undo "label printed" for ${r?r.name+' ('+oid+')':oid}?\n\nIt goes back to Completed, waiting for its label.`))return;
+  b.disabled=true;try{await post(`/api/logistics/order/${encodeURIComponent(oid)}/label`,{undo:true})}catch(e){alert(e.message)}loadMakeIt()}
+const OUTSIDE='Printed outside SnapSTL';
+function lHow(r){const by=r.label_by||'';return by==='SnapSTL label'?'SnapSTL':by.startsWith(OUTSIDE)?'Printed outside'+(by.includes(' · ')?' · '+esc(by.split(' · ')[1]):''):by==='logistics'?'Label Generated (Pack page)':r.label_at?esc(by):'On ShopDeck'}
+function lRender(){if(!MK||!$('mklabelled'))return;const days=+$('ldays').value,q=$('lsearch').value.trim().toLowerCase(),since=days?Date.now()/1000-days*86400:0;
+  const L=(MK.labelled||[]).filter(r=>(!MKVPROD||r.product===MKVPROD)&&(!since||(r.label_at||r.checked_at||r.made_at||0)>=since)&&(!q||(r.name||'').toLowerCase().includes(q)||(r.order_id||'').toLowerCase().includes(q)))
+    .sort((a,b)=>(b.label_at||b.checked_at||0)-(a.label_at||a.checked_at||0));
+  $('mklabelled').innerHTML=L.length?L.map(r=>{const undo=(r.label_by||'').startsWith(OUTSIDE)&&r.label_at&&Date.now()/1000-r.label_at<7*86400;
+    return `<tr><td><b>${esc(r.name)}</b> ${sw(r.color)}${r.quantity>1?` <span class="pill">×${r.quantity}</span>`:''}</td><td class="fn" style="font-size:12px">${esc(r.order_id)}</td><td>${esc(r.checked_by||'')}</td><td class="hint">${r.label_at?new Date(r.label_at*1000).toLocaleString():'—'}</td><td>${lHow(r)}</td><td>${undo?`<button class="small" data-lundo="${esc(r.order_id)}" title="The label was not printed: back to Completed">Undo</button>`:''}</td></tr>`}).join('')
+    :'<tr><td colspan="6" class="empty">No labels printed in this period</td></tr>';
+  document.querySelectorAll('#mklabelled [data-lundo]').forEach(b=>b.onclick=()=>labelUndo(b.dataset.lundo,b))}
+$('ldays').onchange=()=>MK&&lRender();$('lsearch').oninput=()=>MK&&lRender();
 $('cdays').onchange=()=>MK&&cRender();$('csearch').oninput=()=>MK&&cRender();
 $('call').onchange=()=>{for(const r of cRows())$('call').checked?CSEL.add(r.order_id):CSEL.delete(r.order_id);cRender()};
 $('cslip').onclick=()=>{const L=cRows().filter(r=>!CSEL.size||CSEL.has(r.order_id));if(!L.length){alert('Nothing to put on the slip');return}
@@ -1978,7 +2001,9 @@ try{$('mkbycolor').checked=localStorage.getItem('mkbycolor')==='1'}catch{}
 function farmMsgs(st,printers){return st.connected?(st.error?`<div class="e">${esc(st.error)}</div>`:'')
       :st.reachable?`<div class="w">Bambuddy is running at <code>${esc(st.url)}</code> but SnapSTL isn't connected — <a href="#" data-go="settings:connections">Settings → Connections</a>.</div>`
       :`<div class="e">Bambuddy isn't answering at <code>${esc(st.url||'')}</code>. It's installed with SnapSTL and starts at login — re-run the SnapSTL installer if it's missing.</div>`}
-async function loadMakeIt(){let r;try{r=await api('/api/makeit')}catch(e){$('mkmsgs').innerHTML=`<div class="e">${esc(e.message)}</div>`;return}MK=r;
+async function loadMakeIt(){let r;try{r=await api('/api/makeit')}catch(e){$('mkmsgs').innerHTML=`<div class="e">${esc(e.message)}</div>`;return}
+  // 0.40: Completed = waiting for the label (and doubtful outside marks); Label printed = the rest
+  const comp=r.completed||[];r.labelled=comp.filter(o=>o.tab==='ship_it'&&!o.label_doubt);r.completed=comp.filter(o=>o.tab!=='ship_it'||o.label_doubt);MK=r;
   const st=r.status;$('bbopen').href=st.url;$('bbopen').hidden=!st.reachable||!META.local;
   const rows=[...r.bases,...r.names];
   const need=[...new Set(rows.filter(x=>x.slice&&x.slice.state==='needs_presets').map(x=>x.slice.printer))];
@@ -2335,24 +2360,8 @@ function setSec(sec){if(!SETSECS.some(x=>x[0]===sec))sec='setup';SETSEC=sec;try{
 async function loadReportImport(){try{const r=await api('/api/report-import');$('riauto').checked=r.on;
   $('riinfo').innerHTML=`Watched folder: <code>${esc(r.folder)}</code> (checked every minute; files saved in the last 2 days, each once).`+(r.last.length?` Last: ${r.last.map(x=>esc(x.file)+(x.ok?` — ${x.new} new, ${x.updated} updated`:` — ${esc(x.error)}`)).join('; ')}`:'')}catch{}}
 $('riauto').onchange=async()=>{try{await post('/api/report-import',{on:$('riauto').checked})}catch(e){alert(e.message)}loadReportImport()};
-// ---------- आज का काम / Today (0.39): what to do next at the printers, in Hindi (English switch) ----------
-const TD={hi:{title:'आज का काम',refresh:'ताज़ा करें',now:'अभी करें',other:'बाकी काम',next:'आगे — कौन सा प्रिंटर कब खाली होगा',
-  th_p:'प्रिंटर',th_s:'हाल',th_e:'कब खत्म',
-  ph:{day:'दिन',prep:'रात की तैयारी',round:'रात का राउंड',night:'रात'},
-  phtext:{day:'प्लेटें ऐसी लगाई जा रही हैं कि आपके रहते खत्म हों। नीचे जो लिखा है, ऊपर से एक-एक करके करें।',
-    prep:'रात की प्लेटें तैयार हो रही हैं। {round} से हर प्रिंटर पर रात की प्लेट लगेगी।',
-    round:'जाने से पहले: हर खाली प्रिंटर पर रात की प्लेट लगाएँ। जो प्रिंटर अभी छाप रहे हैं, उन्हें चलने दें।',
-    night:'रात — सुबह {start} पर फिर शुरू।'},
-  clear:'प्लेट उतारें और साफ़ करें',put:'फिर लगाएँ',bases:'बेस',letters:'अक्षर',stands:'नेम स्टैंड',
-  hours:'घंटे',ends:'खत्म',nightplate:'रात की प्लेट',split:'({of} बेस की प्लेट से {n} अलग — अपने आप)',
-  start:'शुरू करें',starting:'शुरू हो रहा…',started:'{p} पर शुरू हो गया',confirm:'क्या {p} की प्लेट हटा दी और साफ़ कर दी?',
-  fix:'दोबारा छापना',express:'जल्दी (Express)',none:'अभी कोई प्रिंटर खाली नहीं।',nextfree:'अगला प्रिंटर {p} ~{t} पर खाली होगा।',
-  meanwhile:'तब तक: प्रिंट जाँचें, लेबल बनाएँ, या चिपकाने/पैकिंग में मदद करें।',
-  verify:'प्रिंट जाँचें',verifyh:'छपे हुए प्रिंट जाँचने हैं',open:'खोलें',labels:'लेबल बनाएँ',labelsh:'ऑर्डर बन गए — लेबल बाकी',
-  printing:'छप रहा',idle:'खाली',offline:'बंद / ऑफ़लाइन',startingp:'शुरू हो रहा',nightend:'रात में खत्म — कुछ नहीं करना',
-  bedcheck:'प्लेट उतारनी है',nightready:'रात की प्लेटें: {have} तैयार (3 बेस वाली), प्रिंटर {need}',merged:'आज जोड़ी गई: {n}',
-  short:'प्लेटें कम हैं — Pending Orders पर "Make next batch" दबाएँ।',notconn:'Bambuddy से जुड़ा नहीं — प्रिंटर नहीं दिख रहे।'},
- en:{title:'Today',refresh:'Refresh',now:'Do now',other:'Other work',next:'Coming up — when each printer is free',
+// ---------- Today's work (0.39; English only since 0.40): what to do next at the printers ----------
+const TD={en:{title:"Today's work",refresh:'Refresh',now:'Do now',other:'Other work',next:'Coming up — when each printer is free',
   th_p:'Printer',th_s:'State',th_e:'Ends',
   ph:{day:'Day',prep:'Night prep',round:'Night round',night:'Night'},
   phtext:{day:'Plates are sized to finish while you are here. Do the steps below, top to bottom.',
@@ -2368,16 +2377,15 @@ const TD={hi:{title:'आज का काम',refresh:'ताज़ा करे
   printing:'printing',idle:'free',offline:'off / offline',startingp:'starting',nightend:'ends at night — nothing to do',
   bedcheck:'plate to take off',nightready:'Night plates: {have} ready (3 bases), printers {need}',merged:'merged today: {n}',
   short:'Not enough plates — press "Make next batch" on Pending Orders.',notconn:'Not connected to Bambuddy — no printers.'}};
-let TDL='hi';try{TDL=localStorage.getItem('tdlang')||'hi'}catch{}
+const TDL='en';
 let TDB=null,TDTIMER=null;
 const tdT=(k,v={})=>{let s=k.split('.').reduce((o,x)=>o&&o[x],TD[TDL])??k;for(const[a,b]of Object.entries(v))s=s.replaceAll('{'+a+'}',b);return s};
-const tdClock=t=>new Date(t*1000).toLocaleTimeString(TDL==='hi'?'hi-IN':[], {hour:'numeric',minute:'2-digit'});
+const tdClock=t=>new Date(t*1000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
 async function loadToday(){clearTimeout(TDTIMER);TDTIMER=setTimeout(()=>{if(tab==='today'&&!document.hidden)loadToday()},60000);
   try{TDB=await api('/api/today')}catch(e){$('tdmsg').innerHTML=`<div class="e">${esc(e.message)}</div>`;return}renderToday()}
 function renderToday(){const b=TDB;if(!b)return;
-  document.querySelectorAll('[data-tdlang]').forEach(x=>x.classList.toggle('on',x.dataset.tdlang===TDL));
   for(const[id,k]of[['tdtitle','title'],['tdrefresh','refresh'],['tdnowh','now'],['tdotherh','other'],['tdnexth','next'],['tdthp','th_p'],['tdths','th_s'],['tdthe','th_e']])$(id).textContent=tdT(k);
-  $('tdclock').textContent=new Date().toLocaleString(TDL==='hi'?'hi-IN':[], {weekday:'long',hour:'numeric',minute:'2-digit'});
+  $('tdclock').textContent=new Date().toLocaleString([], {weekday:'long',hour:'numeric',minute:'2-digit'});
   $('tdphase').textContent=tdT('ph.'+b.phase);$('tdphase').className='pill '+(b.phase==='round'?'warn':b.phase==='night'?'info':'ok');
   $('tdphasetext').textContent=tdT('phtext.'+b.phase,{round:tdClock(b.night.round_from),start:b.shift.start});
   const N=b.night;$('tdnight').innerHTML=(b.phase==='prep'||b.phase==='round')?`<div class="msgs"><div class="${N.three_base_plates>=N.printers?'o':'w'}">${tdT('nightready',{have:N.three_base_plates,need:N.printers})}${N.merged&&N.merged.length?' · '+tdT('merged',{n:N.merged.length}):''}${N.three_base_plates<N.printers?' '+tdT('short'):''}</div></div>`:'';
@@ -2394,7 +2402,7 @@ function renderToday(){const b=TDB;if(!b)return;
   document.querySelectorAll('[data-tdgo]').forEach(x=>x.onclick=()=>tdStart(+x.dataset.tdgo,x));
   $('tdother').innerHTML=`<div class="tdbox"><span class="hint">${tdT('verifyh')}</span><b>${b.verify}</b><button class="small" id="tdgover">${tdT('verify')}</button></div>
     <div class="tdbox"><span class="hint">${tdT('labelsh')}</span><b>${b.to_pack}</b><button class="small" id="tdgolab">${tdT('labels')}</button></div>`;
-  $('tdgover').onclick=()=>{show('makeit');mkShow('verify')};$('tdgolab').onclick=()=>show('orders');
+  $('tdgover').onclick=()=>{show('makeit');mkShow('verify')};$('tdgolab').onclick=()=>{show('makeit');mkShow('completed')};
   $('tdnext').innerHTML=b.printing.map(x=>`<tr><td><b>${esc(x.printer)}</b></td><td>${x.state==='printing'?`${tdT('printing')}${x.progress!=null?` ${Math.round(x.progress)}%`:''}`:x.state==='idle'?(x.bed==='check'?`<span class="pill warn">${tdT('bedcheck')}</span>`:tdT('idle')):x.state==='offline'?`<span class="pill err">${tdT('offline')}</span>`:tdT('startingp')}</td><td>${x.ends_at?tdClock(x.ends_at)+(x.night?` <span class="hint">· ${tdT('nightend')}</span>`:''):''}</td></tr>`).join('')}
 async function tdStart(i,btn){const t=TDB.tasks[i];if(!t)return;
   if(t.bed==='check'&&!confirm(tdT('confirm',{p:t.printer})))return;
@@ -2404,7 +2412,6 @@ async function tdStart(i,btn){const t=TDB.tasks[i];if(!t)return;
   catch(e){if(/finished print on its bed/.test(e.message)&&confirm(tdT('confirm',{p:t.printer}))){try{await post('/api/today/start',{...body,bed_clear:true});$('tdmsg').innerHTML=`<div class="o">${esc(tdT('started',{p:t.printer}))}</div>`}catch(e2){$('tdmsg').innerHTML=`<div class="e">${esc(e2.message)}</div>`}}
     else $('tdmsg').innerHTML=`<div class="e">${esc(e.message)}</div>`}
   loadToday()}
-document.querySelectorAll('[data-tdlang]').forEach(x=>x.onclick=()=>{TDL=x.dataset.tdlang;try{localStorage.setItem('tdlang',TDL)}catch{}renderToday()});
 $('tdrefresh').onclick=loadToday;
 
 // ---------- Stats (0.26) ----------

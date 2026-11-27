@@ -1,4 +1,4 @@
-"""0.39: आज का काम / Today — plates sized to end while someone is there, the board's tasks, its Start button."""
+"""0.39: Today's work — plates sized to end while someone is there, the board's tasks, its Start button."""
 from datetime import datetime
 
 import pytest
