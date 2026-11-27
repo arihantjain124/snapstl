@@ -412,6 +412,12 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
 - **Slicing → Letters** (0.27): per printer, a Letters process profile and speed. Letter plates slice and print with
   them; bases use the printer's own profiles. Once any printer has a Letters profile, letters go only to those
   printers (e.g. the P1S with colours in the AMS) — Print and Print next pick it by themselves.
+- **आज का काम / Today** (0.39, first page): for the person at the printers, in Hindi (English switch). It lists,
+  top to bottom, which printer to clear and which plate to start, with one **शुरू करें / Start** button. Base plates
+  are sized to end while someone is there (about 2 bases in the day, 3 at night — a bigger plate is split by itself);
+  letters printers get letters in the day and a base plate at night; X1 gets name stands first. From 20:00 small
+  base plates are merged into night plates by themselves; from 21:00 every free printer gets its night plate.
+  Below: prints to check, labels to make, and when each printer is free next.
 - **Settings → ShopDeck** (0.37): paste the App ID from ShopDeck's partner portal (Apps → SnapSTL), press **Connect
   ShopDeck** and allow it on ShopDeck's page. Every 5 minutes orders that ShopDeck shows as printed, packed, shipped,
   delivered, cancelled or returned move forward here (never backward). Names, colours, AWB EXPIRED and Acceptance

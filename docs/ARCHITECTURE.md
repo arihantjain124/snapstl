@@ -148,6 +148,7 @@ Snapstl/
 │   ├── stats.py              Stats page: made per day, backlog, printers, checkers (0.26)
 │   ├── reportwatch.py        imports a new report saved in Downloads by itself (0.26)
 │   ├── shopdeck.py           ShopDeck partner API: connect (OAuth), key renewal, live order status (0.37)
+│   ├── today.py              आज का काम / Today: the staff board, plates sized to the shift, night plates (0.39)
 │   ├── spares.py             spare name pieces in stock, matched to new orders, shared (0.28)
 │   ├── products.py           which SKU is which product (organizer, name stands), what can be made / shared (0.29)
 │   ├── stands.py             name stand plates: size table, 3 per plate, two-part two-filament .3mf (0.31)
@@ -776,6 +777,23 @@ snapstl.server:app --port 8320`.
   while offline and are sent later.
 
 ---
+
+## आज का काम / Today (0.39, `today.py`)
+
+The first page, for the person at the printers (Hindi, English switch; the strings live in `TD` in index.html).
+`GET /api/today` = `today.build(makeit_board())`: for every free printer (connected, not printing, no SnapSTL job
+waiting; `bed` = clear / check) one task in Print's own plate order. Name stands go to Flex first, then Letters
+printers; letter plates to Letters (then Flex, Any) printers by colour fit (`makeit.choose`), in the day only and
+only when they end before the shift's last 15 minutes. Every other free printer gets bases; `best_size` picks 1–3
+bases: the most bases per hour once the idle time after it is counted (ends while someone is there → 15 min,
+else the hours until the shift starts). Hours are rough, per piece (`per_piece`: median of print time ÷ pieces over
+30 days, per kind and printer model; `DEFAULT_H` with fewer than 5 prints) — Print's estimate uses them too
+(`per_piece` in `/api/makeit`). A bigger plate is split on Start (`today.start` → `extras.divide` → Start print);
+nothing is split while the bed is not confirmed clear. Letters printers take a 1-base plate in the day only when no
+letters wait, a full base plate from the night round on. `NightPrep` (thread; `SNAPSTL_NO_NIGHTPREP`) merges base
+plates (extras.base_suggestions, 3 bases only) from 2 h before the shift ends until there is a 3-base plate per
+connected printer, once a day. Phases: day, prep (−2 h), round (−1 h), night. The 0.36 Before you leave / Good
+morning panels and the night pills on Print were removed (owner: confusing).
 
 ## ShopDeck partner API (0.37, `shopdeck.py`)
 

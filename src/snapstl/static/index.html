@@ -222,6 +222,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 .pdtable select{min-width:120px;padding:3px 6px}.pdtable td{vertical-align:middle}
 @media (max-width:800px){.app{grid-template-columns:minmax(0,1fr)}nav#tabs{flex-wrap:wrap}.hint code,.callout code{word-break:break-all}.toolbar{flex-wrap:wrap}.side{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:0;border-bottom:1px solid var(--line);padding:8px 10px}
   nav#tabs{flex-direction:row}nav#tabs button{width:auto;padding:6px 9px}.side .foot{margin:0;flex-direction:row;flex-wrap:wrap}.health{flex-direction:row;flex-wrap:wrap;border:0;padding:0}.bar{display:none}}
+.tdtask{display:flex;gap:14px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:8px 0;flex-wrap:wrap}.tdtask .pn{font-size:22px;font-weight:700;min-width:110px}.tdtask .what{flex:1;min-width:240px;font-size:15px;line-height:1.5}.tdtask .go{font-size:16px;padding:10px 18px}.tdtask.night{border-color:var(--accent);background:var(--infobg)}.tdtask .step{display:inline-block;background:var(--chip);border-radius:8px;padding:1px 8px;margin-right:6px;font-size:13px}.tdgrid{display:flex;gap:12px;flex-wrap:wrap}.tdgrid .tdbox{border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:220px;flex:1}.tdgrid .tdbox b{font-size:26px;display:block}.tdphase{font-size:15px;margin:6px 0 0}.seg button.on{background:var(--accent);color:#fff}
 .mkplan{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}.mkplan table td{vertical-align:top}.rtag{font-size:11px;padding:1px 6px;border-radius:8px;background:var(--chip);margin-left:4px}.rtag.letters{background:var(--infobg);color:var(--accent)}.rtag.bases{background:var(--okbg);color:var(--ok)}.rtag.flex{background:var(--warnbg);color:var(--warn)}
 .ask{color:var(--warn);font-size:12px;font-weight:600;margin-top:3px;max-width:240px}tr.asking td{background:var(--warnbg)}
 .adhoc{border:1px solid var(--line);border-radius:10px;padding:12px;margin:8px 0}.adhocrow{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}.adhocrow label{display:flex;flex-direction:column;gap:4px;font-size:12px;min-width:0;flex:1 1 140px;margin:0}.adhocrow label.grow{flex:2 1 200px}.adhocrow input{width:100%;box-sizing:border-box}
@@ -232,6 +233,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 <aside class="side">
   <h1>SnapSTL<small>Name organizer plates</small><small id="pcname" class="pc"></small></h1>
   <nav id="tabs">
+    <button data-t="today"><span class="ic">★</span>आज का काम</button>
     <button data-t="orders" class="on"><span class="ic">▤</span>Pending Orders</button>
     <button data-t="history"><span class="ic">◷</span>Order History</button>
     <button data-t="makeit"><span class="ic">⚒</span>Print</button>
@@ -375,9 +377,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 
 <section id="t-makeit" hidden>
   <div class="card">
-    <div class="toolbar"><h2 style="margin:0">Print</h2><span class="grow hint" id="mkinfo"></span><button class="small" id="slp_all" title="Queue every waiting plate for slicing, each with the profiles of the printer chosen for it">Slice all waiting</button><button class="small" id="mkplanbtn" title="Plan the night: an overnight base plate for every printer">Before you leave</button><button class="small" id="mkrefresh">Refresh</button><label class="hint" style="display:flex;gap:4px;align-items:center;margin:0" title="A sound and a notice when a printer finishes or fails"><input type="checkbox" id="pralertson"> Alerts</label><button class="small" id="mkbbrefresh" title="Ask every printer (through Bambuddy) to report its status and filament again — e.g. after changing a spool">Refresh from Bambuddy</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
+    <div class="toolbar"><h2 style="margin:0">Print</h2><span class="grow hint" id="mkinfo"></span><button class="small" id="slp_all" title="Queue every waiting plate for slicing, each with the profiles of the printer chosen for it">Slice all waiting</button><button class="small" id="mkrefresh">Refresh</button><label class="hint" style="display:flex;gap:4px;align-items:center;margin:0" title="A sound and a notice when a printer finishes or fails"><input type="checkbox" id="pralertson"> Alerts</label><button class="small" id="mkbbrefresh" title="Ask every printer (through Bambuddy) to report its status and filament again — e.g. after changing a spool">Refresh from Bambuddy</button><a class="btn small" id="bbopen" target="_blank" rel="noopener" hidden>Open Bambuddy</a></div>
     <div id="mknow"></div><div class="msgs" id="mkmsgs"></div><div class="msgs" id="mknote"></div><div class="hint" id="slp_allmsg"></div>
-    <div id="mkmorning"></div><div id="mkplan" hidden></div>
     <div id="mkready"></div>
     <div class="chips" id="mktabs"></div>
     <div class="chips" id="mktabs2" hidden></div>
@@ -555,7 +556,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
   <div class="card" id="rolecard">
     <div class="toolbar"><h2 style="margin:0">Printer roles and AMS colours</h2><span class="grow hint" id="rolemsg"></span><button class="small primary" id="rolesave">Save</button></div>
-    <p class="hint">What each printer is for. <b>Bases</b>: stays on white, gets base plates. <b>Letters</b>: keeps the common letter colours in its AMS (the slots below), gets letter plates during the shift — staff watch these. <b>Flex</b>: bases, and letters in the rare colours. <b>Any</b>: no role. Print pre-selects printers by role; at night every printer prints a base plate (Print → <b>Before you leave</b>). A slot that doesn't hold its planned colour shows in red here. Change roles any time.</p>
+    <p class="hint">What each printer is for. <b>Bases</b>: stays on white, gets base plates. <b>Letters</b>: keeps the common letter colours in its AMS (the slots below), gets letter plates during the shift — staff watch these. <b>Flex</b>: bases, and letters in the rare colours. <b>Any</b>: no role. Print pre-selects printers by role; at night every printer prints a base plate (<b>आज का काम</b> gives it). A slot that doesn't hold its planned colour shows in red here. Change roles any time.</p>
     <div class="toolbar"><label style="margin:0">Shift from <input type="time" id="shstart" style="max-width:120px"></label><label style="margin:0">to <input type="time" id="shend" style="max-width:120px"></label><span class="hint">someone is at the printers — Print plans the night around it</span></div>
     <datalist id="slotcolors"></datalist>
     <div class="tw"><table><thead><tr><th>Printer</th><th>Role</th><th>Slot 1</th><th>Slot 2</th><th>Slot 3</th><th>Slot 4</th><th>Loaded now</th></tr></thead><tbody id="roles"><tr><td colspan="7" class="hint">Loading…</td></tr></tbody></table></div>
@@ -909,6 +910,19 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 
 
 
+<section id="t-today" hidden>
+  <div class="card">
+    <div class="toolbar"><h2 style="margin:0" id="tdtitle">आज का काम</h2><span class="pill info" id="tdphase"></span><span class="grow hint" id="tdclock"></span>
+      <div class="seg"><button class="small" data-tdlang="hi">हिंदी</button><button class="small" data-tdlang="en">English</button></div>
+      <button class="small" id="tdrefresh"></button></div>
+    <p class="tdphase" id="tdphasetext"></p>
+    <div id="tdnight"></div>
+  </div>
+  <div class="card"><h2 style="margin-top:0" id="tdnowh"></h2><div id="tdtasks"></div><div class="msgs" id="tdmsg"></div></div>
+  <div class="card"><h2 style="margin-top:0" id="tdotherh"></h2><div id="tdother" class="tdgrid"></div></div>
+  <div class="card"><h2 style="margin-top:0" id="tdnexth"></h2><div class="tw"><table><thead><tr><th id="tdthp"></th><th id="tdths"></th><th id="tdthe"></th></tr></thead><tbody id="tdnext"></tbody></table></div></div>
+</section>
+
 <section id="t-help" class="help" hidden>
   <div class="card">
     <h2>Help</h2>
@@ -1007,7 +1021,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <p><b>By product (0.35):</b> <b>Custom Organizer</b> (Bases / Letters, each To print · Printing · Printed) · <b>GTA</b> · <b>Harry Potter</b> · <b>Barbie</b> (To print · Printing · Printed) · <b>Verify</b> and <b>Completed</b> (product chips; search finds any order ID) · <b>Batches</b>. <b>Removed plates</b> is a link under each To print list.</p>
     <p><b>Print time:</b> under the printer picked, <i>≈ 6 h 40 m · ready ~9:15 pm</i> — learned from the prints already done (at 124 %, scaled to the speed chosen), counted from when that printer finishes its current print. A printer uses its own figures from 10 prints of a kind, else its model's, else every printer's; until a product has a few prints it says so. Stats → <b>Print time per letter</b> shows each printer's figures.</p>
     <p><b>Printer roles (0.36, Printers → Printer roles and AMS colours):</b> <b>Bases</b> printers stay on white and get base plates; <b>Letters</b> printers keep the common letter colours in their AMS slots and get letter plates during the shift; <b>Flex</b> takes bases and the rare letter colours; <b>Any</b> = no role. Print pre-selects printers by role and <b>Print next</b> follows it. A slot not holding its planned colour shows in red. Letter colours no Letters printer has loaded are listed on Letters (load them on the Flex printer).</p>
-    <p><b>The shift and the night (0.36):</b> set when someone is at the printers (default 8:00–22:00). Under the time of a base plate: <i>done before 22:00</i>, <i>overnight plate</i>, or in red <i>ends at night, then idle ~6 h</i> — start that one in the evening instead. <b>Before you leave</b> (press the button on Print; it opens only then) gives every printer — letters printers too — a base plate that finishes around the morning, with <b>Start print</b> once it's free; it says when plates are short (merge bases or Make next batch). In the morning Print lists what printed overnight and which beds to clear.</p>
+    <p><b>आज का काम / Today (0.39):</b> the first page, for the person at the printers (Hindi, with an English switch). It lists what to do now, top to bottom: which printer to clear and which plate to start, with one <b>Start</b> button. Base plates are sized so they end while someone is here (the shift, Printers → Printer roles, default 8:00–22:00): about 2 bases in the day, 3 at night; a bigger plate is split by itself. Letters printers get letter plates in the day and a base plate at night; X1 (Flex) gets name stands first. From 2 hours before the shift ends, small base plates are merged into 3-base night plates by themselves; in the last hour every free printer gets its night plate. Times are rough, per piece (≈3.3 h per base on P1S, ≈4 h on A1, from the prints of the last 30 days).</p>
     <p><b>Merging base plates:</b> tick base plates not started (up to 3 bases) and <b>Merge onto one plate</b> — no scaling; refused when they don't fit on the bed. <b>Available to merge</b> suggests sets that look like they fit, with the time (≈ 8 h or more: a good overnight plate). <b>Split back</b> undoes it before printing. A plate holding a clubbed order whose other names are already made says <i>print this now</i>.</p>
     <p><b>Bambuddy</b>, the open-source print-farm manager, runs on one Windows computer (as a service, with only its slicer service in Docker), for every SnapSTL computer (set up with <code>bambuddy-server.ps1</code>). Each SnapSTL connects to it in <b>Settings → Connections</b> with that computer's address, e.g. <code>http://192.168.1.50:8000</code> — the sidebar's <b>IP address</b> line on the Bambuddy computer shows and copies it. Bambuddy is connected to your Bambu printers and keeps a queue per printer.</p>
     <p>If Bambuddy, Docker, the slicer service or OctoEverywhere stops, open SnapSTL on the Bambuddy computer: <b>Settings → Connections → This Bambuddy computer — external services</b> shows each one. <b>Check now</b> looks again, <b>Start</b> starts whatever is down (choose Yes if Windows asks), each has its own <b>Restart</b>, and <b>Restart all</b> restarts Bambuddy, the slicer and OctoEverywhere (Docker has its own Restart). <b>Keep running</b> (on by default) starts what stopped by itself every minute; it never restarts anything that's running.</p>
@@ -1165,14 +1179,14 @@ const sw=c=>`<span class="swatch" style="background:${COLORS[c]||'transparent'}"
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
 function show(t){let pane=null;if(t==='batches'||t==='activity'){pane='batches';t='makeit'}tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   const sec=t==='history'?'orders':t;for(const s of PAGES)$('t-'+s).hidden=s!==sec;
-  if(t==='orders'||t==='history'){ordMode(t==='history'?'history':'pending');loadOrders();reportAge()} if(t==='makeit'){loadMakeIt();loadQueues();loadBatches();if(pane)mkShow(pane)} if(t==='printers')loadStatusAll(); if(t==='stats')loadStats(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadHelpPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
+  if(t==='orders'||t==='history'){ordMode(t==='history'?'history':'pending');loadOrders();reportAge()} if(t==='makeit'){loadMakeIt();loadQueues();loadBatches();if(pane)mkShow(pane)} if(t==='printers')loadStatusAll(); if(t==='stats')loadStats(); if(t==='today')loadToday(); if(t==='slicing')loadPresets(); if(t==='settings'){setSec(SETSEC);loadSetup();loadShared();loadFarmSettings();loadHost();loadDb();loadPortal();loadHelpPortal();loadUpdates(0)} try{localStorage.setItem('tab',t)}catch{}}
 function ordMode(m,keepTab){$('ordtools').hidden=m!=='pending';
   document.querySelectorAll('#tabs button').forEach(b=>{if(b.dataset.t==='orders'||b.dataset.t==='history')b.classList.toggle('on',(b.dataset.t==='history')===(m==='history'))});
   if(OMODE===m)return;OMODE=m;filter.offset=0;SEL.clear();
   if(!keepTab)filter.tab=m==='pending'?'pending':'pack_it';
   visibleColumns=m==='pending'?[...PEND_COLS]:COLUMN_NAMES.map((_,i)=>i+1);renderColumns();
   loadFacets()}
-const PAGES=['orders','makeit','printers','slicing','settings','stats','help'];
+const PAGES=['today','orders','makeit','printers','slicing','settings','stats','help'];
 const OLD_PAGES={downloads:'makeit',pstatus:'printers',batches:'makeit',activity:'makeit'};  // 0.35: Batches and the download queue are on Print  // pages merged in 0.19 (the download queue is on Activities since 0.24)
 
 // ---------- orders ----------
@@ -1639,16 +1653,11 @@ function shiftTimes(){const sh=(MK&&MK.shift)||{start:'08:00',end:'22:00'},now=n
   const nextStart=t<st?st:st+864e5;      // when people are back
   const startAfter=end-en+st+864e5;      // the start after tonight's end
   return {sh,night,end,nextStart,startAfter,prevEnd:t>=en?en:en-864e5,start:st}}
-function fitTag(r,endT){if(r.kind!=='bases'&&r.kind!=='stands')return '';const sh=shiftTimes().sh,e=new Date(endT);
-  const d0=new Date(e.getFullYear(),e.getMonth(),e.getDate()).getTime(),st=d0+hmMin(sh.start)*60000,en=d0+hmMin(sh.end)*60000;
-  if(endT>=st&&endT<=en)return ` <span class="pill ok" title="Finishes while someone is here">done before ${esc(sh.end)}</span>`;
-  const back=endT<st?st:st+864e5,idle=Math.round((back-endT)/36e5*10)/10;  // it ends at night: nobody starts the next plate until then
-  return idle>1?` <span class="pill err" title="Nobody is here to start the next plate">ends at night, then idle ~${idle} h until ${esc(sh.start)}</span>`:` <span class="pill info" title="Prints through the night, done when people are back">overnight plate</span>`}
-function mkEst(r,sel){const c=r.choices.find(x=>String(x.id)===sel.printer);if(!c)return '';
-  if(!c.est)return '<div class="hint">Time: not enough prints of this kind yet</div>';
-  const pct=SPPCT[sel.speed||(mkDefaults(r,sel.printer)||{}).speed||'sport']||124,m=Math.round(c.est.min*124/pct),wait=c.free_in||0;
-  const end=Date.now()+(wait+m)*60000,night=new Date(end).getHours()>=22||new Date(end).getHours()<8;
-  return `<div class="hint mkest" title="From ${c.est.prints} prints (${esc(c.est.basis)}), usually within ±${Math.round(c.est.err)} min">≈ ${mkDur(m)} · ready ~${mkClock(end)}${wait?` <span>(after its current print, ${mkDur(wait)})</span>`:''}${fitTag(r,end)}</div>`}
+function mkEst(r,sel){const c=r.choices.find(x=>String(x.id)===sel.printer);const P=(MK&&MK.per_piece)||{};if(!c)return '';
+  const p=(MK.printers||[]).find(x=>String(x.id)===sel.printer)||{},m=String(p.model||'').toUpperCase().replace(/ /g,''),fam=m.startsWith('A1')?'A1':(m.startsWith('P1')||m.startsWith('X1'))?'P1S':m;
+  const k=P[r.kind]||{},per=k[fam]||k['']||0;if(!per)return '';const n=r.kind==='names'?1:Math.max(1,(r.open_items||[]).length);
+  const mins=Math.round(per*n*60),wait=c.free_in||0,end=Date.now()+(wait+mins)*60000;
+  return `<div class="hint mkest" title="Rough: ${per} h per ${r.kind==='names'?'letters plate':r.kind==='stands'?'stand':'base'} on ${esc(fam||'these')} printers, from the prints of the last 30 days">≈ ${mkDur(mins)} · ready ~${mkClock(end)}${wait?` <span>(after its current print, ${mkDur(wait)})</span>`:''}</div>`}
 function mkTrays(r,sel){const c=r.choices.find(x=>String(x.id)===sel.printer);return c?(c.trays||[]):[]}
 function mkRow(r,withColour){const k=mkKey(r);const sel=MKSEL[k]||(MKSEL[k]={printer:String(r.suggested??(r.job&&r.job.printer_id?r.job.printer_id:'')),options:{...((r.job&&r.job.options)||{})},speed:(r.job&&r.job.speed)||'',tray:(r.job&&r.job.ams_tray!=null)?String(r.job.ams_tray):'',tray2:(r.job&&r.job.ams_tray2!=null)?String(r.job.ams_tray2):''});
   const ch=r.choices.find(x=>String(x.id)===sel.printer),trays=mkTrays(r,sel),stand=r.kind==='stands';
@@ -1779,39 +1788,6 @@ function mkRender(force){const editing=!force&&['mkbases','mknames','mkstands'].
       if(/finished print on its bed/i.test(e.message)){if(confirm(e.message+'\n\nIs the bed empty and the plate clean now?')){try{await sentOk({...body,bed_clear:true})}catch(e2){if(/anyway|filament|warn/i.test(e2.message)&&confirm(e2.message+'\n\nStart anyway?')){try{await sentOk({...body,bed_clear:true,force:true})}catch(e3){alert(e3.message)}}else alert(e2.message)}}}
       else if(/anyway|filament|warn/i.test(e.message)&&confirm(e.message+'\n\nStart anyway?')){try{await sentOk({...body,force:true})}catch(e2){alert(e2.message)}}else alert(e.message)}
     document.activeElement&&document.activeElement.blur();await loadMakeIt();MKGOING.delete(x.dataset.mkstart);mkRender(true)})}
-// ---------- Before you leave / morning (0.36): every printer prints a base plate through the night ----------
-let PLANSTART={};
-function mkPlan(){if(!MK)return;const T=shiftTimes(),now=Date.now(),back=T.night?T.nextStart:T.startAfter,endAt=T.night?now:T.end;
-  let free=MK.bases.filter(r=>!r.job_active&&!(r.job&&['sent','printing','queued','slicing','uploading'].includes(r.job.state)));
-  const prs=MK.printers.filter(p=>p.active!==false&&p.status&&p.status.connected).map(p=>{const st=p.status,run=['RUNNING','PREPARE','PAUSE','SLICING'].includes((st.state||'').toUpperCase());
-    return {p,run,freeAt:now+(run?(st.remaining_time||0):0)*60000,bed:!!st.awaiting_plate_clear}}).sort((a,b)=>a.freeAt-b.freeAt);
-  const rows=[];let short=0;PLANSTART={};
-  for(const x of prs){const p=x.p,when=x.run?`printing, done ${mkClock(x.freeAt)}`:x.bed?'<b>bed to clear</b>':'free now';
-    if(x.freeAt>=endAt){const idle=(back-x.freeAt)/36e5;rows.push(`<tr><td><b>${esc(p.name)}</b>${rtag(p.role)}</td><td>${when}</td><td>${idle>1.5?`<span class="pill err">idle ~${Math.round(idle*10)/10} h after it, until ${esc(T.sh.start)}</span>`:'<span class="pill ok">busy through the night</span>'}</td><td></td></tr>`);continue}
-    let best=null,bs=1e18;for(const r of free){const c=r.choices.find(y=>y.id===p.id);if(!c||!c.est)continue;const e=Math.max(x.freeAt,now)+c.est.min*60000;
-      const score=e>=back-36e5?(e-back)+(3-(r.open_items||[]).length)*6e5:1e12+(back-e);if(score<bs){bs=score;best={r,e,m:c.est.min}}}
-    if(!best){short++;rows.push(`<tr><td><b>${esc(p.name)}</b>${rtag(p.role)}</td><td>${when}</td><td colspan="2"><span class="pill err">needs an overnight plate — none left</span></td></tr>`);continue}
-    free=free.filter(r=>r!==best.r);const k=mkKey(best.r);PLANSTART[k]=p.id;
-    const idle=(back-best.e)/36e5,can=!x.run&&!x.bed;
-    rows.push(`<tr><td><b>${esc(p.name)}</b>${rtag(p.role)}</td><td>${when}</td><td>Bases · ${esc(best.r.names.join(', '))} <span class="hint">(${esc(best.r.batch)})</span><div class="hint">≈ ${mkDur(best.m)} · done ~${mkClock(best.e)}${idle>1.5?` · <span class="reason">idle ~${Math.round(idle*10)/10} h before ${esc(T.sh.start)}</span>`:''}</div></td><td>${can?`<button class="small primary" data-planstart="${esc(k)}">Start print</button>`:`<span class="hint">${x.bed?'clear the bed, then Start':'start when it finishes'}</span>`}</td></tr>`)}
-  const n3=MK.bases.filter(r=>(r.open_items||[]).length>=3&&!r.job_active).length;
-  $('mkplan').hidden=false;
-  $('mkplan').innerHTML=`<div class="mkplan"><div class="toolbar" style="margin:0 0 6px"><b>Before you leave</b><span class="hint">· shift ends ${esc(T.sh.end)}, back at ${esc(T.sh.start)} — a base plate on every printer for the night (letters printers too)</span><span class="grow"></span><button class="small" id="mkplanx">Hide</button></div>
-    ${short?`<div class="msgs"><div class="e">${short} printer${short>1?'s':''} without an overnight plate — merge bases (<b>Bases → Available to merge</b>, ${(MK.merge_bases||[]).length} set${(MK.merge_bases||[]).length===1?'':'s'}) or press <b>Make next batch</b> on Pending Orders.</div></div>`:''}
-    <div class="hint" style="margin-bottom:4px">${n3} base plate${n3===1?'':'s'} with 3 bases ready · plates picked to finish around ${esc(T.sh.start)} (the longest that fit the night)</div>
-    <div class="tw"><table><thead><tr><th>Printer</th><th>Now</th><th>Overnight plate</th><th></th></tr></thead><tbody>${rows.join('')||'<tr><td colspan="4" class="empty">No printers connected</td></tr>'}</tbody></table></div></div>`;
-  $('mkplanx').onclick=()=>{$('mkplan').hidden=true};
-  document.querySelectorAll('[data-planstart]').forEach(b=>b.onclick=()=>{const k=b.dataset.planstart,r=MK.bases.find(y=>mkKey(y)===k);if(r)startOn(r,PLANSTART[k])})}
-$('mkplanbtn').onclick=()=>{if(!$('mkplan').hidden){$('mkplan').hidden=true;return}mkPlan()};
-function mkMorning(){if(!MK)return;const T=shiftTimes(),t=Date.now();
-  if(T.night||t>T.start+3*36e5){$('mkmorning').innerHTML='';return}
-  const done=[...(MK.printed_bases||[]),...(MK.printed_letters||[]),...(MK.printed_stands||[])].filter(r=>r.done_at&&r.done_at*1000>=T.prevEnd);
-  const clear=MK.printers.filter(p=>p.status&&p.status.awaiting_plate_clear).map(p=>p.name);
-  if(!done.length&&!clear.length){$('mkmorning').innerHTML='';return}
-  $('mkmorning').innerHTML=`<div class="mkplan"><b>Good morning</b> <span class="hint">· printed overnight</span>${done.length?`<ul style="margin:6px 0">${done.map(r=>`<li><b>${esc(r.printer||'?')}</b> finished ${r.kind==='bases'?'Bases':'Letters'} · ${esc(r.names.join(', '))} at ${mkClock(r.done_at*1000)}</li>`).join('')}</ul>`:''}${clear.length?`<div class="hint">Clear the bed: <b>${clear.map(esc).join(', ')}</b> — then start the next plate (<b>Print next</b>).</div>`:''}<div class="hint">Check what's ready on <a href="#" data-mk="verify" onclick="mkShow('verify');return false">Verify</a>.</div></div>`}
-// ---------- Print next (0.26): the best plate for a free printer, started like Start print ----------
-// fix plates first, then Express, then letters whose base is printed in a loaded colour (✓), then base plates
-// (oldest first), then letters whose base isn't printed yet; only plates that fit this printer's filament
 function pickFor(pid,night){const role=(mkPrinter(pid).role)||'any';night=night??shiftTimes().night;
   const rank=r=>{const c=r.choices.find(x=>x.id===pid);if(!c||!c.online||!c.available||r.job_active)return null;
     if(r.kind==='names'&&role==='bases')return null;if(r.kind==='bases'&&role==='letters'&&!night)return null;  // 0.36: roles (at night bases everywhere)
@@ -2017,7 +1993,7 @@ async function loadMakeIt(){let r;try{r=await api('/api/makeit')}catch(e){$('mkm
   $('mknow').innerHTML=r.printers.length?`<div class="mknow"><b>Free for the next print:</b> ${nw.free.length?nw.free.map(p=>`<span class="nchip" title="${esc(p.spools.map(s=>s.color).filter(Boolean).join(', ')||'no filament reported')}">${esc(p.name)}${rtag(mkPrinter(p.id).role)} ${p.spools.slice(0,4).map(s=>`<span class="swatch" style="background:${esc(hx(s))}"></span>`).join('')}${(()=>{const x=pickFor(p.id);if(!x)return ' <span class="hint">nothing for it</span>';const c=x.choices.find(y=>y.id===p.id),m=c&&c.est?c.est.min:null;return ` <span class="hint">next: ${x.kind==='bases'?'Bases':x.kind==='stands'?'Stand':'Letters '+esc(x.colors[0]||'')} · ${esc(x.names.slice(0,3).join(', '))}${m?` · ≈ ${mkDur(m)}, done ~${mkClock(Date.now()+m*60000)}`:''}</span>`})()} <button class="small primary" data-pnext="${p.id}" title="Pick the best plate for this printer (its role, the filament loaded) and start it">Print next</button></span>`).join(''):'<span class="hint">none right now</span>'}${nw.clear.length?` <span class="pill warn">Bed to clear: ${nw.clear.map(esc).join(', ')}</span>`:''} <span class="hint">· ${nw.busy} busy${nw.offline?` · ${nw.offline} offline`:''}</span></div>`
     +((nw.printing||[]).length?`<div class="mknow"><b>Printing:</b> ${nw.printing.map(p=>`<span class="nchip" style="flex-direction:column;align-items:flex-start;border-radius:8px;padding:3px 8px"><span>${esc(p.name)} · ${Math.round(p.progress||0)}%</span>${p.remaining?`<b style="font-size:12px">ready at ${finishAt(p.remaining)}</b>`:''}</span>`).join('')}</div>`:''):'';
   document.querySelectorAll('[data-pnext]').forEach(x=>x.onclick=()=>printNext(+x.dataset.pnext));
-  mkMorning();if(!$('mkplan').hidden)mkPlan();
+
   $('mkinfo').innerHTML=`${r.printers.length} printer${r.printers.length===1?'':'s'} · ${busy} printing${clear?` · <a href="#" data-go="printers">${clear} waiting for the bed to be cleared</a>`:''}`;
   mkShow(MKTAB);mkRender();
   // a plate on its way to a printer: refresh every 5 s so the progress bar moves (else once a minute)
@@ -2359,6 +2335,78 @@ function setSec(sec){if(!SETSECS.some(x=>x[0]===sec))sec='setup';SETSEC=sec;try{
 async function loadReportImport(){try{const r=await api('/api/report-import');$('riauto').checked=r.on;
   $('riinfo').innerHTML=`Watched folder: <code>${esc(r.folder)}</code> (checked every minute; files saved in the last 2 days, each once).`+(r.last.length?` Last: ${r.last.map(x=>esc(x.file)+(x.ok?` — ${x.new} new, ${x.updated} updated`:` — ${esc(x.error)}`)).join('; ')}`:'')}catch{}}
 $('riauto').onchange=async()=>{try{await post('/api/report-import',{on:$('riauto').checked})}catch(e){alert(e.message)}loadReportImport()};
+// ---------- आज का काम / Today (0.39): what to do next at the printers, in Hindi (English switch) ----------
+const TD={hi:{title:'आज का काम',refresh:'ताज़ा करें',now:'अभी करें',other:'बाकी काम',next:'आगे — कौन सा प्रिंटर कब खाली होगा',
+  th_p:'प्रिंटर',th_s:'हाल',th_e:'कब खत्म',
+  ph:{day:'दिन',prep:'रात की तैयारी',round:'रात का राउंड',night:'रात'},
+  phtext:{day:'प्लेटें ऐसी लगाई जा रही हैं कि आपके रहते खत्म हों। नीचे जो लिखा है, ऊपर से एक-एक करके करें।',
+    prep:'रात की प्लेटें तैयार हो रही हैं। {round} से हर प्रिंटर पर रात की प्लेट लगेगी।',
+    round:'जाने से पहले: हर खाली प्रिंटर पर रात की प्लेट लगाएँ। जो प्रिंटर अभी छाप रहे हैं, उन्हें चलने दें।',
+    night:'रात — सुबह {start} पर फिर शुरू।'},
+  clear:'प्लेट उतारें और साफ़ करें',put:'फिर लगाएँ',bases:'बेस',letters:'अक्षर',stands:'नेम स्टैंड',
+  hours:'घंटे',ends:'खत्म',nightplate:'रात की प्लेट',split:'({of} बेस की प्लेट से {n} अलग — अपने आप)',
+  start:'शुरू करें',starting:'शुरू हो रहा…',started:'{p} पर शुरू हो गया',confirm:'क्या {p} की प्लेट हटा दी और साफ़ कर दी?',
+  fix:'दोबारा छापना',express:'जल्दी (Express)',none:'अभी कोई प्रिंटर खाली नहीं।',nextfree:'अगला प्रिंटर {p} ~{t} पर खाली होगा।',
+  meanwhile:'तब तक: प्रिंट जाँचें, लेबल बनाएँ, या चिपकाने/पैकिंग में मदद करें।',
+  verify:'प्रिंट जाँचें',verifyh:'छपे हुए प्रिंट जाँचने हैं',open:'खोलें',labels:'लेबल बनाएँ',labelsh:'ऑर्डर बन गए — लेबल बाकी',
+  printing:'छप रहा',idle:'खाली',offline:'बंद / ऑफ़लाइन',startingp:'शुरू हो रहा',nightend:'रात में खत्म — कुछ नहीं करना',
+  bedcheck:'प्लेट उतारनी है',nightready:'रात की प्लेटें: {have} तैयार (3 बेस वाली), प्रिंटर {need}',merged:'आज जोड़ी गई: {n}',
+  short:'प्लेटें कम हैं — Pending Orders पर "Make next batch" दबाएँ।',notconn:'Bambuddy से जुड़ा नहीं — प्रिंटर नहीं दिख रहे।'},
+ en:{title:'Today',refresh:'Refresh',now:'Do now',other:'Other work',next:'Coming up — when each printer is free',
+  th_p:'Printer',th_s:'State',th_e:'Ends',
+  ph:{day:'Day',prep:'Night prep',round:'Night round',night:'Night'},
+  phtext:{day:'Plates are sized to finish while you are here. Do the steps below, top to bottom.',
+    prep:'Night plates are being got ready. From {round} every printer gets its night plate.',
+    round:'Before you leave: put a night plate on every free printer. Leave the ones still printing.',
+    night:'Night — starts again at {start}.'},
+  clear:'Take the plate off and clean it',put:'then start',bases:'bases',letters:'letters',stands:'name stand',
+  hours:'h',ends:'ends',nightplate:'night plate',split:'(split {n} off a {of}-base plate — by itself)',
+  start:'Start',starting:'Starting…',started:'Started on {p}',confirm:'Is the plate on {p} off and clean?',
+  fix:'reprint',express:'Express',none:'No printer is free right now.',nextfree:'Next free: {p} at ~{t}.',
+  meanwhile:'Meanwhile: check prints, make labels, or help with sticking/packing.',
+  verify:'Check prints',verifyh:'printed parts to check',open:'Open',labels:'Make labels',labelsh:'orders made — labels to make',
+  printing:'printing',idle:'free',offline:'off / offline',startingp:'starting',nightend:'ends at night — nothing to do',
+  bedcheck:'plate to take off',nightready:'Night plates: {have} ready (3 bases), printers {need}',merged:'merged today: {n}',
+  short:'Not enough plates — press "Make next batch" on Pending Orders.',notconn:'Not connected to Bambuddy — no printers.'}};
+let TDL='hi';try{TDL=localStorage.getItem('tdlang')||'hi'}catch{}
+let TDB=null,TDTIMER=null;
+const tdT=(k,v={})=>{let s=k.split('.').reduce((o,x)=>o&&o[x],TD[TDL])??k;for(const[a,b]of Object.entries(v))s=s.replaceAll('{'+a+'}',b);return s};
+const tdClock=t=>new Date(t*1000).toLocaleTimeString(TDL==='hi'?'hi-IN':[], {hour:'numeric',minute:'2-digit'});
+async function loadToday(){clearTimeout(TDTIMER);TDTIMER=setTimeout(()=>{if(tab==='today'&&!document.hidden)loadToday()},60000);
+  try{TDB=await api('/api/today')}catch(e){$('tdmsg').innerHTML=`<div class="e">${esc(e.message)}</div>`;return}renderToday()}
+function renderToday(){const b=TDB;if(!b)return;
+  document.querySelectorAll('[data-tdlang]').forEach(x=>x.classList.toggle('on',x.dataset.tdlang===TDL));
+  for(const[id,k]of[['tdtitle','title'],['tdrefresh','refresh'],['tdnowh','now'],['tdotherh','other'],['tdnexth','next'],['tdthp','th_p'],['tdths','th_s'],['tdthe','th_e']])$(id).textContent=tdT(k);
+  $('tdclock').textContent=new Date().toLocaleString(TDL==='hi'?'hi-IN':[], {weekday:'long',hour:'numeric',minute:'2-digit'});
+  $('tdphase').textContent=tdT('ph.'+b.phase);$('tdphase').className='pill '+(b.phase==='round'?'warn':b.phase==='night'?'info':'ok');
+  $('tdphasetext').textContent=tdT('phtext.'+b.phase,{round:tdClock(b.night.round_from),start:b.shift.start});
+  const N=b.night;$('tdnight').innerHTML=(b.phase==='prep'||b.phase==='round')?`<div class="msgs"><div class="${N.three_base_plates>=N.printers?'o':'w'}">${tdT('nightready',{have:N.three_base_plates,need:N.printers})}${N.merged&&N.merged.length?' · '+tdT('merged',{n:N.merged.length}):''}${N.three_base_plates<N.printers?' '+tdT('short'):''}</div></div>`:'';
+  if(!b.connected){$('tdtasks').innerHTML=`<div class="msgs"><div class="e">${tdT('notconn')}</div></div>`}
+  else if(!b.tasks.length){const nx=b.printing.find(x=>x.ends_at&&x.ends_at===b.next_end);
+    $('tdtasks').innerHTML=`<p style="font-size:16px">${tdT('none')} ${nx?tdT('nextfree',{p:esc(nx.printer),t:tdClock(nx.ends_at)}):''}</p><p class="hint">${tdT('meanwhile')}</p>`}
+  else $('tdtasks').innerHTML=b.tasks.map((t,i)=>{const kind=t.kind==='names'?tdT('letters'):t.kind==='stands'?tdT('stands'):`${t.n} ${tdT('bases')}`;
+    const col=t.kind==='names'&&t.colors.length?` <span class="step">${esc(t.colors[0])}</span>`:'';
+    return `<div class="tdtask ${t.night?'night':''}"><span class="pn">${esc(t.printer)}</span><div class="what">
+      ${t.bed==='check'?`<div><span class="step">1</span>${tdT('clear')}</div>`:''}
+      <div><span class="step">${t.bed==='check'?2:1}</span>${t.bed==='check'?tdT('put')+': ':''}<b>${kind}</b>${col} — ${esc(t.names.join(', '))}${t.fix?` <span class="pill warn">${tdT('fix')}</span>`:''}${t.express?` <span class="pill err">${tdT('express')}</span>`:''}</div>
+      <div class="hint">~${t.hours} ${tdT('hours')} · ${tdT('ends')} ~${tdClock(t.ends_at)}${t.night?` · <b>${tdT('nightplate')}</b>`:''}${t.split?' · '+tdT('split',{n:t.split[0],of:t.split[0]+t.split[1]}):''}</div></div>
+      <button class="primary go" data-tdgo="${i}">${tdT('start')}</button></div>`}).join('');
+  document.querySelectorAll('[data-tdgo]').forEach(x=>x.onclick=()=>tdStart(+x.dataset.tdgo,x));
+  $('tdother').innerHTML=`<div class="tdbox"><span class="hint">${tdT('verifyh')}</span><b>${b.verify}</b><button class="small" id="tdgover">${tdT('verify')}</button></div>
+    <div class="tdbox"><span class="hint">${tdT('labelsh')}</span><b>${b.to_pack}</b><button class="small" id="tdgolab">${tdT('labels')}</button></div>`;
+  $('tdgover').onclick=()=>{show('makeit');mkShow('verify')};$('tdgolab').onclick=()=>show('orders');
+  $('tdnext').innerHTML=b.printing.map(x=>`<tr><td><b>${esc(x.printer)}</b></td><td>${x.state==='printing'?`${tdT('printing')}${x.progress!=null?` ${Math.round(x.progress)}%`:''}`:x.state==='idle'?(x.bed==='check'?`<span class="pill warn">${tdT('bedcheck')}</span>`:tdT('idle')):x.state==='offline'?`<span class="pill err">${tdT('offline')}</span>`:tdT('startingp')}</td><td>${x.ends_at?tdClock(x.ends_at)+(x.night?` <span class="hint">· ${tdT('nightend')}</span>`:''):''}</td></tr>`).join('')}
+async function tdStart(i,btn){const t=TDB.tasks[i];if(!t)return;
+  if(t.bed==='check'&&!confirm(tdT('confirm',{p:t.printer})))return;
+  btn.disabled=true;btn.textContent=tdT('starting');$('tdmsg').innerHTML='';
+  const body={batch_id:t.batch_id,file:t.file,printer_id:t.printer_id,split:t.split,bed_clear:t.bed==='check'};
+  try{await post('/api/today/start',body);$('tdmsg').innerHTML=`<div class="o">${esc(tdT('started',{p:t.printer}))}</div>`}
+  catch(e){if(/finished print on its bed/.test(e.message)&&confirm(tdT('confirm',{p:t.printer}))){try{await post('/api/today/start',{...body,bed_clear:true});$('tdmsg').innerHTML=`<div class="o">${esc(tdT('started',{p:t.printer}))}</div>`}catch(e2){$('tdmsg').innerHTML=`<div class="e">${esc(e2.message)}</div>`}}
+    else $('tdmsg').innerHTML=`<div class="e">${esc(e.message)}</div>`}
+  loadToday()}
+document.querySelectorAll('[data-tdlang]').forEach(x=>x.onclick=()=>{TDL=x.dataset.tdlang;try{localStorage.setItem('tdlang',TDL)}catch{}renderToday()});
+$('tdrefresh').onclick=loadToday;
+
 // ---------- Stats (0.26) ----------
 async function loadPrintTimes(){try{const r=await api('/api/stats/print-times');const f=x=>x?`<td style="text-align:right">${x.b}</td><td style="text-align:right">${Math.round(x.a)} min</td><td style="text-align:right">${x.n}</td>`:'<td style="text-align:right" class="hint">—</td><td></td><td style="text-align:right" class="hint">too few</td>';
   $('stptime').innerHTML=r.rows.map(x=>`<tr><td>${esc(x.printer)}</td><td>${esc(x.model)}</td>${f(x.bases)}${f(x.names)}</tr>`).join('')+(r.all&&(r.all.bases||r.all.names)?`<tr><td><b>All printers</b></td><td></td>${f(r.all.bases)}${f(r.all.names)}</tr>`:'')||'<tr><td colspan="8" class="empty">No prints done yet</td></tr>'}

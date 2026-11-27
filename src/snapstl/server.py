@@ -96,6 +96,8 @@ async def _lifespan(_app):
     WATCHER.start()  # a new report in Downloads is imported by itself (Settings: report_import)
     from . import shopdeck
     shopdeck.POLLER.start()  # 0.37: live order status from the ShopDeck API, once connected in Settings
+    from . import today
+    today.NIGHT.start(lambda: makeit_board())  # 0.39: night plates got ready from 2 hours before the shift ends
     bambuddy_host.start_watch()  # Bambuddy computer: Keep running (starts Bambuddy / Docker when they stop)
     yield
     from .logistics import stop as stop_logistics
@@ -946,6 +948,40 @@ async def helper_ping(req: Request):
     return {"paused": DOWNLOADER.paused}
 
 
+# ---------------- आज का काम / Today (0.39, today.py): what to do next at the printers ----------------
+@app.get("/api/today")
+def today_board():
+    from . import tabs, today
+
+    mk = makeit_board()
+    out = today.build(mk, mk.get("printers") or [])
+    with db.tx() as con:
+        out["to_pack"] = con.execute(f"SELECT COUNT(*) FROM orders WHERE {tabs.TAB_SQL}='pack_it'").fetchone()[0]
+    out["connected"] = bool((mk.get("status") or {}).get("connected"))
+    return out
+
+
+@app.post("/api/today/start")
+async def today_start(req: Request):
+    """The board's button: {batch_id, file, printer_id, split?: [n, rest], bed_clear?}."""
+    from . import today
+
+    global _BOARD
+    b = await req.json()
+    _own_batch(int(b.get("batch_id") or 0))
+    try:
+        prs = await run_in_threadpool(farm.printers)
+        farm.describe_roles(prs, farm.load_config())
+        out = await run_in_threadpool(today.start, prs, int(b["batch_id"]), str(b.get("file", "")),
+                                      int(b.get("printer_id") or 0), b.get("split"), bool(b.get("bed_clear")))
+    except makeit.BedNotClear as e:
+        raise HTTPException(428, str(e)) from e
+    except (farm.FarmError, extras.ExtraError) as e:
+        raise HTTPException(400, str(e)) from e
+    _BOARD = None  # the next board shows it at once
+    return out
+
+
 # ---------------- ShopDeck API (0.37, shopdeck.py): connect, live order status ----------------
 @app.get("/api/shopdeck")
 def shopdeck_status():
@@ -1626,7 +1662,10 @@ def _makeit_board() -> dict:
         p["defaults"] = farm.print_defaults(p["id"], cfg)
         p["defaults_letters"] = farm.print_defaults(p["id"], cfg, "names")
     farm.describe_roles(prs, cfg)  # 0.36: role, AMS slot plan and where it isn't loaded as planned
+    from . import today
+
     return {"status": st, "printers": prs, **makeit.board(prs), "shift": farm.shift(cfg),
+            "per_piece": today.per_piece(prs),  # 0.39: rough hours per base / letters plate / stand
             "options": {k: list(v) for k, v in farm.OPTIONS.items()},
             "speeds": list(farm.SPEEDS_SET),
             "worker": {"log": farm.WORKER.log[-20:]}}

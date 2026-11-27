@@ -14,6 +14,7 @@ os.environ["SNAPSTL_BAMBUDDY_URL"] = "http://127.0.0.1:9"
 os.environ["SNAPSTL_NO_BAMBUDDY"] = "1"  # never update a real Bambuddy install from tests
 os.environ["SNAPSTL_NO_REPORT_WATCH"] = "1"  # tests import reports themselves
 os.environ["SNAPSTL_NO_SHOPDECK"] = "1"  # the ShopDeck API poller never runs by itself in tests
+os.environ["SNAPSTL_NO_NIGHTPREP"] = "1"  # night plates are never merged by themselves in tests
 os.environ["SNAPSTL_NO_CLEANUP"] = "1"  # the daily clean-up (archive.py) never runs by itself in tests
 
 import numpy as np

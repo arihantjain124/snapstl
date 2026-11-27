@@ -828,3 +828,12 @@ English hard — the language help was skipped by the owner).
 - Products SnapSTL doesn't make show their SKU code (the report has no product name).
 - Agreed next (plan 2026-11-27): day rhythm and a staff board in Hindi (English switch) replacing the shift plan
   panel and Before you leave; maintenance tracking; 24 printers.
+
+### 2026-11-27: 0.39.0 आज का काम / Today — the day rhythm and the staff board
+- Owner's goal: most output (organizers first) from 13 printers with two staff, 08:00–22:00, without the owner
+  starting night plates. Measured: a base ≈ 3.3 h on P1S, ≈ 4.0 h on A1 (linear per base), a letters plate ≈ 0.4 h.
+  Printers were busy ~68 %; plates finishing in the evening waited ~100 printer-hours a week.
+- Owner's choices: the board's button starts the print; plates are split to size by themselves; a new first page
+  (Print stays for the owner); night plates got ready from 20:00. Hindi with an English switch (the person at the
+  printers reads little English). Removed (owner: confusing): Before you leave, Good morning, the night pills on
+  Print. Print's time estimate is now rough per piece, not per letter (owner: per letter was wrong).
