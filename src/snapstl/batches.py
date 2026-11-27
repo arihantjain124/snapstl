@@ -919,6 +919,13 @@ class Manager:
             with db.tx() as con:
                 db.finish_batch(con, batch_id, "done" if summary["ok"] else "done_with_problems", summary, done_ids)
             self._log(f"Batch #{batch_id} done: {len(res.plates)} plates")
+            try:  # 0.42: orders with a spare base kept for them: their base leaves its plate now
+                from . import spares
+                n = spares.apply_reserved(batch_id)
+                if n:
+                    self._log(f"Batch #{batch_id}: {n} spare base{'s' if n > 1 else ''} used — only the letters print")
+            except Exception as e:  # noqa: BLE001 — the batch itself is fine
+                self._log(f"Batch #{batch_id}: spare bases not applied: {e}")
             _kick_sync()
         except Exception as e:  # noqa: BLE001
             self._log(f"Batch #{batch_id} failed: {e}")

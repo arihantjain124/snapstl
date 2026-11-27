@@ -38,7 +38,7 @@ FIX_RESULTS = ("letters", "name", "colour", "base", "stand")  # a small fix plat
 OUTSIDE = "Printed outside SnapSTL"  # label_by of Completed → Label printed outside SnapSTL (0.40)
 DOUBT_AFTER_S = 6 * 3600  # an outside mark ShopDeck still shows unlabelled after this long comes back with a warning
 COMPLETE = ({"bases", "names"}, {"stands"})  # the parts that make one order: an organizer, a name stand (0.32)
-NOT_STARTED = ("removed", "merged", "unmerged", "divided")      # print job states that don't mean "a print started"
+NOT_STARTED = ("removed", "merged", "unmerged", "divided", "spare")  # print job states that don't mean "a print started"
 MAX_FIXES_WARN = 2                                   # a third fix of one item: check the model
 
 

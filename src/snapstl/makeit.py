@@ -221,8 +221,8 @@ def board(prs: list[dict] | None = None) -> dict:
             j = latest.get((b["id"], p["file"]))
             label = summ.get("label") or f"Batch #{b['id']}"
             open_orders = [i for i in ids if i in open_ids]
-            if j and j["state"] in ("merged", "divided"):
-                return  # printed on a merged plate, or split into smaller plates
+            if j and j["state"] in ("merged", "divided", "spare"):
+                return  # printed on a merged plate, split into smaller plates, or its base is a spare piece (0.42)
             if j and j["state"] == "removed":
                 if open_orders:  # hidden once its orders are packed / shipped / cancelled
                     removed.append({"batch_id": b["id"], "batch": label, "file": p["file"], "kind": p["kind"],
@@ -274,10 +274,17 @@ def board(prs: list[dict] | None = None) -> dict:
         parts = verify.part_status(con, batches)
         dupes = extras.duplicates(con)  # 0.28: the same names on two plates (a double press) — Remove the copy
         stock = spares.in_stock_orders(con, [o for r in rows for o in r["open_items"]])  # a spare piece fits
+        # 0.42: base plates — a free spare base fits (Use spare base) or one is used
+        base_ids = [o for r in rows if r["kind"] == "bases" for o in r["open_items"]]
+        offers = spares.base_offers(con, base_ids)
+        onames = {r[0]: r[1] for r in con.execute(
+            f"SELECT order_id, name FROM orders WHERE order_id IN ({','.join('?' * len(offers))})", list(offers))} if offers else {}
     # how far each order's other part is: Letters splits into "base printed" / "base still to print",
     # Bases → Printed shows how far the letters are
     for r in rows:
         r["in_stock"] = [o for o in r["open_items"] if o in stock]
+        r["spare_bases"] = ([{"order_id": o, "name": onames.get(o, ""), **offers[o]} for o in r["open_items"]
+                             if o in offers and not offers[o]["used"]] if r["kind"] == "bases" else [])
         r["club_wait"] = [o for o in r["open_items"] if o in club_wait]
     for r in rows + printed + removed:
         r["product"] = _product(skus, r.get("order_ids") or r.get("open_items") or [])

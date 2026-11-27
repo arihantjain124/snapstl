@@ -447,6 +447,7 @@ def _order_view(r: dict) -> dict:
         "returned": r.get("_returned") or [],
         "spares": r.get("_spares") or [],  # 0.28: spare pieces in stock that fit
         "made_before": r.get("_made_before"),  # 0.32.1: already made in this batch — Remake to make it again
+        "spare_base": r.get("_spare_base"),  # 0.42: {uid, used} — a spare base fits / is used (letters only)
         "reuse_words": spares.describe(r.get("reuse_of")),
         "club": r.get("_club"),  # 0.34: {size, to_make, check, held, started} of its clubbed order
         "payment": r.get("payment") or "",
@@ -552,6 +553,9 @@ def list_orders(request: Request, tab: str = "to_make", limit: int = 200, offset
                 r["_returned"] = returned_pieces(con, r)
                 r["_spares"] = spares.for_order(con, r)
             r["_made_before"] = made.get(r["order_id"])
+        sb = spares.base_offers(con, [r["order_id"] for r in rs])
+        for r in rs:
+            r["_spare_base"] = sb.get(r["order_id"])
         in_stock = spares.waiting_matches(con)
         g = clubbed.groups(con, [r["clubbed_id"] for r in rs])  # 0.34: made together
         for r in rs:
@@ -710,6 +714,36 @@ async def use_spare(order_id: str, req: Request):
         raise HTTPException(409, str(e)) from e
     sync.LOOP.kick()
     return {"ok": True}
+
+
+@app.post("/api/orders/{order_id}/use-spare-base")
+async def use_spare_base(order_id: str, req: Request):
+    """0.42: use a spare base (base only) for this order — only its letters are printed."""
+    b = await req.json()
+    try:
+        out = await run_in_threadpool(spares.use_base, order_id, str(b.get("uid") or ""), str(b.get("staff") or "")[:60])
+    except (spares.SpareError, extras.ExtraError) as e:
+        raise HTTPException(409, str(e)) from e
+    _kick_board()
+    return out
+
+
+@app.post("/api/orders/{order_id}/undo-spare-base")
+async def undo_spare_base(order_id: str, req: Request):
+    """0.42: the spare base back in stock; a base taken off its plate is printed again (fix plate)."""
+    b = await req.json()
+    try:
+        out = await run_in_threadpool(spares.undo_base, order_id, str(b.get("staff") or "")[:60])
+    except (spares.SpareError, extras.ExtraError) as e:
+        raise HTTPException(409, str(e)) from e
+    _kick_board()
+    return out
+
+
+def _kick_board() -> None:
+    global _BOARD
+    _BOARD = None
+    sync.LOOP.kick()
 
 
 @app.get("/api/spares")

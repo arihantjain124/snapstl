@@ -785,6 +785,19 @@ snapstl.server:app --port 8320`.
 
 ---
 
+## Spare base → letters only (0.42, `spares.use_base`)
+
+A base-only spare piece (exactly the same name) can stand in for an organizer's base. `use_base`: an order in a
+batch — its base item still to print (not started) leaves the plate it would print on (`_take_off`: a plate with
+nothing else to print gets print job `spare`, hidden like merged / divided; otherwise `extras._divide` writes a part
+with the others and the plate leaves the list; a merged plate or one holding other batches' bases is refused —
+Split back first), then a `good` check with note `spare base` (printed_on `spare:<uid>`) so the order is made once
+its letters are checked; the spare gets `used_by`. An order not in a batch yet: the spare is kept for it
+(`used_by`) and `apply_reserved` (called right after a batch is built, `batches.Manager`) does the same then — or
+puts the spare back in stock if the base is no longer to print. `undo_base`: spare back in stock; a base taken off
+gets a `base` check and a base fix plate. `base_offers` (Orders rows `spare_base`, Print base rows `spare_bases`)
+lists only orders whose base can still be saved. `verify.NOT_STARTED` includes `spare`.
+
 ## Printer care (0.41, `printercare.py`)
 
 Bambuddy keeps the maintenance record (owner's choice): task types, print hours per printer, items per printer,

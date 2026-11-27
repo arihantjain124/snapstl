@@ -185,6 +185,189 @@ def release(con, order_id: str, reuse_of: str | None) -> None:
         _touch(con, reuse_of[len(PREFIX):], used_by=None, used_at=None)
 
 
+# ---------------- a spare base: print the letters only (0.42, owner) ----------------
+NOTE = "spare base"  # plate_checks.note of a base covered by a spare piece (printed_on = "spare:<uid>")
+
+
+def _base_of(con, o: dict) -> tuple[dict | None, str]:
+    """The order's base item still to print in its batch (one copy) and why not, if there is none."""
+    from . import verify
+
+    b = verify._batch(con, int(o["batch_id"] or 0)) if o.get("batch_id") else None
+    if b is None:
+        return None, "Its batch isn't on this computer"
+    items, _ = verify.batch_items(con, b)
+    mine = [it for it in items if it["order_id"] == o["order_id"] and it["part"] == "bases"]
+    if not mine:
+        return None, "Its batch has no base for it"
+    checks = verify.latest_checks(con, [b["id"]])
+    jobs = verify.latest_jobs(con)
+    extras_by = verify._by_item(verify.extra_plates(con, [b["id"]]))
+    for it in mine:
+        st = verify.item_status(it, checks.get(verify.key(it)), jobs, extras_by)
+        if st["status"] == "todo" and not st["started"]:
+            return {**it, "_carrier": st["carrier"], "_extra": st["extra"]}, ""
+    return None, "Its base is already printing or printed — keep the spare in stock"
+
+
+def _take_off(con, it: dict, staff: str) -> str:
+    """Take this base off the plate it would print on: a plate with nothing else to print is hidden (print job
+    'spare'); otherwise a new part with the others is made (the plate itself leaves the list, like a split)."""
+    from pathlib import Path as _P
+
+    from . import computer, extras, verify
+
+    cb, cf = it["_carrier"]
+    x = it["_extra"]
+    if x is not None and x["kind"] == "merged":
+        raise SpareError(f"Its base is on a merged plate ({_P(cf).name}) — Split back that plate first")
+    if extras._latest_state(con, cb, cf) not in extras.MERGEABLE + ("failed", "cancelled"):
+        raise SpareError(f"{_P(cf).name} is already started — keep the spare in stock")
+    b = extras._own(con, cb)
+    if x is None:
+        pl = next(p for p in extras._plates(b) if p["file"] == cf)
+        _, on = extras._plate_orders(con, b, cf)
+        cand = verify.plate_items(cb, pl, on)
+    else:
+        pl = {"kind": "bases", "file": cf, "colors": []}
+        cand = list(x["items"])
+    checks = verify.latest_checks(con, {int(i["batch_id"]) for i in cand} | {cb})
+    open_ids = {r[0] for r in con.execute("SELECT order_id FROM orders WHERE state='bundled' AND made_at IS NULL")}
+    others = [i for i in cand if verify.key(i) != verify.key(it) and i.get("order_id") in open_ids
+              and (checks.get(verify.key(i)) or {}).get("result") != "good"]
+    now = db.now()
+    if not others:
+        con.execute("INSERT INTO print_jobs(batch_id,plate,kind,color,printer_id,printer_name,state,created_at,"
+                    "updated_at,computer_id) VALUES (?,?,'bases','',0,'','spare',?,?,?)", (cb, cf, now, now, computer.ID))
+        return f"{_P(cf).name} taken off (nothing else on it to print)"
+    if any(int(i["batch_id"]) != cb for i in others):
+        raise SpareError(f"{_P(cf).name} holds bases of other batches — Split back that plate first")
+    made = extras._divide(con, b, pl, cf, [others], staff)
+    return f"{_P(cf).name} → {_P(made[0]).name} without this base"
+
+
+def use_base(order_id: str, uid: str, staff: str = "") -> dict:
+    """Use a spare base (base only) for this order: only its letters are printed. An order in a batch: its base
+    leaves its plate now and counts as checked good; an order still to batch: the spare is kept for it and its
+    base leaves its plate as soon as its batch is built (`apply_reserved`)."""
+    with db.tx() as con:
+        cur = con.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
+        if cur is None:
+            raise SpareError("No such order")
+        o = dict(cur)
+        if o.get("reuse_of") or o.get("made_at") is not None or o["state"] not in ("ready", "needs_review", "bundled"):
+            raise SpareError("Only an order still to make can use a spare base")
+        if products.of_order(o) is not products.ORGANIZER:
+            raise SpareError("Only an organizer has a base")
+        if con.execute("SELECT 1 FROM spares WHERE used_by=? AND part='bases' AND removed_at IS NULL",
+                       (order_id,)).fetchone():
+            raise SpareError("This order already has a spare base")
+        sp = con.execute("SELECT * FROM spares WHERE uid=?", (uid,)).fetchone()
+        if sp is None or sp["part"] != "bases" or sp["name"] != o["name"] or sp["used_by"] or sp["removed_at"]:
+            raise SpareError("That spare base doesn't fit this order (exactly the same name) or is already used")
+        what = "kept for it: only the letters are made once it is in a batch"
+        if o["state"] == "bundled":
+            what = _apply(con, o, uid, staff)
+        _touch(con, uid, used_by=order_id, used_at=db.now())
+        db.add_activity(con, "spare", f"Spare base for {o['name']} ({order_id}): {what}")
+        db.count_usage(con, "use_spare_base")
+        bid = o.get("batch_id") if o["state"] == "bundled" else None
+    if bid:
+        from . import verify
+        verify.update_orders(int(bid))
+    return {"ok": True, "what": what}
+
+
+def _apply(con, o: dict, uid: str, staff: str) -> str:
+    from . import verify
+
+    it, why = _base_of(con, o)
+    if it is None:
+        raise SpareError(why)
+    what = _take_off(con, it, staff or "spare base")
+    verify.add_check(con, it, "good", staff or "spare base", note=NOTE, printed_on=PREFIX + uid)
+    return what + "; base counted as checked good — print and check the letters"
+
+
+def apply_reserved(batch_id: int | None = None) -> int:
+    """Orders in a batch with a spare base kept for them whose base isn't taken off yet (after the batch is built)."""
+    n = 0
+    touched = set()
+    with db.tx() as con:
+        q = ("SELECT o.*, s.uid AS spare_uid FROM orders o JOIN spares s ON s.used_by=o.order_id AND s.part='bases' "
+             "AND s.removed_at IS NULL WHERE o.state='bundled' AND o.made_at IS NULL")
+        rows = db.rows(con, q + (" AND o.batch_id=?" if batch_id else ""), *([batch_id] if batch_id else []))
+        done = {r[0] for r in con.execute("SELECT order_id FROM plate_checks WHERE note=? AND part='bases'", (NOTE,))}
+        for o in rows:
+            if o["order_id"] in done:
+                continue
+            try:
+                what = _apply(con, o, o["spare_uid"], "spare base")
+            except SpareError as e:  # e.g. printed already: the spare goes back to stock
+                _touch(con, o["spare_uid"], used_by=None, used_at=None)
+                db.add_activity(con, "spare", f"Spare base for {o['name']} ({o['order_id']}) not used: {e} — back in stock")
+                continue
+            db.add_activity(con, "spare", f"Spare base for {o['name']} ({o['order_id']}): {what}")
+            touched.add(int(o["batch_id"]))
+            n += 1
+    from . import verify
+    for bid in touched:
+        verify.update_orders(bid)
+    return n
+
+
+def undo_base(order_id: str, staff: str = "") -> dict:
+    """Undo a spare base: the piece back in stock; a base taken off its plate is printed again (a base fix plate)."""
+    from . import extras, verify
+
+    with db.tx() as con:
+        o = con.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
+        sp = con.execute("SELECT uid FROM spares WHERE used_by=? AND part='bases'", (order_id,)).fetchone()
+        if o is None or sp is None:
+            raise SpareError("This order has no spare base")
+        if o["made_at"] is not None:
+            raise SpareError("Already made — use Completed → Reprint base if the spare was wrong")
+        _touch(con, sp[0], used_by=None, used_at=None)
+        files = []
+        chk = con.execute("SELECT * FROM plate_checks WHERE order_id=? AND part='bases' AND note=? ORDER BY at DESC",
+                          (order_id, NOTE)).fetchone()
+        if chk is not None:
+            latest = verify.latest_checks(con, [chk["batch_id"]]).get((int(chk["batch_id"]), chk["plate"], int(chk["idx"])))
+            if latest and latest["uid"] == chk["uid"]:
+                it = {k: chk[k] for k in ("batch_id", "plate", "idx", "order_id", "part", "name", "color")}
+                at = db.now()
+                verify.add_check(con, it, "base", staff or "spare base", note="spare base undone", at=at)
+                files = extras.make_fixes(con, int(it["batch_id"]), [{"item": it, "result": "base", "pieces": None}],
+                                          staff or "spare base", at + 0.0005)
+        db.add_activity(con, "spare", f"Spare base undone for {o['name']} ({order_id})"
+                        + (f": base printed again on {files[0].rsplit('/', 1)[-1]}" if files else ""))
+        bid = o["batch_id"] if files else None
+    if bid:
+        verify.update_orders(int(bid))
+    return {"ok": True, "fixes": files}
+
+
+def base_offers(con, order_ids) -> dict[str, dict]:
+    """Of these orders: those using a spare base ({uid, used: True}) and those a free base-only spare fits."""
+    ids = list({i for i in order_ids if i})
+    if not ids:
+        return {}
+    q = ",".join("?" * len(ids))
+    out = {r[0]: {"uid": r[1], "used": True} for r in con.execute(
+        f"SELECT used_by, uid FROM spares WHERE part='bases' AND removed_at IS NULL AND used_by IN ({q})", ids)}
+    for row in db.rows(
+            con, f"SELECT o.*, (SELECT s.uid FROM spares s WHERE s.part='bases' AND s.name=o.name AND s.used_by IS NULL "
+                 f"AND s.removed_at IS NULL ORDER BY s.added_at LIMIT 1) AS spare_uid FROM orders o WHERE o.order_id IN ({q}) "
+                 f"AND o.made_at IS NULL AND o.reuse_of IS NULL AND o.state IN ('ready','needs_review','bundled') "
+                 f"AND {products.organizer_sql('o.sku')}", *ids):
+        if not row["spare_uid"] or row["order_id"] in out:
+            continue
+        if row["state"] == "bundled" and _base_of(con, row)[0] is None:
+            continue  # its base is printing / printed already: nothing to save
+        out[row["order_id"]] = {"uid": row["spare_uid"], "used": False}
+    return out
+
+
 def describe(reuse_of: str | None) -> str:
     """'spare:…' → 'a spare piece'; an order ID → that returned order."""
     if reuse_of and reuse_of.startswith(PREFIX):

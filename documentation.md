@@ -856,3 +856,10 @@ English hard — the language help was skipped by the owner).
   (P1S)), intervals 100 / 200 / 500 h (printers run ~20 h a day), Clean Build Plate off.
 - Today's work: a full service per printer first (one a day, worst first), then due tasks when the printer is free;
   Done ticks them in Bambuddy. Failed prints of the last 24 h: one tap for the reason. Stats → Printer care.
+
+### 2026-11-28: 0.42.0 Spare base → print the letters only
+- Owner: bases with a matching name sat in stock while their orders could not move from To make to Completed.
+  Now **Use spare base** (Pending Orders, Print → Bases): the base leaves its plate (with a confirm), counts as checked
+  good, only the letters are printed and checked, then the order is Completed and the label can be printed. An order
+  not in a batch yet keeps the spare until its batch is built. Undo prints the base again. On the live data: 13
+  orders match a spare base; 8 can use one now (5 bases in batches were already printing or printed).

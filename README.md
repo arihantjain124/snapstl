@@ -418,6 +418,12 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   letters printers get letters in the day and a base plate at night; X1 gets name stands first. From 20:00 small
   base plates are merged into night plates by themselves; from 21:00 every free printer gets its night plate.
   Below: prints to check, labels to make (opens Print → Completed), and when each printer is free next.
+- **Spare base** (0.42): when a base-only spare piece has exactly the same name as an order, Pending Orders and
+  the Print → Bases plate show **Use spare base**. In a batch, the base leaves its plate at once (the plate is made
+  again with the other bases, or leaves the list if it held only that base) and counts as checked good — only the
+  letters are printed; Verify checks the letters, then the order is Completed and its label can be printed. Not in a
+  batch yet: the spare is kept for it and the base leaves its plate as soon as the batch is built. **Undo** puts the
+  piece back in stock (a small fix plate prints the base again). Refused once the base is printing or printed.
 - **Printer care** (0.41): maintenance lives in Bambuddy (its Maintenance page keeps the hours and history);
   SnapSTL sets up our tasks once (A1 / P1S, intervals for ~20 h a day of printing, Clean Build Plate off) and puts
   them on **Today's work** when a printer is free anyway: first a **full service** per printer (~40 min, one a day:
