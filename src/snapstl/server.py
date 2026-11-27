@@ -993,7 +993,17 @@ def today_board():
     out = today.build(mk, mk.get("printers") or [])
     with db.tx() as con:
         out["to_pack"] = con.execute(f"SELECT COUNT(*) FROM orders WHERE {tabs.TAB_SQL}='pack_it'").fetchone()[0]
+        # 0.43: what the board may offer (each with a confirmation): Make next batch, merges
+        out["to_make"] = con.execute(f"SELECT COUNT(*) FROM orders WHERE {tabs.TAB_SQL}='to_make' AND "
+                                     f"{products.in_sql([products.ORGANIZER.key])}").fetchone()[0]
+        out["batches_coming"] = con.execute(
+            "SELECT COUNT(*) FROM batches WHERE status NOT IN ('done','done_with_problems','failed') "
+            "AND archived_at IS NULL AND COALESCE(computer_id, ?)=?", (computer.ID, computer.ID)).fetchone()[0]
     out["connected"] = bool((mk.get("status") or {}).get("connected"))
+    out["merge"] = (mk.get("merge") or [])[:3] if out["phase"] in ("day", "prep") else []
+    out["merge_bases"] = ([s for s in mk.get("merge_bases") or [] if s.get("names") == 3][:3]
+                          if out["phase"] in ("prep", "round") else [])
+    out["batch_size"] = 50
     out.update(_care(out, mk.get("printers") or []))
     return out
 

@@ -863,3 +863,12 @@ English hard — the language help was skipped by the owner).
   good, only the letters are printed and checked, then the order is Completed and the label can be printed. An order
   not in a batch yet keeps the spare until its batch is built. Undo prints the base again. On the live data: 13
   orders match a spare base; 8 can use one now (5 bases in batches were already printing or printed).
+
+### 2026-11-28: 0.43.0 The day plan on Today's work
+- Owner: clear tasks through the day; printers busy most of the day; every printer free 21:30–22:00 for its night
+  plate (an A1 may start its night plate at 20:00); the board may do every action with a confirmation; after a
+  split, the rest of an Express / clubbed order comes next.
+- Day plates now end by 21:30 (was 21:45). Today's work shows each printer's day (now → plates → night plate),
+  offers Make next batch when the plan needs more bases than are ready, letter merges and 3-base night merges, and
+  asks before a split. Splits put Express names and clubbed orders first; split leftovers are started next.
+- Breaks (30 + 15 min, no fixed time): not planned — the 15 minutes to take a plate off covers short gaps.

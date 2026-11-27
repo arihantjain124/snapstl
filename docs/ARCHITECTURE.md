@@ -785,6 +785,20 @@ snapstl.server:app --port 8320`.
 
 ---
 
+## The day plan (0.43, `today.plan`)
+
+`LEAVE_MIN` = 30: no day plate runs after 21:30 (owner: every printer free 21:30–22:00 for its night plate);
+a plate ending later is a night plate (`night` = ends after 21:30 or while nobody is there) and may start earlier
+(A1 3 bases from ~20:15 → 08:15). `plan(prs, tasks, now, sh, pp, ready)`: per connected printer, what it prints
+now (a board task or the print running; a print ending before the shift starts continues at 08:00), then base
+plates sized by `best_size` until its night plate; a letters printer prints letters until 21:30. `need` = bases
+those plates take, `ready` = bases on plates not started → `short`. `/api/today` adds `to_make`, `batches_coming`,
+`merge` (letters, day / prep), `merge_bases` (3 bases, prep / round): the board offers Make next batch (when short,
+nothing being made, orders to make), the merges and a split — each with a confirmation. Base plates start in
+`_rank` order (fix, Express, clubbed waiting, the rest of a split plate, then Print's order); `extras._priority`
+puts Express names (earliest first) and clubbed orders waiting for this name first on a split, each clubbed order's
+names together — the letters follow the same parts.
+
 ## Spare base → letters only (0.42, `spares.use_base`)
 
 A base-only spare piece (exactly the same name) can stand in for an organizer's base. `use_base`: an order in a
@@ -820,7 +834,7 @@ The first page, for the person at the printers (English only since 0.40; the str
 `GET /api/today` = `today.build(makeit_board())`: for every free printer (connected, not printing, no SnapSTL job
 waiting; `bed` = clear / check) one task in Print's own plate order. Name stands go to Flex first, then Letters
 printers; letter plates to Letters (then Flex, Any) printers by colour fit (`makeit.choose`), in the day only and
-only when they end before the shift's last 15 minutes. Every other free printer gets bases; `best_size` picks 1–3
+only when they end by 21:30 (the shift's last half hour, 0.43). Every other free printer gets bases; `best_size` picks 1–3
 bases: the most bases per hour once the idle time after it is counted (ends while someone is there → 15 min,
 else the hours until the shift starts). Hours are rough, per piece (`per_piece`: median of print time ÷ pieces over
 30 days, per kind and printer model; `DEFAULT_H` with fewer than 5 prints) — Print's estimate uses them too

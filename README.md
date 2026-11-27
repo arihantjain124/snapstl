@@ -418,6 +418,11 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   letters printers get letters in the day and a base plate at night; X1 gets name stands first. From 20:00 small
   base plates are merged into night plates by themselves; from 21:00 every free printer gets its night plate.
   Below: prints to check, labels to make (opens Print → Completed), and when each printer is free next.
+- **Day plan** (0.43, Today's work): every printer's day at a glance — what it prints now, the next plates
+  (sized so day plates end by 21:30) and its night plate (an A1 may start its night plate from ~20:00). When the
+  plan needs more base plates than are ready, **Make next batch** is offered there; letter merges (day) and 3-base
+  night merges (from 20:00) too. Every button asks first. A split puts Express names and clubbed orders first; the
+  rest of a split plate is the next plate for the next free printer.
 - **Spare base** (0.42): when a base-only spare piece has exactly the same name as an order, Pending Orders and
   the Print → Bases plate show **Use spare base**. In a batch, the base leaves its plate at once (the plate is made
   again with the other bases, or leaves the list if it held only that base) and counts as checked good — only the

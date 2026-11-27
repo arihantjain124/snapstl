@@ -222,7 +222,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 .pdtable select{min-width:120px;padding:3px 6px}.pdtable td{vertical-align:middle}
 @media (max-width:800px){.app{grid-template-columns:minmax(0,1fr)}nav#tabs{flex-wrap:wrap}.hint code,.callout code{word-break:break-all}.toolbar{flex-wrap:wrap}.side{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:0;border-bottom:1px solid var(--line);padding:8px 10px}
   nav#tabs{flex-direction:row}nav#tabs button{width:auto;padding:6px 9px}.side .foot{margin:0;flex-direction:row;flex-wrap:wrap}.health{flex-direction:row;flex-wrap:wrap;border:0;padding:0}.bar{display:none}}
-.tdtask{display:flex;gap:14px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:8px 0;flex-wrap:wrap}.tdtask .pn{font-size:22px;font-weight:700;min-width:110px}.tdtask .what{flex:1;min-width:240px;font-size:15px;line-height:1.5}.tdtask .go{font-size:16px;padding:10px 18px}.tdtask.night{border-color:var(--accent);background:var(--infobg)}.tdtask .step{display:inline-block;background:var(--chip);border-radius:8px;padding:1px 8px;margin-right:6px;font-size:13px}.tdgrid{display:flex;gap:12px;flex-wrap:wrap}.tdgrid .tdbox{border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:220px;flex:1}.tdgrid .tdbox b{font-size:26px;display:block}.tdphase{font-size:15px;margin:6px 0 0}.tdcare{border:1px dashed var(--warn);background:var(--warnbg);border-radius:10px;padding:8px 10px;margin:6px 0}.tdcare li{margin:3px 0}.tdtask.fail{border-color:var(--err)}.tdreasons{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.tdreasons button{font-size:14px;padding:8px 12px}.seg button.on{background:var(--accent);color:#fff}
+.tdtask{display:flex;gap:14px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:8px 0;flex-wrap:wrap}.tdtask .pn{font-size:22px;font-weight:700;min-width:110px}.tdtask .what{flex:1;min-width:240px;font-size:15px;line-height:1.5}.tdtask .go{font-size:16px;padding:10px 18px}.tdtask.night{border-color:var(--accent);background:var(--infobg)}.tdtask .step{display:inline-block;background:var(--chip);border-radius:8px;padding:1px 8px;margin-right:6px;font-size:13px}.tdgrid{display:flex;gap:12px;flex-wrap:wrap}.tdgrid .tdbox{border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:220px;flex:1}.tdgrid .tdbox b{font-size:26px;display:block}.tdphase{font-size:15px;margin:6px 0 0}.tdcare{border:1px dashed var(--warn);background:var(--warnbg);border-radius:10px;padding:8px 10px;margin:6px 0}.tdcare li{margin:3px 0}.tdtask.fail{border-color:var(--err)}.tdreasons{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.tdslot{display:inline-block;border:1px solid var(--line);border-radius:8px;padding:2px 8px;margin:2px 4px 2px 0;font-size:13px;white-space:nowrap}.tdslot.now{background:var(--chip)}.tdslot.night{border-color:var(--accent);background:var(--infobg)}.tdreasons button{font-size:14px;padding:8px 12px}.seg button.on{background:var(--accent);color:#fff}
 .mkplan{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}.mkplan table td{vertical-align:top}.rtag{font-size:11px;padding:1px 6px;border-radius:8px;background:var(--chip);margin-left:4px}.rtag.letters{background:var(--infobg);color:var(--accent)}.rtag.bases{background:var(--okbg);color:var(--ok)}.rtag.flex{background:var(--warnbg);color:var(--warn)}
 .ask{color:var(--warn);font-size:12px;font-weight:600;margin-top:3px;max-width:240px}tr.asking td{background:var(--warnbg)}
 .adhoc{border:1px solid var(--line);border-radius:10px;padding:12px;margin:8px 0}.adhocrow{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}.adhocrow label{display:flex;flex-direction:column;gap:4px;font-size:12px;min-width:0;flex:1 1 140px;margin:0}.adhocrow label.grow{flex:2 1 200px}.adhocrow input{width:100%;box-sizing:border-box}
@@ -926,6 +926,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
   </div>
   <div class="card" id="tdfailcard" hidden><h2 style="margin-top:0">Why did it fail?</h2><p class="hint">One tap per failed print — it shows which printer needs which fix.</p><div id="tdfail"></div></div>
   <div class="card"><h2 style="margin-top:0" id="tdnowh"></h2><div id="tdtasks"></div><div class="msgs" id="tdmsg"></div><p class="hint" id="tdcarewait"></p></div>
+  <div class="card" id="tdactcard" hidden><h2 style="margin-top:0">Plates to get ready</h2><div id="tdact"></div></div>
+  <div class="card"><h2 style="margin-top:0">Day plan</h2><p class="hint" id="tdplanh"></p><div class="tw"><table><thead><tr><th>Printer</th><th>Now → then → night plate</th></tr></thead><tbody id="tdplan"></tbody></table></div></div>
   <div class="card"><h2 style="margin-top:0" id="tdotherh"></h2><div id="tdother" class="tdgrid"></div></div>
   <div class="card"><h2 style="margin-top:0" id="tdnexth"></h2><div class="tw"><table><thead><tr><th id="tdthp"></th><th id="tdths"></th><th id="tdthe"></th></tr></thead><tbody id="tdnext"></tbody></table></div></div>
 </section>
@@ -2391,11 +2393,20 @@ const TD={en:{title:"Today's work",refresh:'Refresh',now:'Do now',other:'Other w
   verify:'Check prints',verifyh:'printed parts to check',open:'Open',labels:'Make labels',labelsh:'orders made — labels to make',
   printing:'printing',idle:'free',offline:'off / offline',startingp:'starting',nightend:'ends at night — nothing to do',
   bedcheck:'plate to take off',nightready:'Night plates: {have} ready (3 bases), printers {need}',merged:'merged today: {n}',
-  short:'Not enough plates — press "Make next batch" on Pending Orders.',notconn:'Not connected to Bambuddy — no printers.',
+  short:'Not enough 3-base plates yet — small ones are merged by themselves; if still short, Make next batch below.',notconn:'Not connected to Bambuddy — no printers.',
   care:'Maintenance first (~{m} min)',full:'Full service (~{m} min) — every task below, once',caredone:'Done',careonly:'Maintenance (~{m} min) — the printer is free',
   careconfirm:'{p}: all of these done?\n\n{list}',carefull:'{p}: full service done — every task on the list?',caresaved:'{p}: maintenance saved in Bambuddy',
   carewait:'Full service still to do (one a day, in this order): {list}',failed:'failed {t}',skip:'Skip',
-  soundon:'Sound: on',soundoff:'Sound: off'}};
+  soundon:'Sound: on',soundoff:'Sound: off',
+  planh:'Rough times. Day plates end by {last}; then every printer gets its night plate. Re-planned every minute.',
+  planshort:'Plates for about {ready} bases are ready; the plan needs about {need} more today and tonight.',
+  short2:'The day plan needs more base plates than are ready ({ready} ready, about {need} needed).',
+  mknext:'Make next batch ({n} oldest orders)',mkconfirm:'Make a batch of the {n} oldest organizer orders in To make (Express first)?\n\nTheir models download and the plates build by themselves (about an hour).',
+  mkdone:'Batch #{b} made with {n} orders — its plates build by themselves.',coming:'{n} batch(es) are being made — their plates come soon.',
+  mergel:'— merge the letters: {names}',mergeb:'Make a night plate (3 bases): {names}',merge:'Merge',mergeok:'Merged: {names}',
+  mergeconfirm:'Merge these plates onto one?\n\n{names}\n\nSame size, no scaling. Split back on Print undoes it before printing.',
+  splitconfirm:'{p}: split {n} off the {of}-base plate and start it? The other {r} go on their own plate for the next printer.',
+  sl_printing:'printing',sl_bases:'{n} bases',sl_names:'letters',sl_stands:'name stand',sl_night:'night'}};
 const TDL='en';
 let TDB=null,TDTIMER=null;
 const tdT=(k,v={})=>{let s=k.split('.').reduce((o,x)=>o&&o[x],TD[TDL])??k;for(const[a,b]of Object.entries(v))s=s.replaceAll('{'+a+'}',b);return s};
@@ -2417,7 +2428,7 @@ function renderToday(){const b=TDB;if(!b)return;
   $('tdfail').innerHTML=F.map((f,i)=>`<div class="tdtask fail"><span class="pn">${esc((f.printer||'').split(' ')[0]||'?')}</span><div class="what"><b>${esc(f.print_name)}</b> <span class="hint">· ${tdT('failed',{t:tdClock(Date.parse(f.failed_at)/1000)})}${f.hours?` · after ${f.hours} h`:''}</span>
     <div class="tdreasons">${Object.entries(b.reasons||{}).map(([k,l])=>`<button data-tdfail="${i}" data-r="${k}">${esc(l)}</button>`).join('')}<button class="small" data-tdfail="${i}" data-r="">${tdT('skip')}</button></div></div></div>`).join('');
   document.querySelectorAll('[data-tdfail]').forEach(x=>x.onclick=()=>tdFail(+x.dataset.tdfail,x.dataset.r,x));
-  tdSoundCheck(b);
+  tdSoundCheck(b);tdPlan(b);tdActions(b);
   if(!b.connected){$('tdtasks').innerHTML=`<div class="msgs"><div class="e">${tdT('notconn')}</div></div>`}
   else if(!b.tasks.length&&careOnly)$('tdtasks').innerHTML=careOnly;
   else if(!b.tasks.length){const nx=b.printing.find(x=>x.ends_at&&x.ends_at===b.next_end);
@@ -2437,6 +2448,7 @@ function renderToday(){const b=TDB;if(!b)return;
   $('tdnext').innerHTML=b.printing.map(x=>`<tr><td><b>${esc(x.printer)}</b></td><td>${x.state==='printing'?`${tdT('printing')}${x.progress!=null?` ${Math.round(x.progress)}%`:''}`:x.state==='idle'?(x.bed==='check'?`<span class="pill warn">${tdT('bedcheck')}</span>`:tdT('idle')):x.state==='offline'?`<span class="pill err">${tdT('offline')}</span>`:tdT('startingp')}</td><td>${x.ends_at?tdClock(x.ends_at)+(x.night?` <span class="hint">· ${tdT('nightend')}</span>`:''):''}</td></tr>`).join('')}
 async function tdStart(i,btn){const t=TDB.tasks[i];if(!t)return;
   if(t.bed==='check'&&!confirm(tdT('confirm',{p:t.printer})))return;
+  if(t.split&&!confirm(tdT('splitconfirm',{p:t.printer,n:t.split[0],of:t.split[0]+t.split[1],r:t.split[1]})))return;
   btn.disabled=true;btn.textContent=tdT('starting');$('tdmsg').innerHTML='';
   const body={batch_id:t.batch_id,file:t.file,printer_id:t.printer_id,split:t.split,bed_clear:t.bed==='check'};
   try{await post('/api/today/start',body);$('tdmsg').innerHTML=`<div class="o">${esc(tdT('started',{p:t.printer}))}</div>`}
@@ -2444,6 +2456,23 @@ async function tdStart(i,btn){const t=TDB.tasks[i];if(!t)return;
     else $('tdmsg').innerHTML=`<div class="e">${esc(e.message)}</div>`}
   loadToday()}
 $('tdrefresh').onclick=loadToday;
+// 0.43: the day plan per printer, and plates to get ready (Make next batch, merges) — each with a confirmation
+function tdPlan(b){const P=b.plan;if(!P){$('tdplan').innerHTML='';return}
+  $('tdplanh').textContent=tdT('planh',{last:tdClock(P.last)})+(P.short?' '+tdT('planshort',{ready:P.ready,need:P.need}):'');
+  const slot=s=>`<span class="tdslot ${s.now?'now':''} ${s.night?'night':''}">${s.kind==='printing'?tdT('sl_printing'):s.kind==='bases'?(s.n===1?'1 base':tdT('sl_bases',{n:s.n})):tdT('sl_'+s.kind)}${s.night&&s.kind!=='printing'?' · '+tdT('sl_night'):''} ${s.now&&s.kind==='printing'?'→ '+tdClock(s.end):tdClock(s.start)+'→'+tdClock(s.end)}</span>`;
+  $('tdplan').innerHTML=P.printers.map(r=>`<tr><td><b>${esc(r.printer.split(' ')[0])}</b> <span class="hint">${esc(r.role)}</span></td><td>${r.slots.map(slot).join(' ')}</td></tr>`).join('')||'<tr><td colspan="2" class="empty">No printer connected</td></tr>'}
+function tdActions(b){const P=b.plan||{},out=[];
+  if(P.short>0&&b.to_make>0){
+    if(b.batches_coming)out.push(`<div class="msgs"><div class="o">${tdT('coming',{n:b.batches_coming})}</div></div>`);
+    else{const n=Math.min(b.batch_size||50,b.to_make);out.push(`<div class="tdtask"><div class="what">${tdT('short2',{ready:P.ready,need:P.need})}</div><button class="primary" id="tdmknext" data-n="${n}">${tdT('mknext',{n})}</button></div>`)}}
+  (b.merge||[]).forEach((s,i)=>out.push(`<div class="tdtask"><div class="what">${sw(s.color)} ${esc(tdT('mergel',{c:s.color,names:s.plates.map(p=>p.names.join(', ')).join(' + ')}))}</div><button data-tdmerge="l${i}">${tdT('merge')}</button></div>`));
+  (b.merge_bases||[]).forEach((s,i)=>out.push(`<div class="tdtask night"><div class="what">${esc(tdT('mergeb',{names:s.plates.map(p=>p.names.join(', ')).join(' + ')}))}</div><button data-tdmerge="b${i}">${tdT('merge')}</button></div>`));
+  $('tdactcard').hidden=!out.length;$('tdact').innerHTML=out.join('');
+  if($('tdmknext'))$('tdmknext').onclick=async e=>{const n=+e.target.dataset.n;if(!confirm(tdT('mkconfirm',{n})))return;e.target.disabled=true;
+    try{const r=await post('/api/batches/next',{count:n,product:'organizer'});$('tdmsg').innerHTML=`<div class="o">${esc(tdT('mkdone',{b:r.batch_id,n:r.orders}))}</div>`}catch(x){$('tdmsg').innerHTML=`<div class="e">${esc(x.message)}</div>`}loadToday()};
+  document.querySelectorAll('[data-tdmerge]').forEach(x=>x.onclick=async()=>{const k=x.dataset.tdmerge,s=(k[0]==='l'?b.merge:b.merge_bases)[+k.slice(1)];if(!s)return;
+    const names=s.plates.map(p=>p.names.join(', ')).join(' + ');if(!confirm(tdT('mergeconfirm',{names})))return;x.disabled=true;
+    try{const r=await post('/api/makeit/merge',{plates:s.plates.map(p=>({batch_id:p.batch_id,file:p.file})),staff:$('vstaff')?$('vstaff').value:''});$('tdmsg').innerHTML=`<div class="o">${esc(tdT('mergeok',{names:r.names}))}</div>`}catch(e){$('tdmsg').innerHTML=`<div class="e">${esc(e.message)}</div>`}loadToday()})}
 // 0.41: maintenance Done (ticked in Bambuddy), why a print failed (one tap), a loud sound for new work
 async function tdCare(pid,btn){const c=(TDB.care||[]).find(x=>x.printer_id===pid);if(!c)return;
   if(!confirm(c.full?tdT('carefull',{p:c.printer}):tdT('careconfirm',{p:c.printer,list:c.items.map(i=>'• '+i.name).join('\n')})))return;

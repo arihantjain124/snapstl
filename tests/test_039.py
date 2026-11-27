@@ -18,7 +18,7 @@ def test_phase_and_staffed():
     assert today.phase(at(9), SH) == "day" and today.phase(at(20, 5), SH) == "prep"
     assert today.phase(at(21, 10), SH) == "round" and today.phase(at(23), SH) == "night"
     assert today.phase(at(7, 59), SH) == "night"
-    assert today.staffed(at(21, 44), SH) and not today.staffed(at(21, 46), SH) and not today.staffed(at(3), SH)
+    assert today.staffed(at(21, 29), SH) and not today.staffed(at(21, 31), SH) and not today.staffed(at(3), SH)
     assert today.next_staffed(at(23), SH) == datetime(2026, 11, 29, 8, 0).timestamp()
     assert today.next_staffed(at(5), SH) == at(8)
 

@@ -48,6 +48,7 @@ keep the docs true, and commit. Don't rewrite or replace working parts.
   (`farm.refresh_from_bambuddy`) only asks printers to report their status again.
 
 **Technical rules**
+- **Day plan (0.43, `today.plan`)**: day plates end by 21:30 (`LEAVE_MIN` 30) — never plan one past it; every board action (start, split, merge, Make next batch) asks for a confirmation first (owner).
 - **Spare base (0.42, `spares.use_base`)**: a spare base is a `good` base check (note `spare base`) plus the base taken off its plate — never edit a plate file in place, never touch a plate that is started; refuse rather than guess (merged plates, other batches).
 - **Printer care (0.41, `printercare.py`)**: Bambuddy is the maintenance record — never keep a second one here; SnapSTL only sets up our tasks / intervals (`TASKS`), shows what is due on a printer that is free anyway, and performs it in Bambuddy on Done. Never tick a task the person did not confirm. Times per task are rough minutes for the card.
 - **Today's work (0.39, `today.py`)**: the staff board is for a person with little English — one action per card, plain short English words (0.40: Hindi removed, staff said it isn't needed); strings live in `TD.en`. Times are rough per piece (`today.per_piece`), never per letter. The board's Start only splits a plate after the bed is confirmed clear, and starts through `makeit.start_print`.

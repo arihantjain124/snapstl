@@ -480,6 +480,7 @@ def divide(batch_id: int, file: str, sizes: list[int], staff: str = "") -> dict:
             raise ExtraError("This plate has only one item left to print")
         if len(sizes) < 2 or sum(sizes) != len(items):
             raise ExtraError(f"The parts must add up to the {len(items)} items on the plate")
+        items = _priority(con, items)
         groups, k = [], 0
         for n in sizes:
             groups.append(items[k:k + n])
@@ -491,6 +492,33 @@ def divide(batch_id: int, file: str, sizes: list[int], staff: str = "") -> dict:
         db.add_activity(con, "merge", f"Split {Path(file).name} into {len(made)} plates ({' + '.join(map(str, sizes))})"
                         + (f"; letters split the same way: {', '.join(Path(f).name for f in letters)}" if letters else ""))
     return {"files": made, "letters": letters, "letters_skipped": skipped}
+
+
+def _priority(con, items: list[dict]) -> list[dict]:
+    """0.43 (owner): the order the items of a split plate go onto its parts — the first part is printed first:
+    Express orders (earliest needed-by first), then clubbed orders whose other names are made (their parcel waits),
+    each clubbed order's names next to each other; otherwise plate order."""
+    ids = list({i["order_id"] for i in items})
+    if not ids:
+        return items
+    q = ",".join("?" * len(ids))
+    info = {r[0]: (r[1], r[2] or "") for r in con.execute(
+        f"SELECT order_id, express_by, clubbed_id FROM orders WHERE order_id IN ({q})", ids)}
+    waiting = {r[0] for r in con.execute(
+        f"SELECT o.order_id FROM orders o WHERE o.order_id IN ({q}) AND COALESCE(o.clubbed_id,'')<>'' AND EXISTS "
+        f"(SELECT 1 FROM orders o2 WHERE o2.clubbed_id=o.clubbed_id AND o2.order_id<>o.order_id AND "
+        f"(o2.made_at IS NOT NULL OR o2.state='printed' OR o2.label_at IS NOT NULL))", ids)}
+
+    def group(it):
+        exp, club = info.get(it["order_id"], (None, ""))
+        return club or it["order_id"]
+    rank: dict[str, tuple] = {}
+    for pos, it in enumerate(items):
+        exp, _ = info.get(it["order_id"], (None, ""))
+        r = (exp is None, exp or "", it["order_id"] not in waiting, pos)
+        g = group(it)
+        rank[g] = min(rank.get(g, r), r)
+    return sorted(items, key=lambda it: (rank[group(it)], items.index(it)))
 
 
 def _divisible(con, b: dict, file: str, quiet: bool = False) -> tuple[dict | None, list[dict]]:

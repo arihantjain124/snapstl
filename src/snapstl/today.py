@@ -10,6 +10,13 @@ hour once the time nobody is there to take it off is counted. A bigger plate is 
 when its button is pressed; the print starts like Print → Start print (the bed check included).
 Letters printers get letter plates in the day, a base plate for the night; X1 (Flex) gets name stands first.
 From 20:00 (two hours before the shift ends) `NIGHT` merges small base plates into 3-base ones, once a day.
+
+0.43 (owner): the whole day per printer (`plan`): what it prints now, then the plates sized to end by 21:30 (no day
+plate runs after 21:30, so every printer is free for its night plate by 22:00; a plate ending later is a night plate
+and may start earlier — an A1 at 20:00 prints 3 bases till 08:00), then its night plate. Re-planned on every refresh.
+When the plan needs more bases than are on plates, the board offers Make next batch; it also offers letter merges
+(day) and 3-base night merges (from 20:00) — every action with a confirmation. A split puts Express and clubbed
+names first (`extras.divide`); the rest of a split plate comes next (`_rank`).
 """
 from __future__ import annotations
 
@@ -22,7 +29,7 @@ from datetime import datetime, timedelta
 from . import db, estimate, extras, farm, makeit
 
 REACT_H = 0.25     # someone takes a finished plate off within ~15 minutes while they are here
-LEAVE_MIN = 15     # the last plate of the day must end this long before the shift ends (time to swap)
+LEAVE_MIN = 30     # no day plate runs in the last half hour (0.43, owner: every printer free 21:30–22:00)
 ROUND_MIN = 60     # the night round: the last hour of the shift
 PREP_MIN = 120     # night plates are got ready from two hours before the shift ends
 DEFAULT_H = {"bases": {"A1": 4.0, "P1S": 3.3, "": 3.5}, "names": {"": 0.35}, farm.STANDS: {"": 4.0}}
@@ -179,7 +186,7 @@ def build(mk: dict, prs: list[dict], now: float | None = None, sh: dict | None =
         tasks.append({"type": "start", "printer_id": p["id"], "printer": p["name"], "role": p.get("role") or "any",
                       "bed": free[p["id"]], "kind": kind, "batch_id": r["batch_id"], "file": r["file"],
                       "names": r.get("names") or [], "colors": r.get("colors") or [], "n": n,
-                      "split": split, "hours": h, "ends_at": end, "night": not staffed(end, sh),
+                      "split": split, "hours": h, "ends_at": end, "night": end > cut or not staffed(end, sh),
                       "idle_after": 0 if staffed(end, sh) else round((next_staffed(end, sh) - end) / 3600, 1),
                       "product": r.get("product") or "", "express": bool(r.get("express_by")),
                       "fix": r.get("extra") == "fix", "why": why})
@@ -207,7 +214,7 @@ def build(mk: dict, prs: list[dict], now: float | None = None, sh: dict | None =
                 task(by_id[pid], r, kind)
             rows = [r for r in rows if (r["batch_id"], r["file"]) not in used]
     # bases: every other free printer; letters printers only from the night round on (or with nothing else to do)
-    bases = [r for r in mk.get("bases") or [] if _startable(r)]
+    bases = sorted((r for r in mk.get("bases") or [] if _startable(r)), key=_rank)
     letters_waiting = any(_startable(r) for r in mk.get("names") or [])
     for pid in sorted(free, key=lambda i: ((by_id[i].get("role") or "any") == "letters", by_id[i]["name"])):
         p = by_id[pid]
@@ -253,13 +260,71 @@ def build(mk: dict, prs: list[dict], now: float | None = None, sh: dict | None =
     next_end = next((x["ends_at"] for x in printing if x.get("ends_at") and staffed(x["ends_at"], sh)), None)
     tasks.sort(key=lambda t: (not t["fix"], not t["express"], t["kind"] != farm.STANDS, t["printer"]))
     three = sum(1 for r in bases if _plate_n(r) >= 3 and (r["batch_id"], r["file"]) not in used)
+    ready = sum(_plate_n(r) for r in bases if (r["batch_id"], r["file"]) not in used)
     return {"now": now, "phase": ph, "shift": sh, "tasks": tasks, "printing": printing, "next_end": next_end,
+            "plan": plan(prs, tasks, now, sh, pp, ready),
             "verify": len(mk.get("verify") or []), "per_piece": pp,
             "night": {"three_base_plates": three, "printers": sum(1 for p in prs if p.get("active", True)
                                                                     and (p.get("status") or {}).get("connected")),
                       "prep_from": day_end - PREP_MIN * 60, "round_from": day_end - ROUND_MIN * 60,
                       "merged_today": NIGHT.merged_on == datetime.fromtimestamp(now).date().isoformat(),
                       "merged": NIGHT.merged}}
+
+
+def _rank(r: dict) -> tuple:
+    """Base plates in the order they are started: fix plates, Express, clubbed orders waiting for this name, the
+    rest of a split plate (0.43: what a split left for later comes next), then Print's own order."""
+    return (r.get("extra") != "fix", r.get("express_by") is None, r.get("express_by") or "", not r.get("club_wait"),
+            r.get("extra") != "divided")
+
+
+def plan(prs: list[dict], tasks: list[dict], now: float, sh: dict, pp: dict, ready: int) -> dict:
+    """The rest of the day per printer (0.43): now → plates sized to end by 21:30 → the night plate. Rough: a
+    letters printer prints letters through the day; every plate is base plates. `need` = bases the plan still
+    has to find (beyond the plates already started now), `ready` = bases on plates not started."""
+    _, en = shift_window(sh)
+    day_end = datetime.fromtimestamp(now).replace(hour=en // 60, minute=en % 60, second=0, microsecond=0).timestamp()
+    if day_end <= now - 12 * 3600:
+        day_end += 86400
+    last = day_end - LEAVE_MIN * 60
+    by_task = {t["printer_id"]: t for t in tasks}
+    rows, need = [], 0
+    for p in sorted(prs, key=lambda p: p["name"]):
+        s = p.get("status") or {}
+        if not p.get("active", True) or not s.get("connected"):
+            continue
+        role = p.get("role") or "any"
+        per_h = hours(pp, "bases", str(p.get("model") or ""), 1)
+        slots: list[dict] = []
+        t = now
+        tk = by_task.get(p["id"])
+        if tk is not None:
+            slots.append({"kind": tk["kind"], "n": tk["n"], "start": now, "end": tk["ends_at"], "night": tk["night"],
+                          "now": True})
+            t = tk["ends_at"]
+        elif makeit.bed_state(p) == "busy":
+            rem = s.get("remaining_time")
+            t = now + float(rem) * 60 if rem is not None else now
+            slots.append({"kind": "printing", "start": now, "end": t, "night": t > last, "now": True})
+        if slots and slots[-1]["night"]:
+            rows.append({"printer": p["name"], "role": role, "slots": slots})
+            continue
+        # someone takes it off ~15 min after it ends while they are here, else when the shift starts
+        t = max((t + REACT_H * 3600 if staffed(t, sh) else next_staffed(t, sh)) if slots else next_staffed(t, sh), now)
+        if role == "letters" and t < last:
+            slots.append({"kind": "names", "start": t, "end": last, "night": False})
+            t = last
+        while t < day_end:
+            n, _ = best_size(t, per_h, 3, sh)
+            end = t + n * per_h * 3600
+            night = end > last or not staffed(end, sh)  # runs past 21:30: the night plate
+            slots.append({"kind": "bases", "n": n, "start": t, "end": end, "night": night})
+            need += n
+            if night:
+                break
+            t = end + REACT_H * 3600
+        rows.append({"printer": p["name"], "role": role, "slots": slots})
+    return {"printers": rows, "need": need, "ready": ready, "short": max(0, need - ready), "last": last}
 
 
 def start(mk_prs: list[dict], batch_id: int, file: str, printer_id: int, split: list[int] | None = None,
