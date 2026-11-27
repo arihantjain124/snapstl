@@ -222,7 +222,7 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 .pdtable select{min-width:120px;padding:3px 6px}.pdtable td{vertical-align:middle}
 @media (max-width:800px){.app{grid-template-columns:minmax(0,1fr)}nav#tabs{flex-wrap:wrap}.hint code,.callout code{word-break:break-all}.toolbar{flex-wrap:wrap}.side{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:0;border-bottom:1px solid var(--line);padding:8px 10px}
   nav#tabs{flex-direction:row}nav#tabs button{width:auto;padding:6px 9px}.side .foot{margin:0;flex-direction:row;flex-wrap:wrap}.health{flex-direction:row;flex-wrap:wrap;border:0;padding:0}.bar{display:none}}
-.tdtask{display:flex;gap:14px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:8px 0;flex-wrap:wrap}.tdtask .pn{font-size:22px;font-weight:700;min-width:110px}.tdtask .what{flex:1;min-width:240px;font-size:15px;line-height:1.5}.tdtask .go{font-size:16px;padding:10px 18px}.tdtask.night{border-color:var(--accent);background:var(--infobg)}.tdtask .step{display:inline-block;background:var(--chip);border-radius:8px;padding:1px 8px;margin-right:6px;font-size:13px}.tdgrid{display:flex;gap:12px;flex-wrap:wrap}.tdgrid .tdbox{border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:220px;flex:1}.tdgrid .tdbox b{font-size:26px;display:block}.tdphase{font-size:15px;margin:6px 0 0}.seg button.on{background:var(--accent);color:#fff}
+.tdtask{display:flex;gap:14px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:8px 0;flex-wrap:wrap}.tdtask .pn{font-size:22px;font-weight:700;min-width:110px}.tdtask .what{flex:1;min-width:240px;font-size:15px;line-height:1.5}.tdtask .go{font-size:16px;padding:10px 18px}.tdtask.night{border-color:var(--accent);background:var(--infobg)}.tdtask .step{display:inline-block;background:var(--chip);border-radius:8px;padding:1px 8px;margin-right:6px;font-size:13px}.tdgrid{display:flex;gap:12px;flex-wrap:wrap}.tdgrid .tdbox{border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:220px;flex:1}.tdgrid .tdbox b{font-size:26px;display:block}.tdphase{font-size:15px;margin:6px 0 0}.tdcare{border:1px dashed var(--warn);background:var(--warnbg);border-radius:10px;padding:8px 10px;margin:6px 0}.tdcare li{margin:3px 0}.tdtask.fail{border-color:var(--err)}.tdreasons{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.tdreasons button{font-size:14px;padding:8px 12px}.seg button.on{background:var(--accent);color:#fff}
 .mkplan{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}.mkplan table td{vertical-align:top}.rtag{font-size:11px;padding:1px 6px;border-radius:8px;background:var(--chip);margin-left:4px}.rtag.letters{background:var(--infobg);color:var(--accent)}.rtag.bases{background:var(--okbg);color:var(--ok)}.rtag.flex{background:var(--warnbg);color:var(--warn)}
 .ask{color:var(--warn);font-size:12px;font-weight:600;margin-top:3px;max-width:240px}tr.asking td{background:var(--warnbg)}
 .adhoc{border:1px solid var(--line);border-radius:10px;padding:12px;margin:8px 0}.adhocrow{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}.adhocrow label{display:flex;flex-direction:column;gap:4px;font-size:12px;min-width:0;flex:1 1 140px;margin:0}.adhocrow label.grow{flex:2 1 200px}.adhocrow input{width:100%;box-sizing:border-box}
@@ -905,6 +905,8 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
     <div class="toolbar"><label for="stshipday" style="margin:0">Shipped on</label><input type="date" id="stshipday" style="max-width:170px"><button class="small" id="stshipopen">Show</button></div>
     <div class="tw"><table><thead><tr><th>Day</th><th style="text-align:right">Labels — all</th><th style="text-align:right">From SnapSTL</th><th style="text-align:right">Parcels picked up</th><th style="text-align:right">Pieces shipped</th><th></th></tr></thead><tbody id="stfloor"></tbody></table></div>
     <div id="stshiplog"></div></div>
+  <div class="card"><h3 style="margin-top:0">Printer care</h3><p class="hint">Per printer: plates printed and failed per week (from Monday), when its full service and its last maintenance were done (ticked on Today's work; Bambuddy keeps the record and the print hours), and why prints failed in the last 30 days. <span id="stcarestate"></span></p>
+    <div class="tw"><table><thead><tr id="stcarehead"></tr></thead><tbody id="stcare"></tbody></table></div></div>
   <div class="grid2">
     <div class="card"><h3 style="margin-top:0">Printers</h3><div class="tw"><table><thead><tr><th>Printer</th><th style="text-align:right">Plates printed</th><th style="text-align:right">Failed</th><th style="text-align:right">Hours printing</th><th>Last used</th></tr></thead><tbody id="stprinters"></tbody></table></div><p class="hint">Hours printing are counted from 0.26 on.</p></div>
     <div class="card"><h3 style="margin-top:0">Checked by</h3><div class="tw"><table><thead><tr><th>Person</th><th style="text-align:right">Parts good</th><th style="text-align:right">Problems found</th><th style="text-align:right">Orders</th></tr></thead><tbody id="stcheckers"></tbody></table></div></div>
@@ -918,11 +920,12 @@ details.kvd>summary{cursor:pointer;font-size:12.5px;padding:3px 0}details.kvd{ma
 <section id="t-today" hidden>
   <div class="card">
     <div class="toolbar"><h2 style="margin:0" id="tdtitle">Today's work</h2><span class="pill info" id="tdphase"></span><span class="grow hint" id="tdclock"></span>
-      <button class="small" id="tdrefresh"></button></div>
+      <button class="small" id="tdsound" title="A loud sound when a printer becomes free or a print fails (this computer)"></button><button class="small" id="tdrefresh"></button></div>
     <p class="tdphase" id="tdphasetext"></p>
     <div id="tdnight"></div>
   </div>
-  <div class="card"><h2 style="margin-top:0" id="tdnowh"></h2><div id="tdtasks"></div><div class="msgs" id="tdmsg"></div></div>
+  <div class="card" id="tdfailcard" hidden><h2 style="margin-top:0">Why did it fail?</h2><p class="hint">One tap per failed print — it shows which printer needs which fix.</p><div id="tdfail"></div></div>
+  <div class="card"><h2 style="margin-top:0" id="tdnowh"></h2><div id="tdtasks"></div><div class="msgs" id="tdmsg"></div><p class="hint" id="tdcarewait"></p></div>
   <div class="card"><h2 style="margin-top:0" id="tdotherh"></h2><div id="tdother" class="tdgrid"></div></div>
   <div class="card"><h2 style="margin-top:0" id="tdnexth"></h2><div class="tw"><table><thead><tr><th id="tdthp"></th><th id="tdths"></th><th id="tdthe"></th></tr></thead><tbody id="tdnext"></tbody></table></div></div>
 </section>
@@ -2376,7 +2379,11 @@ const TD={en:{title:"Today's work",refresh:'Refresh',now:'Do now',other:'Other w
   verify:'Check prints',verifyh:'printed parts to check',open:'Open',labels:'Make labels',labelsh:'orders made — labels to make',
   printing:'printing',idle:'free',offline:'off / offline',startingp:'starting',nightend:'ends at night — nothing to do',
   bedcheck:'plate to take off',nightready:'Night plates: {have} ready (3 bases), printers {need}',merged:'merged today: {n}',
-  short:'Not enough plates — press "Make next batch" on Pending Orders.',notconn:'Not connected to Bambuddy — no printers.'}};
+  short:'Not enough plates — press "Make next batch" on Pending Orders.',notconn:'Not connected to Bambuddy — no printers.',
+  care:'Maintenance first (~{m} min)',full:'Full service (~{m} min) — every task below, once',caredone:'Done',careonly:'Maintenance (~{m} min) — the printer is free',
+  careconfirm:'{p}: all of these done?\n\n{list}',carefull:'{p}: full service done — every task on the list?',caresaved:'{p}: maintenance saved in Bambuddy',
+  carewait:'Full service still to do (one a day, in this order): {list}',failed:'failed {t}',skip:'Skip',
+  soundon:'Sound: on',soundoff:'Sound: off'}};
 const TDL='en';
 let TDB=null,TDTIMER=null;
 const tdT=(k,v={})=>{let s=k.split('.').reduce((o,x)=>o&&o[x],TD[TDL])??k;for(const[a,b]of Object.entries(v))s=s.replaceAll('{'+a+'}',b);return s};
@@ -2389,17 +2396,29 @@ function renderToday(){const b=TDB;if(!b)return;
   $('tdphase').textContent=tdT('ph.'+b.phase);$('tdphase').className='pill '+(b.phase==='round'?'warn':b.phase==='night'?'info':'ok');
   $('tdphasetext').textContent=tdT('phtext.'+b.phase,{round:tdClock(b.night.round_from),start:b.shift.start});
   const N=b.night;$('tdnight').innerHTML=(b.phase==='prep'||b.phase==='round')?`<div class="msgs"><div class="${N.three_base_plates>=N.printers?'o':'w'}">${tdT('nightready',{have:N.three_base_plates,need:N.printers})}${N.merged&&N.merged.length?' · '+tdT('merged',{n:N.merged.length}):''}${N.three_base_plates<N.printers?' '+tdT('short'):''}</div></div>`:'';
+  const care={};for(const c of b.care||[])care[c.printer_id]=c;
+  const careBox=(c,only)=>`<div class="tdcare"><b>${c.full?tdT('full',{m:c.minutes}):only?tdT('careonly',{m:c.minutes}):tdT('care',{m:c.minutes})}</b><ul style="margin:4px 0 6px;padding-left:20px">${c.items.map(i=>`<li><b>${esc(i.name)}</b> — ${esc(i.how)}</li>`).join('')}</ul><button class="small primary" data-tdcare="${c.printer_id}">${tdT('caredone')}</button></div>`;
+  const withTask=new Set(b.tasks.map(t=>t.printer_id));
+  const careOnly=(b.care||[]).filter(c=>!withTask.has(c.printer_id)).map(c=>`<div class="tdtask"><span class="pn">${esc(c.printer)}</span><div class="what">${careBox(c,true)}</div></div>`).join('');
+  $('tdcarewait').textContent=(b.care_waiting||[]).length?tdT('carewait',{list:b.care_waiting.map(n=>n.split(' ')[0]).join(', ')}):'';
+  const F=b.failures||[];$('tdfailcard').hidden=!F.length;
+  $('tdfail').innerHTML=F.map((f,i)=>`<div class="tdtask fail"><span class="pn">${esc((f.printer||'').split(' ')[0]||'?')}</span><div class="what"><b>${esc(f.print_name)}</b> <span class="hint">· ${tdT('failed',{t:tdClock(Date.parse(f.failed_at)/1000)})}${f.hours?` · after ${f.hours} h`:''}</span>
+    <div class="tdreasons">${Object.entries(b.reasons||{}).map(([k,l])=>`<button data-tdfail="${i}" data-r="${k}">${esc(l)}</button>`).join('')}<button class="small" data-tdfail="${i}" data-r="">${tdT('skip')}</button></div></div></div>`).join('');
+  document.querySelectorAll('[data-tdfail]').forEach(x=>x.onclick=()=>tdFail(+x.dataset.tdfail,x.dataset.r,x));
+  tdSoundCheck(b);
   if(!b.connected){$('tdtasks').innerHTML=`<div class="msgs"><div class="e">${tdT('notconn')}</div></div>`}
+  else if(!b.tasks.length&&careOnly)$('tdtasks').innerHTML=careOnly;
   else if(!b.tasks.length){const nx=b.printing.find(x=>x.ends_at&&x.ends_at===b.next_end);
     $('tdtasks').innerHTML=`<p style="font-size:16px">${tdT('none')} ${nx?tdT('nextfree',{p:esc(nx.printer),t:tdClock(nx.ends_at)}):''}</p><p class="hint">${tdT('meanwhile')}</p>`}
   else $('tdtasks').innerHTML=b.tasks.map((t,i)=>{const kind=t.kind==='names'?tdT('letters'):t.kind==='stands'?tdT('stands'):`${t.n} ${tdT('bases')}`;
     const col=t.kind==='names'&&t.colors.length?` <span class="step">${esc(t.colors[0])}</span>`:'';
     return `<div class="tdtask ${t.night?'night':''}"><span class="pn">${esc(t.printer)}</span><div class="what">
-      ${t.bed==='check'?`<div><span class="step">1</span>${tdT('clear')}</div>`:''}
+      ${t.bed==='check'?`<div><span class="step">1</span>${tdT('clear')}</div>`:''}${care[t.printer_id]?careBox(care[t.printer_id],false):''}
       <div><span class="step">${t.bed==='check'?2:1}</span>${t.bed==='check'?tdT('put')+': ':''}<b>${kind}</b>${col} — ${esc(t.names.join(', '))}${t.fix?` <span class="pill warn">${tdT('fix')}</span>`:''}${t.express?` <span class="pill err">${tdT('express')}</span>`:''}</div>
       <div class="hint">~${t.hours} ${tdT('hours')} · ${tdT('ends')} ~${tdClock(t.ends_at)}${t.night?` · <b>${tdT('nightplate')}</b>`:''}${t.split?' · '+tdT('split',{n:t.split[0],of:t.split[0]+t.split[1]}):''}</div></div>
-      <button class="primary go" data-tdgo="${i}">${tdT('start')}</button></div>`}).join('');
+      <button class="primary go" data-tdgo="${i}">${tdT('start')}</button></div>`}).join('')+careOnly;
   document.querySelectorAll('[data-tdgo]').forEach(x=>x.onclick=()=>tdStart(+x.dataset.tdgo,x));
+  document.querySelectorAll('[data-tdcare]').forEach(x=>x.onclick=()=>tdCare(+x.dataset.tdcare,x));
   $('tdother').innerHTML=`<div class="tdbox"><span class="hint">${tdT('verifyh')}</span><b>${b.verify}</b><button class="small" id="tdgover">${tdT('verify')}</button></div>
     <div class="tdbox"><span class="hint">${tdT('labelsh')}</span><b>${b.to_pack}</b><button class="small" id="tdgolab">${tdT('labels')}</button></div>`;
   $('tdgover').onclick=()=>{show('makeit');mkShow('verify')};$('tdgolab').onclick=()=>{show('makeit');mkShow('completed')};
@@ -2413,8 +2432,35 @@ async function tdStart(i,btn){const t=TDB.tasks[i];if(!t)return;
     else $('tdmsg').innerHTML=`<div class="e">${esc(e.message)}</div>`}
   loadToday()}
 $('tdrefresh').onclick=loadToday;
+// 0.41: maintenance Done (ticked in Bambuddy), why a print failed (one tap), a loud sound for new work
+async function tdCare(pid,btn){const c=(TDB.care||[]).find(x=>x.printer_id===pid);if(!c)return;
+  if(!confirm(c.full?tdT('carefull',{p:c.printer}):tdT('careconfirm',{p:c.printer,list:c.items.map(i=>'• '+i.name).join('\n')})))return;
+  btn.disabled=true;try{await post('/api/care/done',{printer_id:pid,item_ids:c.items.map(i=>i.id),full:c.full,staff:$('vstaff')?$('vstaff').value:''});$('tdmsg').innerHTML=`<div class="o">${esc(tdT('caresaved',{p:c.printer}))}</div>`}
+  catch(e){$('tdmsg').innerHTML=`<div class="e">${esc(e.message)}</div>`}loadToday()}
+async function tdFail(i,reason,btn){const f=(TDB.failures||[])[i];if(!f)return;
+  document.querySelectorAll(`[data-tdfail="${i}"]`).forEach(x=>x.disabled=true);
+  try{await post('/api/care/failure',{...f,reason,staff:$('vstaff')?$('vstaff').value:''})}catch(e){alert(e.message)}loadToday()}
+let TDSOUND=true,TDSEEN=null;try{TDSOUND=localStorage.getItem('tdsound')!=='off'}catch{}
+let TDAUDIO=null;const tdAudio=()=>{try{TDAUDIO=TDAUDIO||new (window.AudioContext||window.webkitAudioContext)();if(TDAUDIO.state==='suspended')TDAUDIO.resume()}catch{}return TDAUDIO};
+document.addEventListener('click',()=>{if(TDSOUND)tdAudio()},{once:true});  // browsers allow sound only after a first click
+function tdBeep(){const a=tdAudio();if(!a)return;const t0=a.currentTime;
+  for(let k=0;k<3;k++)for(const[f,dt]of[[880,0],[1320,0.18]]){const o=a.createOscillator(),g=a.createGain();o.type='square';o.frequency.value=f;
+    g.gain.setValueAtTime(0.9,t0+k*0.6+dt);g.gain.exponentialRampToValueAtTime(0.001,t0+k*0.6+dt+0.17);o.connect(g).connect(a.destination);o.start(t0+k*0.6+dt);o.stop(t0+k*0.6+dt+0.18)}}
+function tdSoundCheck(b){const keys=new Set([...b.tasks.map(t=>'p'+t.printer_id),...(b.care||[]).map(c=>'p'+c.printer_id),...(b.failures||[]).map(f=>'f'+f.archive_id)]);
+  const fresh=TDSEEN&&[...keys].some(k=>!TDSEEN.has(k));TDSEEN=keys;if(fresh&&TDSOUND)tdBeep();
+  $('tdsound').textContent=tdT(TDSOUND?'soundon':'soundoff')}
+$('tdsound').onclick=()=>{TDSOUND=!TDSOUND;try{localStorage.setItem('tdsound',TDSOUND?'on':'off')}catch{}if(TDSOUND){tdAudio();tdBeep()}$('tdsound').textContent=tdT(TDSOUND?'soundon':'soundoff')};
 
 // ---------- Stats (0.26) ----------
+function stCare(c){if(!c||!$('stcare'))return;const wk=d=>new Date(d+'T12:00:00').toLocaleDateString([], {day:'numeric',month:'short'});
+  const when=t=>t?new Date(t*1000).toLocaleDateString([], {day:'numeric',month:'short'}):'<span class="hint">—</span>';
+  $('stcarehead').innerHTML=`<th>Printer</th>${c.weeks.map(w=>`<th style="text-align:right">Week of ${wk(w)}</th>`).join('')}<th>Full service</th><th>Last maintenance</th><th>Why prints failed (30 days)</th>`;
+  $('stcare').innerHTML=c.printers.map(p=>`<tr><td><b>${esc(p.printer)}</b></td>${p.weeks.map(w=>{const pct=w.prints?Math.round(100*w.failed/w.prints):null;
+      return `<td style="text-align:right">${w.prints?`<span class="${pct>=10?'reason':''}">${pct}%</span> <span class="hint">${w.failed}/${w.prints}</span>`:'<span class="hint">—</span>'}</td>`}).join('')}
+    <td>${when(p.full_at)}</td><td>${when(p.tasks_at||p.full_at)}</td><td class="hint">${Object.entries(p.reasons).map(([k,n])=>`${esc(k)} ${n}`).join(' · ')||'—'}</td></tr>`).join('')||`<tr><td colspan="${c.weeks.length+4}" class="empty">No prints yet</td></tr>`;
+  $('stcarestate').innerHTML=c.set_up?'Maintenance is set up in Bambuddy. <button class="small" id="stcaresetup">Set up again</button>':`<b>Maintenance not set up in Bambuddy yet</b>${c.error?' ('+esc(c.error)+')':''}. <button class="small primary" id="stcaresetup">Set up now</button>`;
+  $('stcaresetup').onclick=async()=>{if(!confirm('Set our maintenance tasks and intervals in Bambuddy?\n\nAdds the missing tasks to each printer, sets their intervals and turns off Clean Build Plate. Nothing is ticked.'))return;
+    try{const x=await post('/api/care/setup',{});alert(`Done: ${x.made.length} task types made, ${x.assigned} assigned, ${x.changed} changed.`)}catch(e){alert(e.message)}loadStats()}}
 async function loadPrintTimes(){try{const r=await api('/api/stats/print-times');const f=x=>x?`<td style="text-align:right">${x.b}</td><td style="text-align:right">${Math.round(x.a)} min</td><td style="text-align:right">${x.n}</td>`:'<td style="text-align:right" class="hint">—</td><td></td><td style="text-align:right" class="hint">too few</td>';
   $('stptime').innerHTML=r.rows.map(x=>`<tr><td>${esc(x.printer)}</td><td>${esc(x.model)}</td>${f(x.bases)}${f(x.names)}</tr>`).join('')+(r.all&&(r.all.bases||r.all.names)?`<tr><td><b>All printers</b></td><td></td>${f(r.all.bases)}${f(r.all.names)}</tr>`:'')||'<tr><td colspan="8" class="empty">No prints done yet</td></tr>'}
   catch(e){$('stptime').innerHTML=`<tr><td colspan="8" class="reason">${esc(e.message)}</td></tr>`}}
@@ -2444,6 +2490,7 @@ async function loadStats(){loadPrintTimes();let r;try{r=await api('/api/stats?da
     <div class="stlbl">${r.days.map((d,i)=>`<span>${i%Math.ceil(r.days.length/10)===0?dt(d.day):''}</span>`).join('')}</div>
     <p class="hint"><span class="swatch" style="background:var(--ok)"></span> made · <span class="swatch" style="background:var(--line)"></span> new orders${t.target?' · dashed line: daily target':''}</p>`;
   $('stlabsince').textContent=r.labels_since?dt(r.labels_since):'when ShopDeck was connected (none yet)';
+  stCare(r.care);
   $('stfloor').innerHTML=r.days.slice().reverse().map(d=>`<tr><td>${dt(d.day)}</td><td style="text-align:right">${r.labels_since&&d.day>=r.labels_since?d.labels_all:'<span class="hint">—</span>'}</td><td style="text-align:right">${d.labels_snapstl||0}</td><td style="text-align:right">${d.ship_orders||0}</td><td style="text-align:right">${d.ship_pcs||0}</td><td>${d.ship_orders?`<button class="small" data-shipday="${d.day}">Names</button>`:''}</td></tr>`).join('');
   document.querySelectorAll('[data-shipday]').forEach(b=>b.onclick=()=>loadShipLog(b.dataset.shipday));
   $('stprinters').innerHTML=r.printers.length?r.printers.map(p=>`<tr><td>${esc(p.name||'—')}</td><td style="text-align:right">${p.done||0}</td><td style="text-align:right">${p.failed||0}${p.fail_pct?` <span class="hint">(${p.fail_pct}%)</span>`:''}</td><td style="text-align:right">${p.hours||'—'}</td><td class="hint">${p.last?new Date(p.last*1000).toLocaleString([], {day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}):''}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No prints in this period</td></tr>';

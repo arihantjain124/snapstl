@@ -98,6 +98,8 @@ async def _lifespan(_app):
     shopdeck.POLLER.start()  # 0.37: live order status from the ShopDeck API, once connected in Settings
     from . import today
     today.NIGHT.start(lambda: makeit_board())  # 0.39: night plates got ready from 2 hours before the shift ends
+    from . import printercare
+    printercare.SETUP.start()  # 0.41: our maintenance tasks and intervals in Bambuddy, once
     bambuddy_host.start_watch()  # Bambuddy computer: Keep running (starts Bambuddy / Docker when they stop)
     yield
     from .logistics import stop as stop_logistics
@@ -958,7 +960,72 @@ def today_board():
     with db.tx() as con:
         out["to_pack"] = con.execute(f"SELECT COUNT(*) FROM orders WHERE {tabs.TAB_SQL}='pack_it'").fetchone()[0]
     out["connected"] = bool((mk.get("status") or {}).get("connected"))
+    out.update(_care(out, mk.get("printers") or []))
     return out
+
+
+def _care(board: dict, prs: list[dict]) -> dict:
+    """0.41: maintenance cards for free printers (day only), prints that failed without a reason, full services
+    still to do. Never stops the board (Bambuddy down → nothing shown)."""
+    from . import printercare, today
+
+    out = {"care": [], "failures": [], "care_waiting": [], "care_set_up": printercare.is_set_up(),
+           "reasons": printercare.REASONS}
+    if not board.get("connected"):
+        return out
+    try:
+        names = {p["id"]: p["name"] for p in prs}
+        if board["phase"] != "night":
+            out["failures"] = [{**f, "printer": names.get(f["printer_id"], "")} for f in printercare.failures()]
+        if out["care_set_up"]:
+            active = farm.active_counts()
+            free = {p["id"] for p in prs if today._free(p, active)}
+            ov = printercare.overview()
+            if board["phase"] in ("day", "prep"):
+                out["care"] = printercare.cards(free, ov)
+            out["care_waiting"] = printercare.waiting_full(ov)
+    except Exception as e:  # noqa: BLE001 — the board itself must still show
+        out["care_error"] = str(e)
+    return out
+
+
+@app.post("/api/care/done")
+async def care_done(req: Request):
+    """Today's work → maintenance Done: {printer_id, item_ids?, full?, staff?} → performed in Bambuddy."""
+    from . import printercare
+
+    b = await req.json()
+    try:
+        return await run_in_threadpool(printercare.done, int(b.get("printer_id") or 0), b.get("item_ids") or [],
+                                       bool(b.get("full")), str(b.get("staff") or "")[:60])
+    except (printercare.CareError, farm.FarmError) as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/care/failure")
+async def care_failure(req: Request):
+    """Today's work → why a print failed: {archive_id, reason ('' = skip), printer, printer_id, print_name, failed_at}."""
+    from . import printercare
+
+    b = await req.json()
+    try:
+        return await run_in_threadpool(
+            printercare.note_failure, int(b.get("archive_id") or 0), str(b.get("reason") or ""),
+            str(b.get("staff") or "")[:60], str(b.get("printer") or "")[:60], b.get("printer_id"),
+            str(b.get("print_name") or "")[:200], str(b.get("failed_at") or "")[:40])
+    except printercare.CareError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/care/setup")
+async def care_setup():
+    """Stats → Printer care → Set up maintenance in Bambuddy (again)."""
+    from . import printercare
+
+    try:
+        return await run_in_threadpool(printercare.setup)
+    except farm.FarmError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @app.post("/api/today/start")
@@ -1920,9 +1987,13 @@ def printers_now_light():
 @app.get("/api/stats")
 def stats_get(days: int = 30):
     """Stats page: made per day against new orders, backlog, printers, checkers, waiting times."""
-    from . import stats
+    from . import printercare, stats
 
-    return stats.stats(days, SETTINGS.daily_target)
+    out = stats.stats(days, SETTINGS.daily_target)
+    with db.tx() as con:
+        out["care"] = printercare.printer_stats(con)  # 0.41: failures per week, service, reasons per printer
+    out["care"].update(set_up=printercare.is_set_up(), error=printercare.SETUP.error)
+    return out
 
 
 @app.get("/api/stats/print-times")

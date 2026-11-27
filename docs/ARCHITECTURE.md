@@ -149,6 +149,7 @@ Snapstl/
 │   ├── reportwatch.py        imports a new report saved in Downloads by itself (0.26)
 │   ├── shopdeck.py           ShopDeck partner API: connect (OAuth), key renewal, live order status (0.37)
 │   ├── today.py              Today's work: the staff board, plates sized to the shift, night plates (0.39)
+│   ├── printercare.py        printer care: maintenance in Bambuddy shown / ticked on Today's work, failure reasons (0.41)
 │   ├── spares.py             spare name pieces in stock, matched to new orders, shared (0.28)
 │   ├── products.py           which SKU is which product (organizer, name stands), what can be made / shared (0.29)
 │   ├── stands.py             name stand plates: size table, 3 per plate, two-part two-filament .3mf (0.31)
@@ -783,6 +784,22 @@ snapstl.server:app --port 8320`.
   while offline and are sent later.
 
 ---
+
+## Printer care (0.41, `printercare.py`)
+
+Bambuddy keeps the maintenance record (owner's choice): task types, print hours per printer, items per printer,
+perform + history (`/api/v1/maintenance/*`). `setup` (once, in the background at start — `printercare.json`
+marks it; Stats → Printer care → Set up again) makes our missing task types, assigns `TASKS` to the printers of
+their family (A1 / P1S), sets each one's interval (`custom_interval_hours`) and turns off Clean Build Plate (washed
+every print). Idempotent: a second run changes nothing; tasks we don't know are left alone. `/api/today` adds (via
+`server._care`, never failing the board): `care` = `cards(free printers)` in the day / prep only — first a **full
+service** per printer (every enabled task; `care_log` kind `full`), one a day, in `FIRST` order (A5, X8, A4, A3,
+A2, X7, then the rest); after it the tasks Bambuddy says are due, the long ones (≥ 500 h) on one printer a day.
+`POST /api/care/done` performs them in Bambuddy and logs them. `failures` = Bambuddy archives `failed` / `aborted`
+in the last 24 h without a reason here; `POST /api/care/failure` saves the reason (`print_failures`, '' = skipped)
+and PATCHes the archive's `failure_reason`. Stats → Printer care: `printer_stats` (print jobs done / failed per
+week from Monday, last full service / tasks, reasons in 30 days). The board beeps (Web Audio, loud; Sound on/off,
+this computer) when a new printer card or failed print appears.
 
 ## Today's work (0.39, `today.py`)
 

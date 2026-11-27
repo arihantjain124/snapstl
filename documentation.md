@@ -847,3 +847,12 @@ English hard — the language help was skipped by the owner).
 - Merging: split parts, merged plates (merged again) and fix plates merge too — bases with bases, letters with
   letters of one colour (owner: same colour). Split back undoes one step at a time; Split back / Join back also
   work on a plate that came back to its list.
+
+### 2026-11-28: 0.41.0 Printer care — maintenance on Today's work, why a print failed
+- Owner: use Bambuddy's maintenance tracker; Person A does it when needed; counters start from 0 (printers 1–2 months
+  old, X7 18 months, A4 2 years); a reason for every failed print; a loud sound. Measured (30 days): base plates
+  fail 14–27 % on A2–A5 and 16 % on X8 (owner: edges lifting), 2–9 % on the other P1S; 56 of 62 failures had no reason.
+- Bambuddy set up once: 4 task types added (extruder gears, heatbed cable (A1), grease Z screws, fans and filter
+  (P1S)), intervals 100 / 200 / 500 h (printers run ~20 h a day), Clean Build Plate off.
+- Today's work: a full service per printer first (one a day, worst first), then due tasks when the printer is free;
+  Done ticks them in Bambuddy. Failed prints of the last 24 h: one tap for the reason. Stats → Printer care.

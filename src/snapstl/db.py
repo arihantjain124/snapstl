@@ -274,6 +274,13 @@ CREATE TABLE IF NOT EXISTS shopdeck_live (order_id TEXT PRIMARY KEY, status TEXT
 -- 0.38: when the ShopDeck API first showed an order item labelled / picked up (shopdeck.py → Stats); this computer only
 CREATE TABLE IF NOT EXISTS floor_events (order_id TEXT, kind TEXT, group_key TEXT, day TEXT, at REAL,
     PRIMARY KEY (order_id, kind));
+-- 0.41: printer care (printercare.py; this computer only): maintenance ticked on Today's work (kind full | tasks),
+-- and why a print failed (one row per Bambuddy print archive, reason '' = skipped)
+CREATE TABLE IF NOT EXISTS care_log (id INTEGER PRIMARY KEY AUTOINCREMENT, printer_id INTEGER NOT NULL, printer TEXT,
+    kind TEXT NOT NULL, tasks TEXT, staff TEXT, at REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS care_log_printer ON care_log(printer_id, kind, at);
+CREATE TABLE IF NOT EXISTS print_failures (archive_id INTEGER PRIMARY KEY, printer_id INTEGER, printer TEXT,
+    print_name TEXT, failed_at TEXT, reason TEXT NOT NULL, staff TEXT, at REAL NOT NULL);
 """
 
 

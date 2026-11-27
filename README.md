@@ -418,6 +418,14 @@ print** (with the colours loaded) and beds to clear, and has **Refresh from Bamb
   letters printers get letters in the day and a base plate at night; X1 gets name stands first. From 20:00 small
   base plates are merged into night plates by themselves; from 21:00 every free printer gets its night plate.
   Below: prints to check, labels to make (opens Print → Completed), and when each printer is free next.
+- **Printer care** (0.41): maintenance lives in Bambuddy (its Maintenance page keeps the hours and history);
+  SnapSTL sets up our tasks once (A1 / P1S, intervals for ~20 h a day of printing, Clean Build Plate off) and puts
+  them on **Today's work** when a printer is free anyway: first a **full service** per printer (~40 min, one a day:
+  A5, X8, A4, A3, A2, X7, then the rest), afterwards the tasks that are due (the long ones on one printer a day).
+  **Done** ticks them in Bambuddy. A print that failed gets a **Why did it fail?** card — one tap (edges lifted,
+  spaghetti, layer shift, nozzle blocked, filament, other), saved in Bambuddy too. A loud sound plays when a printer
+  becomes free or a print fails (**Sound: on/off**). Stats → **Printer care**: failures per printer per week,
+  service dates, reasons.
 - **Print → Completed / Label printed** (0.40): Completed lists only the names still waiting for their label. A printed
   label moves the name to **Label printed** (with when and how: SnapSTL, on ShopDeck, or Printed outside).
   **Printed outside** on a Completed name: the label was made somewhere else — it moves to Label printed; **Undo**
